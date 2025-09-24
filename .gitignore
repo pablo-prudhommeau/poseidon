@@ -4,5 +4,4 @@ venv/
 .idea/
 *.iws
 data/
-package-lock.json
 .vscode/

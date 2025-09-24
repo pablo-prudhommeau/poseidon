@@ -1,12 +1,35 @@
-services:
-  app:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - ./:/app
-    restart: always
-    network_mode: bridge
+version: "3.9"
 
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    container_name: poseidon-backend
+    environment:
+      POSEIDON_DB_PATH: "/data/poseidon.db"
+    volumes:
+      - /opt/poseidon/data:/data
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/portfolio"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    container_name: poseidon-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
