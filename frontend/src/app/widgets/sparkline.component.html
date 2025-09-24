@@ -1,0 +1,4 @@
+<svg *ngIf="path" [attr.width]="width" [attr.height]="height"
+     [attr.viewBox]="'0 0 ' + width + ' ' + height" preserveAspectRatio="none" class="mt-2">
+	<path [attr.d]="path" fill="none" stroke="currentColor" stroke-width="2" class="opacity-60"/>
+</svg>

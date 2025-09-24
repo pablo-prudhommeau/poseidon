@@ -1,11 +1,13 @@
+
 # src/offchain/trending_job.py
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from src.logger import get_logger
 from src.config import settings
-from src.offchain.cmc_dapi import fetch_cmc_dapi_trending
+from src.trending.cmc_dapi import fetch_cmc_dapi_trending
 
 # Le trader existe déjà dans ton workspace.
 # On évite les dépendances rigides en appelant ses méthodes de façon "souple".
@@ -35,7 +37,7 @@ def _pct_or_none(v: Any) -> Optional[float]:
 
 
 def _fmt_pct(x: Optional[float]) -> str:
-    return f"{x*100:.2f}%" if isinstance(x, (int, float, float)) else "None"
+    return f"{x*100:.2f}%" if isinstance(x, (int, float)) else "None"
 
 
 def _last6(addr: str) -> str:
@@ -108,7 +110,11 @@ def _softfill_ok(it: Dict[str, Any], min_vol: float, min_liq: float) -> bool:
 # ------------------------------ Job --------------------------------
 
 class TrendingJob:
-    def __init__(self) -> None:
+    def __init__(self, w3: Optional["Web3"] = None) -> None:
+        """
+        Accepte un client Web3 optionnel. En mode LIVE (PAPER_MODE=False), on
+        tentera d'établir une connexion si non fournie (via QUICKNODE_URL).
+        """
         self.source: str = settings.TREND_SOURCE
         self.interval: str = (settings.TREND_INTERVAL or "1h").lower()
         self.page_size: int = int(settings.TREND_PAGE_SIZE)
@@ -132,6 +138,9 @@ class TrendingJob:
         self.chain_tag = (getattr(settings, "TREND_CHAIN", "ethereum") or "ethereum").upper()
         self.debug_n = int(getattr(settings, "DEBUG_SAMPLE_ROWS", 6))
 
+        # Web3 (optionnel)
+        self.w3: Optional["Web3"] = w3
+
     # --------------- fetch ---------------
 
     def _fetch(self) -> List[Dict[str, Any]]:
@@ -141,12 +150,102 @@ class TrendingJob:
         log.error("TREND_SOURCE '%s' inconnu", self.source)
         return []
 
+    # --------------- onchain helpers ---------------
+
+    def set_web3(self, w3: "Web3") -> None:
+        self.w3 = w3
+
+    def _is_connected(self, w3: "Web3") -> bool:
+        try:
+            return bool(w3.is_connected())  # web3>=6
+        except Exception:
+            try:
+                return bool(w3.isConnected())  # web3<6
+            except Exception:
+                return False
+
+    def _ensure_web3(self) -> bool:
+        """
+        S'assure qu'on dispose d'un client web3 **connecté** en LIVE.
+        Si non fourni, tente QUICKNODE_URL en WS puis HTTP.
+        """
+        if getattr(settings, "PAPER_MODE", True):
+            return False  # inutile en PAPER
+
+        # Si déjà fourni et connecté
+        if self.w3 is not None and self._is_connected(self.w3):
+            return True
+
+        # Sinon, essaie de construire depuis QUICKNODE_URL
+        url = (getattr(settings, "QUICKNODE_URL", "") or os.getenv("QUICKNODE_URL", "")).strip()
+        if not url:
+            return False
+
+        try:
+            from web3 import Web3  # type: ignore
+        except Exception:
+            log.warning("web3.py non installé — onchain désactivé.")
+            return False
+
+        if url.startswith("ws"):
+            try:
+                w3 = Web3(Web3.WebsocketProvider(url, websocket_timeout=10))
+                if self._is_connected(w3):
+                    self.w3 = w3
+                    return True
+            except Exception:
+                log.warning("WS provider KO, fallback HTTP")
+
+        try:
+            w3 = Web3(Web3.HTTPProvider(url))
+            if self._is_connected(w3):
+                self.w3 = w3
+                return True
+        except Exception as e:
+            log.warning("HTTP provider KO: %s", e)
+
+        return False
+
+    def _onchain_scan(self) -> None:
+        """
+        Point d'extension pour ta logique onchain (liquidité, pools, etc.).
+        Ici : simple sanity check + mise à dispo du client au Trader si possible.
+        """
+        if not self.w3:
+            log.debug("Onchain scan sauté (w3 absent).")
+            return
+
+        # Sanity: dernier bloc, chain_id
+        try:
+            latest = int(self.w3.eth.block_number)  # type: ignore[attr-defined]
+            try:
+                chain_id = int(self.w3.eth.chain_id)  # type: ignore[attr-defined]
+            except Exception:
+                chain_id = -1
+            log.info("[Onchain] OK — latest block=%s chain_id=%s", latest, chain_id)
+        except Exception as e:
+            log.warning("[Onchain] Impossible de lire le dernier bloc : %s", e)
+
+        # Donner w3 au Trader si celui-ci expose un setter / attribut
+        if self.trader is not None:
+            try:
+                if hasattr(self.trader, "set_web3") and callable(getattr(self.trader, "set_web3")):
+                    self.trader.set_web3(self.w3)  # type: ignore[arg-type]
+                elif hasattr(self.trader, "w3"):
+                    setattr(self.trader, "w3", self.w3)
+            except Exception as e:
+                log.debug("Trader web3 injection skipped: %s", e)
+
     # --------------- core ---------------
 
     def run_once(self) -> None:
         if not getattr(settings, "TREND_ENABLE", True):
             log.info("Trending disabled (TREND_ENABLE=false)")
             return
+
+        # LIVE => s'assurer du client web3
+        if not getattr(settings, "PAPER_MODE", True):
+            self._ensure_web3()
 
         rows = self._fetch()
         if not rows:
@@ -249,18 +348,9 @@ class TrendingJob:
             rejects_excl,
         )
 
-        # -------- preview kept --------
-        for i, it in enumerate(kept[: self.debug_n], 1):
-            log.debug(
-                "[KEPT] #%d %s Δ1h=%s Δ24h=%s vol=$%.0f liq=$%.0f 0x…%s",
-                i,
-                (it.get("symbol") or ""),
-                _fmt_pct(it.get("pct1h")),
-                _fmt_pct(it.get("pct24h")),
-                float(it.get("vol24h") or 0),
-                float(it.get("liqUsd") or 0),
-                _last6(it.get("address") or ""),
-            )
+        # -------- onchain (LIVE seulement) --------
+        if not getattr(settings, "PAPER_MODE", True):
+            self._onchain_scan()
 
         # -------- passage au trader --------
         if not kept:

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional
 from web3 import Web3
 from src.config import settings
+from src.integrations.trader_hooks import on_trade
 from src.logger import get_logger
 
 log = get_logger(__name__)
@@ -79,6 +80,14 @@ class Trader:
             )
             self.positions[addr] = Position(sym, addr, qty, price, stop, tp1, tp2, "OPEN")
             log.info("[PAPER EXIT PLAN] %s stop=$%.8f tp1=$%.8f tp2=$%.8f", sym, stop, tp1, tp2)
+            on_trade(
+                side="BUY",
+                symbol=sym,
+                price=price,
+                qty=qty,
+                status="PAPER",
+                address=addr,
+            )
             return
 
         # ---- LIVE (placeholder) ----
