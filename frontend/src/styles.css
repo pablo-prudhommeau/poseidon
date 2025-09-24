@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+:root {
+    --bg: #0e1320;
+    --card: #141b2d;
+    --muted: #8aa0b4;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: #e8eef6;
+}
+
+a {
+    color: #93c5fd;
+}
