@@ -43,7 +43,12 @@ export class WsService {
         return Number.isFinite(n) ? n : null;
     }
 
-    connect(url = `ws://${location.hostname}:8000/ws`) {
+    private defaultWsUrl(): string {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${proto}//${location.host}/ws`; // <- plus de :8000
+    }
+
+    connect(url = this.defaultWsUrl()) {
         if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) {
             return;
         }
