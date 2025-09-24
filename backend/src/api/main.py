@@ -9,6 +9,7 @@ from src.persistence.db import init_db
 from src.realtime.ws_manager import ws_manager
 from src.ui.ws_hub import router as ws_router
 from src.ui.orchestrator import ensure_started, get_status
+from src.ui.http_api import router as http_router
 
 log = logging.getLogger("poseidon.api")  # <- notre logger
 
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         return {"ok": True, "status": get_status()}
 
     app.include_router(ws_router)
+    app.include_router(http_router)
     return app
 
 app = create_app()

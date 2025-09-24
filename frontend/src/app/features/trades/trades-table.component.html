@@ -1,23 +1,23 @@
 <div class="overflow-x-auto">
-	<table class="min-w-full text-sm">
+	<table class="min-w-full text-xs">
 		<thead class="text-left text-slate-400">
 		<tr>
-			<th class="px-5 py-3">Date</th>
-			<th class="px-5 py-3">Side</th>
-			<th class="px-5 py-3">Symbol</th>
-			<th class="px-5 py-3 text-right">Qty</th>
-			<th class="px-5 py-3 text-right">Price</th>
-			<th class="px-5 py-3">Status</th>
+			<th class="px-3 py-1">Date</th>
+			<th class="px-3 py-1">Side</th>
+			<th class="px-3 py-1">Symbol</th>
+			<th class="px-3 py-1 text-right">Qty</th>
+			<th class="px-3 py-1 text-right">Price</th>
+			<th class="px-3 py-1">Status</th>
 		</tr>
 		</thead>
 		<tbody *ngIf="ws.trades().length; else empty">
 		<tr *ngFor="let t of ws.trades()" class="border-t border-white/5 hover:bg-white/5">
-			<td class="px-5 py-3">{{ t.created_at || t.date | date:'short' }}</td>
-			<td class="px-5 py-3">{{ t.side }}</td>
-			<td class="px-5 py-3">{{ t.symbol }}</td>
-			<td class="px-5 py-3 text-right">{{ t.qty | number:'1.2-6' }}</td>
-			<td class="px-5 py-3 text-right">{{ t.price | number:'1.4-8' }}</td>
-			<td class="px-5 py-3">{{ t.status }}</td>
+			<td class="px-3 py-1">{{ t.created_at || t.date | date:'short' }}</td>
+			<td class="px-3 py-1">{{ t.side }}</td>
+			<td class="px-3 py-1">{{ t.symbol }}</td>
+			<td class="px-3 py-1 text-right">{{ t.qty | number:'1.2-6' }}</td>
+			<td class="px-3 py-1 text-right">{{ t.price | number:'1.4-8' }}</td>
+			<td class="px-3 py-1">{{ t.status }}</td>
 		</tr>
 		</tbody>
 	</table>

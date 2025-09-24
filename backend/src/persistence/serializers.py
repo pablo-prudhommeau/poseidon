@@ -22,27 +22,41 @@ def serialize_trade(t) -> dict:
         "created_at": _dt(t.created_at),
     }
 
-def serialize_position(p) -> dict:
-    return {
+def serialize_position(p, last_price: float | None = None) -> dict:
+    data = {
         "id": p.id,
-        "symbol": p.symbol,
         "address": p.address,
-        "qty": _f(p.qty),
-        "entry": _f(p.entry),
-        "tp1": _f(p.tp1),
-        "tp2": _f(p.tp2),
-        "stop": _f(p.stop),
+        "symbol": p.symbol,
+        "qty": float(p.qty or 0.0),
+        "entry": float(p.entry or 0.0),
+        "tp1": float(p.tp1 or 0.0),
+        "tp2": float(p.tp2 or 0.0),
+        "stop": float(p.stop or 0.0),
         "phase": p.phase,
         "is_open": bool(p.is_open),
-        "opened_at": _dt(p.opened_at),
         "updated_at": _dt(p.updated_at),
-        "closed_at": _dt(p.closed_at),
     }
+    if last_price is not None:
+        data["last_price"] = float(last_price)
+    return data
 
-def serialize_portfolio(s) -> dict:
-    return {
+def serialize_portfolio(
+        s,
+        *,
+        equity_curve: list[tuple[int, float]] | None = None,
+        realized_total: float | None = None,
+        realized_24h: float | None = None,
+) -> dict:
+    data = {
         "equity": _f(s.equity) or 0.0,
         "cash": _f(s.cash) or 0.0,
         "holdings": _f(s.holdings) or 0.0,
         "created_at": _dt(s.created_at),
     }
+    if equity_curve is not None:
+        data["equity_curve"] = [{"t": int(t), "v": float(v)} for t, v in equity_curve]
+    if realized_total is not None:
+        data["realized_pnl_total"] = float(realized_total)
+    if realized_24h is not None:
+        data["realized_pnl_24h"] = float(realized_24h)
+    return data

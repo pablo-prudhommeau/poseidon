@@ -1,27 +1,48 @@
 <div class="overflow-x-auto">
-	<table class="min-w-full text-sm">
+	<table class="min-w-full text-xs">
 		<thead class="text-left text-slate-400">
 		<tr>
-			<th class="px-5 py-3">Symbol</th>
-			<th class="px-5 py-3">Address</th>
-			<th class="px-5 py-3 text-right">Qty</th>
-			<th class="px-5 py-3 text-right">Entry</th>
-			<th class="px-5 py-3 text-right">TP1</th>
-			<th class="px-5 py-3 text-right">TP2</th>
-			<th class="px-5 py-3 text-right">Stop</th>
-			<th class="px-5 py-3">Phase</th>
+			<th class="px-3 py-1">Symbol</th>
+			<th class="px-3 py-1">Address</th>
+			<th class="px-3 py-1 text-right">Qty</th>
+			<th class="px-3 py-1 text-right">Entry</th>
+			<th class="px-3 py-1 text-right">TP1</th>
+			<th class="px-3 py-1 text-right">TP2</th>
+			<th class="px-3 py-1 text-right">Stop</th>
+			<th class="px-3 py-1 text-right">Δ&nbsp;%</th>
+			<th class="px-3 py-1">Phase</th>
+			<th class="px-3 py-1 text-right">Last</th>
 		</tr>
 		</thead>
 		<tbody *ngIf="ws.positions().length; else empty">
 		<tr *ngFor="let p of ws.positions()" class="border-t border-white/5 hover:bg-white/5">
-			<td class="px-5 py-3 font-medium">{{ p.symbol }}</td>
-			<td class="px-5 py-3 font-mono text-xs opacity-70">{{ p.address }}</td>
-			<td class="px-5 py-3 text-right">{{ p.qty | number:'1.2-6' }}</td>
-			<td class="px-5 py-3 text-right">{{ p.entry | number:'1.4-8' }}</td>
-			<td class="px-5 py-3 text-right">{{ p.tp1 | number:'1.4-8' }}</td>
-			<td class="px-5 py-3 text-right">{{ p.tp2 | number:'1.4-8' }}</td>
-			<td class="px-5 py-3 text-right">{{ p.stop | number:'1.4-8' }}</td>
-			<td class="px-5 py-3">{{ p.phase }}</td>
+			<td class="px-3 py-1 font-medium">{{ p.symbol }}</td>
+			<td class="px-3 py-1 font-mono text-xs opacity-70">{{ p.address }}</td>
+			<td class="px-3 py-1 text-right">{{ p.qty | number:'1.2-6' }}</td>
+			<td class="px-3 py-1 text-right">{{ p.entry | number:'1.4-8' }}</td>
+			<td class="px-3 py-1 text-right">{{ p.tp1 | number:'1.4-8' }}</td>
+			<td class="px-3 py-1 text-right">{{ p.tp2 | number:'1.4-8' }}</td>
+			<td class="px-3 py-1 text-right">{{ p.stop | number:'1.4-8' }}</td>
+			<td class="px-3 py-1 text-right"
+			    [ngClass]="{'pct-up': (p._changePct ?? 0) > 0, 'pct-down': (p._changePct ?? 0) < 0}">
+				<ng-container *ngIf="p._changePct !== null && p._changePct !== undefined; else noPct">
+					{{ p._changePct | number:'1.2-2' }} %
+				</ng-container>
+				<ng-template #noPct>—</ng-template>
+			</td>
+			<td class="px-3 py-1">{{ p.phase }}</td>
+			<!-- ... -->
+			<td class="px-3 py-1 text-right" [ngClass]="{'price-up': p._lastDir==='up', 'price-down': p._lastDir==='down'}">
+			  <span class="inline-flex items-center gap-1">
+			    <ng-container *ngIf="p.last_price !== null && p.last_price !== undefined; else noLast">
+			      {{ p.last_price | number:'1.2-8' }}
+			    </ng-container>
+			    <ng-template #noLast>—</ng-template>
+
+			    <span *ngIf="p._lastDir==='up'">▲</span>
+			    <span *ngIf="p._lastDir==='down'">▼</span>
+			  </span>
+			</td>
 		</tr>
 		</tbody>
 	</table>

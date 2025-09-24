@@ -1,15 +1,21 @@
 # src/ui/orchestrator.py
 from __future__ import annotations
 
+import asyncio
 import os
 import threading
 import time
 from typing import Optional
 
-from src.logger import get_logger, init_logging
 from src.config import settings
+from src.integrations.dexscreener_client import fetch_prices_by_addresses
+from src.logger import get_logger, init_logging
+from src.persistence import crud
+from src.persistence.db import SessionLocal
+from src.persistence.serializers import serialize_trade, serialize_portfolio
 from src.trending.trending_job import TrendingJob
 from src.ui.log_bridge import install_bridge
+from src.ui.ws_hub import ws_manager
 
 log = get_logger(__name__)
 
@@ -17,6 +23,7 @@ _w3 = None
 _thread: Optional[threading.Thread] = None
 _trending_job: Optional[TrendingJob] = None
 _started = False
+_price_task: asyncio.Task | None = None
 
 
 def _is_connected(w3) -> bool:
@@ -86,6 +93,11 @@ def ensure_started():
     _thread.start()
     _started = True
 
+    global _price_task
+    loop = asyncio.get_event_loop()
+    if _price_task is None or _price_task.done():
+        _price_task = loop.create_task(_dex_prices_loop())
+
 
 def get_status():
     return {
@@ -93,3 +105,39 @@ def get_status():
         "web3_ok": _is_connected(_w3),
         "interval": int(getattr(settings, "TREND_INTERVAL_SEC", 180)),
     }
+
+
+async def _dex_prices_loop():
+    log.info("Background DexScreener price loop starting (interval=%ss)", settings.DEXSCREENER_FETCH_INTERVAL_SECONDS)
+    while True:
+        try:
+            with SessionLocal() as db:
+                addresses = crud.get_open_addresses(db)
+            if addresses:
+                address_price = await fetch_prices_by_addresses(addresses)
+
+                with SessionLocal() as db:
+                    # autosell par adresse
+                    for addr, price in address_price.items():
+                        autos = crud.check_thresholds_and_autosell_for_address(db, address=addr, last_price=price)
+                        for tr in autos:
+                            ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(tr)})
+
+                    # broadcast positions avec last_price live (par adresse)
+                    pos_payload = crud.serialize_positions_with_prices_by_address(db, address_price)
+                    ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": pos_payload})
+
+                    # snapshot + broadcast portfolio
+                    snap = crud.snapshot_portfolio(db)
+                    ws_manager.broadcast_json_threadsafe({
+                        "type": "portfolio",
+                        "payload": serialize_portfolio(
+                            snap,
+                            equity_curve=crud.equity_curve(db),
+                            realized_total=crud.realized_pnl_total(db),
+                            realized_24h=crud.realized_pnl_24h(db),
+                        )
+                    })
+        except Exception:
+            log.exception("DexScreener price loop error")
+        await asyncio.sleep(max(1, int(settings.DEXSCREENER_FETCH_INTERVAL_SECONDS)))
