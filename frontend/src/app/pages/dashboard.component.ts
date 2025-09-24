@@ -1,5 +1,6 @@
 import {DecimalPipe} from '@angular/common';
 import {Component, computed, OnInit} from '@angular/core';
+import {ApiService} from '../api.service';
 import {WsService} from '../core/ws.service';
 import {PositionsTableComponent} from '../features/positions/positions-table.component';
 import {TradesTableComponent} from '../features/trades/trades-table.component';
@@ -13,7 +14,7 @@ import {SparklineComponent} from '../widgets/sparkline.component';
     templateUrl: './dashboard.component.html'
 })
 export class DashboardComponent implements OnInit {
-    constructor(public ws: WsService) {}
+    constructor(public ws: WsService, private api: ApiService) {}
 
     ngOnInit(): void {
         this.ws.connect();
@@ -28,4 +29,10 @@ export class DashboardComponent implements OnInit {
     realized24h = computed(() => this.ws.portfolio()?.realized_pnl_24h ?? 0);
 
     spark = computed<number[]>(() => this.ws.portfolio()?.equity_curve ?? []);
+
+    resetPaper() {
+        this.api.resetPaper().subscribe(() => {
+            try { (this.ws as any)['socket']?.send(JSON.stringify({ type: 'refresh' })); } catch {}
+        });
+    }
 }

@@ -5,9 +5,13 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
+from src.execution import trader
 from src.logger import get_logger
 from src.config import settings
 from src.trending.cmc_dapi import fetch_cmc_dapi_trending
+
+from src.persistence.db import SessionLocal
+from src.persistence import crud
 
 # Le trader existe déjà dans ton workspace.
 # On évite les dépendances rigides en appelant ses méthodes de façon "souple".
@@ -140,6 +144,25 @@ class TrendingJob:
 
         # Web3 (optionnel)
         self.w3: Optional["Web3"] = w3
+
+    def _current_free_cash(self) -> float:
+        with SessionLocal() as db:
+            snap = crud.get_latest_portfolio(db, create_if_missing=True)
+            return float(snap.cash or 0.0) if snap else 0.0
+
+    def _open_sets(self) -> tuple[set[str], set[str]]:
+        """Retourne (symbols_upper, addresses_lower) pour les positions OPEN."""
+        with SessionLocal() as db:
+            pos = crud.get_open_positions(db)
+        syms = { (p.symbol or "").upper() for p in pos if p.symbol }
+        addrs = { (p.address or "").lower() for p in pos if p.address }
+        return syms, addrs
+
+    def _per_buy_budget(self, free_cash: float) -> float:
+        frac = float(getattr(settings, "TREND_PER_BUY_FRACTION", 0.0))
+        if frac > 0:
+            return max(1.0, free_cash * frac)
+        return float(getattr(settings, "TREND_PER_BUY_USD", 200.0))
 
     # --------------- fetch ---------------
 
@@ -360,33 +383,50 @@ class TrendingJob:
             log.warning("Trader indisponible (module non importé). Pas d'exécution.")
             return
 
-        # On tente d'abord des méthodes "batch", puis on itère si absent.
-        batch_methods = ("on_trending", "scan", "process_candidates", "process", "consider_batch")
-        called = False
-        for m in batch_methods:
-            fn = getattr(self.trader, m, None)
-            if callable(fn):
-                try:
-                    fn(kept)
-                    called = True
-                    break
-                except Exception as e:
-                    log.exception("Trader.%s error: %s", m, e)
+        # 1) Filtrer les actifs qui ont déjà une position (par symbol OU address)
+        open_syms, open_addrs = self._open_sets()
+        def _already_has_pos(it: Dict[str, Any]) -> bool:
+            s = (it.get("symbol") or "").upper()
+            a = (it.get("address") or "").lower()
+            return (s and s in open_syms) or (a and a in open_addrs)
 
-        if not called:
-            per_item_methods = ("maybe_buy", "try_enter", "on_signal", "consider", "trade", "buy")
-            for it in kept:
-                for m in per_item_methods:
-                    fn = getattr(self.trader, m, None)
-                    if callable(fn):
-                        try:
-                            fn(it)
-                            break
-                        except Exception as e:
-                            log.exception("Trader.%s error on %s: %s", m, it.get("symbol"), e)
-                            break
-            if not any(getattr(self.trader, m, None) for m in per_item_methods):
-                log.warning(
-                    "Aucune méthode compatible trouvée sur Trader. "
-                    "Ajoute par ex. Trader.on_trending(candidates) ou Trader.maybe_buy(item)."
-                )
+        candidates = [it for it in kept if not _already_has_pos(it)]
+        if not candidates:
+            log.info("Aucun achat: tous les candidats ont déjà une position ouverte.")
+            return
+
+        # 2) Cash disponible et sizing par achat
+        free_cash = self._current_free_cash()
+        per_buy = self._per_buy_budget(free_cash)
+        min_free = float(getattr(settings, "TREND_MIN_FREE_CASH_USD", 50.0))
+        max_buys = int(getattr(settings, "TREND_MAX_BUYS_PER_RUN", 5))
+
+        sim_cash = free_cash
+        buys = 0
+
+        log.info("Cash dispo=$%.2f — per_buy=$%.2f, min_free=$%.2f, max_buys=%d, candidats=%d",
+                 free_cash, per_buy, min_free, max_buys, len(candidates))
+
+        for it in candidates:
+            if buys >= max_buys:
+                log.info("Limite TREND_MAX_BUYS_PER_RUN atteinte (%d).", max_buys)
+                break
+
+            # Assez de cash pour initier ce buy ET conserver un coussin ?
+            if sim_cash < per_buy or (sim_cash - per_buy) < min_free:
+                log.info("Cash insuffisant pour un nouvel achat (sim_cash=$%.2f, besoin≈$%.2f, coussin≥$%.2f).",
+                         sim_cash, per_buy, min_free)
+                break
+
+            # Go buy
+            try:
+                Trader().buy(it)   # on garde la signature existante
+                buys += 1
+                sim_cash -= per_buy
+                sym = (it.get("symbol") or "").upper()
+                log.info("BUY %s ok — buys=%d, sim_cash restant=$%.2f", sym, buys, sim_cash)
+            except Exception as e:
+                log.warning("BUY échec pour %s: %s", it.get("symbol"), e)
+
+        if buys == 0:
+            log.info("Aucun achat déclenché (cash/candidats/limites).")

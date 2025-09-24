@@ -19,3 +19,12 @@ body {
 a {
     color: #93c5fd;
 }
+
+@keyframes flashUp { 0% { background: rgba(34,197,94,0.25); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: rgba(239,68,68,0.25); } 100% { background: transparent; } }
+
+.price-up { color: #22c55e; animation: flashUp 500ms ease-out; }
+.price-down { color: #ef4444; animation: flashDown 500ms ease-out; }
+
+.pct-up { color: #22c55e; }   /* vert */
+.pct-down { color: #ef4444; } /* rouge */

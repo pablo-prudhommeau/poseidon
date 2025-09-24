@@ -7,6 +7,7 @@ def _as_bool(v: str | None, default: bool = False) -> bool:
 
 class Settings:
     PAPER_MODE: bool = (os.getenv("PAPER_MODE", "true").lower() in ("1","true","yes"))
+    PAPER_STARTING_CASH: float = float(os.getenv("PAPER_STARTING_CASH", "10000"))
     LOG_LEVEL: str = os.getenv("LOG_LEVEL","INFO").upper()
     BASE_CURRENCY: str = os.getenv("BASE_CURRENCY","EUR")
 
@@ -42,7 +43,7 @@ class Settings:
     TREND_CHAIN_ID: str = os.getenv("TREND_CHAIN_ID", "1")            # fallback si dapi préfère l'id
 
     TREND_PAGE_SIZE: int = int(os.getenv("TREND_PAGE_SIZE", "100"))
-    TREND_MAX_RESULTS: int = int(os.getenv("TREND_MAX_RESULTS", "10"))
+    TREND_MAX_RESULTS: int = int(os.getenv("TREND_MAX_RESULTS", "100"))
 
     # Seuils (adapte selon l’intervalle)
     TREND_MIN_PCT_5M: float = float(os.getenv("TREND_MIN_PCT_5M", "2"))
@@ -51,8 +52,7 @@ class Settings:
     TREND_MIN_VOL_USD: float = float(os.getenv("TREND_MIN_VOL_USD", "100000"))
     TREND_MIN_LIQ_USD: float = float(os.getenv("TREND_MIN_LIQ_USD", "50000"))
 
-    TREND_INTERVAL_SEC: int = int(os.getenv("TREND_INTERVAL_SEC", "180"))
-    TREND_POLL_SEC= int(os.getenv("TREND_POLL_SEC", "180"))  # fréquence du scan offchain
+    TREND_INTERVAL_SEC: int = int(os.getenv("TREND_INTERVAL_SEC", "10"))
 
     TREND_SOFTFILL_MIN = int(os.getenv("TREND_SOFTFILL_MIN", "6"))  # nb min à renvoyer
     TREND_SOFTFILL_SORT = os.getenv("TREND_SOFTFILL_SORT", "vol24h")  # ou "liqUsd"
@@ -60,8 +60,22 @@ class Settings:
     TREND_EXCLUDE_STABLES: bool = _as_bool(os.getenv("TREND_EXCLUDE_STABLES"), True)
     TREND_EXCLUDE_MAJORS: bool = _as_bool(os.getenv("TREND_EXCLUDE_MAJORS"), True)
 
+    TREND_PER_BUY_USD: float = float(os.getenv("TREND_PER_BUY_USD", "200"))          # montant visé par achat
+    TREND_PER_BUY_FRACTION: float = float(os.getenv("TREND_PER_BUY_FRACTION", "0"))  # ex: 0.05 pour 5% du cash (si >0, prioritaire)
+    TREND_MIN_FREE_CASH_USD: float = float(os.getenv("TREND_MIN_FREE_CASH_USD", "50"))  # coussin minimal restant
+    TREND_MAX_BUYS_PER_RUN: int = int(os.getenv("TREND_MAX_BUYS_PER_RUN", "5"))      # limite de prudence par tick
+
     # Cache
     CACHE_DIR: str = os.getenv("CACHE_DIR","/app/data")
     CG_LIST_TTL_MIN: int = int(os.getenv("CG_LIST_TTL_MIN","720"))
+
+    TP1_PCT: float = float(os.getenv("TP1_PCT", "0.15"))     # +15% par défaut
+    TP2_PCT: float = float(os.getenv("TP2_PCT", "0.30"))     # +30% par défaut
+    STOP_PCT: float = float(os.getenv("STOP_PCT", "0.2"))    # -20% par défaut
+
+    DEXSCREENER_BASE_URL: str = os.getenv("DEXSCREENER_BASE_URL", "https://api.dexscreener.com")
+    DEXSCREENER_FETCH_INTERVAL_SECONDS: int = int(os.getenv("DEXSCREENER_FETCH_INTERVAL_SECONDS", "30"))
+    DEXSCREENER_MAX_ADDRESSES_PER_CALL: int = int(os.getenv("DEXSCREENER_MAX_ADDRESSES_PER_CALL", "40"))
+
 
 settings = Settings()

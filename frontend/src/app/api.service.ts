@@ -23,4 +23,5 @@ export class ApiService {
     pollPositions(ms = 6000): Observable<Position[]> { return timer(0, ms).pipe(switchMap(() => this.getPositions())); }
 
     pollTrades(ms = 8000): Observable<Trade[]> { return timer(0, ms).pipe(switchMap(() => this.getTrades(100))); }
+
 }

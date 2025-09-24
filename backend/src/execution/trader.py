@@ -2,6 +2,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
+
+import httpx
 from web3 import Web3
 from src.config import settings
 from src.integrations.trader_hooks import on_trade
@@ -34,6 +36,33 @@ class Trader:
         self.slippage_bps = 75      # 0.75%
         self.positions: Dict[str, Position] = {}  # key = address
 
+    def _dex_price_for_address(self, address: str) -> Optional[float]:
+        """
+        Retourne le meilleur priceUsd DexScreener pour une adresse de token.
+        Heuristique: on sélectionne la paire avec la plus grosse liquidité USD (puis volume 24h).
+        """
+        if not address:
+            return None
+        base = getattr(settings, "DEXSCREENER_BASE_URL", "https://api.dexscreener.com").rstrip("/")
+        url = f"{base}/latest/dex/tokens/{address.lower()}"
+        try:
+            r = httpx.get(url, timeout=8.0)
+            r.raise_for_status()
+            data = r.json() or {}
+            pairs = data.get("pairs", []) or []
+            if not pairs:
+                return None
+            def score(p):
+                liq = float((p.get("liquidity") or {}).get("usd") or 0.0)
+                vol = float((p.get("volume") or {}).get("h24") or 0.0)
+                return (liq, vol)
+            best = max(pairs, key=score)
+            price = best.get("priceUsd")
+            return float(price) if price is not None else None
+        except Exception as e:
+            log.debug("DexScreener price fetch failed for %s: %s", address, e)
+            return None
+
     # --------- utils ----------
     def _gas_price_gwei(self) -> Optional[float]:
         try:
@@ -47,13 +76,33 @@ class Trader:
     def buy(self, it: Dict[str, Any]) -> None:
         sym  = it.get("symbol")
         addr = (it.get("address") or "").lower()
-        price = it.get("price")
-        if not addr or not price or price <= 0:
+
+        # 1) essaie d'abord un prix DexScreener (si déjà fourni par l'appelant, prends-le)
+        ds_price = None
+        try:
+            v = it.get("last_price") if "last_price" in it else it.get("dex_price")
+            if v is not None:
+                v = float(v)
+                ds_price = v if v > 0 else None
+        except Exception:
+            ds_price = None
+        if ds_price is None and addr:
+            ds_price = self._dex_price_for_address(addr)
+
+        # 2) fallback CMC/trending si besoin
+        price = ds_price
+        if price is None:
+            try:
+                v = float(it.get("price"))
+                price = v if v > 0 else None
+            except Exception:
+                price = None
+
+        if not addr or price is None:
             log.debug("[BUY SKIP] %s addr/price invalid (addr=%s price=%s)", sym, addr, price)
             return
 
         if addr in self.positions:
-            # déjà en position → on ignore pour ne pas multiplier les entrées
             return
 
         gas_gwei = self._gas_price_gwei()
@@ -64,19 +113,19 @@ class Trader:
         notional = self.order_usd
         qty = notional / price
 
-        # niveaux fixes (simple plan)
-        stop = price * 0.93
-        tp1  = price * 1.06
-        tp2  = price * 1.12
+        # niveaux fixes (si tu veux, ajuste ici la formule)
+        stop = price * settings.STOP_PCT
+        tp1  = price * settings.TP1_PCT
+        tp2  = price * settings.TP2_PCT
 
-        # --- PAPER mode ---
         if self.paper:
             liq = float(it.get("liqUsd", 0.0) or 0.0)
             vol = float(it.get("vol24h", 0.0) or 0.0)
             tail = addr[-6:] if addr else "--"
+            src = "DEX" if ds_price is not None else "CMC"
             log.info(
-                "[PAPER BUY] %s $%.0f @ $%.8f (~%s %s) slippage≤%dbps (liq=$%.0f vol24h=$%.0f) 0x%s",
-                sym, notional, price, f"{qty:.6f}", sym, self.slippage_bps, liq, vol, tail
+                "[PAPER BUY/%s] %s $%.0f @ $%.8f (~%s %s) slippage≤%dbps (liq=$%.0f vol24h=$%.0f) 0x%s",
+                src, sym, notional, price, f"{qty:.6f}", sym, self.slippage_bps, liq, vol, tail
             )
             self.positions[addr] = Position(sym, addr, qty, price, stop, tp1, tp2, "OPEN")
             log.info("[PAPER EXIT PLAN] %s stop=$%.8f tp1=$%.8f tp2=$%.8f", sym, stop, tp1, tp2)
@@ -90,7 +139,6 @@ class Trader:
             )
             return
 
-        # ---- LIVE (placeholder) ----
         log.warning("[LIVE BUY NOT IMPLEMENTED] %s (%s)", sym, addr)
 
     def evaluate(self, prices_by_addr: Dict[str, Optional[float]]) -> None:
