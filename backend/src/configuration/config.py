@@ -8,7 +8,7 @@ def _as_bool(v: str | None, default: bool = False) -> bool:
 class Settings:
     PAPER_MODE: bool = (os.getenv("PAPER_MODE", "true").lower() in ("1","true","yes"))
     PAPER_STARTING_CASH: float = float(os.getenv("PAPER_STARTING_CASH", "10000"))
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL","INFO").upper()
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL","DEBUG").upper()
     BASE_CURRENCY: str = os.getenv("BASE_CURRENCY","EUR")
 
     QUICKNODE_URL: str = os.getenv("QUICKNODE_URL","")
@@ -66,6 +66,14 @@ class Settings:
     TREND_MAX_BUYS_PER_RUN: int = int(os.getenv("TREND_MAX_BUYS_PER_RUN", "5"))      # limite de prudence par tick
 
     TREND_REQUIRE_DEX_PRICE: bool = os.getenv("TREND_REQUIRE_DEX_PRICE", "true").lower() in {"1","true","yes","y"}
+
+    # Dexscreener quality filters (new, conservative defaults)
+    DS_MIN_AGE_HOURS: float = float(os.getenv("DS_MIN_AGE_HOURS", "2"))
+    DS_MAX_AGE_HOURS: float = float(os.getenv("DS_MAX_AGE_HOURS", "240"))
+    DS_MAX_ABS_M5_PCT: float = float(os.getenv("DS_MAX_ABS_M5_PCT", "25"))
+    DS_MAX_ABS_H1_PCT: float = float(os.getenv("DS_MAX_ABS_H1_PCT", "60"))
+    DS_MIN_QUALITY_SCORE: float = float(os.getenv("DS_MIN_QUALITY_SCORE", "12"))
+    DS_REBUY_COOLDOWN_MIN: int = int(os.getenv("DS_REBUY_COOLDOWN_MIN", "45"))
 
     # Cache
     CACHE_DIR: str = os.getenv("CACHE_DIR","/app/data")
