@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
-from src.config import settings
+from src.configuration.config import settings
 from src.persistence.models import Position, PortfolioSnapshot, Trade
 from src.persistence.serializers import serialize_position
 

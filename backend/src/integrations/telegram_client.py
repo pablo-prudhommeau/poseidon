@@ -1,6 +1,6 @@
 import requests
-from ..config import settings
-from ..logger import get_logger
+from src.configuration.config import settings
+from src.logging.logger import get_logger
 log=get_logger(__name__)
 
 def _escape_md(s:str)->str:

@@ -5,9 +5,9 @@ from typing import Dict, Any, Optional
 
 import httpx
 from web3 import Web3
-from src.config import settings
-from src.integrations.trader_hooks import on_trade
-from src.logger import get_logger
+from src.configuration.config import settings
+from src.core.trader_hooks import on_trade
+from src.logging.logger import get_logger
 
 log = get_logger(__name__)
 

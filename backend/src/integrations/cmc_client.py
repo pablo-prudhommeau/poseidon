@@ -1,9 +1,9 @@
-# src/offchain/cmc_dapi.py
+# src/offchain/cmc_client.py
 from __future__ import annotations
 import requests
 from typing import List, Dict, Any, Optional
-from src.config import settings
-from src.logger import get_logger
+from src.configuration.config import settings
+from src.logging.logger import get_logger
 
 log = get_logger(__name__)
 

@@ -1,6 +1,6 @@
 # src/logger.py
 import logging, sys
-from src.config import settings
+from src.configuration.config import settings
 
 _FMT = "%(asctime)s %(levelname)s %(name)s:%(lineno)d — %(message)s"
 

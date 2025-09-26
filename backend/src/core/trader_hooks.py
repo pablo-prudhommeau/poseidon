@@ -1,13 +1,12 @@
 from __future__ import annotations
 from contextlib import contextmanager
-from typing import Optional
 
 from src.persistence.db import SessionLocal
 from src.persistence import crud
 from src.persistence.serializers import (
     serialize_trade, serialize_position, serialize_portfolio
 )
-from src.realtime.ws_manager import ws_manager
+from src.api.ws_manager import ws_manager
 
 @contextmanager
 def _session(db=None):

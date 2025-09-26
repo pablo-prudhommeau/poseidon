@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio, logging
 from typing import Iterable, Dict, List
 import httpx
-from src.config import settings
+from src.configuration.config import settings
 
 log = logging.getLogger(__name__)
 
