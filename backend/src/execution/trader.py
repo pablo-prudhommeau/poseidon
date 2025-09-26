@@ -38,8 +38,8 @@ class Trader:
 
     def _dex_price_for_address(self, address: str) -> Optional[float]:
         """
-        Retourne le meilleur priceUsd DexScreener pour une adresse de token.
-        Heuristique: on sélectionne la paire avec la plus grosse liquidité USD (puis volume 24h).
+        Prix DexScreener strict: on ne retient que les paires où le token est BASE.
+        Si aucune paire 'baseToken.address == address', on renvoie None (on NE fait PAS d'inversion).
         """
         if not address:
             return None
@@ -50,15 +50,30 @@ class Trader:
             r.raise_for_status()
             data = r.json() or {}
             pairs = data.get("pairs", []) or []
-            if not pairs:
+
+            # garder seulement les paires où le token EST le baseToken
+            addr_l = address.lower()
+            base_pairs = []
+            for p in pairs:
+                bt = (p.get("baseToken") or {})
+                if (bt.get("address") or "").lower() == addr_l:
+                    base_pairs.append(p)
+
+            if not base_pairs:
+                # rien de fiable -> pas d'achat
+                log.warning("DexScreener: no BASE pair for %s, skipping price.", address)
                 return None
+
+            # score liquidité/volume
             def score(p):
                 liq = float((p.get("liquidity") or {}).get("usd") or 0.0)
                 vol = float((p.get("volume") or {}).get("h24") or 0.0)
                 return (liq, vol)
-            best = max(pairs, key=score)
+
+            best = max(base_pairs, key=score)
             price = best.get("priceUsd")
-            return float(price) if price is not None else None
+            price = float(price) if price is not None else None
+            return price if (price is not None and price > 0) else None
         except Exception as e:
             log.debug("DexScreener price fetch failed for %s: %s", address, e)
             return None
@@ -77,31 +92,34 @@ class Trader:
         sym  = it.get("symbol")
         addr = (it.get("address") or "").lower()
 
-        # 1) essaie d'abord un prix DexScreener (si déjà fourni par l'appelant, prends-le)
-        ds_price = None
+        # 1) prix DexScreener strict (préféré)
+        ds_price = self._dex_price_for_address(addr)
+
+        # 2) fallback éventuel (prix du scan/trending si fourni)
+        fallback = None
         try:
-            v = it.get("last_price") if "last_price" in it else it.get("dex_price")
+            v = it.get("price")
             if v is not None:
                 v = float(v)
-                ds_price = v if v > 0 else None
+                fallback = v if v > 0 else None
         except Exception:
-            ds_price = None
-        if ds_price is None and addr:
-            ds_price = self._dex_price_for_address(addr)
+            fallback = None
 
-        # 2) fallback CMC/trending si besoin
-        price = ds_price
-        if price is None:
-            try:
-                v = float(it.get("price"))
-                price = v if v > 0 else None
-            except Exception:
-                price = None
-
+        price = ds_price or fallback
         if not addr or price is None:
             log.debug("[BUY SKIP] %s addr/price invalid (addr=%s price=%s)", sym, addr, price)
             return
 
+        # 3) GARDE-FOU: si on a les deux, refuse si l’écart est énorme
+        max_mult = float(getattr(settings, "MAX_PRICE_DEVIATION_MULTIPLIER", 3.0))
+        if ds_price is not None and fallback is not None:
+            lo, hi = sorted([ds_price, fallback])
+            if hi > 0 and (hi / lo) > max_mult:
+                log.warning("[BUY SKIP] %s price mismatch DEX %.6f vs ext %.6f (>x%.1f)",
+                            sym, ds_price, fallback, max_mult)
+                return
+
+        # --- reste inchangé ---
         if addr in self.positions:
             return
 
@@ -113,7 +131,6 @@ class Trader:
         notional = self.order_usd
         qty = notional / price
 
-        # niveaux fixes (si tu veux, ajuste ici la formule)
         stop = price * settings.STOP_PCT
         tp1  = price * settings.TP1_PCT
         tp2  = price * settings.TP2_PCT
@@ -122,21 +139,12 @@ class Trader:
             liq = float(it.get("liqUsd", 0.0) or 0.0)
             vol = float(it.get("vol24h", 0.0) or 0.0)
             tail = addr[-6:] if addr else "--"
-            src = "DEX" if ds_price is not None else "CMC"
-            log.info(
-                "[PAPER BUY/%s] %s $%.0f @ $%.8f (~%s %s) slippage≤%dbps (liq=$%.0f vol24h=$%.0f) 0x%s",
-                src, sym, notional, price, f"{qty:.6f}", sym, self.slippage_bps, liq, vol, tail
-            )
+            src = "DEX" if ds_price is not None else "FALLBACK"
+            log.info("[PAPER BUY/%s] %s $%.0f @ $%.8f (~%s %s)liq=$%.0f vol24h=$%.0f 0x%s",
+                     src, sym, notional, price, f"{qty:.6f}", sym, liq, vol, tail)
             self.positions[addr] = Position(sym, addr, qty, price, stop, tp1, tp2, "OPEN")
             log.info("[PAPER EXIT PLAN] %s stop=$%.8f tp1=$%.8f tp2=$%.8f", sym, stop, tp1, tp2)
-            on_trade(
-                side="BUY",
-                symbol=sym,
-                price=price,
-                qty=qty,
-                status="PAPER",
-                address=addr,
-            )
+            on_trade(side="BUY", symbol=sym, price=price, qty=qty, status="PAPER", address=addr)
             return
 
         log.warning("[LIVE BUY NOT IMPLEMENTED] %s (%s)", sym, addr)

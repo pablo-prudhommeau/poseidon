@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import httpx
 from typing import Any, Dict, List, Optional
 
 from src.execution import trader
@@ -110,7 +111,56 @@ def _softfill_ok(it: Dict[str, Any], min_vol: float, min_liq: float) -> bool:
         return p24 >= 0
     return False
 
+def _dex_best_base_price_map_sync(addresses: List[str]) -> Dict[str, float]:
+    """
+    Fetch DexScreener en batch et retourne {address_lower: priceUsd_float} *strict BASE*.
+    On ignore les paires où le token n'est pas 'baseToken'.
+    """
+    addrs = [a.strip().lower() for a in addresses if a]
+    if not addrs:
+        return {}
 
+    base = settings.DEXSCREENER_BASE_URL.rstrip("/")
+    path = f"{base}/latest/dex/tokens"
+    out: Dict[str, float] = {}
+
+    def _score(p):
+        liq = float((p.get("liquidity") or {}).get("usd") or 0.0)
+        vol = float((p.get("volume") or {}).get("h24") or 0.0)
+        return (liq, vol)
+
+    chunk = max(1, int(getattr(settings, "DEXSCREENER_MAX_ADDRESSES_PER_CALL", 40)))
+    for i in range(0, len(addrs), chunk):
+        batch = addrs[i:i+chunk]
+        url = f"{path}/" + ",".join(batch)
+        try:
+            with httpx.Client(timeout=10) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                data = r.json() or {}
+        except Exception as e:
+            log.warning("DexScreener batch failed (%d): %s", len(batch), e)
+            continue
+
+        pairs = data.get("pairs", []) or []
+        by_addr: Dict[str, List[dict]] = {}
+        for p in pairs:
+            bt = (p.get("baseToken") or {})
+            addr = (bt.get("address") or "").lower()
+            if addr:
+                by_addr.setdefault(addr, []).append(p)
+
+        for addr, lst in by_addr.items():
+            best = sorted(lst, key=_score, reverse=True)[0]
+            price = best.get("priceUsd")
+            try:
+                pf = float(price)
+                if pf > 0:
+                    out[addr] = pf
+            except Exception:
+                continue
+
+    return out
 # ------------------------------ Job --------------------------------
 
 class TrendingJob:
@@ -259,6 +309,13 @@ class TrendingJob:
             except Exception as e:
                 log.debug("Trader web3 injection skipped: %s", e)
 
+    def _preload_dex_prices(self, candidates: List[Dict[str, Any]]) -> Dict[str, float]:
+        addrs = [(c.get("address") or "").lower() for c in candidates if c.get("address")]
+        addrs = sorted(set(a for a in addrs if a))
+        if not addrs:
+            return {}
+        return _dex_best_base_price_map_sync(addrs)
+
     # --------------- core ---------------
 
     def run_once(self) -> None:
@@ -383,7 +440,7 @@ class TrendingJob:
             log.warning("Trader indisponible (module non importé). Pas d'exécution.")
             return
 
-        # 1) Filtrer les actifs qui ont déjà une position (par symbol OU address)
+        # 1) ne pas racheter ce qu'on a déjà (symbol OU address)
         open_syms, open_addrs = self._open_sets()
         def _already_has_pos(it: Dict[str, Any]) -> bool:
             s = (it.get("symbol") or "").upper()
@@ -395,38 +452,73 @@ class TrendingJob:
             log.info("Aucun achat: tous les candidats ont déjà une position ouverte.")
             return
 
-        # 2) Cash disponible et sizing par achat
+        # 2) Pré-quote DexScreener en batch pour les candidats
+        dex_map = self._preload_dex_prices(candidates)
+        require_dex = bool(getattr(settings, "TREND_REQUIRE_DEX_PRICE", True))
+        max_mult = float(getattr(settings, "MAX_PRICE_DEVIATION_MULTIPLIER", 3.0))
+
+        # 3) Cash & limites
         free_cash = self._current_free_cash()
         per_buy = self._per_buy_budget(free_cash)
         min_free = float(getattr(settings, "TREND_MIN_FREE_CASH_USD", 50.0))
         max_buys = int(getattr(settings, "TREND_MAX_BUYS_PER_RUN", 5))
-
         sim_cash = free_cash
         buys = 0
 
-        log.info("Cash dispo=$%.2f — per_buy=$%.2f, min_free=$%.2f, max_buys=%d, candidats=%d",
-                 free_cash, per_buy, min_free, max_buys, len(candidates))
+        log.info(
+            "Cash dispo=$%.2f — per_buy=$%.2f, min_free=$%.2f, max_buys=%d, candidats=%d",
+            free_cash, per_buy, min_free, max_buys, len(candidates)
+        )
 
         for it in candidates:
             if buys >= max_buys:
                 log.info("Limite TREND_MAX_BUYS_PER_RUN atteinte (%d).", max_buys)
                 break
 
-            # Assez de cash pour initier ce buy ET conserver un coussin ?
+            # DexScreener guard
+            addr = (it.get("address") or "").lower()
+            ds_price = dex_map.get(addr)
+
+            if require_dex and (ds_price is None or ds_price <= 0):
+                log.info("[SKIP DEX] %s: pas de prix DexScreener BASE pour %s",
+                         (it.get("symbol") or "").upper(), addr[-6:] if addr else "--")
+                continue
+
+            ext_price = None
+            try:
+                v = it.get("price")
+                if v is not None:
+                    v = float(v)
+                    ext_price = v if v > 0 else None
+            except Exception:
+                ext_price = None
+
+            # écart de prix (si on a les deux)
+            if ds_price is not None and ext_price is not None:
+                lo, hi = sorted([ds_price, ext_price])
+                if lo > 0 and (hi / lo) > max_mult:
+                    log.warning("[SKIP DEV] %s: DEX %.6f vs ext %.6f (>x%.1f) 0x%s",
+                                (it.get("symbol") or "").upper(),
+                                ds_price, ext_price, max_mult, addr[-6:] if addr else "--")
+                    continue
+
+            # Cash guard
             if sim_cash < per_buy or (sim_cash - per_buy) < min_free:
-                log.info("Cash insuffisant pour un nouvel achat (sim_cash=$%.2f, besoin≈$%.2f, coussin≥$%.2f).",
+                log.info("Cash insuffisant (sim_cash=$%.2f, besoin≈$%.2f, coussin≥$%.2f).",
                          sim_cash, per_buy, min_free)
                 break
 
-            # Go buy
+            # Injecte le prix DEX pour éviter un refetch dans Trader.buy()
+            it_payload = dict(it)
+            if ds_price is not None:
+                it_payload["dex_price"] = ds_price
+
             try:
-                Trader().buy(it)   # on garde la signature existante
+                Trader().buy(it_payload)
                 buys += 1
                 sim_cash -= per_buy
-                sym = (it.get("symbol") or "").upper()
-                log.info("BUY %s ok — buys=%d, sim_cash restant=$%.2f", sym, buys, sim_cash)
             except Exception as e:
                 log.warning("BUY échec pour %s: %s", it.get("symbol"), e)
 
         if buys == 0:
-            log.info("Aucun achat déclenché (cash/candidats/limites).")
+            log.info("Aucun achat déclenché (garde-fous/cash).")
