@@ -65,6 +65,8 @@ class Settings:
     TREND_MIN_FREE_CASH_USD: float = float(os.getenv("TREND_MIN_FREE_CASH_USD", "50"))  # coussin minimal restant
     TREND_MAX_BUYS_PER_RUN: int = int(os.getenv("TREND_MAX_BUYS_PER_RUN", "5"))      # limite de prudence par tick
 
+    TREND_REQUIRE_DEX_PRICE: bool = os.getenv("TREND_REQUIRE_DEX_PRICE", "true").lower() in {"1","true","yes","y"}
+
     # Cache
     CACHE_DIR: str = os.getenv("CACHE_DIR","/app/data")
     CG_LIST_TTL_MIN: int = int(os.getenv("CG_LIST_TTL_MIN","720"))
@@ -76,6 +78,8 @@ class Settings:
     DEXSCREENER_BASE_URL: str = os.getenv("DEXSCREENER_BASE_URL", "https://api.dexscreener.com")
     DEXSCREENER_FETCH_INTERVAL_SECONDS: int = int(os.getenv("DEXSCREENER_FETCH_INTERVAL_SECONDS", "30"))
     DEXSCREENER_MAX_ADDRESSES_PER_CALL: int = int(os.getenv("DEXSCREENER_MAX_ADDRESSES_PER_CALL", "40"))
+
+    MAX_PRICE_DEVIATION_MULTIPLIER: float = float(os.getenv("MAX_PRICE_DEVIATION_MULTIPLIER", "3.0"))
 
 
 settings = Settings()
