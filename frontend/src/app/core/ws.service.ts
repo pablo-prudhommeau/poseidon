@@ -13,6 +13,7 @@ export interface PositionView {
     id: string;
     address: string;
     symbol: string;
+    chain: string;
     qty: number;
     entry: number;
     tp1: number;

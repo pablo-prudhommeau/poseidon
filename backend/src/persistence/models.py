@@ -13,6 +13,7 @@ class Position(Base):
     __tablename__ = "positions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
+    chain: Mapped[str] = mapped_column(String(32), nullable=False)
     address: Mapped[str] = mapped_column(String(128), default="", nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     entry: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -30,6 +31,7 @@ class Trade(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     side: Mapped[str] = mapped_column(String(4), index=True)  # BUY/SELL
     symbol: Mapped[str] = mapped_column(String(24), index=True)
+    chain: Mapped[str] = mapped_column(String(32), nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
     fee: Mapped[float] = mapped_column(Float, default=0.0)  # <— corrige l’erreur fee

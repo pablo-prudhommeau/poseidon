@@ -1,3 +1,4 @@
+# backend/src/integrations/dexscreener_client.py
 from __future__ import annotations
 
 import asyncio
@@ -9,20 +10,57 @@ from src.configuration.config import settings
 
 log = logging.getLogger(__name__)
 
-BASE = settings.DEXSCREENER_BASE_URL.rstrip("/")
-TOKENS_V1 = f"{BASE}/tokens/v1"                 # /tokens/v1/{chainId}/{addr1,addr2,...}
-LATEST_TOKENS = f"{BASE}/latest/dex/tokens"     # /latest/dex/tokens/{addr1,addr2,...}
+BASE = getattr(settings, "DEXSCREENER_BASE_URL", "https://api.dexscreener.com").rstrip("/")
+LATEST_TOKENS = f"{BASE}/latest/dex/tokens"       # /latest/dex/tokens/{addr1,addr2,...}
 TOKEN_PROFILES = f"{BASE}/token-profiles/latest/v1"
 TOKEN_BOOSTS_LATEST = f"{BASE}/token-boosts/latest/v1"
 TOKEN_BOOSTS_TOP = f"{BASE}/token-boosts/top/v1"
+DEFAULT_MAX_PER = max(1, int(getattr(settings, "DEXSCREENER_MAX_ADDRESSES_PER_CALL", 20)))  # ↓ 20 au lieu de 40
+
+# ---------------- helpers ----------------
+import re
+
+_BASE58_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]+$")  # alphabet base58
+
+async def _safe_fetch_pairs_batch(client: httpx.AsyncClient, batch: list[str]) -> dict[str, list[dict]]:
+    """
+    Appelle /latest/dex/tokens/{a,b,c}. Si 400 (souvent un élément invalide ou limite),
+    on splitte en deux et on réessaie, jusqu'à la granularité 1.
+    """
+    if not batch:
+        return {}
+    url = f"{LATEST_TOKENS}/" + ",".join(batch)
+    try:
+        data = await _get_json(client, url)
+        pairs = (data or {}).get("pairs", []) if isinstance(data, dict) else []
+        by_addr: dict[str, list[dict]] = {}
+        for p in pairs:
+            bt = p.get("baseToken") or {}
+            a = (bt.get("address") or "").lower()
+            if a:
+                by_addr.setdefault(a, []).append(p)
+        return by_addr
+    except httpx.HTTPStatusError as e:
+        # 400 => on split le batch et on réessaie
+        if e.response.status_code == 400 and len(batch) > 1:
+            mid = len(batch) // 2
+            left  = await _safe_fetch_pairs_batch(client, batch[:mid])
+            right = await _safe_fetch_pairs_batch(client, batch[mid:])
+            # fusion
+            out = {}
+            out.update(left)
+            for k, v in right.items():
+                out.setdefault(k, []).extend(v)
+            return out
+        # autres codes: warn et on skip
+        log.warning("DexScreener pairs failed (%d): %s", len(batch), e)
+        return {}
+    except httpx.HTTPError as e:
+        log.warning("DexScreener pairs failed (%d): %s", len(batch), e)
+        return {}
 
 
-# ---------- helpers ----------
-def _chunked(items: List[str], n: int) -> List[List[str]]:
-    n = max(1, int(n or 1))
-    return [items[i:i + n] for i in range(0, len(items), n)]
-
-def _is_evm_address(a: str) -> bool:
+def _is_evm_addr(a: str) -> bool:
     a = (a or "").lower()
     if not (a.startswith("0x") and len(a) == 42):
         return False
@@ -31,6 +69,26 @@ def _is_evm_address(a: str) -> bool:
         return True
     except Exception:
         return False
+
+def _is_solana_addr(a: str) -> bool:
+    a = (a or "").strip()
+    # solana: 32..44 chars, alphabet base58
+    return 32 <= len(a) <= 44 and bool(_BASE58_RE.fullmatch(a))
+
+_SUFFIXES = ("pump", "bonk", "rev", "to", "tr")  # cas observés dans tes logs
+
+def _strip_known_suffix(a: str) -> str:
+    """Si l’adresse termine par un suffixe ‘pairId’ connu, on l’enlève."""
+    for s in _SUFFIXES:
+        if a.endswith(s) and len(a) > len(s):
+            candidate = a[: -len(s)]
+            if _is_solana_addr(candidate) or _is_evm_addr(candidate):
+                return candidate
+    return a
+
+def _chunked(items: List[str], n: int) -> List[List[str]]:
+    n = max(1, int(n or 1))
+    return [items[i:i + n] for i in range(0, len(items), n)]
 
 async def _get_json(client: httpx.AsyncClient, url: str):
     r = await client.get(url, timeout=15.0)
@@ -50,194 +108,161 @@ def _select_best_pair(pairs: list[dict]) -> dict | None:
     return sorted(pairs, key=score, reverse=True)[0]
 
 def _normalize_row_from_pair(addr: str, pair: dict) -> dict:
-    bt = pair.get("baseToken") or {}
-    pc = pair.get("priceChange") or {}
+    bt  = pair.get("baseToken") or {}
+    pc  = pair.get("priceChange") or {}
     vol = pair.get("volume") or {}
     liq = pair.get("liquidity") or {}
+    def _flt(x):
+        try: return float(x)
+        except Exception: return None
     return {
         "name": (bt.get("name") or "").strip(),
         "symbol": (bt.get("symbol") or "").strip().upper(),
-        "address": addr.lower(),
+        "address": (addr or "").lower(),
         "chain": (pair.get("chainId") or "").lower(),
-        "price": float(pair.get("priceUsd") or 0.0) or None,
-        "pct5m": float(pc.get("m5")) if pc.get("m5") is not None else None,
-        "pct1h": float(pc.get("h1")) if pc.get("h1") is not None else None,
-        "pct24h": float(pc.get("h24")) if pc.get("h24") is not None else None,
+        "price": _flt(pair.get("priceUsd")),
+        "pct5m": _flt(pc.get("m5"))  if pc.get("m5")  is not None else None,
+        "pct1h": _flt(pc.get("h1"))  if pc.get("h1")  is not None else None,
+        "pct24h": _flt(pc.get("h24")) if pc.get("h24") is not None else None,
         "vol24h": float(vol.get("h24") or 0.0),
         "liqUsd": float(liq.get("usd") or 0.0),
         "pairCreatedAt": int(pair.get("pairCreatedAt") or 0),
         "txns": pair.get("txns") or {},
-        "fdv": float(pair.get("fdv") or 0.0) if pair.get("fdv") is not None else None,
-        "marketCap": float(pair.get("marketCap") or 0.0) if pair.get("marketCap") is not None else None,
+        "fdv": _flt(pair.get("fdv")) if pair.get("fdv") is not None else None,
+        "marketCap": _flt(pair.get("marketCap")) if pair.get("marketCap") is not None else None,
     }
 
+def _clean_addresses(addrs: Iterable[str], cap: int) -> List[str]:
+    """
+    - trim/lower
+    - retire espaces/virgules/points
+    - strip suffixes 'pairId' (pump/bonk/rev/to/tr)
+    - garde seulement EVM(0x...) ou base58 Solana (32..44)
+    """
+    out: List[str] = []
+    seen = set()
+    dropped = 0
 
-# ---------- core fetchers ----------
+    for raw in (str(x).strip() for x in addrs if x):
+        a = raw.lower()
+        if " " in a or "," in a or "." in a or "/" in a or ":" in a:
+            dropped += 1
+            continue
+
+        a = _strip_known_suffix(a)
+
+        ok = _is_evm_addr(a) or _is_solana_addr(a)
+        if not ok:
+            dropped += 1
+            continue
+
+        if a not in seen:
+            seen.add(a)
+            out.append(a)
+        if len(out) >= cap:
+            break
+
+    if dropped:
+        log.debug("DexScreener: filtered invalid addresses=%d kept=%d", dropped, len(out))
+    return out
+
+def _extract_addresses(payload: Any) -> List[str]:
+    addrs: List[str] = []
+
+    def _from_item(it: dict):
+        a = (it.get("tokenAddress") or it.get("address") or "")
+        if not a:
+            bt = it.get("baseToken") or it.get("token") or {}
+            a = bt.get("address") or ""
+        a = a.lower().strip()
+        if a:
+            addrs.append(a)
+
+    if payload is None:
+        return addrs
+    if isinstance(payload, list):
+        for it in payload:
+            if isinstance(it, dict):
+                _from_item(it)
+    elif isinstance(payload, dict):
+        for key in ("data", "tokens", "profiles", "pairs"):
+            arr = payload.get(key)
+            if isinstance(arr, list):
+                for it in arr:
+                    if isinstance(it, dict):
+                        _from_item(it)
+    return addrs
+
+# ---------------- public API ----------------
+
 async def fetch_pairs_by_addresses(addresses: Iterable[str], chain_id: Optional[str] = None) -> Dict[str, List[dict]]:
-    """Map {baseTokenAddress -> [pairs]}."""
-    addrs = []
-    for a in (a.strip().lower() for a in addresses if a):
-        if "." in a or "," in a or " " in a:
-            continue
-        if chain_id and not _is_evm_address(a):
-            # si on impose un chain_id EVM, on filtre les non-EVM
-            continue
-        addrs.append(a)
-    addrs = list(dict.fromkeys(addrs))
+    addrs = _clean_addresses(addresses, cap=max(1000, int(getattr(settings, "DEXSCREENER_MAX_ADDRESSES", 1000))))
     if not addrs:
         return {}
-
-    max_per = max(1, int(getattr(settings, "DEXSCREENER_MAX_ADDRESSES_PER_CALL", 40)))
     out: Dict[str, List[dict]] = {a: [] for a in addrs}
 
-    async with httpx.AsyncClient() as client:
-        for batch in _chunked(addrs, max_per):
-            if chain_id:
-                url = f"{TOKENS_V1}/{chain_id}/" + ",".join(batch)
-            else:
-                url = f"{LATEST_TOKENS}/" + ",".join(batch)
-            try:
-                data = await _get_json(client, url)
-                # data est dict {"pairs":[...]} ou None
-                pairs = (data or {}).get("pairs", []) if isinstance(data, dict) else []
-                by_addr: Dict[str, List[dict]] = {}
-                for p in pairs:
-                    bt = p.get("baseToken") or {}
-                    a = (bt.get("address") or "").lower()
-                    if a:
-                        by_addr.setdefault(a, []).append(p)
-                for a in batch:
-                    if a in by_addr:
-                        out[a] = by_addr[a]
-            except httpx.HTTPError as e:
-                log.warning("DexScreener fetch pairs failed (%d): %s", len(batch), e)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for batch in _chunked(addrs, DEFAULT_MAX_PER):
+            by_addr = await _safe_fetch_pairs_batch(client, batch)
+            for a, lst in by_addr.items():
+                out[a] = lst
             await asyncio.sleep(0)
     return out
-
 
 async def fetch_prices_by_addresses(addresses: Iterable[str], chain_id: Optional[str] = None) -> Dict[str, float]:
-    """
-    Map {address -> priceUsd} en choisissant la meilleure paire (liq/vol).
-    Garde la compat d'import attendue par orchestrator/trader.
-    """
-    addrs = []
-    for a in (a.strip().lower() for a in addresses if a):
-        if "." in a or "," in a or " " in a:
-            continue
-        if chain_id and not _is_evm_address(a):
-            continue
-        addrs.append(a)
-    addrs = list(dict.fromkeys(addrs))
+    addrs = _clean_addresses(addresses, cap=max(1000, int(getattr(settings, "DEXSCREENER_MAX_ADDRESSES", 1000))))
     if not addrs:
         return {}
+    prices: Dict[str, float] = {}
 
-    max_per = max(1, int(getattr(settings, "DEXSCREENER_MAX_ADDRESSES_PER_CALL", 40)))
-    out: Dict[str, float] = {}
-
-    async with httpx.AsyncClient() as client:
-        for batch in _chunked(addrs, max_per):
-            if chain_id:
-                url = f"{TOKENS_V1}/{chain_id}/" + ",".join(batch)
-            else:
-                url = f"{LATEST_TOKENS}/" + ",".join(batch)
-            try:
-                data = await _get_json(client, url)
-                pairs = (data or {}).get("pairs", []) if isinstance(data, dict) else []
-                by_addr: Dict[str, List[dict]] = {}
-                for p in pairs:
-                    a = ((p.get("baseToken") or {}).get("address") or "").lower()
-                    if a:
-                        by_addr.setdefault(a, []).append(p)
-                for a, lst in by_addr.items():
-                    best = _select_best_pair(lst)
-                    if not best:
-                        continue
-                    try:
-                        price = float(best.get("priceUsd") or 0.0)
-                        if price > 0:
-                            out[a] = price
-                    except Exception:
-                        pass
-            except httpx.HTTPError as e:
-                log.warning("DexScreener fetch prices failed (%d): %s", len(batch), e)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for batch in _chunked(addrs, DEFAULT_MAX_PER):
+            by_addr = await _safe_fetch_pairs_batch(client, batch)
+            for a, lst in by_addr.items():
+                best = _select_best_pair(lst)
+                if not best:
+                    continue
+                try:
+                    px = float(best.get("priceUsd") or 0.0)
+                    if px > 0:
+                        prices[a] = px
+                except Exception:
+                    pass
             await asyncio.sleep(0)
-    return out
-
+    return prices
 
 async def fetch_trending_candidates(
         interval: str,
         page_size: int = 100,
         chain: Optional[str] = None,
-        chain_id: Optional[str] = None,
+        chain_id: Optional[str] = None,  # ignoré (multi-chain)
 ) -> List[dict]:
-    """
-    Compose un univers depuis boosts + profiles.
-    Accepte payload list/dict, filtre les adresses invalides si chain_id, puis enrichit via /tokens.
-    """
-
-    def _extract_addresses(payload) -> List[str]:
-        addrs: List[str] = []
-
-        def _from_item(it: dict):
-            a = (it.get("tokenAddress") or it.get("address") or "").lower()
-            if not a:
-                bt = it.get("baseToken") or it.get("token") or {}
-                a = (bt.get("address") or "").lower()
-            if a:
-                addrs.append(a)
-
-        if payload is None:
-            return addrs
-        if isinstance(payload, list):
-            for it in payload:
-                if isinstance(it, dict):
-                    _from_item(it)
-        elif isinstance(payload, dict):
-            for key in ("data", "tokens", "profiles", "pairs"):
-                arr = payload.get(key)
-                if isinstance(arr, list):
-                    for it in arr:
-                        if isinstance(it, dict):
-                            _from_item(it)
-        return addrs
-
-    def _sanitize(addrs: List[str]) -> List[str]:
-        out: List[str] = []
-        seen = set()
-        for a in (x.strip().lower() for x in addrs if x):
-            if "." in a or "," in a or " " in a:
-                continue
-            if chain_id and not _is_evm_address(a):
-                continue
-            if a not in seen:
-                seen.add(a)
-                out.append(a)
-            if len(out) >= max(page_size * 3, 100):
-                break
-        return out
-
-    # 1) collect
     addresses: List[str] = []
     async with httpx.AsyncClient(timeout=15.0) as client:
         for url in (TOKEN_BOOSTS_LATEST, TOKEN_BOOSTS_TOP, TOKEN_PROFILES):
             try:
                 payload = await _get_json(client, url)
-                addresses.extend(_extract_addresses(payload))
+                extracted = _extract_addresses(payload)
+                addresses.extend(extracted)
+                log.debug("DexScreener %s -> items=%s extracted=%s",
+                          url.rsplit("/", 2)[-2:],
+                          (len(payload) if isinstance(payload, list) else len(payload or {})),
+                          len(extracted))
             except httpx.HTTPError as e:
                 log.warning("DexScreener read failed: %s (%s)", url, e)
 
-    uniq = _sanitize(addresses)
+    uniq = _clean_addresses(addresses, cap=max(page_size * 3, 300))
     if not uniq:
-        log.info("Dexscreener sources returned 0 token addresses after sanitize (chain_id=%s).", chain_id)
+        log.info("DexScreener sources yielded 0 usable addresses (after sanitize).")
+        return []
+    else:
+        log.debug("DexScreener: addresses collected=%d sanitized=%d", len(addresses), len(uniq))
+
+    pairs_map = await fetch_pairs_by_addresses(uniq, chain_id=None)
+    if not any(pairs_map.values()):
+        log.info("DexScreener pairs empty for collected addresses.")
         return []
 
-    # 2) enrich
-    pairs_map = await fetch_pairs_by_addresses(uniq, chain_id=chain_id)
-    if not any(pairs_map.values()):
-        log.info("No pairs with chain_id=%s; trying multi-chain fallback.", chain_id)
-        pairs_map = await fetch_pairs_by_addresses(uniq, chain_id=None)
-
-    # 3) normalize + sort
     rows: List[dict] = []
     for addr, pairs in pairs_map.items():
         best = _select_best_pair(pairs)
@@ -246,4 +271,11 @@ async def fetch_trending_candidates(
         rows.append(_normalize_row_from_pair(addr, best))
 
     rows.sort(key=lambda x: (float(x.get("vol24h") or 0.0), float(x.get("liqUsd") or 0.0)), reverse=True)
-    return rows[:page_size]
+    rows = rows[:page_size]
+
+    if rows:
+        top = rows[0]
+        log.debug("Trending sample: %s (%s) vol24h=%.0f liq=%.0f",
+                  top.get("symbol"), (top.get("address") or "")[-6:],
+                  float(top.get("vol24h") or 0.0), float(top.get("liqUsd") or 0.0))
+    return rows

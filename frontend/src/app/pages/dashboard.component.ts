@@ -24,9 +24,9 @@ export class DashboardComponent implements OnInit {
     equity = computed(() => this.ws.portfolio()?.equity ?? 0);
     cash = computed(() => this.ws.portfolio()?.cash ?? 0);
     holdings = computed(() => this.ws.portfolio()?.holdings ?? 0);
-    unrealized = computed(() => this.ws.portfolio()?.unrealized_pnl ?? 0);
-    realizedTotal = computed(() => this.ws.portfolio()?.realized_pnl_total ?? 0);
-    realized24h = computed(() => this.ws.portfolio()?.realized_pnl_24h ?? 0);
+    unrealized = computed(() => this.ws.portfolio().unrealized_pnl ?? 0);
+    realizedTotal = computed(() => this.ws.portfolio().realized_pnl_total ?? 0);
+    realized24h = computed(() => this.ws.portfolio().realized_pnl_24h ?? 0);
 
     spark = computed<number[]>(() => this.ws.portfolio()?.equity_curve ?? []);
 

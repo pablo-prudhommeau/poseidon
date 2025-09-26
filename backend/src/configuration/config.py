@@ -52,7 +52,7 @@ class Settings:
     TREND_MIN_VOL_USD: float = float(os.getenv("TREND_MIN_VOL_USD", "100000"))
     TREND_MIN_LIQ_USD: float = float(os.getenv("TREND_MIN_LIQ_USD", "50000"))
 
-    TREND_INTERVAL_SEC: int = int(os.getenv("TREND_INTERVAL_SEC", "10"))
+    TREND_INTERVAL_SEC: int = int(os.getenv("TREND_INTERVAL_SEC", "60"))
 
     TREND_SOFTFILL_MIN = int(os.getenv("TREND_SOFTFILL_MIN", "6"))  # nb min à renvoyer
     TREND_SOFTFILL_SORT = os.getenv("TREND_SOFTFILL_SORT", "vol24h")  # ou "liqUsd"
@@ -84,8 +84,8 @@ class Settings:
     STOP_PCT: float = float(os.getenv("STOP_PCT", "0.2"))    # -20% par défaut
 
     DEXSCREENER_BASE_URL: str = os.getenv("DEXSCREENER_BASE_URL", "https://api.dexscreener.com")
-    DEXSCREENER_FETCH_INTERVAL_SECONDS: int = int(os.getenv("DEXSCREENER_FETCH_INTERVAL_SECONDS", "30"))
-    DEXSCREENER_MAX_ADDRESSES_PER_CALL: int = int(os.getenv("DEXSCREENER_MAX_ADDRESSES_PER_CALL", "40"))
+    DEXSCREENER_FETCH_INTERVAL_SECONDS: int = int(os.getenv("DEXSCREENER_FETCH_INTERVAL_SECONDS", "10"))
+    DEXSCREENER_MAX_ADDRESSES_PER_CALL: int = int(os.getenv("DEXSCREENER_MAX_ADDRESSES_PER_CALL", "20"))
 
     MAX_PRICE_DEVIATION_MULTIPLIER: float = float(os.getenv("MAX_PRICE_DEVIATION_MULTIPLIER", "3.0"))
 
