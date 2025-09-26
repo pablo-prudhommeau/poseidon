@@ -2,8 +2,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
-
-import httpx
+import asyncio
+from src.integrations.dexscreener_client import fetch_prices_by_addresses
 from web3 import Web3
 from src.configuration.config import settings
 from src.core.trader_hooks import on_trade
@@ -37,45 +37,14 @@ class Trader:
         self.positions: Dict[str, Position] = {}  # key = address
 
     def _dex_price_for_address(self, address: str) -> Optional[float]:
-        """
-        Prix DexScreener strict: on ne retient que les paires où le token est BASE.
-        Si aucune paire 'baseToken.address == address', on renvoie None (on NE fait PAS d'inversion).
-        """
         if not address:
             return None
-        base = getattr(settings, "DEXSCREENER_BASE_URL", "https://api.dexscreener.com").rstrip("/")
-        url = f"{base}/latest/dex/tokens/{address.lower()}"
         try:
-            r = httpx.get(url, timeout=8.0)
-            r.raise_for_status()
-            data = r.json() or {}
-            pairs = data.get("pairs", []) or []
-
-            # garder seulement les paires où le token EST le baseToken
-            addr_l = address.lower()
-            base_pairs = []
-            for p in pairs:
-                bt = (p.get("baseToken") or {})
-                if (bt.get("address") or "").lower() == addr_l:
-                    base_pairs.append(p)
-
-            if not base_pairs:
-                # rien de fiable -> pas d'achat
-                log.warning("DexScreener: no BASE pair for %s, skipping price.", address)
-                return None
-
-            # score liquidité/volume
-            def score(p):
-                liq = float((p.get("liquidity") or {}).get("usd") or 0.0)
-                vol = float((p.get("volume") or {}).get("h24") or 0.0)
-                return (liq, vol)
-
-            best = max(base_pairs, key=score)
-            price = best.get("priceUsd")
-            price = float(price) if price is not None else None
-            return price if (price is not None and price > 0) else None
+            m = asyncio.run(fetch_prices_by_addresses([address], chain_id=getattr(settings, "TREND_CHAIN_ID", None)))
+            price = m.get(address.lower())
+            return float(price) if price and price > 0 else None
         except Exception as e:
-            log.debug("DexScreener price fetch failed for %s: %s", address, e)
+            log.warning("DexScreener price fetch failed for %s: %s", address, e)
             return None
 
     # --------- utils ----------
