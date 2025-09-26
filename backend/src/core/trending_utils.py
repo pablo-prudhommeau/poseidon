@@ -12,8 +12,17 @@ from src.persistence.db import SessionLocal
 from src.persistence.models import Trade
 from src.integrations.dexscreener_client import fetch_prices_by_addresses
 
+from src.logging.logger import get_logger
 
-# ---------- helpers ----------
+log = get_logger(__name__)
+
+def _fmt(v):
+    return "NA" if v is None else f"{v:.2f}"
+
+def _tail(addr: str, n: int = 6) -> str:
+    a = (addr or "").lower()
+    return a[-n:] if len(a) >= n else a
+
 def _num(x: Any) -> Optional[float]:
     try:
         v = float(x)
@@ -73,6 +82,27 @@ def filter_strict(
         kept.append(it)
         if len(kept) >= max_results:
             break
+    for it in kept:
+        sym = (it.get("symbol") or "").upper()
+        addr = _tail(it.get("address") or "")
+        vol  = float(it.get("vol24h") or 0.0)
+        liq  = float(it.get("liqUsd") or 0.0)
+        p5   = _num(it.get("pct5m"))
+        p1   = _num(it.get("pct1h"))
+        p24  = _num(it.get("pct24h"))
+
+        via = "24h"
+        if interval == "5m" and p5 is not None and p5 >= th5: via = "5m"
+        elif interval == "1h" and p1 is not None and p1 >= th1: via = "1h"
+        elif p24 is not None and p24 >= th24: via = "24h"
+
+        log.debug(
+            "[BASELINE:KEEP] %s (%s) — vol=%.0f≥%.0f liq=%.0f≥%.0f "
+            "p5=%s(th=%.2f) p1=%s(th=%.2f) p24=%s(th=%.2f) via=%s",
+            sym, addr, vol, min_vol_usd, liq, min_liq_usd,
+            _fmt(p5), th5, _fmt(p1), th1, _fmt(p24), th24, via
+        )
+
     return kept, rej
 
 def softfill(
@@ -120,7 +150,7 @@ def _momentum_ok(p5: Optional[float], p1: Optional[float], p24: Optional[float])
         return False
     return True
 
-def quality_score(it: Dict[str, Any]) -> Tuple[bool, float, str]:
+def quality_score(it: Dict[str, Any]) -> Tuple[bool, float, str, Dict[str, float]]:
     liq = float(it.get("liqUsd") or 0.0)
     vol = float(it.get("vol24h") or 0.0)
     p5  = _num(it.get("pct5m"))
@@ -134,10 +164,12 @@ def quality_score(it: Dict[str, Any]) -> Tuple[bool, float, str]:
     min_age = float(getattr(settings, "DS_MIN_AGE_HOURS", 2.0))
     max_age = float(getattr(settings, "DS_MAX_AGE_HOURS", 240.0))
 
-    if liq < min_liq: return False, 0.0, "low_liquidity"
-    if vol < min_vol: return False, 0.0, "low_volume"
-    if age < min_age or age > max_age: return False, 0.0, "age_out_of_bounds"
-    if not _momentum_ok(p5, p1, p24): return False, 0.0, "choppy_or_spiky"
+    if liq < min_liq: return False, 0.0, "low_liquidity", {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1, "p24": p24}
+    if vol < min_vol: return False, 0.0, "low_volume",    {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1, "p24": p24}
+    if age < min_age or age > max_age:
+        return False, 0.0, "age_out_of_bounds", {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1, "p24": p24}
+    if not _momentum_ok(p5, p1, p24):
+        return False, 0.0, "choppy_or_spiky",   {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1, "p24": p24}
 
     m5 = max(0.0, p5 or 0.0)
     m1 = max(0.0, p1 or 0.0)
@@ -146,7 +178,13 @@ def quality_score(it: Dict[str, Any]) -> Tuple[bool, float, str]:
     liq_score = min(1.0, liq / (min_liq * 4.0))
     vol_score = min(1.0, vol / (min_vol * 4.0))
     score = 100.0 * (0.45 * momentum / 100.0 + 0.25 * liq_score + 0.20 * vol_score + 0.10 * bs)
-    return True, float(score), "ok"
+
+    ctx = {
+        "liq": liq, "vol": vol, "age_h": age, "bs": bs,
+        "p5": p5, "p1": p1, "p24": p24,
+        "momentum": momentum, "liq_score": liq_score, "vol_score": vol_score
+    }
+    return True, float(score), "ok", ctx
 
 def apply_quality_filter(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not candidates:
@@ -154,10 +192,21 @@ def apply_quality_filter(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any
     min_score = float(getattr(settings, "DS_MIN_QUALITY_SCORE", 12.0))
     out: List[Dict[str, Any]] = []
     for it in candidates:
-        ok, s, _ = quality_score(it)
+        ok, s, _, ctx = quality_score(it)
         if ok and s >= min_score:
             it["qualityScore"] = s
             out.append(it)
+
+            sym  = (it.get("symbol") or "").upper()
+            addr = _tail(it.get("address") or "")
+            log.debug(
+                "[QUALITY:KEEP] %s (%s) — score=%.2f≥%.2f  liq=%.0f vol=%.0f "
+                "age=%.1fh bs=%.2f  m5=%s m1=%s m24=%s  components(momentum=%.2f liqSc=%.2f volSc=%.2f)",
+                sym, addr, s, min_score,
+                ctx["liq"], ctx["vol"], ctx["age_h"], ctx["bs"],
+                _fmt(ctx["p5"]), _fmt(ctx["p1"]), _fmt(ctx["p24"]),
+                ctx["momentum"], ctx["liq_score"], ctx["vol_score"]
+            )
     return out
 
 

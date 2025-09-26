@@ -1,7 +1,5 @@
-<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold"
+<span class="inline-flex items-center px-2 py-1 rounded-full text-xs text-white font-semibold"
       [class.bg-emerald-500]="value >= 0"
-      [class.text-white]="value >= 0"
-      [class.bg-rose-500]="value < 0"
-      [class.text-rose-300]="value < 0">
+      [class.bg-rose-500]="value < 0">
 	{{ value | number: '1.2-2' }} $
 </span>

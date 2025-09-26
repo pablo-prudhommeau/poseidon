@@ -1,0 +1,12 @@
+<span class="inline-flex items-center gap-2">
+  <img [src]="chainIcon()"
+       (error)="onChainError($event)"
+       alt="chain"
+       class="h-4 w-4 rounded-full ring-1 ring-white/10"/>
+  <img [src]="tokenIconUrls()[0]"
+       data-idx="0"
+       (error)="onTokenError($event)"
+       alt="token"
+       class="h-4 w-4 rounded-full ring-1 ring-white/10"/>
+  <span class="font-medium">{{ symbol }}</span>
+</span>

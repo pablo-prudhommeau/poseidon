@@ -14,7 +14,12 @@
 		<tr *ngFor="let t of ws.trades()" class="border-t border-white/5 hover:bg-white/5">
 			<td class="px-3 py-1">{{ t.created_at || t.date | date:'short' }}</td>
 			<td class="px-3 py-1">{{ t.side }}</td>
-			<td class="px-3 py-1">{{ t.symbol }}</td>
+			<td class="px-3 py-1">
+				<token-chip [chain]="t.chain"
+				            [address]="t.address"
+				            [symbol]="t.symbol">
+				</token-chip>
+			</td>
 			<td class="px-3 py-1 text-right">{{ t.qty | number:'1.2-6' }}</td>
 			<td class="px-3 py-1 text-right">{{ t.price | number:'1.4-8' }}</td>
 			<td class="px-3 py-1">{{ t.status }}</td>

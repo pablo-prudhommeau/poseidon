@@ -16,7 +16,13 @@
 		</thead>
 		<tbody *ngIf="ws.positions().length; else empty">
 		<tr *ngFor="let p of ws.positions()" class="border-t border-white/5 hover:bg-white/5">
-			<td class="px-3 py-1 font-medium">{{ p.symbol }}</td>
+			<td class="px-3 py-1">
+				<token-chip [chain]="p.chain"
+				            [address]="p.address"
+				            [symbol]="p.symbol">
+				</token-chip>
+			</td>
+
 			<td class="px-3 py-1 font-mono text-xs opacity-70">{{ p.address }}</td>
 			<td class="px-3 py-1 text-right">{{ p.qty | number:'1.2-6' }}</td>
 			<td class="px-3 py-1 text-right">{{ p.entry | number:'1.4-8' }}</td>

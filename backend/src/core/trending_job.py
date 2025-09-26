@@ -37,7 +37,7 @@ class TrendingJob:
         self.page_size = int(getattr(settings, "TREND_PAGE_SIZE", 100))
         self.max_results = int(getattr(settings, "TREND_MAX_RESULTS", 100))
         self.chain = (getattr(settings, "TREND_CHAIN", "ethereum") or "ethereum").lower()
-        self.chain_id = getattr(settings, "TREND_CHAIN_ID", "1")
+        self.chain_id = None
 
         self.min_vol = float(getattr(settings, "TREND_MIN_VOL_USD", 100_000))
         self.min_liq = float(getattr(settings, "TREND_MIN_LIQ_USD", 50_000))
@@ -73,9 +73,10 @@ class TrendingJob:
     # ---- fetch
     def _fetch(self) -> List[Dict[str, Any]]:
         try:
-            return asyncio.run(
-                fetch_trending_candidates(self.interval, page_size=self.page_size, chain=self.chain, chain_id=self.chain_id)
-            )
+            return asyncio.run(fetch_trending_candidates(
+                self.interval, page_size=self.page_size,
+                chain=self.chain, chain_id=None  # <— force multi-chain
+            ))
         except Exception as e:
             log.warning("Dexscreener trending fetch failed: %s", e)
             return []

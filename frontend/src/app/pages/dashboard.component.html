@@ -22,15 +22,15 @@
 	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 		<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40 p-4">
 			<div class="text-slate-400 text-sm">Unrealized PnL</div>
-			<div class="mt-2"><pnl-badge [value]="unrealized()?.unrealized_pnl || 0" suffix="$"></pnl-badge></div>
+			<div class="mt-2"><pnl-badge [value]="unrealized() || 0" suffix="$"></pnl-badge></div>
 		</div>
 
 		<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40 p-4">
 			<div class="text-slate-400 text-sm">Realized PnL</div>
 			<div class="flex items-center gap-3 mt-2">
-				<pnl-badge [value]="realizedTotal()?.realized_pnl_total || 0" suffix="$"></pnl-badge>
+				<pnl-badge [value]="realizedTotal() || 0" suffix="$"></pnl-badge>
 				<span class="text-slate-400 text-xs">24h:</span>
-				<pnl-badge [value]="realized24h()?.realized_pnl_24h || 0" suffix="$"></pnl-badge>
+				<pnl-badge [value]="realized24h() || 0" suffix="$"></pnl-badge>
 			</div>
 		</div>
 

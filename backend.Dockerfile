@@ -15,4 +15,4 @@ COPY backend/ ./
 
 EXPOSE 8000
 
-CMD ["python", "-m", "src.run"]
+CMD ["python", "-m", "src.main"]
