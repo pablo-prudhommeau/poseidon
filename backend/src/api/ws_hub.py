@@ -6,8 +6,8 @@ from src.persistence import crud
 from src.persistence.serializers import (
     serialize_trade, serialize_position, serialize_portfolio
 )
-from src.realtime.ws_manager import ws_manager
-from src.config import settings
+from src.api.ws_manager import ws_manager
+from src.configuration.config import settings
 
 log = logging.getLogger("poseidon.api")
 router = APIRouter()

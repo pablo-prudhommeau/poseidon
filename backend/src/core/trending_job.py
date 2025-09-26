@@ -6,10 +6,9 @@ import os
 import httpx
 from typing import Any, Dict, List, Optional
 
-from src.execution import trader
-from src.logger import get_logger
-from src.config import settings
-from src.trending.cmc_dapi import fetch_cmc_dapi_trending
+from src.logging.logger import get_logger
+from src.configuration.config import settings
+from src.integrations.cmc_client import fetch_cmc_dapi_trending
 
 from src.persistence.db import SessionLocal
 from src.persistence import crud
@@ -17,7 +16,7 @@ from src.persistence import crud
 # Le trader existe déjà dans ton workspace.
 # On évite les dépendances rigides en appelant ses méthodes de façon "souple".
 try:
-    from src.execution.trader import Trader  # type: ignore
+    from src.core.trader import Trader  # type: ignore
 except Exception:  # pragma: no cover - tolérant si le module n'est pas encore là
     Trader = None  # type: ignore
 

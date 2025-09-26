@@ -7,15 +7,15 @@ import threading
 import time
 from typing import Optional
 
-from src.config import settings
+from src.configuration.config import settings
 from src.integrations.dexscreener_client import fetch_prices_by_addresses
-from src.logger import get_logger, init_logging
+from src.logging.logger import get_logger, init_logging
 from src.persistence import crud
 from src.persistence.db import SessionLocal
 from src.persistence.serializers import serialize_trade, serialize_portfolio
-from src.trending.trending_job import TrendingJob
-from src.ui.log_bridge import install_bridge
-from src.ui.ws_hub import ws_manager
+from src.core.trending_job import TrendingJob
+from src.core.log_bridge import install_bridge
+from src.api.ws_hub import ws_manager
 
 log = get_logger(__name__)
 

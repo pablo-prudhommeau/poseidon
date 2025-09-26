@@ -4,7 +4,7 @@ import logging
 from contextlib import contextmanager
 
 from src.persistence.db import SessionLocal
-from src.integrations.trader_hooks import on_trade, on_position_opened
+from src.core.trader_hooks import on_position_opened
 
 
 @contextmanager
