@@ -1,14 +1,10 @@
-# src/api/ws_hub.py
 from __future__ import annotations
-import logging
+
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from sqlalchemy.orm import Session
 
-from src.persistence.db import get_db
-from src.persistence import crud
-from src.persistence.serializers import (
-    serialize_trade, serialize_position, serialize_portfolio
-)
 from src.api.ws_manager import ws_manager
 from src.configuration.config import settings
 from src.core.pnl import (
@@ -17,53 +13,67 @@ from src.core.pnl import (
     cash_from_trades,
     holdings_and_unrealized,
 )
+from src.logging.logger import get_logger
+from src.persistence import crud
+from src.persistence.db import get_db
+from src.persistence.serializers import (
+    serialize_trade,
+    serialize_position,
+    serialize_portfolio,
+)
 
-log = logging.getLogger("poseidon.api")
 router = APIRouter()
+log = get_logger(__name__)
 
 
-async def _send_init(ws: WebSocket, db):
-    snap = crud.get_latest_portfolio(db)
+async def _send_init(ws: WebSocket, db: Session) -> None:
+    """Send the initial payload to a newly connected WebSocket client."""
+    snapshot = crud.get_latest_portfolio(db)
     positions = crud.get_open_positions(db)
 
-    # 1) Prix live + last_price
-    prices = await latest_prices_for_positions(positions, chain_id=getattr(settings, "TREND_CHAIN_ID", None))
+    # 1) Live prices and last_price enrichment
+    prices = await latest_prices_for_positions(positions)
 
-    # 2) Trades (source unique) et PnL réalisé
+    # 2) Trades (single source of truth) and realized PnL
     get_all = getattr(crud, "get_all_trades", None)
     trades = get_all(db) if callable(get_all) else crud.get_recent_trades(db, limit=10000)
     realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
 
     # 3) Cash & holdings/unrealized
-    start_cash = float(getattr(settings, "PAPER_STARTING_CASH", 10_000.0))
-    cash, _, _, _ = cash_from_trades(start_cash, trades)
+    starting_cash = float(settings.PAPER_STARTING_CASH)
+    cash, _, _, _ = cash_from_trades(starting_cash, trades)
     holdings, unrealized = holdings_and_unrealized(positions, prices)
 
-    # 4) Portfolio enrichi (même forme que l’orchestrator)
-    portfolio = serialize_portfolio(
-        snap,
-        equity_curve=crud.equity_curve(db),
-        realized_total=realized_total,
-        realized_24h=realized_24h,
-    ) if snap else {}
-    portfolio.setdefault("cash", cash)         # au cas où le snapshot vient d’un ancien schéma
+    # 4) Portfolio payload (same shape as orchestrator)
+    portfolio = (
+        serialize_portfolio(
+            snapshot,
+            equity_curve=crud.equity_curve(db),
+            realized_total=realized_total,
+            realized_24h=realized_24h,
+        )
+        if snapshot
+        else {}
+    )
+    # Backward compatibility with older schemas
+    portfolio.setdefault("cash", cash)
     portfolio.setdefault("holdings", holdings)
     portfolio["equity"] = round(float(portfolio.get("cash", cash)) + holdings, 2)
     portfolio["unrealized_pnl"] = unrealized
     portfolio["realized_pnl_total"] = realized_total
     portfolio["realized_pnl_24h"] = realized_24h
 
-    # 5) Positions avec last_price
-    positions_payload = []
-    for p in positions:
-        d = serialize_position(p)
-        d["last_price"] = prices.get((p.address or "").lower(), None)
-        positions_payload.append(d)
+    # 5) Positions with last_price
+    positions_payload: List[Dict[str, Any]] = []
+    for position in positions:
+        serialized = serialize_position(position)
+        serialized["last_price"] = prices.get((position.address or "").lower(), None)
+        positions_payload.append(serialized)
 
-    # 6) Trades pour la table
+    # 6) Recent trades for the table
     trades_recent = crud.get_recent_trades(db, limit=100)
 
-    payload = {
+    payload: Dict[str, Any] = {
         "status": {"paperMode": settings.PAPER_MODE, "interval": settings.TREND_INTERVAL_SEC},
         "portfolio": portfolio,
         "positions": positions_payload,
@@ -73,27 +83,28 @@ async def _send_init(ws: WebSocket, db):
 
 
 @router.websocket("/ws")
-async def ws_endpoint(ws: WebSocket, db=Depends(get_db)):
+async def ws_endpoint(ws: WebSocket, db: Session = Depends(get_db)) -> None:
+    """WebSocket endpoint: keeps the connection open and responds to simple commands."""
     await ws.accept()
-    ws_manager.connect(ws)
+    ws_manager.connect(ws)  # sync connect by design
     try:
         await _send_init(ws, db)
 
-        # ⇩⇩⇩ garde la connexion ouverte et répond aux pings ⇩⇩⇩
+        # Keep the connection alive and handle light commands
         while True:
-            msg = await ws.receive_json()
-            t = msg.get("type")
-            if t == "ping":
+            message = await ws.receive_json()
+            message_type = message.get("type")
+            if message_type == "ping":
                 await ws.send_json({"type": "pong"})
-            elif t == "refresh":
+            elif message_type == "refresh":
                 await _send_init(ws, db)
-            # autres types ignorés pour l’instant
+            # Other message types are currently ignored
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        log.exception("WS error: %s", e)
+    except Exception as exc:
+        log.exception("WebSocket error: %s", exc)
         try:
-            await ws.send_json({"type": "error", "payload": str(e)})
+            await ws.send_json({"type": "error", "payload": str(exc)})
         except Exception:
             pass
     finally:
