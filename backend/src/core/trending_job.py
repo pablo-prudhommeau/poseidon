@@ -1,172 +1,204 @@
 from __future__ import annotations
+
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 from src.configuration.config import settings
-from src.logging.logger import get_logger
-from src.persistence.db import SessionLocal
-from src.persistence import crud
-
-from src.integrations.dexscreener_client import fetch_trending_candidates
+from src.core.trader import Trader
 from src.core.trending_utils import (
-    filter_strict, softfill, apply_quality_filter,
-    recently_traded, preload_best_prices
+    filter_strict,
+    soft_fill,
+    apply_quality_filter,
+    recently_traded,
+    preload_best_prices,
 )
+from src.integrations.dexscreener.dexscreener_client import fetch_trending_candidates
+from src.logging.logger import get_logger
+from src.persistence import crud
+from src.persistence.db import SessionLocal
 
 log = get_logger(__name__)
 
-try:
-    from src.core.trader import Trader
-except Exception:
-    Trader = None
 
-
-def _as_frac(x: float | int) -> float:
+def _as_fraction(value: float | int) -> float:
+    """Convert a percent-like number to a fraction (e.g., 5 → 0.05)."""
     try:
-        v = float(x)
-        return v / 100.0 if v > 1 else v
+        number = float(value)
+        return number / 100.0 if number > 1 else number
     except Exception:
         return 0.0
 
 
 class TrendingJob:
-    """Thin orchestrator: fetch → filter → quality → guard → buy."""
+    """Thin orchestrator: fetch → filter → quality → guards → buy."""
 
     def __init__(self, w3: Optional["Web3"] = None) -> None:
-        self.interval = (settings.TREND_INTERVAL or "1h").lower()
-        self.page_size = int(getattr(settings, "TREND_PAGE_SIZE", 100))
-        self.max_results = int(getattr(settings, "TREND_MAX_RESULTS", 100))
-        self.chain = (getattr(settings, "TREND_CHAIN", "ethereum") or "ethereum").lower()
-        self.chain_id = None
+        self.interval: str = settings.TREND_INTERVAL.lower()
+        self.page_size: int = settings.TREND_PAGE_SIZE
+        self.max_results: int = settings.TREND_MAX_RESULTS
 
-        self.min_vol = float(getattr(settings, "TREND_MIN_VOL_USD", 100_000))
-        self.min_liq = float(getattr(settings, "TREND_MIN_LIQ_USD", 50_000))
-        self.th5 = _as_frac(getattr(settings, "TREND_MIN_PCT_5M", 2.0))
-        self.th1 = _as_frac(getattr(settings, "TREND_MIN_PCT_1H", 5.0))
-        self.th24 = _as_frac(getattr(settings, "TREND_MIN_PCT_24H", 10.0))
+        self.min_volume_usd: float = settings.TREND_MIN_VOL_USD
+        self.min_liquidity_usd: float = settings.TREND_MIN_LIQ_USD
+        self.min_pct_5m: float = _as_fraction(settings.TREND_MIN_PCT_5M)
+        self.min_pct_1h: float = _as_fraction(settings.TREND_MIN_PCT_1H)
+        self.min_pct_24h: float = _as_fraction(settings.TREND_MIN_PCT_24H)
 
-        self.exclude_stables = bool(getattr(settings, "TREND_EXCLUDE_STABLES", True))
-        self.exclude_majors = bool(getattr(settings, "TREND_EXCLUDE_MAJORS", True))
-        self.softfill_min = int(getattr(settings, "TREND_SOFTFILL_MIN", 6))
-        self.softfill_sort = getattr(settings, "TREND_SOFTFILL_SORT", "vol24h")
+        self.exclude_stables: bool = settings.TREND_EXCLUDE_STABLES
+        self.exclude_majors: bool = settings.TREND_EXCLUDE_MAJORS
+        self.soft_fill_min: int = settings.TREND_SOFT_FILL_MIN
+        self.soft_fill_sort: str = settings.TREND_SOFT_FILL_SORT
 
-        self.trader = Trader() if Trader else None
-        self.w3 = w3  # compat
+        self.trader = Trader()
+        self.w3 = w3
 
-    # ---- portfolio helpers
     def _free_cash(self) -> float:
+        """Return the current free cash from the latest portfolio snapshot."""
         with SessionLocal() as db:
-            snap = crud.get_latest_portfolio(db, create_if_missing=True)
-            return float(snap.cash or 0.0) if snap else 0.0
+            snapshot = crud.get_latest_portfolio(db, create_if_missing=True)
+            return float(snapshot.cash or 0.0) if snapshot else 0.0
 
-    def _open_sets(self) -> tuple[set[str], set[str]]:
+    def _open_sets(self) -> Tuple[Set[str], Set[str]]:
+        """Return sets of currently open symbols and addresses."""
         with SessionLocal() as db:
-            pos = crud.get_open_positions(db)
-        syms = {(p.symbol or "").upper() for p in pos if p.symbol}
-        addrs = {(p.address or "").lower() for p in pos if p.address}
-        return syms, addrs
+            positions = crud.get_open_positions(db)
+        symbols = {(p.symbol or "").upper() for p in positions if p.symbol}
+        addresses = {(p.address or "").lower() for p in positions if p.address}
+        return symbols, addresses
 
     def _per_buy_budget(self, free_cash: float) -> float:
-        frac = float(getattr(settings, "TREND_PER_BUY_FRACTION", 0.0))
-        return max(1.0, free_cash * frac) if frac > 0 else float(getattr(settings, "TREND_PER_BUY_USD", 200.0))
+        """Compute the per-buy budget using either fraction or absolute USD."""
+        fraction = float(settings.TREND_PER_BUY_FRACTION)
+        return max(1.0, free_cash * fraction) if fraction > 0 else float(settings.TREND_PER_BUY_USD)
 
-    # ---- fetch
     def _fetch(self) -> List[Dict[str, Any]]:
+        """Fetch trending candidates from Dexscreener."""
         try:
-            return asyncio.run(fetch_trending_candidates(
-                self.interval, page_size=self.page_size,
-                chain=self.chain, chain_id=None  # <— force multi-chain
-            ))
-        except Exception as e:
-            log.warning("Dexscreener trending fetch failed: %s", e)
+            return asyncio.run(
+                fetch_trending_candidates(
+                    self.interval,
+                    page_size=self.page_size
+                )
+            )
+        except Exception as exc:
+            log.warning("Dexscreener trending fetch failed: %s", exc)
             return []
 
-    # ---- main
     def run_once(self) -> None:
-        if not getattr(settings, "TREND_ENABLE", True):
-            log.info("Trending disabled");
+        """Run one full trending cycle: fetch → filter → rank → execute buys."""
+        if not settings.TREND_ENABLE:
+            log.info("Trending disabled")
             return
 
         rows = self._fetch()
         if not rows:
-            log.info("Trending: 0 candidates");
+            log.info("Trending: 0 candidates")
             return
 
-        kept, rej = filter_strict(
+        kept, rejected_counts = filter_strict(
             rows,
             interval=self.interval,
-            min_vol_usd=self.min_vol, min_liq_usd=self.min_liq,
-            th5=self.th5, th1=self.th1, th24=self.th24,
-            exclude_stables=self.exclude_stables, exclude_majors=self.exclude_majors,
+            min_vol_usd=self.min_volume_usd,
+            min_liq_usd=self.min_liquidity_usd,
+            th5=self.min_pct_5m,
+            th1=self.min_pct_1h,
+            th24=self.min_pct_24h,
+            exclude_stables=self.exclude_stables,
+            exclude_majors=self.exclude_majors,
             max_results=self.max_results,
         )
 
-        need_min = max(self.softfill_min, len(kept))
-        kept = softfill(rows, kept, need_min=need_min, min_vol_usd=self.min_vol, min_liq_usd=self.min_liq, sort_key=self.softfill_sort)
+        need_minimum = max(self.soft_fill_min, len(kept))
+        kept = soft_fill(
+            rows,
+            kept,
+            need_min=need_minimum,
+            min_vol_usd=self.min_volume_usd,
+            min_liq_usd=self.min_liquidity_usd,
+            sort_key=self.soft_fill_sort,
+        )
 
         kept = apply_quality_filter(kept)
         if not kept:
-            log.info("Quality kept=0 (rej=%s)", rej);
+            log.info("Quality kept=0 (rejected=%s)", rejected_counts)
             return
 
-        key = self.softfill_sort if self.softfill_sort in {"vol24h", "liqUsd"} else "vol24h"
-        kept.sort(key=lambda x: float(x.get(key) or 0.0), reverse=True)
+        sort_key = self.soft_fill_sort if self.soft_fill_sort in {"vol24h", "liqUsd"} else "vol24h"
+        kept.sort(key=lambda item: float(item.get(sort_key) or 0.0), reverse=True)
         kept = kept[: self.max_results]
 
-        open_syms, open_addrs = self._open_sets()
-        candidates = [it for it in kept if (it.get("symbol", "").upper() not in open_syms and (it.get("address") or "").lower() not in open_addrs)]
+        open_symbols, open_addresses = self._open_sets()
+        candidates = [
+            item
+            for item in kept
+            if (item.get("symbol", "").upper() not in open_symbols)
+               and ((item.get("address") or "").lower() not in open_addresses)
+        ]
         if not candidates:
-            log.info("No buys: already in open positions");
+            log.info("No buys: already in open positions")
             return
 
-        addr_list = [(it.get("address") or "").lower() for it in candidates if it.get("address")]
-        price_map = preload_best_prices(addr_list)
-        cooldown_min = int(getattr(settings, "DS_REBUY_COOLDOWN_MIN", 45))
+        address_list = [(item.get("address") or "").lower() for item in candidates if item.get("address")]
+        best_price_by_address = preload_best_prices(address_list)
+        cooldown_minutes = int(settings.DEXSCREENER_REBUY_COOLDOWN_MIN)
 
         if self.trader is None:
-            log.warning("Trader unavailable; skipping execution");
+            log.warning("Trader unavailable; skipping execution")
             return
 
         free_cash = self._free_cash()
-        per_buy = self._per_buy_budget(free_cash)
-        min_free = float(getattr(settings, "TREND_MIN_FREE_CASH_USD", 50.0))
-        max_buys = int(getattr(settings, "TREND_MAX_BUYS_PER_RUN", 5))
-        require_dex = bool(getattr(settings, "TREND_REQUIRE_DEX_PRICE", True))
-        max_mult = float(getattr(settings, "MAX_PRICE_DEVIATION_MULTIPLIER", 3.0))
+        per_buy_usd = self._per_buy_budget(free_cash)
+        min_free_cash_usd = float(settings.TREND_MIN_FREE_CASH_USD)
+        max_buys_per_run = int(settings.TREND_MAX_BUYS_PER_RUN)
+        require_dex_price = bool(settings.TREND_REQUIRE_DEX_PRICE)
+        max_price_deviation = float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER)
 
-        sim_cash, buys = free_cash, 0
-        for it in candidates:
-            if buys >= max_buys: break
-            addr = (it.get("address") or "").lower()
-            if recently_traded(addr, minutes=cooldown_min): continue
+        simulated_cash = free_cash
+        executed_buys = 0
+        for item in candidates:
+            if executed_buys >= max_buys_per_run:
+                break
 
-            ds_price = price_map.get(addr)
-            if require_dex and (ds_price is None or ds_price <= 0): continue
+            address = (item.get("address") or "").lower()
+            if recently_traded(address, minutes=cooldown_minutes):
+                continue
 
-            ext_price = None
+            dex_price = best_price_by_address.get(address)
+            if require_dex_price and (dex_price is None or dex_price <= 0):
+                continue
+
+            external_price: Optional[float] = None
             try:
-                p = float(it.get("price") or 0.0)
-                ext_price = p if p > 0 else None
+                raw_price = float(item.get("price") or 0.0)
+                external_price = raw_price if raw_price > 0 else None
             except Exception:
-                ext_price = None
-            if ds_price and ext_price:
-                lo, hi = sorted([ds_price, ext_price])
-                if lo > 0 and (hi / lo) > max_mult: continue
+                external_price = None
 
-            if sim_cash < per_buy or (sim_cash - per_buy) < min_free: break
+            if dex_price and external_price:
+                low, high = sorted([dex_price, external_price])
+                if low > 0 and (high / low) > max_price_deviation:
+                    continue
 
-            payload = dict(it)
-            if ds_price is not None:
-                payload["dex_price"] = ds_price
+            if simulated_cash < per_buy_usd or (simulated_cash - per_buy_usd) < min_free_cash_usd:
+                break
+
+            payload = dict(item)
+            if dex_price is not None:
+                payload["dex_price"] = dex_price
+
             try:
                 self.trader.buy(payload)  # type: ignore[attr-defined]
-                buys += 1
-                sim_cash -= per_buy
-            except Exception as e:
-                log.warning("BUY failed for %s: %s", it.get("symbol"), e)
+                executed_buys += 1
+                simulated_cash -= per_buy_usd
+            except Exception as exc:
+                log.warning("BUY failed for %s: %s", item.get("symbol"), exc)
 
-        log.info("Executed buys=%d (free_cash_start=%.2f per_buy=%.2f)", buys, free_cash, per_buy)
+        log.info(
+            "Executed buys=%d (free_cash_start=%.2f per_buy=%.2f)",
+            executed_buys,
+            free_cash,
+            per_buy_usd,
+        )
 
-    # Backward compat if something calls run()
     def run(self) -> None:
+        """Compatibility alias."""
         self.run_once()

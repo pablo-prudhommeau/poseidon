@@ -1,11 +1,15 @@
-import os
+from __future__ import annotations
 
 import uvicorn
 
+from src.configuration.config import settings
+from src.logging.logger import init_logging
+
 if __name__ == "__main__":
+    init_logging()
     uvicorn.run(
         "src.api.app:create_app",
         factory=True,
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "8000"))
+        host=settings.API_HOST,
+        port=settings.API_PORT
     )

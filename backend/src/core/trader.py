@@ -1,13 +1,14 @@
-# src/execution/trader.py
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Dict, Any, Optional
+
 import asyncio
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 from web3 import Web3
+
 from src.configuration.config import settings
-from src.integrations.dexscreener_client import fetch_prices_by_addresses
-from src.core.trader_hooks import on_trade  # rebroadcast_portfolio est importé tardivement
+from src.core.trader_hooks import on_trade
+from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_addresses
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)
@@ -27,46 +28,53 @@ class Position:
 
 
 class Trader:
-    """
-    Trader PAPER par défaut.
-    - buy(): ouvre une position simulée
-    - evaluate(prices): gère stop/tp et sort avec logs
-    - rebroadcast automatiquement le portfolio (payload 'portfolio') après buy/sell/exit
+    """PAPER trader by default.
+
+    - buy(): opens a simulated position
+    - evaluate(prices): handles stop/tp exits and logs realized PnL
+    - automatically re-broadcasts the portfolio after buy/sell/exit
     """
 
-    def __init__(self, w3: Optional[Web3] = None):
+    def __init__(self, w3: Optional[Web3] = None) -> None:
         self.w3 = w3
         self.paper = settings.PAPER_MODE
-        self.order_usd = 250.0      # taille d'ordre simulée
-        self.slippage_bps = 75      # 0.75%
-        self.positions: Dict[str, Position] = {}  # key = address
-        self.realized_pnl_usd: float = 0.0        # suivi interne (utile aux logs)
+        self.order_usd = 250.0  # simulated order notional
+        self.slippage_bps = 75  # 0.75%
+        self.positions: Dict[str, Position] = {}  # key = address (lowercased)
+        self.realized_pnl_usd: float = 0.0  # internal running total (for logs)
 
-    # ------------- prix -------------
     def _dex_price_for_address(self, address: str) -> Optional[float]:
+        """Fetch a live DEX price for a single address (sync-friendly).
+
+        If already inside a running event loop, we avoid blocking and return None,
+        letting the caller use its fallback price if any.
+        """
         if not address:
             return None
         try:
-            # Si on est déjà DANS une boucle asyncio (FastAPI task, etc.), on évite asyncio.run()
+            # If we're already in an event loop (e.g., FastAPI task), do not block.
             try:
                 asyncio.get_running_loop()
-                # Dans ce cas, on ne bloque pas : on laisse le fallback prendre le relais
-                log.debug("Running loop detected, skipping sync DEX price for %s (will use fallback if any)", address)
+                log.debug(
+                    "Running loop detected, skipping sync DEX price for %s (will use fallback if any)",
+                    address,
+                )
                 return None
             except RuntimeError:
-                pass  # pas de loop -> on peut faire un appel bloquant
+                # No running loop → we can perform a blocking call safely.
+                pass
 
-            m = asyncio.run(
-                fetch_prices_by_addresses([address], chain_id=getattr(settings, "TREND_CHAIN_ID", None))
+            result = asyncio.run(
+                fetch_prices_by_addresses([address])
             )
-            price = m.get(address.lower())
+            price = result.get(address.lower())
             return float(price) if price and price > 0 else None
-        except Exception as e:
-            log.warning("DexScreener price fetch failed for %s: %s", address, e)
+        except Exception as exc:
+            log.warning("DexScreener price fetch failed for %s: %s", address, exc)
             return None
 
-    # ------------- utils -------------
     def _gas_price_gwei(self) -> Optional[float]:
+        """Return current base fee (gwei) if a Web3 client is available."""
         try:
             if not self.w3:
                 return None
@@ -75,115 +83,143 @@ class Trader:
             return None
 
     def _rebroadcast_portfolio(self) -> None:
-        """
-        Recalcule & rebroadcast le portfolio (payload 'portfolio') à tous les clients.
-        Aucun changement de protocole WS côté front.
-        """
+        """Recompute & re-broadcast the portfolio payload to all clients."""
         try:
-            # import tardif pour éviter les cycles
+            # Late import to avoid cycles
             from src.core.trader_hooks import rebroadcast_portfolio  # async
+
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(rebroadcast_portfolio())
             except RuntimeError:
                 asyncio.run(rebroadcast_portfolio())
-        except Exception as e:
-            log.debug("rebroadcast_portfolio failed: %s", e)
+        except Exception as exc:
+            log.debug("rebroadcast_portfolio failed: %s", exc)
 
-    # ------------- actions -------------
     def buy(self, it: Dict[str, Any]) -> None:
-        sym  = it.get("symbol")
-        addr = (it.get("address") or "").lower()
+        symbol = it.get("symbol")
+        address = (it.get("address") or "").lower()
         chain = (it.get("chain") or "unknown").lower()
 
-        # 1) prix DexScreener strict (préféré)
-        ds_price = self._dex_price_for_address(addr)
+        # 1) Preferred: strict DexScreener price
+        ds_price = self._dex_price_for_address(address)
 
-        # 2) fallback éventuel (prix du scan/trending si fourni)
-        fallback = None
+        # 2) Optional fallback (price provided by scan/trending item)
+        fallback_price: Optional[float] = None
         try:
-            v = it.get("price")
-            if v is not None:
-                v = float(v)
-                fallback = v if v > 0 else None
+            raw_price = it.get("price")
+            if raw_price is not None:
+                raw_price = float(raw_price)
+                fallback_price = raw_price if raw_price > 0 else None
         except Exception:
-            fallback = None
+            fallback_price = None
 
-        price = ds_price or fallback
-        if not addr or price is None:
-            log.debug("[BUY SKIP] %s addr/price invalid (addr=%s price=%s)", sym, addr, price)
+        price = ds_price or fallback_price
+        if not address or price is None:
+            log.debug("[BUY SKIP] %s addr/price invalid (addr=%s price=%s)", symbol, address, price)
             return
 
-        # 3) GARDE-FOU: si on a les deux, refuse si l’écart est énorme
-        max_mult = float(getattr(settings, "MAX_PRICE_DEVIATION_MULTIPLIER", 3.0))
-        if ds_price is not None and fallback is not None:
-            lo, hi = sorted([ds_price, fallback])
+        # 3) Safety: if both sources exist, reject on huge deviation
+        max_mult = float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER)
+        if ds_price is not None and fallback_price is not None:
+            lo, hi = sorted([ds_price, fallback_price])
             if hi > 0 and (hi / lo) > max_mult:
-                log.warning("[BUY SKIP] %s price mismatch DEX %.6f vs ext %.6f (>x%.1f)",
-                            sym, ds_price, fallback, max_mult)
+                log.warning(
+                    "[BUY SKIP] %s price mismatch DEX %.6f vs ext %.6f (>x%.1f)",
+                    symbol,
+                    ds_price,
+                    fallback_price,
+                    max_mult,
+                )
                 return
 
-        # déjà en position ?
-        if addr in self.positions:
+        # Already in position?
+        if address in self.positions:
             return
 
         gas_gwei = self._gas_price_gwei()
         if gas_gwei is not None and gas_gwei > 120:
-            log.info("[SKIP GAS] %s baseFee=%.1f gwei (cap=120)", sym, gas_gwei)
+            log.info("[SKIP GAS] %s baseFee=%.1f gwei (cap=120)", symbol, gas_gwei)
             return
 
         notional = self.order_usd
         qty = notional / price
 
-        stop = price * settings.STOP_PCT
-        tp1  = price * settings.TP1_PCT
-        tp2  = price * settings.TP2_PCT
+        stop = price * settings.TRENDING_STOP_PCT
+        tp1 = price * settings.TRENDING_TP1_PCT
+        tp2 = price * settings.TRENDING_TP2_PCT
 
         if self.paper:
             liq = float(it.get("liqUsd", 0.0) or 0.0)
             vol = float(it.get("vol24h", 0.0) or 0.0)
-            tail = addr[-6:] if addr else "--"
+            tail = address[-6:] if address else "--"
             src = "DEX" if ds_price is not None else "FALLBACK"
-            log.info("[PAPER BUY/%s] %s $%.0f @ $%.8f (~%s %s)liq=$%.0f vol24h=$%.0f 0x%s",
-                     src, sym, notional, price, f"{qty:.6f}", sym, liq, vol, tail)
-            self.positions[addr] = Position(sym, chain, addr, qty, price, stop, tp1, tp2, phase="OPEN")
-            log.info("[PAPER EXIT PLAN] %s stop=$%.8f tp1=$%.8f tp2=$%.8f", sym, stop, tp1, tp2)
+            log.info(
+                "[PAPER BUY/%s] %s $%.0f @ $%.8f (~%s %s)liq=$%.0f vol24h=$%.0f 0x%s",
+                src,
+                symbol,
+                notional,
+                price,
+                f"{qty:.6f}",
+                symbol,
+                liq,
+                vol,
+                tail,
+            )
+            self.positions[address] = Position(symbol, chain, address, qty, price, stop, tp1, tp2, phase="OPEN")
+            log.info("[PAPER EXIT PLAN] %s stop=$%.8f tp1=$%.8f tp2=$%.8f", symbol, stop, tp1, tp2)
             # hook trade (paper)
-            on_trade(side="BUY", symbol=sym, chain=chain, price=price, qty=qty, status="PAPER", address=addr)
-            # rebroadcast du portfolio (pas de type custom)
+            on_trade(side="BUY", symbol=symbol, chain=chain, price=price, qty=qty, status="PAPER", address=address)
+            # rebroadcast portfolio (no custom type)
             self._rebroadcast_portfolio()
             return
 
-        log.warning("[LIVE BUY NOT IMPLEMENTED] %s (%s)", sym, addr)
+        log.warning("[LIVE BUY NOT IMPLEMENTED] %s (%s)", symbol, address)
 
     def evaluate(self, prices_by_addr: Dict[str, Optional[float]]) -> None:
-        """
-        Appelée à chaque tick offchain.
-        prices_by_addr: {address -> last_price}
-        Gère STOP/TP et met à jour le PnL réalisé à chaque vente (partielle ou totale).
-        Puis rebroadcast le portfolio.
-        """
-        to_close = []
-        pnl_realized_delta = 0.0  # pour log
+        """Called every off-chain tick.
 
-        for addr, pos in list(self.positions.items()):
-            price = prices_by_addr.get(addr)
+        Args:
+            prices_by_addr: mapping {address_lower -> last_price}.
+
+        Handles STOP/TP logic, updates realized PnL on each sale,
+        then re-broadcasts the portfolio payload.
+        """
+        to_close: list[str] = []
+        pnl_realized_delta = 0.0  # for logging
+
+        for address, pos in list(self.positions.items()):
+            price = prices_by_addr.get(address)
             if not price or price <= 0:
                 continue
 
-            # STOP loss (vente totale)
+            # STOP loss (full exit)
             if price <= pos.stop and pos.phase != "CLOSED":
                 sell_qty = pos.qty
                 pnl = (price - pos.entry) * sell_qty
                 self.realized_pnl_usd += pnl
                 pnl_realized_delta += pnl
-                log.info("[PAPER SELL STOP] %s @ $%.8f (entry $%.8f) qty=%.6f realized=$%.2f",
-                         pos.symbol, price, pos.entry, sell_qty, pnl)
-                on_trade(side="SELL", symbol=pos.symbol, chain=pos.chain, price=price, qty=sell_qty, status="PAPER", address=addr)
-                to_close.append(addr)
+                log.info(
+                    "[PAPER SELL STOP] %s @ $%.8f (entry $%.8f) qty=%.6f realized=$%.2f",
+                    pos.symbol,
+                    price,
+                    pos.entry,
+                    sell_qty,
+                    pnl,
+                )
+                on_trade(
+                    side="SELL",
+                    symbol=pos.symbol,
+                    chain=pos.chain,
+                    price=price,
+                    qty=sell_qty,
+                    status="PAPER",
+                    address=address,
+                )
+                to_close.append(address)
                 continue
 
-            # TP1 -> on prend la moitié et on remonte le stop à break-even
+            # TP1 → take half and move stop to break-even
             if pos.phase == "OPEN" and price >= pos.tp1:
                 sell_qty = pos.qty * 0.5
                 pnl = (price - pos.entry) * sell_qty
@@ -192,45 +228,86 @@ class Trader:
 
                 pos.qty -= sell_qty
                 pos.phase = "TP1"
-                pos.stop = pos.entry  # remonte à break-even
+                pos.stop = pos.entry  # move to break-even
 
-                log.info("[PAPER TP1] %s @ $%.8f realized=$%.2f sold=%.6f left=%.6f (BE stop=$%.8f)",
-                         pos.symbol, price, pnl, sell_qty, pos.qty, pos.stop)
-                on_trade(side="SELL", symbol=pos.symbol, chain=pos.chain, price=price, qty=sell_qty, status="PAPER", address=addr)
+                log.info(
+                    "[PAPER TP1] %s @ $%.8f realized=$%.2f sold=%.6f left=%.6f (BE stop=$%.8f)",
+                    pos.symbol,
+                    price,
+                    pnl,
+                    sell_qty,
+                    pos.qty,
+                    pos.stop,
+                )
+                on_trade(
+                    side="SELL",
+                    symbol=pos.symbol,
+                    chain=pos.chain,
+                    price=price,
+                    qty=sell_qty,
+                    status="PAPER",
+                    address=address,
+                )
                 continue
 
-            # TP2 -> on sort le reste (vente totale du solde)
+            # TP2 → close the remainder (full exit)
             if pos.phase in {"OPEN", "TP1"} and price >= pos.tp2:
                 sell_qty = pos.qty
                 pnl = (price - pos.entry) * sell_qty
                 self.realized_pnl_usd += pnl
                 pnl_realized_delta += pnl
 
-                log.info("[PAPER TP2] %s @ $%.8f close qty=%.6f realized=$%.2f",
-                         pos.symbol, price, sell_qty, pnl)
-                on_trade(side="SELL", symbol=pos.symbol, chain=pos.chain, price=price, qty=sell_qty, status="PAPER", address=addr)
-                to_close.append(addr)
+                log.info(
+                    "[PAPER TP2] %s @ $%.8f close qty=%.6f realized=$%.2f",
+                    pos.symbol,
+                    price,
+                    sell_qty,
+                    pnl,
+                )
+                on_trade(
+                    side="SELL",
+                    symbol=pos.symbol,
+                    chain=pos.chain,
+                    price=price,
+                    qty=sell_qty,
+                    status="PAPER",
+                    address=address,
+                )
+                to_close.append(address)
                 continue
 
-            # Après TP1, si on retombe sur le stop (break-even), on ferme (réalisé ≈ 0)
+            # After TP1, if we fall back to stop (break-even), close
             if pos.phase == "TP1" and price <= pos.stop:
                 sell_qty = pos.qty
                 pnl = (price - pos.entry) * sell_qty
                 self.realized_pnl_usd += pnl
                 pnl_realized_delta += pnl
 
-                log.info("[PAPER EXIT @BE] %s @ $%.8f qty=%.6f realized=$%.2f",
-                         pos.symbol, price, sell_qty, pnl)
-                on_trade(side="SELL", symbol=pos.symbol, chain=pos.chain, price=price, qty=sell_qty, status="PAPER", address=addr)
-                to_close.append(addr)
+                log.info(
+                    "[PAPER EXIT @BE] %s @ $%.8f qty=%.6f realized=$%.2f",
+                    pos.symbol,
+                    price,
+                    sell_qty,
+                    pnl,
+                )
+                on_trade(
+                    side="SELL",
+                    symbol=pos.symbol,
+                    chain=pos.chain,
+                    price=price,
+                    qty=sell_qty,
+                    status="PAPER",
+                    address=address,
+                )
+                to_close.append(address)
                 continue
 
-        for addr in to_close:
-            # marque CLOSED puis retire de la table
-            if addr in self.positions:
-                self.positions[addr].phase = "CLOSED"
-                del self.positions[addr]
+        # Mark CLOSED and remove from table
+        for address in to_close:
+            if address in self.positions:
+                self.positions[address].phase = "CLOSED"
+                del self.positions[address]
 
-        # rebroadcast du portfolio après ventes/fermetures
+        # Re-broadcast after sales/exits
         if self.positions or pnl_realized_delta != 0.0:
             self._rebroadcast_portfolio()
