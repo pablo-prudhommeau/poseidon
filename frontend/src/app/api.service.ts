@@ -24,4 +24,24 @@ export class ApiService {
 
     pollTrades(ms = 8000): Observable<Trade[]> { return timer(0, ms).pipe(switchMap(() => this.getTrades(100))); }
 
+    exportChartByTrade(tradeId: string, minutesBefore = 720, minutesAfter = 720, timeframe = '1m') {
+        const url = `/export/chart/${encodeURIComponent(tradeId)}?minutes_before=${minutesBefore}&minutes_after=${minutesAfter}&timeframe=${encodeURIComponent(timeframe)}`;
+        return this.http.get(url);
+    }
+
+    exportOhlcv(params: { address: string; chain: string; timeframe: string; start_ms?: string | number; end_ms?: string | number; }) {
+        const qp = new URLSearchParams({
+            address: params.address,
+            chain: params.chain,
+            timeframe: params.timeframe
+        });
+        if (params.start_ms != null) {
+            qp.set('start_ms', String(params.start_ms));
+        }
+        if (params.end_ms != null) {
+            qp.set('end_ms', String(params.end_ms));
+        }
+        return this.http.get(`/ohlcv?${qp.toString()}`);
+    }
+
 }

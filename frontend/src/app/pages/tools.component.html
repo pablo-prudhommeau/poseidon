@@ -1,0 +1,99 @@
+<div class="max-w-6xl mx-auto px-6 space-y-8">
+	<section>
+		<h1 class="text-2xl font-semibold">Tools</h1>
+		<p class="text-sm opacity-80">
+			Export utilities for charts and OHLCV. Uses backend endpoints
+			<code>/export/chart/&lt;trade_id&gt;</code> and <code>/ohlcv</code>.
+		</p>
+	</section>
+
+	<section class="bg-white/5 rounded-2xl p-4 shadow">
+		<h2 class="text-xl font-medium mb-2">Export by Trade</h2>
+
+		<ng-container *ngIf="isLoadingTrades(); else tradeTable">
+			<p>Loading recent trades…</p>
+		</ng-container>
+
+		<ng-template #tradeTable>
+			<p *ngIf="tradesErrorMessage()" class="text-red-500">{{ tradesErrorMessage() }}</p>
+			<div class="overflow-x-auto" *ngIf="!tradesErrorMessage()">
+				<table class="min-w-full text-sm">
+					<thead class="text-left">
+					<tr>
+						<th class="py-2 pr-4">Trade ID</th>
+						<th class="py-2 pr-4">Symbol</th>
+						<th class="py-2 pr-4">Chain</th>
+						<th class="py-2 pr-4">Address</th>
+						<th class="py-2 pr-4">Timestamp</th>
+						<th class="py-2 pr-4">Action</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr *ngFor="let t of recentTrades()" class="border-t border-white/10">
+						<td class="py-2 pr-4">{{ t.id }}</td>
+						<td class="py-2 pr-4">{{ t.symbol }}</td>
+						<td class="py-2 pr-4">{{ t.chain }}</td>
+						<td class="py-2 pr-4">{{ t.address }}</td>
+						<td class="py-2 pr-4">
+							{{ t.timestamp ? ((t.timestamp | date:'medium') || t.timestamp) : '—' }}
+						</td>
+						<td class="py-2 pr-4">
+							<button class="px-3 py-1 rounded-xl border border-white/20 hover:border-white/40"
+							        (click)="exportChartByTradeId(t.id)">
+								Export chart JSON
+							</button>
+						</td>
+					</tr>
+					<tr *ngIf="recentTrades().length === 0">
+						<td class="py-2 pr-4" colspan="6">No trades to display.</td>
+					</tr>
+					</tbody>
+				</table>
+			</div>
+		</ng-template>
+	</section>
+
+	<section class="bg-white/5 rounded-2xl p-4 shadow">
+		<h2 class="text-xl font-medium mb-3">Manual OHLCV Export</h2>
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+			<label class="flex flex-col">
+				<span class="text-xs opacity-70 mb-1">Pool / Pair Address</span>
+				<input class="px-3 py-2 rounded-xl bg-black/20 border border-white/10"
+				       placeholder="0x…" [(ngModel)]="poolAddress">
+			</label>
+			<label class="flex flex-col">
+				<span class="text-xs opacity-70 mb-1">Chain</span>
+				<input class="px-3 py-2 rounded-xl bg-black/20 border border-white/10"
+				       placeholder="ETH | BSC | SOL | …" [(ngModel)]="chainIdentifier">
+			</label>
+			<label class="flex flex-col">
+				<span class="text-xs opacity-70 mb-1">Timeframe</span>
+				<select class="px-3 py-2 rounded-xl bg-black/20 border border-white/10"
+				        [(ngModel)]="timeframe">
+					<option value="1m">1m</option>
+					<option value="5m">5m</option>
+					<option value="15m">15m</option>
+					<option value="1h">1h</option>
+					<option value="4h">4h</option>
+					<option value="1d">1d</option>
+				</select>
+			</label>
+			<label class="flex flex-col">
+				<span class="text-xs opacity-70 mb-1">Start (epoch ms, optional)</span>
+				<input class="px-3 py-2 rounded-xl bg-black/20 border border-white/10"
+				       placeholder="e.g. 1727370000000" [(ngModel)]="startEpochMilliseconds" inputmode="numeric">
+			</label>
+			<label class="flex flex-col">
+				<span class="text-xs opacity-70 mb-1">End (epoch ms, optional)</span>
+				<input class="px-3 py-2 rounded-xl bg-black/20 border border-white/10"
+				       placeholder="e.g. 1727456400000" [(ngModel)]="endEpochMilliseconds" inputmode="numeric">
+			</label>
+		</div>
+		<div class="mt-3">
+			<button class="px-4 py-2 rounded-xl border border-white/20 hover:border-white/40"
+			        (click)="exportOhlcv()">
+				Export OHLCV JSON
+			</button>
+		</div>
+	</section>
+</div>

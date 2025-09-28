@@ -12,7 +12,7 @@ from src.core.trending_utils import (
     recently_traded,
     preload_best_prices,
 )
-from src.integrations.dexscreener.dexscreener_client import fetch_trending_candidates
+from src.integrations.dexscreener_client import fetch_trending_candidates
 from src.logging.logger import get_logger
 from src.persistence import crud
 from src.persistence.db import SessionLocal
@@ -68,7 +68,7 @@ class TrendingJob:
     def _per_buy_budget(self, free_cash: float) -> float:
         """Compute the per-buy budget using either fraction or absolute USD."""
         fraction = float(settings.TREND_PER_BUY_FRACTION)
-        return max(1.0, free_cash * fraction) if fraction > 0 else float(settings.TREND_PER_BUY_USD)
+        return max(1.0, free_cash * fraction)
 
     def _fetch(self) -> List[Dict[str, Any]]:
         """Fetch trending candidates from Dexscreener."""

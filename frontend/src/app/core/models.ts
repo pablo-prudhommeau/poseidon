@@ -1,4 +1,6 @@
 export type Phase = 'OPEN' | 'TP1' | 'TP2' | 'CLOSED';
+export type Side = 'BUY' | 'SELL';
+export type TradeMode = 'LIVE' | 'PAPER';
 
 export interface Position {
     id?: number;
@@ -18,23 +20,23 @@ export interface Position {
 export interface Trade {
     id?: number;
     date: string;
-    side: 'BUY' | 'SELL';
+    side: Side;
     symbol: string;
     price: number;
     qty: number;
     fee?: number | null;
     pnl?: number | null;
-    status: 'LIVE' | 'PAPER';
+    status: TradeMode;
     address?: string;
     tx_hash?: string | null;
     notes?: string | null;
 }
 
 export interface Portfolio {
-    equity: number;              // total = cash + holdings_value
+    equity: number;
     cash: number;
     holdings: number;
-    win_rate?: number;           // optionnel
+    win_rate?: number;
     updated_at?: string;
     equity_curve?: { t: number; v: number }[];
     pnl_daily?: { t: number; v: number }[];
@@ -46,7 +48,7 @@ export interface WsEnvelope<T = any> {
 }
 
 export interface StatusPayload {
-    mode: 'PAPER'|'LIVE';
+    mode: TradeMode;
     web3_ok: boolean;
-    interval: number; // seconds
+    interval: number;
 }

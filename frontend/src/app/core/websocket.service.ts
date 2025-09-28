@@ -1,4 +1,4 @@
-import {effect, Injectable, signal} from '@angular/core';
+import {Injectable, signal} from '@angular/core';
 
 type WsMsg =
     | { type: 'init'; payload: any }
@@ -7,9 +7,9 @@ type WsMsg =
     | { type: 'trade'; payload: any }
     | { type: string; payload?: any };
 
-export type MoveDir = 'up' | 'down' | 'flat';
+export type MoveDirection = 'up' | 'down' | 'flat';
 
-export interface PositionView {
+export interface Position {
     id: string;
     address: string;
     symbol: string;
@@ -22,24 +22,27 @@ export interface PositionView {
     phase: string;
     is_open: boolean;
     updated_at?: string;
+    opened_at?: string;
     last_price?: number | null;
-    _lastDir?: MoveDir;
+    _lastDir?: MoveDirection;
     _changePct?: number | null;
 }
 
 @Injectable({providedIn: 'root'})
-export class WsService {
+export class WebSocketService {
     private prevLastByAddress: Record<string, number> = {};
     private socket?: WebSocket;
 
     status = signal<'connecting' | 'open' | 'closed'>('closed');
     meta = signal<any | null>(null);
     portfolio = signal<any | null>(null);
-    positions = signal<PositionView[]>([]);
+    positions = signal<Position[]>([]);
     trades = signal<any[]>([]);
 
     private toNumOrNull(v: any): number | null {
-        if (v === null || v === undefined) return null;
+        if (v === null || v === undefined) {
+            return null;
+        }
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
     }
@@ -89,14 +92,16 @@ export class WsService {
                 this.portfolio.set(msg.payload ?? null);
                 break;
             case 'positions': {
-                const incoming: PositionView[] = (msg.payload ?? []).map((p: any) => {
+                const incoming: Position[] = (msg.payload ?? []).map((p: any) => {
                     const last = this.toNumOrNull(p.last_price);
                     const entry = this.toNumOrNull(p.entry);
-                    const prev  = this.prevLastByAddress[p.address];
+                    const prev = this.prevLastByAddress[p.address];
 
                     let dir: 'up' | 'down' | 'flat' = 'flat';
                     if (last !== null) {
-                        if (prev !== undefined) dir = last > prev ? 'up' : (last < prev ? 'down' : 'flat');
+                        if (prev !== undefined) {
+                            dir = last > prev ? 'up' : (last < prev ? 'down' : 'flat');
+                        }
                         this.prevLastByAddress[p.address] = last;
                     }
 
@@ -105,7 +110,7 @@ export class WsService {
                         changePct = ((last - entry) / entry) * 100;
                     }
 
-                    return { ...p, last_price: last, _lastDir: dir, _changePct: changePct } as PositionView;
+                    return {...p, last_price: last, _lastDir: dir, _changePct: changePct} as Position;
                 });
 
                 this.positions.set(incoming);
@@ -115,11 +120,5 @@ export class WsService {
                 this.trades.update(t => [msg.payload, ...t].slice(0, 100));
                 break;
         }
-    }
-
-    constructor() {
-        // DEBUG signals
-        effect(() => console.log('[SIG] ws status:', this.status()));
-        effect(() => console.log('[SIG] positions:', this.positions().length));
     }
 }

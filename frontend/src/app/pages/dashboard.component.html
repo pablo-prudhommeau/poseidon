@@ -1,11 +1,9 @@
-<div class="max-w-6xl mx-auto px-6 py-10 space-y-8">
+<div class="max-w-6xl mx-auto px-6 space-y-8">
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-4">
-			<img src="assets/poseidon.png" alt="Poseidon" class="h-32 w-auto"/>
 			<div>
-				<div class="text-2xl font-semibold">Poseidon</div>
 				<div class="text-xs opacity-70">
-					WS:
+					WS status :
 					<span [class.text-emerald-400]="ws.status() === 'open'" [class.text-rose-400]="ws.status() !== 'open'">
                         {{ ws.status() }}
 					</span>
@@ -18,47 +16,44 @@
 		Reset paper
 	</button>
 
-	<!-- KPI cards -->
 	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-		<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40 p-4">
-			<div class="text-slate-400 text-sm">Unrealized PnL</div>
-			<div class="mt-2"><pnl-badge [value]="unrealized() || 0" suffix="$"></pnl-badge></div>
-		</div>
-
-		<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40 p-4">
-			<div class="text-slate-400 text-sm">Realized PnL</div>
-			<div class="flex items-center gap-3 mt-2">
-				<pnl-badge [value]="realizedTotal() || 0" suffix="$"></pnl-badge>
-				<span class="text-slate-400 text-xs">24h:</span>
-				<pnl-badge [value]="realized24h() || 0" suffix="$"></pnl-badge>
+		<div class="bg-white/5 rounded-2xl p-4 shadow">
+			<div class="text-slate-300 font-medium">Unrealized P&L</div>
+			<div class="mt-2">
+				<pnl-badge [value]="unrealized() || 0"></pnl-badge>
 			</div>
 		</div>
 
-		<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40 p-4">
-			<div class="text-slate-400 text-sm">Equity</div>
-			<div class="text-2xl font-semibold text-white">$ {{ equity() | number:'1.2-2' }}</div>
-			<sparkline [data]="spark()" [width]="220" [height]="40"></sparkline>
+		<div class="bg-white/5 rounded-2xl p-4 shadow">
+			<div class="text-slate-300 font-medium mb-3">Realized P&L</div>
+			<div class="flex items-center gap-2">
+				<span class="text-slate-200 text-sm">Total:</span>
+				<pnl-badge [value]="realizedTotal() || 0"></pnl-badge>
+				<span class="text-slate-200 text-sm">24h:</span>
+				<pnl-badge [value]="realized24h() || 0"></pnl-badge>
+			</div>
 		</div>
 
-		<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40 p-4">
-			<div class="text-slate-400 text-sm">Cash</div>
+		<div class="bg-white/5 rounded-2xl p-4 shadow">
+			<div class="text-slate-300 font-medium mb-3">Equity</div>
+			<div class="text-2xl font-semibold text-white">$ {{ equity() | number:'1.2-2' }}</div>
+			<sparkline *ngIf="(spark()?.length ?? 0) > 1" [points]="spark()"></sparkline>
+		</div>
+
+		<div class="bg-white/5 rounded-2xl p-4 shadow">
+			<div class="text-slate-300 font-medium mb-3">Cash</div>
 			<div class="text-2xl font-semibold text-white">$ {{ cash() | number:'1.2-2' }}</div>
 			<div class="text-xs text-slate-400">Holdings: $ {{ holdings() | number:'1.2-2' }}</div>
 		</div>
 	</div>
 
-	<!-- Positions -->
-	<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40">
-		<div class="px-5 py-3 font-medium border-b border-white/10">Open Positions</div>
+	<div class="bg-white/5 rounded-2xl p-4 shadow">
+		<div class="font-medium pb-3">Open Positions</div>
 		<positions-table></positions-table>
 	</div>
 
-	<!-- Trades -->
-	<div class="rounded-2xl ring-1 ring-white/10 bg-slate-900/40">
-		<div class="px-5 py-3 font-medium border-b border-white/10">Recent Trades</div>
+	<div class="bg-white/5 rounded-2xl p-4 shadow">
+		<div class="font-medium pb-3">Recent Trades</div>
 		<trades-table></trades-table>
 	</div>
-
-	<!-- DEBUG (retire quand ok) -->
-	<!-- <pre class="text-xs opacity-50">{{ ws.portfolio() | json }}</pre> -->
 </div>

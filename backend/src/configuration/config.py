@@ -68,15 +68,19 @@ class Settings:
     TREND_SOFT_FILL_SORT: str = os.getenv("TREND_SOFT_FILL_SORT", "vol24h")
     TREND_EXCLUDE_STABLES: bool = _as_bool(os.getenv("TREND_EXCLUDE_STABLES"), True)
     TREND_EXCLUDE_MAJORS: bool = _as_bool(os.getenv("TREND_EXCLUDE_MAJORS"), True)
-    TREND_PER_BUY_USD: float = float(os.getenv("TREND_PER_BUY_USD", "200"))
-    TREND_PER_BUY_FRACTION: float = float(os.getenv("TREND_PER_BUY_FRACTION", "0"))
+    TREND_PER_BUY_FRACTION: float = float(os.getenv("TREND_PER_BUY_FRACTION", "0.05"))
     TREND_MIN_FREE_CASH_USD: float = float(os.getenv("TREND_MIN_FREE_CASH_USD", "50"))
     TREND_MAX_BUYS_PER_RUN: int = int(os.getenv("TREND_MAX_BUYS_PER_RUN", "5"))
     TREND_REQUIRE_DEX_PRICE: bool = _as_bool(os.getenv("TREND_REQUIRE_DEX_PRICE"), True)
     TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER: float = float(os.getenv("TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER", "3.0"))
-    TRENDING_TP1_PCT: float = float(os.getenv("TRENDING_TP1_PCT", "0.15"))
-    TRENDING_TP2_PCT: float = float(os.getenv("TRENDING_TP2_PCT", "0.30"))
-    TRENDING_STOP_PCT: float = float(os.getenv("TRENDING_STOP_PCT", "0.2"))
+    TRENDING_ORDER_VALUE: float = float(os.getenv("TRENDING_ORDER_VALUE", "500"))
+    TRENDING_TP1_FRACTION: float = float(os.getenv("TRENDING_TP1_FRACTION", "0.15"))
+    TRENDING_TP2_FRACTION: float = float(os.getenv("TRENDING_TP2_FRACTION", "0.30"))
+    TRENDING_STOP_FRACTION: float = float(os.getenv("TRENDING_STOP_FRACTION", "0.2"))
+    TRENDING_TAKE_PROFIT_TP1_FRACTION: float = float(os.getenv("TRENDING_TAKE_PROFIT_TP1_FRACTION", "0.35"))
+
+    # Market data
+    MARKETDATA_MAX_STALE_SECONDS: int = int(os.getenv("MARKETDATA_MAX_STALE_SECONDS", "180"))
 
     # Dexscreener client
     DEXSCREENER_BASE_URL: str = os.getenv("DEXSCREENER_BASE_URL", "https://api.dexscreener.com")

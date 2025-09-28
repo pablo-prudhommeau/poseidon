@@ -1,31 +1,29 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from http.client import HTTPException
-from typing import Any, Dict, List, DefaultDict, Optional
+from datetime import timedelta
+from typing import Any, DefaultDict, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from src.api.models import OhlcvResponse
 from src.configuration.config import settings
+from src.core import orchestrator
 from src.core.pnl import (
-    latest_prices_for_positions,
-    fifo_realized_pnl,
     cash_from_trades,
+    fifo_realized_pnl,
     holdings_and_unrealized,
+    latest_prices_for_positions,
 )
 from src.logging.logger import get_logger
-from src.persistence.db import get_db
-from src.persistence.serializers import (
-    serialize_trade,
-    serialize_position,
-    serialize_portfolio,
-)
-
-from fastapi import APIRouter, HTTPException
-from datetime import timedelta
-from src.persistence.db import SessionLocal
 from src.persistence import crud
+from src.persistence.db import SessionLocal, get_db
+from src.persistence.serializers import (
+    serialize_portfolio,
+    serialize_position,
+    serialize_trade,
+)
 
 router = APIRouter()
 log = get_logger(__name__)
@@ -43,25 +41,20 @@ async def get_portfolio(db: Session = Depends(get_db)) -> Dict[str, Any]:
 
     Also writes a DB snapshot for the equity history.
     """
-    # Latest snapshot and open positions
     snapshot = crud.get_latest_portfolio(db, create_if_missing=True)
     positions = crud.get_open_positions(db)
 
-    # Live prices by address
     prices = await latest_prices_for_positions(positions)
 
-    # All trades (or a large recent fallback if the helper does not exist)
     get_all = getattr(crud, "get_all_trades", None)
     trades = get_all(db) if callable(get_all) else crud.get_recent_trades(db, limit=10000)
 
-    # Centralized computations (starting_cash taken directly from settings)
     starting_cash: float = float(settings.PAPER_STARTING_CASH)
     realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
     cash, _, _, _ = cash_from_trades(starting_cash, trades)
     holdings, unrealized_pnl = holdings_and_unrealized(positions, prices)
     equity = round(cash + holdings, 2)
 
-    # Persist an equity snapshot (pure write; no business logic in CRUD)
     snapshot = crud.snapshot_portfolio(db, equity=equity, cash=cash, holdings=holdings)
 
     payload = serialize_portfolio(
@@ -70,9 +63,9 @@ async def get_portfolio(db: Session = Depends(get_db)) -> Dict[str, Any]:
         realized_total=realized_total,
         realized_24h=realized_24h,
     )
-    # Explicit field expected by the frontend
     payload["unrealized_pnl"] = unrealized_pnl
 
+    log.info("Portfolio snapshot refreshed")
     log.debug(
         "Portfolio snapshot updated (equity=%.2f, cash=%.2f, holdings=%.2f, realized_total=%.2f, realized_24h=%.2f)",
         equity,
@@ -89,11 +82,14 @@ async def get_positions(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     """Return open positions enriched with a live last_price (DexScreener) for the UI."""
     positions = crud.get_open_positions(db)
     prices = await latest_prices_for_positions(positions)
+
     result: List[Dict[str, Any]] = []
     for position in positions:
         address = (getattr(position, "address", "") or "").lower()
         last_price: Optional[float] = prices.get(address)
         result.append(serialize_position(position, last_price))
+
+    log.info("Returned open positions")
     log.debug("Returned %d open positions", len(result))
     return result
 
@@ -103,6 +99,8 @@ def get_trades(limit: int = 100, db: Session = Depends(get_db)) -> List[Dict[str
     """Return recent trades (serialized)."""
     trades = crud.get_recent_trades(db, limit=limit)
     result = [serialize_trade(t) for t in trades]
+
+    log.info("Returned recent trades")
     log.debug("Returned %d recent trades (limit=%d)", len(result), limit)
     return result
 
@@ -111,7 +109,8 @@ def get_trades(limit: int = 100, db: Session = Depends(get_db)) -> List[Dict[str
 def reset_paper(db: Session = Depends(get_db)) -> Dict[str, bool]:
     """Reset PAPER mode data and ensure initial cash is seeded."""
     crud.reset_paper(db)
-    crud.ensure_initial_cash(db)  # seed initial cash
+    crud.ensure_initial_cash(db)
+    orchestrator.reset_runtime_state()
     log.info("Paper mode has been reset and initial cash ensured")
     return {"ok": True}
 
@@ -126,7 +125,7 @@ async def pnl_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
       - totalUsd
       - byChain: breakdown per chain (realized/unrealized/total)
     """
-    ALL_TIME_CUTOFF_HOURS = 10_000  # effectively "all-time"
+    ALL_TIME_CUTOFF_HOURS = 10_000
 
     positions = crud.get_open_positions(db)
     prices = await latest_prices_for_positions(positions)
@@ -134,12 +133,10 @@ async def pnl_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
     get_all = getattr(crud, "get_all_trades", None)
     trades = get_all(db) if callable(get_all) else crud.get_recent_trades(db, limit=10000)
 
-    # Totals
     realized_total, _ = fifo_realized_pnl(trades, cutoff_hours=ALL_TIME_CUTOFF_HOURS)
     _, unrealized_total = holdings_and_unrealized(positions, prices)
     total_usd = round(realized_total + unrealized_total, 2)
 
-    # Per-chain breakdown (FIFO per chain for realized, per-position for unrealized)
     trades_by_chain: DefaultDict[str, list] = defaultdict(list)
     for trade in trades:
         chain_key = (getattr(trade, "chain", "") or "unknown").lower()
@@ -177,39 +174,13 @@ async def pnl_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "totalUsd": total_usd,
         "byChain": by_chain,
     }
+
+    log.info("PnL summary computed")
     log.debug(
-        "PnL summary computed (realized=%.2f, unrealized=%.2f, total=%.2f, chains=%d)",
+        "PnL summary (realized=%.2f, unrealized=%.2f, total=%.2f, chains=%d)",
         payload["realizedUsd"],
         payload["unrealizedUsd"],
         payload["totalUsd"],
         len(by_chain),
     )
     return payload
-
-@router.get("/export/chart/{trade_id}")
-def export_chart(trade_id: str, minutes_before: int = 720, minutes_after: int = 720, timeframe: str = "1m"):
-    with SessionLocal() as s:
-        tr = crud.get_trade(s, trade_id)
-        if not tr:
-            raise HTTPException(status_code=404, detail="trade not found")
-        start = tr.timestamp - timedelta(minutes=minutes_before)
-        end   = tr.timestamp + timedelta(minutes=minutes_after)
-
-        candles = fetch_ohlcv(address=tr.address, chain=tr.chain, timeframe=timeframe,
-                              start_ms=int(start.timestamp()*1000), end_ms=int(end.timestamp()*1000))
-
-        payload = {
-            "meta": {
-                "symbol": tr.symbol, "address": tr.address, "chain": tr.chain,
-                "timeframe": timeframe, "source": "dexscreener", "timezone": "UTC",
-                "window": {"start": int(start.timestamp()*1000), "end": int(end.timestamp()*1000)}
-            },
-            "levels": {"entry": tr.entry_price, "sl": tr.stop_loss, "tp1": tr.take_profit_1, "tp2": tr.take_profit_2},
-            "candles": candles,
-            "marks": [
-                {"t": int(tr.timestamp.timestamp()*1000), "type": "ENTRY", "price": tr.entry_price, "side": tr.side, "qty": tr.qty, "id": tr.id},
-                *[m.as_dict() for m in crud.get_trade_marks(s, tr.position_id)]  # TP/SL/EXIT
-            ]
-        }
-        return payload
-

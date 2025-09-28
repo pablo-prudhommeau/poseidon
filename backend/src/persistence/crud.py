@@ -7,8 +7,34 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
+from src.logging.logger import get_logger
 from src.persistence.models import Position, PortfolioSnapshot, Trade
 from src.persistence.serializers import serialize_position
+
+log = get_logger(__name__)
+
+
+def _infer_active_phase(position: Position) -> str:
+    """
+    Infer the correct active phase for an open position (non-STALED):
+    - if TP1 déjà exécuté (tp1 = 0.0) et qty > 0 => PARTIAL
+    - sinon => OPEN
+    - (si plus ouvert / qty 0 => CLOSED, mais on ne devrait pas passer ici)
+    """
+    if not position.is_open or float(position.qty or 0.0) <= 0.0:
+        return "CLOSED"
+    return "PARTIAL" if float(position.tp1 or 0.0) == 0.0 else "OPEN"
+
+
+def _set_phase_if_changed(db: Session, position: Position, new_phase: str) -> None:
+    """Idempotent phase setter with concise logging."""
+    old = (position.phase or "").upper()
+    new = new_phase.upper()
+    if old != new:
+        position.phase = new
+        db.commit()
+        log.info("[PHASE] %s (%s) — %s -> %s",
+                 position.symbol, (position.address or "")[-6:], old or "-", new)
 
 
 def get_open_positions(db: Session) -> List[Position]:
@@ -205,9 +231,9 @@ def record_trade(
 def compute_default_thresholds(entry: float) -> Tuple[float, float, float]:
     """Compute default tp1/tp2/stop prices from an entry price and settings."""
     entry_f = float(entry or 0.0)
-    tp1 = entry_f * (1.0 + float(settings.TRENDING_TP1_PCT))
-    tp2 = entry_f * (1.0 + float(settings.TRENDING_TP2_PCT))
-    stop = entry_f * (1.0 - float(settings.TRENDING_STOP_PCT))
+    tp1 = entry_f * (1.0 + float(settings.TRENDING_TP1_FRACTION))
+    tp2 = entry_f * (1.0 + float(settings.TRENDING_TP2_FRACTION))
+    stop = entry_f * (1.0 - float(settings.TRENDING_STOP_FRACTION))
     return tp1, tp2, stop
 
 
@@ -267,9 +293,10 @@ def check_thresholds_and_autosell(db: Session, *, symbol: str, last_price: float
             created.append(trade)
             continue
 
-        # TP1 → partial exit (fraction defined by TRENDING_TP1_PCT)
+        # TP1 → partial exit (fraction defined by TRENDING_TAKE_PROFIT_TP1_FRACTION)
         if tp1 > 0.0 and last_price_f >= tp1 and qty > 0.0:
-            part = max(0.0, min(qty, qty * float(settings.TRENDING_TP1_PCT)))
+            tp1_sell_fraction = max(0.0, min(1.0, float(settings.TRENDING_TAKE_PROFIT_TP1_FRACTION)))
+            part = max(0.0, min(qty, qty * tp1_sell_fraction))
             if part > 0.0:
                 trade = record_trade(
                     db,
@@ -348,9 +375,10 @@ def check_thresholds_and_autosell_for_address(db: Session, *, address: str, last
         db.commit()
         return created
 
-    # TP1 → partial exit (fraction defined by TRENDING_TP1_PCT)
+    # TP1 → partial exit (fraction defined by TRENDING_TAKE_PROFIT_TP1_FRACTION)
     if tp1 > 0.0 and last_price_f >= tp1 and qty > 0.0:
-        part = max(0.0, min(qty, qty * float(settings.TRENDING_TP1_PCT)))
+        tp1_sell_fraction = max(0.0, min(1.0, float(settings.TRENDING_TAKE_PROFIT_TP1_FRACTION)))
+        part = max(0.0, min(qty, qty * tp1_sell_fraction))
         if part > 0.0:
             trade = record_trade(
                 db,
