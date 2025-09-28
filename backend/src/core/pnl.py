@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from typing import Any, Deque, Dict, Iterable, Optional, Tuple
+from typing import Any, Deque, Dict, Iterable, Tuple
 
 
 def _get_qty(obj: Any) -> float:
@@ -152,5 +152,5 @@ async def latest_prices_for_positions(positions: Iterable[Any]) -> Dict[str, flo
     if not unique_addresses:
         return {}
     # Late import to avoid circular dependencies
-    from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_addresses
+    from src.integrations.dexscreener_client import fetch_prices_by_addresses
     return await fetch_prices_by_addresses(unique_addresses)

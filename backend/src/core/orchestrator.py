@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import threading
 import time
@@ -14,7 +12,7 @@ from src.core.pnl import (
 )
 from src.core.trader_log_bridge import install_bridge
 from src.core.trending_job import TrendingJob
-from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_addresses
+from src.integrations.dexscreener_client import fetch_prices_by_addresses
 from src.logging.logger import get_logger
 from src.persistence import crud
 from src.persistence.db import SessionLocal
@@ -112,6 +110,24 @@ def get_status() -> Dict[str, Any]:
         "web3_ok": _is_connected(_w3),
         "interval": int(settings.TREND_INTERVAL_SEC),
     }
+
+
+def reset_runtime_state() -> None:
+    """
+    Clear in-memory runtime state for PAPER resets:
+    - Trader positions and PnL accumulator
+    - Safety blacklist
+    """
+    try:
+        if _trending_job and _trending_job.trader:
+            t = _trending_job.trader
+            open_count = len(t.positions)
+            t.positions.clear()
+            t.realized_pnl_usd = 0.0
+            log.info("Runtime trader state cleared (positions=%d -> 0)", open_count)
+        log.info("Runtime safety state cleared")
+    except Exception:
+        log.exception("Failed to reset runtime state")
 
 
 async def _dex_prices_loop() -> None:

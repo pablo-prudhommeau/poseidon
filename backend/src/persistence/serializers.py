@@ -48,6 +48,7 @@ def serialize_position(position: Any, last_price: Optional[float] = None) -> Dic
         "stop": float(position.stop or 0.0),
         "phase": position.phase,
         "is_open": bool(position.is_open),
+        "opened_at": _isoformat_or_none(position.opened_at),
         "updated_at": _isoformat_or_none(position.updated_at),
     }
     if last_price is not None:

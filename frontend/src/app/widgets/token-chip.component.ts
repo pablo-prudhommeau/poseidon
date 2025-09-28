@@ -4,7 +4,6 @@ import { NgIf } from '@angular/common';
 @Component({
     standalone: true,
     selector: 'token-chip',
-    imports: [NgIf],
     templateUrl: './token-chip.component.html'
 })
 export class TokenChipComponent {

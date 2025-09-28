@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from datetime import datetime, timedelta
 from math import isnan
@@ -8,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import select
 
 from src.configuration.config import settings
-from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_addresses
+from src.integrations.dexscreener_client import fetch_prices_by_addresses
 from src.logging.logger import get_logger
 from src.persistence.db import SessionLocal
 from src.persistence.models import Trade
@@ -16,7 +17,7 @@ from src.persistence.models import Trade
 log = get_logger(__name__)
 
 
-def _fmt(value: Optional[float]) -> str:
+def _format(value: Optional[float]) -> str:
     """Format a float for logs, or 'NA' if missing."""
     return "NA" if value is None else f"{value:.2f}"
 
@@ -127,10 +128,23 @@ def filter_strict(
             "[BASELINE:KEEP] %s (%s) — vol=%.0f≥%.0f liq=%.0f≥%.0f "
             "p5=%s(th=%.2f) p1=%s(th=%.2f) p24=%s(th=%.2f) via=%s",
             sym_u, addr, vol, min_vol_usd, liq, min_liq_usd,
-            _fmt(p5), th5, _fmt(p1), th1, _fmt(p24), th24, via,
+            _format(p5), th5, _format(p1), th1, _format(p24), th24, via,
         )
 
     return kept, rej
+
+
+def _is_number(x) -> bool:
+    try:
+        f = float(x)
+        return not math.isnan(f) and not math.isinf(f)
+    except Exception:
+        return False
+
+
+def _has_valid_intraday_bars(candidate: dict) -> bool:
+    """True if both m1 and m5 are numeric (not NA) — proxy for fresh OHLCV."""
+    return _is_number(candidate.get("pct5m")) and _is_number(candidate.get("pct1h"))
 
 
 def soft_fill(
@@ -246,32 +260,51 @@ def apply_quality_filter(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any
         return []
     min_score = float(settings.DEXSCREENER_MIN_QUALITY_SCORE)
     out: List[Dict[str, Any]] = []
-    for it in candidates:
-        ok, s, _, ctx = quality_score(it)
-        if ok and s >= min_score:
-            it["qualityScore"] = s
-            out.append(it)
-
-            sym = (it.get("symbol") or "").upper()
-            addr = _tail(it.get("address") or "")
+    for candidate in candidates:
+        ok, score, _, ctx = quality_score(candidate)
+        sym = (candidate.get("symbol") or "").upper()
+        addr = _tail(candidate.get("address") or "")
+        candidate["qualityScore"] = score
+        if ok and score >= min_score:
+            if not _has_valid_intraday_bars(candidate):
+                log.debug("[QUALITY:DROP] %s — intraday bars missing (m1/m5=NA)", candidate.get("symbol"))
+                continue
+            out.append(candidate)
             log.debug(
                 "[QUALITY:KEEP] %s (%s) — score=%.2f≥%.2f  liq=%.0f vol=%.0f "
                 "age=%.1fh bs=%.2f  m5=%s m1=%s m24=%s  components(momentum=%.2f liqSc=%.2f volSc=%.2f)",
                 sym,
                 addr,
-                s,
+                score,
                 min_score,
                 ctx["liq"],
                 ctx["vol"],
                 ctx["age_h"],
                 ctx["bs"],
-                _fmt(ctx["p5"]),
-                _fmt(ctx["p1"]),
-                _fmt(ctx["p24"]),
+                _format(ctx["p5"]),
+                _format(ctx["p1"]),
+                _format(ctx["p24"]),
                 ctx["momentum"],
                 ctx["liq_score"],
                 ctx["vol_score"],
             )
+        else:
+            log.debug(
+                "[QUALITY:DROP] %s (%s) — score=%.2f≥%.2f  liq=%.0f vol=%.0f "
+                "age=%.1fh bs=%.2f  m5=%s m1=%s m24=%s",
+                sym,
+                addr,
+                score,
+                min_score,
+                ctx["liq"],
+                ctx["vol"],
+                ctx["age_h"],
+                ctx["bs"],
+                _format(ctx["p5"]),
+                _format(ctx["p1"]),
+                _format(ctx["p24"])
+            )
+
     return out
 
 

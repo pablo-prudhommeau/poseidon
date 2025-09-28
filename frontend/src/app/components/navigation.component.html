@@ -1,0 +1,24 @@
+<nav class="flex justify-between max-w-6xl mx-auto px-6 py-6">
+	<img src="assets/poseidon.png" alt="Poseidon" class="h-32 w-auto"/>
+	<div class="flex-none">
+		<div class="flex items-center gap-1 rounded-full bg-white/5 border border-white/10 backdrop-blur shadow-sm px-1 py-1 text-sm"
+		     role="navigation"
+		     aria-label="Main">
+			<a *ngFor="let item of items"
+			   [routerLink]="item.route"
+			   routerLinkActive="is-active"
+			   [routerLinkActiveOptions]="{ exact: item.exact }"
+			   class="nav-item inline-flex items-center gap-2 px-3 py-1.5 rounded-full
+             text-white hover:text-slate-200/80 hover:bg-white/10
+             focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60
+             transition-colors"
+			   [attr.aria-label]="getAriaLabel(item)">
+				<span class="inline-flex">
+			        <i *ngIf="item.icon === 'home'" class="fa fa-home"></i>
+			        <i *ngIf="item.icon === 'wrench'" class="fa fa-wrench"></i>
+		        </span>
+				<span class="font-medium">{{ item.label }}</span>
+			</a>
+		</div>
+	</div>
+</nav>
