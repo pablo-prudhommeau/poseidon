@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
@@ -32,26 +33,37 @@ _url = make_url(DB_URL)
 connect_args: dict = {}
 engine_kwargs = dict(pool_pre_ping=True)
 
-# SQLite needs special flags for multithreaded FastAPI
 if _url.drivername.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 
 engine = create_engine(str(_url), connect_args=connect_args, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, class_=Session)
 
-# Apply SQLite pragmas for durability/perf (WAL, NORMAL) when using a file-backed DB.
 if _url.drivername.startswith("sqlite") and (_url.database or "") not in ("", ":memory:"):
 
     @event.listens_for(engine, "connect")
-    def _sqlite_pragmas(dbapi_connection, _) -> None:  # type: ignore[no-redef]
+    def _sqlite_pragmas(dbapi_connection, _) -> None:
         try:
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode=WAL;")
             cursor.execute("PRAGMA synchronous=NORMAL;")
             cursor.close()
         except Exception:
-            # Best-effort; avoid crashing on environments that disallow PRAGMA
             pass
+
+
+@contextmanager
+def _session():
+    """Yield a DB session, committing on success and rolling back on error."""
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -65,7 +77,4 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     """Create tables if they do not exist yet."""
-    # Import here to avoid circular import issues
-    from .models import Base as ModelsBase  # noqa: WPS433 (local import is intentional)
-
-    ModelsBase.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine)

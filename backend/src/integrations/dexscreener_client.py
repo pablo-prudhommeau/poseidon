@@ -247,16 +247,13 @@ async def fetch_prices_by_addresses(addresses: Iterable[str]) -> Dict[str, float
                     if px > 0:
                         prices[addr] = px
                 except Exception:
-                    # ignore malformed numbers
+                    log.debug("DexScreener price parse failed for %s", addr)
                     pass
             await asyncio.sleep(0)
     return prices
 
 
-async def fetch_trending_candidates(
-        interval: str,
-        page_size: int = 100
-) -> List[dict]:
+async def fetch_trending_candidates(page_size: int = 100) -> List[dict]:
     """Aggregate trending candidates from multiple Dexscreener sources."""
     addresses: List[str] = []
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -296,13 +293,4 @@ async def fetch_trending_candidates(
     rows.sort(key=lambda x: (float(x.get("vol24h") or 0.0), float(x.get("liqUsd") or 0.0)), reverse=True)
     rows = rows[:page_size]
 
-    if rows:
-        top = rows[0]
-        log.debug(
-            "Trending sample: %s (%s) vol24h=%.0f liq=%.0f",
-            top.get("symbol"),
-            (top.get("address") or "")[-6:],
-            float(top.get("vol24h") or 0.0),
-            float(top.get("liqUsd") or 0.0),
-        )
     return rows

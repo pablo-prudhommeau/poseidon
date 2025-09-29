@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from datetime import datetime, timedelta
@@ -8,13 +9,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 
+from src.ai.chart_signal_provider import ChartAiSignalProvider
 from src.configuration.config import settings
 from src.integrations.dexscreener_client import fetch_prices_by_addresses
 from src.logging.logger import get_logger
-from src.persistence.db import SessionLocal
+from src.persistence.db import _session
 from src.persistence.models import Trade
 
 log = get_logger(__name__)
+
+_chart_ai_provider = ChartAiSignalProvider()
 
 
 def _format(value: Optional[float]) -> str:
@@ -44,18 +48,6 @@ def _age_hours(ms: int) -> float:
     return max(0.0, (time.time() - (ms / 1000.0)) / 3600.0)
 
 
-def _excluded_symbol(symbol: str, exclude_stables: bool, exclude_majors: bool) -> bool:
-    """Return True if symbol should be excluded (stables/majors)."""
-    stables = {"USDT", "USDC", "DAI", "USDS", "TUSD", "FDUSD", "PYUSD", "USDV", "USDD"}
-    majors = {"ETH", "WETH", "WBTC", "BTC", "STETH", "WSTETH", "BNB", "MKR"}
-    s = (symbol or "").upper()
-    if exclude_stables and s in stables:
-        return True
-    if exclude_majors and s in majors:
-        return True
-    return False
-
-
 def _passes_thresholds(it: Dict[str, Any], interval: str, th5: float, th1: float, th24: float) -> bool:
     """Check percent-change thresholds depending on the selected interval."""
     p5 = _num(it.get("pct5m"))
@@ -65,7 +57,45 @@ def _passes_thresholds(it: Dict[str, Any], interval: str, th5: float, th1: float
         return (p5 is not None and p5 >= th5) or (p24 is not None and p24 >= th24)
     if interval == "1h":
         return (p1 is not None and p1 >= th1) or (p24 is not None and p24 >= th24)
-    return (p24 is not None and p24 >= th24)
+    return p24 is not None and p24 >= th24
+
+
+def _is_number(x) -> bool:
+    try:
+        f = float(x)
+        return not math.isnan(f) and not math.isinf(f)
+    except Exception:
+        return False
+
+
+def _has_valid_intraday_bars(candidate: dict) -> bool:
+    """True if both m1 and m5 are numeric (not NA) — proxy for fresh OHLCV."""
+    return _is_number(candidate.get("pct5m")) and _is_number(candidate.get("pct1h"))
+
+
+def _buy_sell_score(txns: dict) -> float:
+    """Return the fraction of buys over total txns (0.0..1.0)."""
+    if not isinstance(txns, dict):
+        return 0.5
+    bucket = txns.get("h1") or txns.get("h24") or {}
+    buys = float(bucket.get("buys") or 0.0)
+    sells = float(bucket.get("sells") or 0.0)
+    total = buys + sells
+    return 0.5 if total <= 0 else buys / total
+
+
+def _momentum_ok(p5: Optional[float], p1: Optional[float], p24: Optional[float]) -> bool:
+    """Conservative sanity checks against spiky/choppy momentum."""
+    cap_m5 = float(settings.DEXSCREENER_MAX_ABS_M5_PCT)
+    cap_h1 = float(settings.DEXSCREENER_MAX_ABS_H1_PCT)
+    if p5 is not None and abs(p5) > cap_m5:
+        return False
+    if p1 is not None and abs(p1) > cap_h1:
+        return False
+    vals = [v for v in (p5, p1, p24) if v is not None]
+    if len(vals) >= 2 and any(vals[i] > vals[i + 1] + 2.0 for i in range(len(vals) - 1)):
+        return False
+    return True
 
 
 def filter_strict(
@@ -77,8 +107,6 @@ def filter_strict(
         th5: float,
         th1: float,
         th24: float,
-        exclude_stables: bool,
-        exclude_majors: bool,
         max_results: int,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """Hard filters for trending candidates; returns (kept, rejection_counts)."""
@@ -90,21 +118,22 @@ def filter_strict(
         vol = float(it.get("vol24h") or 0.0)
         liq = float(it.get("liqUsd") or 0.0)
 
-        if _excluded_symbol(sym, exclude_stables, exclude_majors):
-            rej["excl"] += 1
-            continue
         if vol < min_vol_usd:
+            log.debug("[BASELINE:REJ] %s — vol=%.0f<%.0f", sym, vol, min_vol_usd)
             rej["lowvol"] += 1
             continue
         if liq < min_liq_usd:
+            log.debug("[BASELINE:REJ] %s — liq=%.0f<%.0f", sym, liq, min_liq_usd)
             rej["lowliq"] += 1
             continue
         if not _passes_thresholds(it, interval, th5, th1, th24):
+            log.debug("[BASELINE:REJ] %s — fails pct thresholds for %s", sym, interval)
             rej["lowpct"] += 1
             continue
 
         kept.append(it)
         if len(kept) >= max_results:
+            log.debug("[BASELINE] Reached max results %d", max_results)
             break
 
     for it in kept:
@@ -125,26 +154,12 @@ def filter_strict(
             via = "24h"
 
         log.debug(
-            "[BASELINE:KEEP] %s (%s) — vol=%.0f≥%.0f liq=%.0f≥%.0f "
-            "p5=%s(th=%.2f) p1=%s(th=%.2f) p24=%s(th=%.2f) via=%s",
+            "[BASELINE:KEEP] %s (%s) — vol=%.0f≥%.0f liq=%.0f≥%.0f p5=%s(th=%.2f) p1=%s(th=%.2f) p24=%s(th=%.2f) via=%s",
             sym_u, addr, vol, min_vol_usd, liq, min_liq_usd,
             _format(p5), th5, _format(p1), th1, _format(p24), th24, via,
         )
 
     return kept, rej
-
-
-def _is_number(x) -> bool:
-    try:
-        f = float(x)
-        return not math.isnan(f) and not math.isinf(f)
-    except Exception:
-        return False
-
-
-def _has_valid_intraday_bars(candidate: dict) -> bool:
-    """True if both m1 and m5 are numeric (not NA) — proxy for fresh OHLCV."""
-    return _is_number(candidate.get("pct5m")) and _is_number(candidate.get("pct1h"))
 
 
 def soft_fill(
@@ -174,145 +189,21 @@ def soft_fill(
     for r in pool:
         if len(kept) >= need_min:
             break
+        log.debug("[SOFT-FILL:KEEP] %s — vol=%.0f liq=%.0f p1=%s p24=%s",
+                  (r.get("symbol") or "").upper(),
+                  float(r.get("vol24h") or 0.0),
+                  float(r.get("liqUsd") or 0.0),
+                  _num(r.get("pct1h")) or 0.0,
+                  _num(r.get("pct24h")) or 0.0)
         kept.append(r)
     return kept
-
-
-def _buy_sell_score(txns: dict) -> float:
-    """Return the fraction of buys over total txns (0.0..1.0)."""
-    if not isinstance(txns, dict):
-        return 0.5
-    bucket = txns.get("h1") or txns.get("h24") or {}
-    buys = float(bucket.get("buys") or 0.0)
-    sells = float(bucket.get("sells") or 0.0)
-    total = buys + sells
-    return 0.5 if total <= 0 else buys / total
-
-
-def _momentum_ok(p5: Optional[float], p1: Optional[float], p24: Optional[float]) -> bool:
-    """Conservative sanity checks against spiky/choppy momentum."""
-    cap_m5 = float(settings.DEXSCREENER_MAX_ABS_M5_PCT)
-    cap_h1 = float(settings.DEXSCREENER_MAX_ABS_H1_PCT)
-    if p5 is not None and abs(p5) > cap_m5:
-        return False
-    if p1 is not None and abs(p1) > cap_h1:
-        return False
-    vals = [v for v in (p5, p1, p24) if v is not None]
-    if len(vals) >= 2 and any(vals[i] > vals[i + 1] + 2.0 for i in range(len(vals) - 1)):
-        return False
-    return True
-
-
-def quality_score(it: Dict[str, Any]) -> Tuple[bool, float, str, Dict[str, float]]:
-    """Compute a quality score and decision for a candidate."""
-    liq = float(it.get("liqUsd") or 0.0)
-    vol = float(it.get("vol24h") or 0.0)
-    p5 = _num(it.get("pct5m"))
-    p1 = _num(it.get("pct1h"))
-    p24 = _num(it.get("pct24h"))
-    age = _age_hours(int(it.get("pairCreatedAt") or 0))
-    bs = _buy_sell_score(it.get("txns") or {})
-
-    min_liq = float(settings.TREND_MIN_LIQ_USD)
-    min_vol = float(settings.TREND_MIN_VOL_USD)
-    min_age = float(settings.DEXSCREENER_MIN_AGE_HOURS)
-    max_age = float(settings.DEXSCREENER_MAX_AGE_HOURS)
-
-    if liq < min_liq:
-        return False, 0.0, "low_liquidity", {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1,
-                                             "p24": p24}
-    if vol < min_vol:
-        return False, 0.0, "low_volume", {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1,
-                                          "p24": p24}
-    if age < min_age or age > max_age:
-        return False, 0.0, "age_out_of_bounds", {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1,
-                                                 "p24": p24}
-    if not _momentum_ok(p5, p1, p24):
-        return False, 0.0, "choppy_or_spiky", {"liq": liq, "vol": vol, "age_h": age, "bs": bs, "p5": p5, "p1": p1,
-                                               "p24": p24}
-
-    m5 = max(0.0, p5 or 0.0)
-    m1 = max(0.0, p1 or 0.0)
-    m24 = max(0.0, p24 or 0.0)
-    momentum = (m5 * 0.2) + (m1 * 0.4) + (m24 * 0.4)
-    liq_score = min(1.0, liq / (min_liq * 4.0))
-    vol_score = min(1.0, vol / (min_vol * 4.0))
-    score = 100.0 * (0.45 * momentum / 100.0 + 0.25 * liq_score + 0.20 * vol_score + 0.10 * bs)
-
-    ctx = {
-        "liq": liq,
-        "vol": vol,
-        "age_h": age,
-        "bs": bs,
-        "p5": p5,
-        "p1": p1,
-        "p24": p24,
-        "momentum": momentum,
-        "liq_score": liq_score,
-        "vol_score": vol_score,
-    }
-    return True, float(score), "ok", ctx
-
-
-def apply_quality_filter(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Keep only candidates above the minimum quality score."""
-    if not candidates:
-        return []
-    min_score = float(settings.DEXSCREENER_MIN_QUALITY_SCORE)
-    out: List[Dict[str, Any]] = []
-    for candidate in candidates:
-        ok, score, _, ctx = quality_score(candidate)
-        sym = (candidate.get("symbol") or "").upper()
-        addr = _tail(candidate.get("address") or "")
-        candidate["qualityScore"] = score
-        if ok and score >= min_score:
-            if not _has_valid_intraday_bars(candidate):
-                log.debug("[QUALITY:DROP] %s — intraday bars missing (m1/m5=NA)", candidate.get("symbol"))
-                continue
-            out.append(candidate)
-            log.debug(
-                "[QUALITY:KEEP] %s (%s) — score=%.2f≥%.2f  liq=%.0f vol=%.0f "
-                "age=%.1fh bs=%.2f  m5=%s m1=%s m24=%s  components(momentum=%.2f liqSc=%.2f volSc=%.2f)",
-                sym,
-                addr,
-                score,
-                min_score,
-                ctx["liq"],
-                ctx["vol"],
-                ctx["age_h"],
-                ctx["bs"],
-                _format(ctx["p5"]),
-                _format(ctx["p1"]),
-                _format(ctx["p24"]),
-                ctx["momentum"],
-                ctx["liq_score"],
-                ctx["vol_score"],
-            )
-        else:
-            log.debug(
-                "[QUALITY:DROP] %s (%s) — score=%.2f≥%.2f  liq=%.0f vol=%.0f "
-                "age=%.1fh bs=%.2f  m5=%s m1=%s m24=%s",
-                sym,
-                addr,
-                score,
-                min_score,
-                ctx["liq"],
-                ctx["vol"],
-                ctx["age_h"],
-                ctx["bs"],
-                _format(ctx["p5"]),
-                _format(ctx["p1"]),
-                _format(ctx["p24"])
-            )
-
-    return out
 
 
 def recently_traded(address: str, minutes: int = 45) -> bool:
     """Return True if a trade for this address exists more recently than `minutes`."""
     if not address:
         return False
-    with SessionLocal() as db:
+    with _session() as db:
         q = select(Trade).where(Trade.address == address.lower()).order_by(Trade.created_at.desc())
         t = db.execute(q).scalars().first()
         if not t:
@@ -330,5 +221,4 @@ def preload_best_prices(addresses: List[str]) -> Dict[str, float]:
 
 def asyncio_run_fetch(addrs: List[str]) -> Dict[str, float]:
     """Isolated asyncio.run wrapper to fetch DexScreener prices."""
-    import asyncio  # local import to stay compact
     return asyncio.run(fetch_prices_by_addresses(addrs))

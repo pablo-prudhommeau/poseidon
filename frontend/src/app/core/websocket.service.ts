@@ -1,43 +1,24 @@
 import {Injectable, signal} from '@angular/core';
+import {Portfolio, Position, Trade} from './models';
 
-type WsMsg =
+type WebsocketMessage =
     | { type: 'init'; payload: any }
     | { type: 'portfolio'; payload: any }
     | { type: 'positions'; payload: any[] }
     | { type: 'trade'; payload: any }
     | { type: string; payload?: any };
 
-export type MoveDirection = 'up' | 'down' | 'flat';
-
-export interface Position {
-    id: string;
-    address: string;
-    symbol: string;
-    chain: string;
-    qty: number;
-    entry: number;
-    tp1: number;
-    tp2: number;
-    stop: number;
-    phase: string;
-    is_open: boolean;
-    updated_at?: string;
-    opened_at?: string;
-    last_price?: number | null;
-    _lastDir?: MoveDirection;
-    _changePct?: number | null;
-}
+export type Status = 'connecting' | 'open' | 'closed';
 
 @Injectable({providedIn: 'root'})
 export class WebSocketService {
     private prevLastByAddress: Record<string, number> = {};
     private socket?: WebSocket;
 
-    status = signal<'connecting' | 'open' | 'closed'>('closed');
-    meta = signal<any | null>(null);
-    portfolio = signal<any | null>(null);
+    status = signal<Status>('closed');
+    portfolio = signal<Portfolio | null>(null);
     positions = signal<Position[]>([]);
-    trades = signal<any[]>([]);
+    trades = signal<Trade[]>([]);
 
     private toNumOrNull(v: any): number | null {
         if (v === null || v === undefined) {
@@ -49,7 +30,7 @@ export class WebSocketService {
 
     private defaultWsUrl(): string {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${proto}//${location.host}/ws`; // <- plus de :8000
+        return `${proto}//${location.host}/ws`;
     }
 
     connect(url = this.defaultWsUrl()) {
@@ -64,10 +45,10 @@ export class WebSocketService {
 
         this.socket.onmessage = (ev) => {
             try {
-                const msg = JSON.parse(ev.data) as WsMsg;
+                const msg = JSON.parse(ev.data) as WebsocketMessage;
                 this.apply(msg);
             } catch {
-                // frames "ping" non JSON
+                console.debug('Invalid WS message', ev.data);
             }
         };
 
@@ -80,10 +61,9 @@ export class WebSocketService {
         };
     }
 
-    private apply(msg: WsMsg) {
+    private apply(msg: WebsocketMessage) {
         switch (msg.type) {
             case 'init':
-                this.meta.set(msg.payload?.meta ?? null);
                 this.portfolio.set(msg.payload?.portfolio ?? null);
                 this.positions.set(msg.payload?.positions ?? []);
                 this.trades.set(msg.payload?.trades ?? []);

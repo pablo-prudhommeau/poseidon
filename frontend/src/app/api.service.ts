@@ -1,13 +1,13 @@
 import {HttpClient} from '@angular/common/http';
 import {inject, Injectable} from '@angular/core';
-import {Observable, switchMap, timer} from 'rxjs';
-import {Portfolio, Position, Trade} from './model';
+import {Portfolio, Position, Trade} from './core/models';
+import {Status} from './core/websocket.service';
 
 @Injectable({providedIn: 'root'})
 export class ApiService {
     private http = inject(HttpClient);
 
-    getStatus() { return this.http.get<{ mode: string; web3_ok: boolean; interval: number }>('/api/status'); }
+    getStatus() { return this.http.get<Status>('/api/status'); }
 
     getPortfolio() { return this.http.get<Portfolio>('/api/portfolio'); }
 

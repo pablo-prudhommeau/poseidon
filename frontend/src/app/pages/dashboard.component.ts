@@ -14,25 +14,23 @@ import {SparklineComponent} from '../widgets/sparkline.component';
     templateUrl: './dashboard.component.html'
 })
 export class DashboardComponent implements OnInit {
-    constructor(public ws: WebSocketService, private api: ApiService) {}
+    constructor(public webSocketService: WebSocketService, private api: ApiService) {}
 
     ngOnInit(): void {
-        this.ws.connect();
+        this.webSocketService.connect();
     }
 
-    // Metrics calculés (robustes aux null)
-    equity = computed(() => this.ws.portfolio()?.equity ?? 0);
-    cash = computed(() => this.ws.portfolio()?.cash ?? 0);
-    holdings = computed(() => this.ws.portfolio()?.holdings ?? 0);
-    unrealized = computed(() => this.ws.portfolio()?.unrealized_pnl ?? 0);
-    realizedTotal = computed(() => this.ws.portfolio()?.realized_pnl_total ?? 0);
-    realized24h = computed(() => this.ws.portfolio()?.realized_pnl_24h ?? 0);
-
-    spark = computed<number[]>(() => this.ws.portfolio()?.equity_curve ?? []);
+    equity = computed(() => this.webSocketService.portfolio()?.equity ?? 0);
+    cash = computed(() => this.webSocketService.portfolio()?.cash ?? 0);
+    holdings = computed(() => this.webSocketService.portfolio()?.holdings ?? 0);
+    unrealized = computed(() => this.webSocketService.portfolio()?.unrealized_pnl ?? 0);
+    realizedTotal = computed(() => this.webSocketService.portfolio()?.realized_pnl_total ?? 0);
+    realized24h = computed(() => this.webSocketService.portfolio()?.realized_pnl_24h ?? 0);
+    spark = computed<number[]>(() => this.webSocketService.portfolio()?.equity_curve ?? []);
 
     resetPaper() {
         this.api.resetPaper().subscribe(() => {
-            try { (this.ws as any)['socket']?.send(JSON.stringify({ type: 'refresh' })); } catch {}
+            try { (this.webSocketService as any)['socket']?.send(JSON.stringify({ type: 'refresh' })); } catch {}
         });
     }
 }

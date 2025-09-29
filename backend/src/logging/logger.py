@@ -55,7 +55,6 @@ def _canonical_name(name: str) -> str:
         return APP_NAMESPACE
     if name.startswith("src."):
         return APP_NAMESPACE + "." + name[len("src."):]
-    # Fallback: prefix anything else from our codebase
     return f"{APP_NAMESPACE}.{name}"
 
 
@@ -102,8 +101,8 @@ def _install_console_handler(root: logging.Logger) -> None:
 
     use_color = sys.stderr.isatty() and (not bool(getattr(settings, "NO_COLOR", False)))
     handler = logging.StreamHandler(stream=sys.stderr)
-    handler._poseidon_handler = True  # type: ignore[attr-defined]
-    handler.setLevel(logging.NOTSET)  # let logger levels decide
+    handler._poseidon_handler = True
+    handler.setLevel(logging.NOTSET)
     handler.setFormatter(ColorFormatter(use_color=use_color))
     root.addHandler(handler)
 
@@ -122,7 +121,6 @@ def init_logging() -> None:
     # Tame noisy libs (configurable)
     logging.getLogger("requests").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_REQUESTS))
     logging.getLogger("urllib3").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_URLLIB3))
-    logging.getLogger("web3").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_WEB3))
     logging.getLogger("websockets").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_WEBSOCKETS))
     logging.getLogger("httpx").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_HTTPX))
     logging.getLogger("httpcore").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_HTTPCORE))

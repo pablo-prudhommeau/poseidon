@@ -15,7 +15,11 @@ from src.core.pnl import (
     latest_prices_for_positions,
 )
 from src.logging.logger import get_logger
-from src.persistence import crud
+from src.persistence import service
+from src.persistence.dao.portfolio_snapshots import get_latest_portfolio, snapshot_portfolio, equity_curve, \
+    ensure_initial_cash
+from src.persistence.dao.positions import get_open_positions
+from src.persistence.dao.trades import get_recent_trades
 from src.persistence.db import get_db
 from src.persistence.serializers import (
     serialize_portfolio,
@@ -39,13 +43,12 @@ async def get_portfolio(db: Session = Depends(get_db)) -> Dict[str, Any]:
 
     Also writes a DB snapshot for the equity history.
     """
-    snapshot = crud.get_latest_portfolio(db, create_if_missing=True)
-    positions = crud.get_open_positions(db)
+    snapshot = get_latest_portfolio(db, create_if_missing=True)
+    positions = get_open_positions(db)
 
     prices = await latest_prices_for_positions(positions)
 
-    get_all = getattr(crud, "get_all_trades", None)
-    trades = get_all(db) if callable(get_all) else crud.get_recent_trades(db, limit=10000)
+    trades = get_recent_trades(db, limit=10000)
 
     starting_cash: float = float(settings.PAPER_STARTING_CASH)
     realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
@@ -53,11 +56,11 @@ async def get_portfolio(db: Session = Depends(get_db)) -> Dict[str, Any]:
     holdings, unrealized_pnl = holdings_and_unrealized(positions, prices)
     equity = round(cash + holdings, 2)
 
-    snapshot = crud.snapshot_portfolio(db, equity=equity, cash=cash, holdings=holdings)
+    snapshot = snapshot_portfolio(equity=equity, cash=cash, holdings=holdings)
 
     payload = serialize_portfolio(
         snapshot,
-        equity_curve=crud.equity_curve(db),
+        equity_curve=equity_curve(db),
         realized_total=realized_total,
         realized_24h=realized_24h,
     )
@@ -78,7 +81,7 @@ async def get_portfolio(db: Session = Depends(get_db)) -> Dict[str, Any]:
 @router.get("/api/positions")
 async def get_positions(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     """Return open positions enriched with a live last_price (DexScreener) for the UI."""
-    positions = crud.get_open_positions(db)
+    positions = get_open_positions(db)
     prices = await latest_prices_for_positions(positions)
 
     result: List[Dict[str, Any]] = []
@@ -95,7 +98,7 @@ async def get_positions(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
 @router.get("/api/trades")
 def get_trades(limit: int = 100, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     """Return recent trades (serialized)."""
-    trades = crud.get_recent_trades(db, limit=limit)
+    trades = get_recent_trades(db, limit=limit)
     result = [serialize_trade(t) for t in trades]
 
     log.info("Returned recent trades")
@@ -106,8 +109,8 @@ def get_trades(limit: int = 100, db: Session = Depends(get_db)) -> List[Dict[str
 @router.post("/api/paper/reset")
 def reset_paper(db: Session = Depends(get_db)) -> Dict[str, bool]:
     """Reset PAPER mode data and ensure initial cash is seeded."""
-    crud.reset_paper(db)
-    crud.ensure_initial_cash(db)
+    service.reset_paper(db)
+    ensure_initial_cash(db)
     orchestrator.reset_runtime_state()
     log.info("Paper mode has been reset and initial cash ensured")
     return {"ok": True}
@@ -125,11 +128,10 @@ async def pnl_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     ALL_TIME_CUTOFF_HOURS = 10_000
 
-    positions = crud.get_open_positions(db)
+    positions = get_open_positions(db)
     prices = await latest_prices_for_positions(positions)
 
-    get_all = getattr(crud, "get_all_trades", None)
-    trades = get_all(db) if callable(get_all) else crud.get_recent_trades(db, limit=10000)
+    trades = get_recent_trades(db, limit=10000)
 
     realized_total, _ = fifo_realized_pnl(trades, cutoff_hours=ALL_TIME_CUTOFF_HOURS)
     _, unrealized_total = holdings_and_unrealized(positions, prices)

@@ -1,17 +1,29 @@
-# src/persistence/models.py
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Boolean, Enum, Float, Integer, String, Text, func
+from sqlalchemy import Enum as SqlAchemyEnum, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-# Use the single declarative Base defined in db.py to avoid split metadata.
 from src.persistence.db import Base
 
-# Phases for a position's lifecycle
-PositionPhase = Enum("OPEN", "PARTIAL", "CLOSED", name="position_phase")
+
+class Phase(Enum):
+    OPEN = "OPEN"
+    PARTIAL = "PARTIAL"
+    CLOSED = "CLOSED"
+
+
+class Side(Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class Status(Enum):
+    PAPER = "PAPER"
+    LIVE = "LIVE"
 
 
 class Position(Base):
@@ -21,19 +33,18 @@ class Position(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
     chain: Mapped[str] = mapped_column(String(32), nullable=False)
-    address: Mapped[str] = mapped_column(String(128), default="", nullable=False)
-    qty: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    entry: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    tp1: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    tp2: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    stop: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    phase: Mapped[str] = mapped_column(PositionPhase, default="OPEN", nullable=False)
-    is_open: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    address: Mapped[str] = mapped_column(String(128), nullable=False)
+    qty: Mapped[float] = mapped_column(Float, nullable=False)
+    entry: Mapped[float] = mapped_column(Float, nullable=False)
+    tp1: Mapped[float] = mapped_column(Float, nullable=False)
+    tp2: Mapped[float] = mapped_column(Float, nullable=False)
+    stop: Mapped[float] = mapped_column(Float, nullable=False)
+    phase: Mapped[Phase] = mapped_column(SqlAchemyEnum(Phase), nullable=False)
     opened_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now(), nullable=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(default=None, nullable=True)
 
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
+    def __repr__(self) -> str:
         return f"<Position {self.symbol} {self.address[-6:]} qty={self.qty} phase={self.phase}>"
 
 
@@ -42,20 +53,19 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    side: Mapped[str] = mapped_column(String(4), index=True)  # BUY/SELL
+    side: Mapped[Side] = mapped_column(SqlAchemyEnum(Side), index=True)
     symbol: Mapped[str] = mapped_column(String(24), index=True)
     chain: Mapped[str] = mapped_column(String(32), nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
-    fee: Mapped[float] = mapped_column(Float, default=0.0)  # fixed earlier: default fee
-    pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # realized PnL for this trade (SELL)
-    status: Mapped[str] = mapped_column(String(16), default="PAPER")    # PAPER | LIVE
-    address: Mapped[str] = mapped_column(String(128), default="")
-    tx_hash: Mapped[str] = mapped_column(String(128), default="")
-    notes: Mapped[str] = mapped_column(Text, default="")
+    fee: Mapped[float] = mapped_column(Float, nullable=False)
+    pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    status: Mapped[Status] = mapped_column(SqlAchemyEnum(Status), nullable=False)
+    address: Mapped[str] = mapped_column(String(128))
+    tx_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
+    def __repr__(self) -> str:
         return f"<Trade {self.side} {self.symbol} qty={self.qty} px={self.price}>"
 
 
@@ -64,10 +74,10 @@ class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    equity: Mapped[float] = mapped_column(Float, default=0.0)
-    cash: Mapped[float] = mapped_column(Float, default=0.0)
-    holdings: Mapped[float] = mapped_column(Float, default=0.0)
+    equity: Mapped[float] = mapped_column(Float, nullable=False)
+    cash: Mapped[float] = mapped_column(Float, nullable=False)
+    holdings: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
+    def __repr__(self) -> str:
         return f"<Snapshot equity={self.equity} cash={self.cash} holdings={self.holdings}>"

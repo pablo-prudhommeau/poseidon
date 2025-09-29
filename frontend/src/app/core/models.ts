@@ -38,17 +38,8 @@ export interface Portfolio {
     holdings: number;
     win_rate?: number;
     updated_at?: string;
-    equity_curve?: { t: number; v: number }[];
-    pnl_daily?: { t: number; v: number }[];
-}
-
-export interface WsEnvelope<T = any> {
-    type: 'init'|'status'|'portfolio'|'positions'|'trades'|'snapshots'|'pong';
-    payload: T;
-}
-
-export interface StatusPayload {
-    mode: TradeMode;
-    web3_ok: boolean;
-    interval: number;
+    equity_curve?: number[];
+    unrealized_pnl?: number;
+    realized_pnl_24h?: number;
+    realized_pnl_total?: number;
 }
