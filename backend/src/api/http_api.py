@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import timedelta
 from typing import Any, DefaultDict, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from src.api.models import OhlcvResponse
 from src.configuration.config import settings
 from src.core import orchestrator
 from src.core.pnl import (
@@ -18,7 +16,7 @@ from src.core.pnl import (
 )
 from src.logging.logger import get_logger
 from src.persistence import crud
-from src.persistence.db import SessionLocal, get_db
+from src.persistence.db import get_db
 from src.persistence.serializers import (
     serialize_portfolio,
     serialize_position,
