@@ -4,8 +4,8 @@
 			<div>
 				<div class="text-xs opacity-70">
 					WS status :
-					<span [class.text-emerald-400]="ws.status() === 'open'" [class.text-rose-400]="ws.status() !== 'open'">
-                        {{ ws.status() }}
+					<span [class.text-emerald-400]="webSocketService.status() === 'open'" [class.text-rose-400]="webSocketService.status() !== 'open'">
+                        {{ webSocketService.status() }}
 					</span>
 				</div>
 			</div>

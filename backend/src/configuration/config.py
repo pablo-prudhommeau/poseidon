@@ -40,7 +40,6 @@ class Settings:
     LOG_LEVEL_POSEIDON: str = os.getenv("LOG_LEVEL_POSEIDON", "DEBUG").upper()  # app packages
     LOG_LEVEL_LIB_REQUESTS: str = os.getenv("LOG_LEVEL_LIB_REQUESTS", "WARNING").upper()
     LOG_LEVEL_LIB_URLLIB3: str = os.getenv("LOG_LEVEL_LIB_URLLIB3", "WARNING".upper())
-    LOG_LEVEL_LIB_WEB3: str = os.getenv("LOG_LEVEL_LIB_WEB3", "WARNING").upper()
     LOG_LEVEL_LIB_WEBSOCKETS: str = os.getenv("LOG_LEVEL_LIB_WEBSOCKETS", "WARNING").upper()
     LOG_LEVEL_LIB_HTTPX: str = os.getenv("LOG_LEVEL_LIB_HTTPX", "WARNING").upper()
     LOG_LEVEL_LIB_HTTPCORE: str = os.getenv("LOG_LEVEL_LIB_HTTPCORE", "WARNING").upper()
@@ -66,18 +65,14 @@ class Settings:
     TREND_INTERVAL_SEC: int = int(os.getenv("TREND_INTERVAL_SEC", "60"))
     TREND_SOFT_FILL_MIN: int = int(os.getenv("TREND_SOFT_FILL_MIN", "6"))
     TREND_SOFT_FILL_SORT: str = os.getenv("TREND_SOFT_FILL_SORT", "vol24h")
-    TREND_EXCLUDE_STABLES: bool = _as_bool(os.getenv("TREND_EXCLUDE_STABLES"), True)
-    TREND_EXCLUDE_MAJORS: bool = _as_bool(os.getenv("TREND_EXCLUDE_MAJORS"), True)
     TREND_PER_BUY_FRACTION: float = float(os.getenv("TREND_PER_BUY_FRACTION", "0.05"))
     TREND_MIN_FREE_CASH_USD: float = float(os.getenv("TREND_MIN_FREE_CASH_USD", "50"))
     TREND_MAX_BUYS_PER_RUN: int = int(os.getenv("TREND_MAX_BUYS_PER_RUN", "5"))
-    TREND_REQUIRE_DEX_PRICE: bool = _as_bool(os.getenv("TREND_REQUIRE_DEX_PRICE"), True)
     TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER: float = float(os.getenv("TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER", "3.0"))
-    TRENDING_ORDER_VALUE: float = float(os.getenv("TRENDING_ORDER_VALUE", "500"))
-    TRENDING_TP1_FRACTION: float = float(os.getenv("TRENDING_TP1_FRACTION", "0.15"))
-    TRENDING_TP2_FRACTION: float = float(os.getenv("TRENDING_TP2_FRACTION", "0.30"))
-    TRENDING_STOP_FRACTION: float = float(os.getenv("TRENDING_STOP_FRACTION", "0.2"))
-    TRENDING_TAKE_PROFIT_TP1_FRACTION: float = float(os.getenv("TRENDING_TAKE_PROFIT_TP1_FRACTION", "0.35"))
+    TRENDING_STOP_LOSS_FRACTION_FLOOR: float = float(os.getenv("TRENDING_STOP_LOSS_FRACTION_FLOOR", "0.06"))
+    TRENDING_STOP_LOSS_FRACTION_CAP: float = float(os.getenv("TRENDING_STOP_LOSS_FRACTION_CAP", "0.25"))
+    TRENDING_TAKE_PROFIT_TP1_FRACTION: float = float(os.getenv("TRENDING_TAKE_PROFIT_TP1_FRACTION", "0.15"))
+    TRENDING_TAKE_PROFIT_TP2_FRACTION: float = float(os.getenv("TRENDING_TAKE_PROFIT_TP1_FRACTION", "0.30"))
 
     # Market data
     MARKETDATA_MAX_STALE_SECONDS: int = int(os.getenv("MARKETDATA_MAX_STALE_SECONDS", "180"))
@@ -97,6 +92,27 @@ class Settings:
     # Cache
     CACHE_DIR: str = os.getenv("CACHE_DIR", "/app/data")
     CG_LIST_TTL_MIN: int = int(os.getenv("CG_LIST_TTL_MIN", "720"))
+
+    # OpenAI
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5-mini)")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    
+    # ---- Chart-based AI Signal (disabled by default) ----
+    CHART_AI_ENABLED: bool = _as_bool(os.getenv("CHART_AI_ENABLED"), True)
+    CHART_AI_WEIGHT: float = float(os.getenv("CHART_AI_WEIGHT", "0.4"))  # 0.0 → no effect
+    CHART_AI_SAVE_SCREENSHOTS: bool = _as_bool(os.getenv("CHART_AI_SAVE_SCREENSHOTS"), True)
+    SCREENSHOT_DIR: str = os.getenv("SCREENSHOT_DIR", "screenshots")
+
+    # Headless capture
+    CHART_AI_TIMEFRAME: str = os.getenv("CHART_AI_TIMEFRAME", "5")  # minutes: "1","3","5","15"...
+    CHART_AI_LOOKBACK_MINUTES: int = int(os.getenv("CHART_AI_LOOKBACK_MINUTES", "120"))
+    CHART_CAPTURE_TIMEOUT_SEC: int = int(os.getenv("CHART_CAPTURE_TIMEOUT_SEC", "15"))
+    CHART_CAPTURE_VIEWPORT_WIDTH: int = int(os.getenv("CHART_CAPTURE_VIEWPORT_WIDTH", "1280"))
+    CHART_CAPTURE_VIEWPORT_HEIGHT: int = int(os.getenv("CHART_CAPTURE_VIEWPORT_HEIGHT", "720"))
+
+    # Rate limiting / cache
+    CHART_AI_MIN_CACHE_SECONDS: int = int(os.getenv("CHART_AI_MIN_CACHE_SECONDS", "60"))
+    CHART_AI_MAX_REQUESTS_PER_MINUTE: int = int(os.getenv("CHART_AI_MAX_REQUESTS_PER_MINUTE", "12"))
 
 
 settings = Settings()

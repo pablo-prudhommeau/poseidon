@@ -4,6 +4,8 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Any, Deque, Dict, Iterable, Tuple
 
+from src.persistence.models import Trade
+
 
 def _get_qty(obj: Any) -> float:
     """Return trade/position quantity from common attribute names."""
@@ -35,7 +37,7 @@ def _get_qty_pos(obj: Any) -> float:
     return float(getattr(obj, "qty", 0.0) or 0.0)
 
 
-def fifo_realized_pnl(trades: Iterable[Any], *, cutoff_hours: int = 24) -> Tuple[float, float]:
+def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Tuple[float, float]:
     """Compute realized PnL using FIFO lots per address.
 
     Args:
@@ -52,7 +54,7 @@ def fifo_realized_pnl(trades: Iterable[Any], *, cutoff_hours: int = 24) -> Tuple
 
     trades_sorted = sorted(trades, key=_get_created_at)
     for t in trades_sorted:
-        side = (getattr(t, "side", "") or "").upper()
+        side = t.side
         address = _get_addr(t)
         qty = _get_qty(t)
         price = _get_price(t)
@@ -98,7 +100,7 @@ def cash_from_trades(start_cash: float, trades: Iterable[Any]) -> Tuple[float, f
     total_fees = 0.0
 
     for t in trades:
-        side = (getattr(t, "side", "") or "").upper()
+        side = t.side
         qty = _get_qty(t)
         price = _get_price(t)
         fee = float(getattr(t, "fee", 0.0) or 0.0)

@@ -1,15 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any
+from typing import Dict, Optional
 
-from web3 import Web3
-
+from src.api.ws_manager import ws_manager
 from src.configuration.config import settings
-from src.core.trader_hooks import on_trade
+from src.core.pnl import (
+    latest_prices_for_positions,
+    fifo_realized_pnl,
+    cash_from_trades,
+    holdings_and_unrealized,
+)
+from src.core.risk_manager import AdaptiveRiskManager
 from src.integrations.dexscreener_client import fetch_prices_by_addresses
 from src.logging.logger import get_logger
-from src.persistence.models import Position
+from src.persistence.dao import trades
+from src.persistence.dao.portfolio_snapshots import snapshot_portfolio, equity_curve
+from src.persistence.dao.positions import get_open_positions, serialize_positions_with_prices_by_address
+from src.persistence.dao.trades import get_recent_trades
+from src.persistence.db import _session
+from src.persistence.models import Position, Phase, Status
+from src.persistence.serializers import serialize_trade, serialize_portfolio
+from src.persistence.service import check_thresholds_and_autosell
 
 log = get_logger(__name__)
 
@@ -22,10 +35,8 @@ class Trader:
     - automatically re-broadcasts the portfolio after buy/sell/exit
     """
 
-    def __init__(self, w3: Optional[Web3] = None) -> None:
-        self.w3 = w3
+    def __init__(self) -> None:
         self.paper = settings.PAPER_MODE
-        self.order_value = float(settings.TRENDING_ORDER_VALUE)
         self.positions: Dict[str, Position] = {}
         self.realized_pnl_usd: float = 0.0
         self.take_profit_tp1_fraction = float(settings.TRENDING_TAKE_PROFIT_TP1_FRACTION)
@@ -39,7 +50,6 @@ class Trader:
         if not address:
             return None
         try:
-            # If we're already in an event loop (e.g., FastAPI task), do not block.
             try:
                 asyncio.get_running_loop()
                 log.debug(
@@ -48,50 +58,62 @@ class Trader:
                 )
                 return None
             except RuntimeError:
-                # No running loop → we can perform a blocking call safely.
                 pass
 
-            result = asyncio.run(
-                fetch_prices_by_addresses([address])
-            )
+            result = asyncio.run(fetch_prices_by_addresses([address]))
             price = result.get(address.lower())
             return float(price) if price and price > 0 else None
         except Exception as exc:
             log.warning("DexScreener price fetch failed for %s: %s", address, exc)
             return None
 
-    def _gas_price_gwei(self) -> Optional[float]:
-        """Return current base fee (gwei) if a Web3 client is available."""
-        try:
-            if not self.w3:
-                return None
-            return self.w3.eth.gas_price / 1e9
-        except Exception:
-            return None
+    async def _recompute_and_broadcast(self) -> None:
+        """Recompute with PnL helpers, then broadcast positions and portfolio."""
+        with _session() as db:
+            positions = get_open_positions()
+            trades = get_recent_trades(db, limit=10000)
+
+        prices: Dict[str, float] = {}
+        if positions:
+            prices = await latest_prices_for_positions(positions)
+
+        starting_cash = float(settings.PAPER_STARTING_CASH)
+        realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
+        cash, _, _, _ = cash_from_trades(starting_cash, trades)
+        holdings, unrealized = holdings_and_unrealized(positions, prices)
+        equity = round(cash + holdings, 2)
+
+        with _session() as db:
+            snap = snapshot_portfolio(db, equity=equity, cash=cash, holdings=holdings)
+            pos_payload = serialize_positions_with_prices_by_address(prices)
+            portfolio_payload = serialize_portfolio(
+                snap,
+                equity_curve=equity_curve(db),
+                realized_total=realized_total,
+                realized_24h=realized_24h,
+            )
+            portfolio_payload["unrealized_pnl"] = unrealized
+
+        ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": pos_payload})
+        ws_manager.broadcast_json_threadsafe({"type": "portfolio", "payload": portfolio_payload})
 
     def _rebroadcast_portfolio(self) -> None:
         """Recompute & re-broadcast the portfolio payload to all clients."""
         try:
-            # Late import to avoid cycles
-            from src.core.trader_hooks import rebroadcast_portfolio  # async
-
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(rebroadcast_portfolio())
+                loop.create_task(self._recompute_and_broadcast())
             except RuntimeError:
-                asyncio.run(rebroadcast_portfolio())
+                asyncio.run(self._recompute_and_broadcast())
         except Exception as exc:
             log.debug("rebroadcast_portfolio failed: %s", exc)
 
     def buy(self, it: Dict[str, Any]) -> None:
+        """Open a (paper) position; supports adaptive overrides from the caller."""
         symbol = it.get("symbol")
         address = (it.get("address") or "").lower()
         chain = (it.get("chain") or "unknown").lower()
-
-        # 1) Preferred: strict DexScreener price
         ds_price = self._dex_price_for_address(address)
-
-        # 2) Optional fallback (price provided by scan/trending item)
         fallback_price: Optional[float] = None
         try:
             raw_price = it.get("price")
@@ -106,7 +128,6 @@ class Trader:
             log.debug("[BUY SKIP] %s addr/price invalid (addr=%s price=%s)", symbol, address, price)
             return
 
-        # 3) Safety: if both sources exist, reject on huge deviation
         max_mult = float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER)
         if ds_price is not None and fallback_price is not None:
             lo, hi = sorted([ds_price, fallback_price])
@@ -120,21 +141,16 @@ class Trader:
                 )
                 return
 
-        # Already in position?
         if address in self.positions:
             return
 
-        gas_gwei = self._gas_price_gwei()
-        if gas_gwei is not None and gas_gwei > 120:
-            log.info("[SKIP GAS] %s baseFee=%.1f gwei (cap=120)", symbol, gas_gwei)
-            return
+        order_notional = it.get("order_notional")
+        qty = order_notional / price
 
-        notional = self.order_value
-        qty = notional / price
-
-        stop = price * settings.TRENDING_STOP_FRACTION
-        tp1 = price * settings.TRENDING_TP1_FRACTION
-        tp2 = price * settings.TRENDING_TP2_FRACTION
+        thresholds = AdaptiveRiskManager().compute_thresholds(price, it)
+        stop = thresholds.stop_loss
+        tp1 = thresholds.take_profit_tp1
+        tp2 = thresholds.take_profit_tp2
 
         if self.paper:
             liq = float(it.get("liqUsd", 0.0) or 0.0)
@@ -145,7 +161,7 @@ class Trader:
                 "[PAPER BUY/%s] %s $%.0f @ $%.8f (~%s %s)liq=$%.0f vol24h=$%.0f 0x%s",
                 src,
                 symbol,
-                notional,
+                order_notional,
                 price,
                 f"{qty:.6f}",
                 symbol,
@@ -153,13 +169,79 @@ class Trader:
                 vol,
                 tail,
             )
-            self.positions[address] = Position(symbol=symbol, chain=chain, address=address, qty=qty, entry=price,
-                                               stop=stop, tp1=tp1, tp2=tp2, phase="OPEN")
+            self.positions[address] = Position(
+                symbol=symbol,
+                chain=chain,
+                address=address,
+                qty=qty,
+                entry=price,
+                stop=stop,
+                tp1=tp1,
+                tp2=tp2,
+                phase=Phase.OPEN
+            )
             log.info("[PAPER EXIT PLAN] %s stop=$%.8f tp1=$%.8f tp2=$%.8f", symbol, stop, tp1, tp2)
-            # hook trade (paper)
-            on_trade(side="BUY", symbol=symbol, chain=chain, price=price, qty=qty, status="PAPER", address=address)
-            # rebroadcast portfolio (no custom type)
-            self._rebroadcast_portfolio()
+            with _session() as db:
+                trade = trades.buy(
+                    db,
+                    symbol=symbol,
+                    chain=chain,
+                    address=address,
+                    qty=qty,
+                    price=price,
+                    stop=stop,
+                    tp1=tp1,
+                    tp2=tp2,
+                    fee=0.0,
+                    status=Status.PAPER,
+                )
+                ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(trade)})
+                auto_trades = check_thresholds_and_autosell(db, symbol=symbol, last_price=price)
+                for atr in auto_trades:
+                    ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(atr)})
+                    _schedule_recompute_and_broadcast()
+                self._rebroadcast_portfolio()
             return
 
         log.warning("[LIVE BUY NOT IMPLEMENTED] %s (%s)", symbol, address)
+
+
+def _schedule_recompute_and_broadcast() -> None:
+    """Schedule `_recompute_and_broadcast()` without blocking the caller thread."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_recompute_and_broadcast())
+    except RuntimeError:
+        asyncio.run(_recompute_and_broadcast())
+
+
+async def _recompute_and_broadcast() -> None:
+    """Recompute with PnL helpers, then broadcast positions and portfolio."""
+    with _session() as db:
+        positions = get_open_positions(db)
+        trades = get_recent_trades(db, limit=10000)
+        prices: Dict[str, float] = {}
+        if positions:
+            prices = await latest_prices_for_positions(positions)
+
+        starting_cash = float(settings.PAPER_STARTING_CASH)
+        realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
+        cash, _, _, _ = cash_from_trades(starting_cash, trades)
+        holdings, unrealized = holdings_and_unrealized(positions, prices)
+        equity = round(cash + holdings, 2)
+        snap = snapshot_portfolio(db, equity=equity, cash=cash, holdings=holdings)
+        pos_payload = serialize_positions_with_prices_by_address(db, prices)
+        portfolio_payload = serialize_portfolio(
+            snap,
+            equity_curve=equity_curve(db),
+            realized_total=realized_total,
+            realized_24h=realized_24h,
+        )
+        portfolio_payload["unrealized_pnl"] = unrealized
+        ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": pos_payload})
+        ws_manager.broadcast_json_threadsafe({"type": "portfolio", "payload": portfolio_payload})
+
+
+async def rebroadcast_portfolio() -> None:
+    """Recompute and broadcast portfolio/positions immediately."""
+    await _recompute_and_broadcast()
