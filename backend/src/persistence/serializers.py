@@ -1,14 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.persistence.db import _session
 
-
-def _isoformat_or_none(value: Any) -> Optional[str]:
-    """Return ISO 8601 string if value has .isoformat(), else None."""
-    iso = getattr(value, "isoformat", None)
-    return iso() if callable(iso) else None
 
 
 def serialize_trade(trade: Any) -> Dict[str, Any]:
@@ -25,7 +21,7 @@ def serialize_trade(trade: Any) -> Dict[str, Any]:
         "status": trade.status,
         "address": trade.address,
         "tx_hash": trade.tx_hash,
-        "created_at": _isoformat_or_none(trade.created_at),
+        "created_at": trade.created_at,
     }
 
 
@@ -42,9 +38,8 @@ def serialize_position(position: Any, last_price: Optional[float] = None) -> Dic
         "tp2": position.tp2,
         "stop": position.stop,
         "phase": position.phase,
-        "is_open": position.is_open,
-        "opened_at": _isoformat_or_none(position.opened_at),
-        "updated_at": _isoformat_or_none(position.updated_at),
+        "opened_at": position.opened_at,
+        "updated_at": position.updated_at,
     }
     if last_price is not None:
         data["last_price"] = float(last_price)
@@ -63,7 +58,7 @@ def serialize_portfolio(
             "equity": snapshot.equity,
             "cash": snapshot.cash,
             "holdings": snapshot.holdings,
-            "created_at": _isoformat_or_none(snapshot.created_at),
+            "created_at": snapshot.created_at,
         }
         if equity_curve is not None:
             data["equity_curve"] = [{"t": int(t), "v": float(v)} for t, v in equity_curve]

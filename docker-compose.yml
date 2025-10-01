@@ -1,5 +1,4 @@
 version: "3.9"
-
 services:
   backend:
     build:
@@ -7,17 +6,18 @@ services:
       dockerfile: backend.Dockerfile
     container_name: poseidon-backend
     environment:
-      POSEIDON_DB_PATH: "/data/poseidon.db"
+      DATABASE_URL: "/app/db/poseidon.db"
+      SCREENSHOT_DIR: "/app/data/screenshots"
     volumes:
-      - /opt/poseidon/data:/data
+      - /opt/poseidon/db:/app/db
+      - /opt/poseidon/data:/app/data
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/portfolio"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 20s
       timeout: 5s
       retries: 5
-
   frontend:
     build:
       context: .

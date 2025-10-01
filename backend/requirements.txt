@@ -11,3 +11,5 @@ SQLAlchemy==2.0.35
 Jinja2==3.1.4
 pydantic==2.9.2
 httpx==0.28.1
+playwright==1.55.0
+openai==2.0.0

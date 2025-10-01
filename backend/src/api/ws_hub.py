@@ -71,7 +71,7 @@ async def _send_init(ws: WebSocket, db: Session) -> None:
     positions_payload: List[Dict[str, Any]] = []
     for position in positions:
         serialized = serialize_position(position)
-        serialized["last_price"] = prices.get((position.address or "").lower(), None)
+        serialized["last_price"] = prices.get(position.address, None)
         positions_payload.append(serialized)
 
     # 6) Recent trades for the table

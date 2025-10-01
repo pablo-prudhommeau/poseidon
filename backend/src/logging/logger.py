@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from typing import Optional
 
 from src.configuration.config import settings
@@ -61,31 +62,40 @@ def _canonical_name(name: str) -> str:
 def _silence_logger(name: str, level: int) -> None:
     lg = logging.getLogger(name)
     lg.setLevel(level)
-    # Ces loggers ajoutent parfois leurs handlers + format brut "DEBUG: ..."
+    # Some libraries attach their own handlers with raw formats
     lg.handlers.clear()
     lg.propagate = False
 
 
 class ColorFormatter(logging.Formatter):
-    """Readable, colored formatter with emoji per level; shows full logger name."""
+    """
+    Readable, colored formatter with emoji per level and UTC ISO-8601 timestamps.
+    Example:
+      2025-10-02 01:36:22.123+0000 ℹ️ INFO     poseidon.core.pnl - Realized P&L computed: total=9.54 recent_24h=9.54
+    """
 
-    def __init__(self, use_color: bool = True) -> None:
+    def __init__(self, use_color: bool = True, datefmt: Optional[str] = None) -> None:
         super().__init__()
         self.use_color = use_color
+        self.datefmt = datefmt or "%Y-%m-%d %H:%M:%S.%03d%z"
+        self.converter = time.localtime
 
     def format(self, record: logging.LogRecord) -> str:
-        level = record.levelname.upper()
-        emoji = _LEVEL_EMOJI.get(level, "")
+        ct = self.converter(record.created)  # type: ignore[arg-type]
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", ct) + f".{int(record.msecs):03d}+0000"
+
+        level_name = record.levelname.upper()
+        emoji = _LEVEL_EMOJI.get(level_name, "")
         message = record.getMessage()
         name = record.name or ""
 
         if self.use_color:
-            color = _LEVEL_COLOR.get(level, "")
+            color = _LEVEL_COLOR.get(level_name, "")
             reset = _COLORS["RESET"]
             dim = _COLORS["DIM"]
-            line = f"{color}{emoji} {level:<8}{reset} {name} {dim}- {message}{reset}"
+            line = f"{dim}{timestamp}{reset} {color}{emoji} {level_name:<8}{reset} {name} {dim}- {message}{reset}"
         else:
-            line = f"{emoji} {level:<8} {name} - {message}"
+            line = f"{timestamp} {emoji} {level_name:<8} {name} - {message}"
 
         if record.exc_info:
             line = f"{line}\n{self.formatException(record.exc_info)}"
@@ -101,14 +111,19 @@ def _install_console_handler(root: logging.Logger) -> None:
 
     use_color = sys.stderr.isatty() and (not bool(getattr(settings, "NO_COLOR", False)))
     handler = logging.StreamHandler(stream=sys.stderr)
-    handler._poseidon_handler = True
+    handler._poseidon_handler = True  # type: ignore[attr-defined]
     handler.setLevel(logging.NOTSET)
     handler.setFormatter(ColorFormatter(use_color=use_color))
     root.addHandler(handler)
 
 
 def init_logging() -> None:
-    """Initialize logging: root level, poseidon namespace level, and noisy libs."""
+    """
+    Initialize logging with:
+    - UTC ISO-8601 timestamps
+    - Emoji per level
+    - Unified format for uvicorn/access/error + asyncio + websockets
+    """
     root = logging.getLogger()
 
     # Root level
@@ -126,8 +141,9 @@ def init_logging() -> None:
     logging.getLogger("httpcore").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_HTTPCORE))
     logging.getLogger("asyncio").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_ASYNCIO))
     logging.getLogger("anyio").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_ANYIO))
+    logging.getLogger("openai").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_OPENAI))
 
-    # 🔇 Couper les traces brutes websocket/protocol
+    # 🔇 Silence raw websocket/protocol traces
     ws_level = _level_from_str(settings.LOG_LEVEL_LIB_WEBSOCKETS)
     _silence_logger("websockets", ws_level)
     _silence_logger("websockets.server", ws_level)
@@ -135,6 +151,7 @@ def init_logging() -> None:
     _silence_logger("wsproto", ws_level)
     _silence_logger("uvicorn.protocols.websockets", ws_level)
 
+    # Force uvicorn family to propagate to our root handler (same formatting)
     for name in (
             "uvicorn", "uvicorn.error", "uvicorn.access",
             "uvicorn.asgi", "uvicorn.protocols.http", "uvicorn.protocols.websockets",

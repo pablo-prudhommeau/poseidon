@@ -41,7 +41,6 @@ export class TradesTableComponent {
             sortable: true,
             filter: 'agDateColumnFilter',
             valueGetter: (p: ValueGetterParams) => p.data?.created_at ?? p.data?.date ?? null,
-            valueFormatter: (p: ValueFormatterParams) => this.dateFormattingService.toIsoNoTimezoneUtc(p.value),
             flex: 1
         },
         {

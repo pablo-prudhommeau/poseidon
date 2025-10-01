@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Any, DefaultDict, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
@@ -14,6 +15,7 @@ from src.core.pnl import (
     holdings_and_unrealized,
     latest_prices_for_positions,
 )
+from src.core.utils import timezone_now
 from src.logging.logger import get_logger
 from src.persistence import service
 from src.persistence.dao.portfolio_snapshots import get_latest_portfolio, snapshot_portfolio, equity_curve, \
@@ -29,6 +31,33 @@ from src.persistence.serializers import (
 
 router = APIRouter()
 log = get_logger(__name__)
+
+
+@router.get("/api/health", tags=["health"])
+async def get_health(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Liveness and readiness probe for Poseidon.
+
+    Returns a minimal payload with the current UTC timestamp and the status of
+    core dependencies (currently: database connectivity).
+    """
+    current_timestamp = timezone_now().isoformat()
+    database_ok = False
+    try:
+        db.execute(text("SELECT 1"))
+        database_ok = True
+    except Exception:
+        log.exception("Health check database connectivity failed.")
+
+    status = "ok" if database_ok else "degraded"
+    payload: Dict[str, Any] = {
+        "status": status,
+        "timestampUtc": current_timestamp,
+        "components": {
+            "database": {"ok": database_ok}
+        },
+    }
+    return payload
 
 
 @router.get("/api/portfolio")
@@ -56,7 +85,7 @@ async def get_portfolio(db: Session = Depends(get_db)) -> Dict[str, Any]:
     holdings, unrealized_pnl = holdings_and_unrealized(positions, prices)
     equity = round(cash + holdings, 2)
 
-    snapshot = snapshot_portfolio(equity=equity, cash=cash, holdings=holdings)
+    snapshot = snapshot_portfolio(db=db, equity=equity, cash=cash, holdings=holdings)
 
     payload = serialize_portfolio(
         snapshot,
