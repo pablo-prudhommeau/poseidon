@@ -27,19 +27,12 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
     """
     Evaluate TP1 / TP2 / SL for a single position and execute corresponding trades.
 
-    Behavior (identical to the previous duplicated logic)
-    ----------------------------------------------------
-    - Order of checks: STOP (<=) -> TP2 (>=) -> TP1 (>=).
-    - STOP: full exit on current quantity, then tp1/tp2/stop reset to 0.0.
-    - TP2: full exit on current quantity, then tp1/tp2/stop reset to 0.0.
-    - TP1: partial exit with fraction TRENDING_TAKE_PROFIT_TP1_FRACTION and tp1 set to 0.0.
-    - At most one action is performed per invocation for a given position.
-    - `record_trade` performs its own commit; this helper does not commit.
-
-    Returns
-    -------
-    List[Trade]
-        The list of trades created (0 or 1 item in practice).
+    Order of checks: STOP (<=) -> TP2 (>=) -> TP1 (>=).
+    - STOP: full exit; thresholds reset (compat preserved).
+    - TP2: full exit; thresholds reset (compat preserved).
+    - TP1: partial exit by TRENDING_TP1_EXIT_FRACTION; **tp1 NOT reset**; phase -> PARTIAL.
+      TP1 fires only once: if phase is already PARTIAL, we skip TP1.
+    At most one action is performed per invocation.
     """
     created: List[Trade] = []
 
@@ -61,7 +54,7 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
     else:
         raise NotImplementedError("Live mode is not implemented yet.")
 
-    # Stop-loss → full exit
+    # STOP → full exit
     if stop > 0.0 and last_price_f <= stop:
         trade = trades.sell(
             db,
@@ -72,8 +65,9 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
             qty=position_quantity,
             fee=fee,
             status=status,
-            phase=Phase.CLOSED
+            phase=Phase.CLOSED,
         )
+        # Keep previous compatibility: reset thresholds on full exit
         position.tp1 = 0.0
         position.tp2 = 0.0
         position.stop = 0.0
@@ -98,7 +92,7 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
             qty=position_quantity,
             fee=fee,
             status=status,
-            phase=Phase.CLOSED
+            phase=Phase.CLOSED,
         )
         position.tp1 = 0.0
         position.tp2 = 0.0
@@ -113,9 +107,8 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
         )
         return created
 
-    # TP1 → partial exit (fraction defined by TRENDING_TAKE_PROFIT_TP1_FRACTION)
-    if tp1 > 0.0 and last_price_f >= tp1 and position_quantity > 0.0:
-        tp1_sell_fraction = max(0.0, min(1.0, float(settings.TRENDING_TAKE_PROFIT_TP1_FRACTION)))
+    if (tp1 > 0.0 and last_price_f >= tp1 and position_quantity > 0.0 and position.phase == Phase.OPEN):
+        tp1_sell_fraction = max(0.0, min(1.0, float(settings.TRENDING_TP1_TAKE_PROFIT_FRACTION)))
         partial_quantity = max(0.0, min(position_quantity, position_quantity * tp1_sell_fraction))
         if partial_quantity > 0.0:
             trade = trades.sell(
@@ -127,17 +120,22 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
                 qty=partial_quantity,
                 fee=fee,
                 status=status,
-                phase=Phase.PARTIAL
+                phase=Phase.PARTIAL,
             )
             created.append(trade)
-            position.tp1 = 0.0
+
+            # Do NOT reset tp1 here; user expectation: keep tp1 price.
+            # Mark lifecycle as PARTIAL so subsequent checks still consider STOP/TP2.
+            position.phase = Phase.PARTIAL
+
+            remaining_est = float((position.qty or 0.0) - partial_quantity)
             log.info(
                 "[AUTOSELL][TP1] %s (%s) sold_qty=%.8f price=%.10f remaining_est=%.8f",
                 position.symbol,
                 (position.address or "")[-6:],
                 partial_quantity,
                 last_price_f,
-                float((position.qty or 0.0) - partial_quantity),
+                remaining_est,
             )
 
     return created
@@ -147,21 +145,24 @@ def check_thresholds_and_autosell(db: Session, symbol: str, last_price: float) -
     """
     Autosell positions for a symbol based on tp1/tp2/stop thresholds and last price.
 
-    Notes
-    -----
-    Behavior preserved from original implementation:
-    - Iterates all open positions for the given symbol.
+    - Evaluates positions in phase OPEN **and PARTIAL** (so STOP/TP2 remain active after TP1).
     - Invokes a single action per position per call (SL > TP2 > TP1).
-    - Performs an extra `db.commit()` at the end if any trade occurred (redundant
-      with `record_trade` internal commit but intentionally kept to avoid regression).
     """
     created: List[Trade] = []
     last_price_f = float(last_price or 0.0)
     if last_price_f <= 0.0:
         return created
-    positions = db.execute(
-        select(Position).where(Position.phase == Phase.OPEN, Position.symbol == symbol)
-    ).scalars().all()
+
+    positions = (
+        db.execute(
+            select(Position).where(
+                Position.symbol == symbol,
+                Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),  # ← include PARTIAL
+            )
+        )
+        .scalars()
+        .all()
+    )
     for position in positions:
         created.extend(_evaluate_position_thresholds_and_execute(db, position, last_price_f))
     if created:
@@ -173,20 +174,22 @@ def check_thresholds_and_autosell_for_address(db: Session, address: str, last_pr
     """
     Autosell for a specific address based on thresholds and last price.
 
-    Notes
-    -----
-    Behavior preserved from original implementation:
-    - Evaluates SL > TP2 > TP1 for the addressed open position.
-    - Keeps the explicit `db.commit()` if any trade occurred (even though
-      `record_trade` already commits) to avoid any regression in side effects.
+    - Evaluates SL > TP2 > TP1 for the addressed position in phase OPEN **or PARTIAL**.
     """
     created: List[Trade] = []
     if not address or float(last_price or 0.0) <= 0.0:
         return created
 
-    position = db.execute(
-        select(Position).where(Position.address == address, Position.phase == Phase.OPEN)
-    ).scalars().first()
+    position = (
+        db.execute(
+            select(Position).where(
+                Position.address == address,
+                Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),  # ← include PARTIAL
+            )
+        )
+        .scalars()
+        .first()
+    )
     if not position:
         return created
 

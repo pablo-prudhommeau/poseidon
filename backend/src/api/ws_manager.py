@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+from decimal import Decimal
+from pathlib import Path
 from typing import Any, Optional, Set
+from enum import Enum
+from datetime import timedelta
 
 from starlette.websockets import WebSocket
+from fastapi.encoders import jsonable_encoder
 
 from src.logging.logger import get_logger
 
@@ -16,7 +22,7 @@ class WsManager:
     Notes:
         - `attach_current_loop()` must be called from the running event loop
           (e.g., at app startup) to enable thread-safe broadcasts.
-        - Public API preserved to avoid regressions.
+        - All payloads are serialized to JSON-compatible primitives before sending.
     """
 
     def __init__(self) -> None:
@@ -38,12 +44,35 @@ class WsManager:
         self._clients.discard(ws)
         log.debug("WebSocket disconnected (total=%d)", len(self._clients))
 
+    @staticmethod
+    def _to_json_compatible(data: Any) -> Any:
+        """Convert any payload to JSON-compatible primitives.
+
+        Uses FastAPI's jsonable_encoder and custom encoders for a few extra types.
+        - Enum -> .value
+        - bytes -> base64 string
+        - pathlib.Path -> str
+        - Decimal -> float
+        - timedelta -> total seconds (float)
+        """
+        return jsonable_encoder(
+            data,
+            custom_encoder={
+                Enum: lambda e: e.value,
+                bytes: lambda b: base64.b64encode(b).decode("ascii"),
+                Path: str,
+                Decimal: float,
+                timedelta: lambda td: td.total_seconds(),
+            },
+        )
+
     async def broadcast_json(self, data: Any) -> None:
         """Broadcast a JSON-serializable payload to all connected clients."""
+        payload = self._to_json_compatible(data)
         stale: list[WebSocket] = []
         for ws in list(self._clients):
             try:
-                await ws.send_json(data)
+                await ws.send_json(payload)
             except Exception as exc:
                 # Mark as stale; cleanup after loop to avoid set mutation mid-iteration
                 stale.append(ws)
@@ -61,7 +90,8 @@ class WsManager:
             log.debug("broadcast_json_threadsafe skipped: no loop attached")
             return
         try:
-            asyncio.run_coroutine_threadsafe(self.broadcast_json(data), self._loop)
+            payload = self._to_json_compatible(data)
+            asyncio.run_coroutine_threadsafe(self.broadcast_json(payload), self._loop)
         except Exception as exc:
             # Do not raise; broadcasting should never crash the caller.
             log.debug("broadcast_json_threadsafe failed: %r", exc)

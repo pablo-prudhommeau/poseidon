@@ -130,12 +130,8 @@ export class PositionsTableComponent {
                 let colorClass = '';
                 if (p.value === 'OPEN') {
                     colorClass = 'bg-blue-600';
-                } else if (p.value === 'TP1') {
-                    colorClass = 'bg-fuchsia-500';
-                } else if (p.value === 'TP2') {
+                } else if (p.value === 'PARTIAL') {
                     colorClass = 'bg-yellow-600';
-                } else if (p.value === 'CLOSED') {
-                    colorClass = 'bg-gray-600';
                 }
                 return '<span class="' + colorClass + ' saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">' + p.value + '</span>';
             },
