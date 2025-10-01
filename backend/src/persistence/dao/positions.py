@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Dict
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from src.persistence.models import Position, Phase
@@ -12,7 +12,8 @@ from src.persistence.serializers import serialize_position
 def get_open_addresses(db: Session) -> List[str]:
     """Return lowercased addresses for all open positions (empty strings excluded)."""
     rows = db.execute(
-        select(Position.address).where(Position.phase == Phase.OPEN)
+        select(Position.address)
+        .filter(or_(Position.phase == Phase.OPEN,Position.phase == Phase.PARTIAL))
     ).scalars().all()
     return [addr for addr in rows if addr]
 
@@ -21,7 +22,7 @@ def get_open_positions(db: Session) -> List[Position]:
     """Return all open positions, newest first."""
     stmt = (
         select(Position)
-        .where(Position.phase == Phase.OPEN)
+        .filter(or_(Position.phase == Phase.OPEN,Position.phase == Phase.PARTIAL))
         .order_by(Position.opened_at.desc())
     )
     return list(db.execute(stmt).scalars().all())
@@ -34,6 +35,6 @@ def serialize_positions_with_prices_by_address(db: Session, address_price: Dict[
     for position in positions:
         last_price = None
         if position.address:
-            last_price = address_price.get((position.address or "").lower())
+            last_price = address_price.get(position.address)
         payload.append(serialize_position(position, last_price))
     return payload

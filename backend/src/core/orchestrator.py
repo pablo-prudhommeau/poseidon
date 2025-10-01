@@ -11,7 +11,7 @@ from src.core.pnl import (
     holdings_and_unrealized,
 )
 from src.core.trending_job import TrendingJob
-from src.integrations.dexscreener_client import fetch_prices_by_addresses
+from src.integrations.dexscreener_client import fetch_prices_by_addresses_sync, fetch_prices_by_addresses
 from src.logging.logger import get_logger
 from src.persistence import dao
 from src.persistence.dao.portfolio_snapshots import snapshot_portfolio, equity_curve
@@ -76,10 +76,8 @@ def reset_runtime_state() -> None:
     try:
         if _trending_job and _trending_job.trader:
             t = _trending_job.trader
-            open_count = len(t.positions)
-            t.positions.clear()
             t.realized_pnl_usd = 0.0
-            log.info("Runtime trader state cleared (positions=%d -> 0)", open_count)
+            log.info("Runtime trader state cleared")
         log.info("Runtime safety state cleared")
     except Exception:
         log.exception("Failed to reset runtime state")

@@ -13,7 +13,7 @@ from src.core.pnl import (
     holdings_and_unrealized,
 )
 from src.core.risk_manager import AdaptiveRiskManager
-from src.integrations.dexscreener_client import fetch_prices_by_addresses
+from src.integrations.dexscreener_client import fetch_prices_by_addresses_sync
 from src.logging.logger import get_logger
 from src.persistence.dao import trades
 from src.persistence.dao.portfolio_snapshots import snapshot_portfolio, equity_curve
@@ -37,9 +37,7 @@ class Trader:
 
     def __init__(self) -> None:
         self.paper = settings.PAPER_MODE
-        self.positions: Dict[str, Position] = {}
         self.realized_pnl_usd: float = 0.0
-        self.take_profit_tp1_fraction = float(settings.TRENDING_TAKE_PROFIT_TP1_FRACTION)
 
     def _dex_price_for_address(self, address: str) -> Optional[float]:
         """Fetch a live DEX price for a single address (sync-friendly).
@@ -60,7 +58,7 @@ class Trader:
             except RuntimeError:
                 pass
 
-            result = asyncio.run(fetch_prices_by_addresses([address]))
+            result = fetch_prices_by_addresses_sync([address])
             price = result.get(address.lower())
             return float(price) if price and price > 0 else None
         except Exception as exc:
@@ -70,22 +68,21 @@ class Trader:
     async def _recompute_and_broadcast(self) -> None:
         """Recompute with PnL helpers, then broadcast positions and portfolio."""
         with _session() as db:
-            positions = get_open_positions()
+            positions = get_open_positions(db)
             trades = get_recent_trades(db, limit=10000)
 
-        prices: Dict[str, float] = {}
-        if positions:
-            prices = await latest_prices_for_positions(positions)
+            prices: Dict[str, float] = {}
+            if positions:
+                prices = await latest_prices_for_positions(positions)
 
-        starting_cash = float(settings.PAPER_STARTING_CASH)
-        realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
-        cash, _, _, _ = cash_from_trades(starting_cash, trades)
-        holdings, unrealized = holdings_and_unrealized(positions, prices)
-        equity = round(cash + holdings, 2)
+            starting_cash = float(settings.PAPER_STARTING_CASH)
+            realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
+            cash, _, _, _ = cash_from_trades(starting_cash, trades)
+            holdings, unrealized = holdings_and_unrealized(positions, prices)
+            equity = round(cash + holdings, 2)
 
-        with _session() as db:
             snap = snapshot_portfolio(db, equity=equity, cash=cash, holdings=holdings)
-            pos_payload = serialize_positions_with_prices_by_address(prices)
+            pos_payload = serialize_positions_with_prices_by_address(db, prices)
             portfolio_payload = serialize_portfolio(
                 snap,
                 equity_curve=equity_curve(db),
@@ -93,9 +90,8 @@ class Trader:
                 realized_24h=realized_24h,
             )
             portfolio_payload["unrealized_pnl"] = unrealized
-
-        ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": pos_payload})
-        ws_manager.broadcast_json_threadsafe({"type": "portfolio", "payload": portfolio_payload})
+            ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": pos_payload})
+            ws_manager.broadcast_json_threadsafe({"type": "portfolio", "payload": portfolio_payload})
 
     def _rebroadcast_portfolio(self) -> None:
         """Recompute & re-broadcast the portfolio payload to all clients."""
@@ -111,7 +107,7 @@ class Trader:
     def buy(self, it: Dict[str, Any]) -> None:
         """Open a (paper) position; supports adaptive overrides from the caller."""
         symbol = it.get("symbol")
-        address = (it.get("address") or "").lower()
+        address = it.get("address") or ""
         chain = (it.get("chain") or "unknown").lower()
         ds_price = self._dex_price_for_address(address)
         fallback_price: Optional[float] = None
@@ -141,9 +137,6 @@ class Trader:
                 )
                 return
 
-        if address in self.positions:
-            return
-
         order_notional = it.get("order_notional")
         qty = order_notional / price
 
@@ -168,17 +161,6 @@ class Trader:
                 liq,
                 vol,
                 tail,
-            )
-            self.positions[address] = Position(
-                symbol=symbol,
-                chain=chain,
-                address=address,
-                qty=qty,
-                entry=price,
-                stop=stop,
-                tp1=tp1,
-                tp2=tp2,
-                phase=Phase.OPEN
             )
             log.info("[PAPER EXIT PLAN] %s stop=$%.8f tp1=$%.8f tp2=$%.8f", symbol, stop, tp1, tp2)
             with _session() as db:
