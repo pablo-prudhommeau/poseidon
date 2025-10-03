@@ -10,7 +10,7 @@ services:
       SCREENSHOT_DIR: "/app/data/screenshots"
     volumes:
       - /opt/poseidon/db:/app/db
-      - /opt/poseidon/data:/app/data
+      - /opt/poseidon/screenshots:/app/data/screenshots
     ports:
       - "8000:8000"
     healthcheck:

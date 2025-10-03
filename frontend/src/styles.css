@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "@fortawesome/fontawesome-free/css/all.css";
 
+@plugin "tailwindcss-primeui";
+
 :root {
     --bg: #0e1320;
     --card: #141b2d;
@@ -17,14 +19,47 @@ body {
     color: #e8eef6;
 }
 
-@keyframes flashUp { 0% { background: rgba(34,197,94,0.25); } 100% { background: transparent; } }
-@keyframes flashDown { 0% { background: rgba(239,68,68,0.25); } 100% { background: transparent; } }
+@keyframes flashUp {
+    0% {
+        background: rgba(34, 197, 94, 0.25);
+    }
+    100% {
+        background: transparent;
+    }
+}
 
-.price-up { color: #22c55e; animation: flashUp 500ms ease-out; }
-.price-down { color: #ef4444; animation: flashDown 500ms ease-out; }
+@keyframes flashDown {
+    0% {
+        background: rgba(239, 68, 68, 0.25);
+    }
+    100% {
+        background: transparent;
+    }
+}
 
-.pct-up { color: #22c55e; }
-.pct-down { color: #ef4444; }
+.price-up {
+    color: #22c55e;
+    animation: flashUp 500ms ease-out;
+}
 
-.img-fade { opacity: 0; transition: opacity .25s ease-out; }
-.img-fade.is-loaded { opacity: 1; }
+.price-down {
+    color: #ef4444;
+    animation: flashDown 500ms ease-out;
+}
+
+.pct-up {
+    color: #22c55e;
+}
+
+.pct-down {
+    color: #ef4444;
+}
+
+.img-fade {
+    opacity: 0;
+    transition: opacity .25s ease-out;
+}
+
+.img-fade.is-loaded {
+    opacity: 1;
+}

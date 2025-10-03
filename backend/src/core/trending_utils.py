@@ -218,7 +218,7 @@ def recently_traded(address: str, minutes: int = 45) -> bool:
     if not address:
         return False
     with _session() as db:
-        query = select(Trade).where(Trade.address == address.lower()).order_by(Trade.created_at.desc())
+        query = select(Trade).where(Trade.address == address).order_by(Trade.created_at.desc())
         trade = db.execute(query).scalars().first()
         if not trade:
             return False
@@ -230,8 +230,6 @@ def recently_traded(address: str, minutes: int = 45) -> bool:
 def preload_best_prices(addresses: List[str]) -> Dict[str, float]:
     """
     Deduplicate and fetch best prices for a list of addresses (address → price).
-
-    EVM addresses are lowercased; Solana mints keep their original casing.
     """
     if not addresses:
         return {}
@@ -239,11 +237,11 @@ def preload_best_prices(addresses: List[str]) -> Dict[str, float]:
     normalized: List[str] = []
 
     for raw in (a for a in addresses if a):
-        key = raw.lower() if raw.startswith("0x") else raw
+        key = raw
         if key in seen:
             continue
         seen.add(key)
-        normalized.append(key)  # EVM already lower; SOL unchanged
+        normalized.append(key)
 
     if not normalized:
         return {}

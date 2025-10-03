@@ -8,7 +8,6 @@ Dexscreener client:
 - Provide a safe synchronous wrapper that can be called from sync or async contexts
 
 Design notes:
-- EVM addresses are normalized to lowercase; Solana mints keep original case
 - We sanitize/repair inputs coming from various sources (pairId suffixes, stray base58, etc.)
 - HTTP is best-effort with small batch-splitting fallbacks when Dexscreener returns 'pairs: null'
 """
@@ -109,7 +108,6 @@ async def _safe_fetch_pairs_batch(
         raw_address = base_token.get("address") or ""
         if not raw_address:
             continue
-        # EVM → lowercase ; SOL → keep case
         by_address.setdefault(raw_address, []).append(pair)
     return by_address
 
@@ -143,7 +141,6 @@ def _normalize_row_from_pair(address: str, pair: dict) -> dict:
         except Exception:
             return None
 
-    # EVM → lowercase ; SOL → keep case
     output_address = (address or "")
 
     return {
