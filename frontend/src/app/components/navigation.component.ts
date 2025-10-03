@@ -19,7 +19,7 @@ interface NavItem {
 })
 export class NavigationComponent {
     public readonly items: ReadonlyArray<NavItem> = [
-        {label: 'Home', route: '/', icon: 'home', exact: true},
+        {label: 'Home', route: '/', icon: 'home', exact: true}
     ];
 
     constructor() {

@@ -2,6 +2,13 @@ export type Phase = 'OPEN' | 'TP1' | 'TP2' | 'CLOSED';
 export type Side = 'BUY' | 'SELL';
 export type TradeMode = 'LIVE' | 'PAPER';
 
+export type EquityCurvePoint =
+    | number
+    | string
+    | [number, number]
+    | { t?: number | string; v?: number | string }
+    | { value?: number | string };
+
 export interface Position {
     id?: number;
     symbol: string;
@@ -38,7 +45,7 @@ export interface Portfolio {
     holdings: number;
     win_rate?: number;
     updated_at?: string;
-    equity_curve?: number[];
+    equity_curve?: EquityCurvePoint[];
     unrealized_pnl?: number;
     realized_pnl_24h?: number;
     realized_pnl_total?: number;

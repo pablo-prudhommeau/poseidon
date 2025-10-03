@@ -1,6 +1,9 @@
 import {provideHttpClient, withFetch} from '@angular/common/http';
 import {ApplicationConfig, provideBrowserGlobalErrorListeners, provideZoneChangeDetection} from '@angular/core';
+import {provideAnimationsAsync} from '@angular/platform-browser/animations/async';
 import {provideRouter} from '@angular/router';
+import Aura from '@primeuix/themes/aura';
+import {providePrimeNG} from 'primeng/config';
 import {routes} from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -8,6 +11,10 @@ export const appConfig: ApplicationConfig = {
         provideBrowserGlobalErrorListeners(),
         provideZoneChangeDetection({eventCoalescing: true}),
         provideRouter(routes),
-        provideHttpClient(withFetch())
+        provideHttpClient(withFetch()),
+        provideAnimationsAsync(),
+        providePrimeNG({
+            theme: {preset: Aura}
+        })
     ]
 };

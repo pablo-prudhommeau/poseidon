@@ -3,20 +3,24 @@ import threading
 import time
 from typing import Optional, Dict, Any
 
-from src.api.ws_hub import ws_manager
+from src.api.ws_manager import ws_manager
 from src.configuration.config import settings
 from src.core.pnl import (
     fifo_realized_pnl,
     cash_from_trades,
-    holdings_and_unrealized,
+    holdings_and_unrealized_from_trades,
 )
+from src.integrations.dexscreener_client import fetch_prices_by_addresses
+from src.core.prices import merge_prices_with_entry
 from src.core.trending_job import TrendingJob
-from src.integrations.dexscreener_client import fetch_prices_by_addresses_sync, fetch_prices_by_addresses
 from src.logging.logger import get_logger
 from src.persistence import dao
 from src.persistence.dao.portfolio_snapshots import snapshot_portfolio, equity_curve
-from src.persistence.dao.positions import get_open_addresses, serialize_positions_with_prices_by_address, \
-    get_open_positions
+from src.persistence.dao.positions import (
+    get_open_addresses,
+    serialize_positions_with_prices_by_address,
+    get_open_positions,
+)
 from src.persistence.dao.trades import get_recent_trades
 from src.persistence.db import _session
 from src.persistence.serializers import serialize_trade, serialize_portfolio
@@ -38,6 +42,7 @@ def _loop() -> None:
         try:
             _trending_job.run_once()
         except Exception as exc:
+            # Protéger le thread pour ne jamais s'arrêter, mais loguer le contexte
             log.exception("Trending loop error: %s", exc)
         time.sleep(interval)
 
@@ -61,18 +66,20 @@ def ensure_started() -> None:
 
 def get_status() -> Dict[str, Any]:
     """Return a lightweight orchestrator status for the API/UI."""
+    # Expose aussi la config de cooldown utile pour le debug côté UI
+    cooldown = int(
+        getattr(settings, "REENTRY_COOLDOWN_SECONDS", getattr(settings, "COOLDOWN_SECONDS", 60))
+    )
     return {
         "mode": "PAPER" if settings.PAPER_MODE else "LIVE",
         "interval": int(settings.TREND_INTERVAL_SEC),
+        "reentry_cooldown_sec": cooldown,
+        "prices_interval": int(settings.DEXSCREENER_FETCH_INTERVAL_SECONDS),
     }
 
 
 def reset_runtime_state() -> None:
-    """
-    Clear in-memory runtime state for PAPER resets:
-    - Trader positions and PnL accumulator
-    - Safety blacklist
-    """
+    """Clear in-memory runtime state for PAPER resets."""
     try:
         if _trending_job and _trending_job.trader:
             t = _trending_job.trader
@@ -84,38 +91,59 @@ def reset_runtime_state() -> None:
 
 
 async def _dex_prices_loop() -> None:
-    """Background loop that fetches live prices and broadcasts portfolio updates."""
-    log.info(
-        "Background DexScreener price loop starting (interval=%ss)",
-        settings.DEXSCREENER_FETCH_INTERVAL_SECONDS,
-    )
+    """
+    Background loop that fetches live prices and broadcasts portfolio updates.
+
+    Remarques:
+    - L'autosell s'exécute ici sur les prix live. Les ventes qui ferment entièrement
+      une position arment un cooldown via dao.trades.sell (re-entry lock).
+    - On valorise l'UI avec 'display_prices' (live ou fallback entry).
+    """
+    fetch_interval = max(1, int(settings.DEXSCREENER_FETCH_INTERVAL_SECONDS))
+    log.info("Background DexScreener price loop starting (interval=%ss)", fetch_interval)
+
     while True:
         try:
             with _session() as db:
                 addresses = get_open_addresses(db)
 
             if addresses:
-                address_price: Dict[str, float] = await fetch_prices_by_addresses(addresses)
+                # 1) Live prices with original keys preserved
+                live_prices: Dict[str, float] = await fetch_prices_by_addresses(addresses)
 
                 with _session() as db:
-                    for addr, price in address_price.items():
-                        autos = check_thresholds_and_autosell_for_address(db, address=addr, last_price=price)
+                    # Autosell uses ONLY live prices
+                    for addr, price in (live_prices or {}).items():
+                        autos = check_thresholds_and_autosell_for_address(
+                            db, address=addr, last_price=price
+                        )
+                        # Broadcast each trade emitted by autosell (incl. CLOSED)
                         for tr in autos:
                             ws_manager.broadcast_json_threadsafe(
                                 {"type": "trade", "payload": serialize_trade(tr)}
                             )
-                    pos_payload = serialize_positions_with_prices_by_address(db, address_price)
+
+                    # Positions payload for UI (live or entry fallback)
+                    positions = get_open_positions(db)
+                    display_prices = merge_prices_with_entry(positions, live_prices)
+                    pos_payload = serialize_positions_with_prices_by_address(db, display_prices)
                     ws_manager.broadcast_json_threadsafe(
                         {"type": "positions", "payload": pos_payload}
                     )
-                    positions = get_open_positions(db)
+
+                    # Portfolio valued with display_prices, PnL from trade truth
                     get_all = getattr(dao, "get_all_trades", None)
                     trades = get_all(db) if callable(get_all) else get_recent_trades(db, limit=10000)
+
                     starting_cash: float = float(settings.PAPER_STARTING_CASH)
                     realized_total, realized_24h = fifo_realized_pnl(trades, cutoff_hours=24)
+
                     cash, _, _, _ = cash_from_trades(starting_cash, trades)
-                    holdings_live, unrealized_live = holdings_and_unrealized(positions, address_price)
+                    holdings_live, unrealized_live = holdings_and_unrealized_from_trades(
+                        trades, display_prices
+                    )
                     equity = round(cash + holdings_live, 2)
+
                     snap = snapshot_portfolio(db, equity=equity, cash=cash, holdings=holdings_live)
                     portfolio_payload = serialize_portfolio(
                         snap,
@@ -127,7 +155,8 @@ async def _dex_prices_loop() -> None:
                     ws_manager.broadcast_json_threadsafe(
                         {"type": "portfolio", "payload": portfolio_payload}
                     )
+
         except Exception:
             log.exception("DexScreener price loop error")
 
-        await asyncio.sleep(max(1, int(settings.DEXSCREENER_FETCH_INTERVAL_SECONDS)))
+        await asyncio.sleep(fetch_interval)

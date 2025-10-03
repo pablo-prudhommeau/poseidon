@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from src.configuration.config import settings
 from src.logging.logger import get_logger
 from src.persistence.dao import trades
+from src.persistence.dao.trades import _compute_open_quantity_from_trades
 from src.persistence.db import _session
 from src.persistence.models import Position, PortfolioSnapshot, Trade, Status, Phase
 
@@ -56,6 +57,7 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
 
     # STOP → full exit
     if stop > 0.0 and last_price_f <= stop:
+        position_quantity = _compute_open_quantity_from_trades(db, position.address)
         trade = trades.sell(
             db,
             symbol=position.symbol,
@@ -67,10 +69,6 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
             status=status,
             phase=Phase.CLOSED,
         )
-        # Keep previous compatibility: reset thresholds on full exit
-        position.tp1 = 0.0
-        position.tp2 = 0.0
-        position.stop = 0.0
         created.append(trade)
         log.info(
             "[AUTOSELL][SL] %s (%s) sold_qty=%.8f price=%.10f",
@@ -94,9 +92,6 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
             status=status,
             phase=Phase.CLOSED,
         )
-        position.tp1 = 0.0
-        position.tp2 = 0.0
-        position.stop = 0.0
         created.append(trade)
         log.info(
             "[AUTOSELL][TP2] %s (%s) sold_qty=%.8f price=%.10f",
