@@ -2,12 +2,8 @@ export type Phase = 'OPEN' | 'TP1' | 'TP2' | 'CLOSED';
 export type Side = 'BUY' | 'SELL';
 export type TradeMode = 'LIVE' | 'PAPER';
 
-export type EquityCurvePoint =
-    | number
-    | string
-    | [number, number]
-    | { t?: number | string; v?: number | string }
-    | { value?: number | string };
+/** Courbe d’équité: points [timestamp, value] uniquement */
+export type EquityCurvePoint = [number, number];
 
 export interface Position {
     id?: number;

@@ -1,6 +1,7 @@
 import {DecimalPipe, NgIf} from '@angular/common';
 import {Component, computed, OnInit} from '@angular/core';
 import {ApiService} from '../api.service';
+import {EquityCurvePoint} from '../core/models';
 import {WebSocketService} from '../core/websocket.service';
 import {PositionsTableComponent} from '../features/positions/positions-table.component';
 import {TradesTableComponent} from '../features/trades/trades-table.component';
@@ -26,7 +27,7 @@ export class DashboardComponent implements OnInit {
     unrealized = computed(() => this.webSocketService.portfolio()?.unrealized_pnl ?? 0);
     realizedTotal = computed(() => this.webSocketService.portfolio()?.realized_pnl_total ?? 0);
     realized24h = computed(() => this.webSocketService.portfolio()?.realized_pnl_24h ?? 0);
-    spark = computed<number[]>(() => this.webSocketService.portfolio()?.equity_curve ?? []);
+    spark = computed<EquityCurvePoint[]>(() => this.webSocketService.portfolio()?.equity_curve ?? []);
 
     resetPaper() {
         this.api.resetPaper().subscribe(() => {

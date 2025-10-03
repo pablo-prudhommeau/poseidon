@@ -57,14 +57,14 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
 
     # STOP → full exit
     if stop > 0.0 and last_price_f <= stop:
-        position_quantity = _compute_open_quantity_from_trades(db, position.address)
+        sell_quantity = _compute_open_quantity_from_trades(db, position.address)
         trade = trades.sell(
             db,
             symbol=position.symbol,
             chain=position.chain,
             address=position.address,
             price=last_price_f,
-            qty=position_quantity,
+            qty=sell_quantity,
             fee=fee,
             status=status,
             phase=Phase.CLOSED,
@@ -81,13 +81,14 @@ def _evaluate_position_thresholds_and_execute(db: Session, position: Position, l
 
     # TP2 → full exit
     if tp2 > 0.0 and last_price_f >= tp2 and position_quantity > 0.0:
+        sell_quantity = _compute_open_quantity_from_trades(db, position.address)
         trade = trades.sell(
             db,
             symbol=position.symbol,
             chain=position.chain,
             address=position.address,
             price=last_price_f,
-            qty=position_quantity,
+            qty=sell_quantity,
             fee=fee,
             status=status,
             phase=Phase.CLOSED,
