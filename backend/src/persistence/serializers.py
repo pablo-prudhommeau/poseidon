@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.persistence.db import _session
 
 
-
 def serialize_trade(trade: Any) -> Dict[str, Any]:
     """Serialize a Trade ORM object to a frontend-friendly dict."""
     return {
@@ -61,7 +60,7 @@ def serialize_portfolio(
             "created_at": snapshot.created_at,
         }
         if equity_curve is not None:
-            data["equity_curve"] = [{"t": int(t), "v": float(v)} for t, v in equity_curve]
+            data["equity_curve"] = [[int(t), float(v)] for t, v in equity_curve]
         if realized_total is not None:
             data["realized_pnl_total"] = float(realized_total)
         if realized_24h is not None:

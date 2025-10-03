@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Tuple, Set, Coroutine
+from typing import Any, Dict, List, Tuple, Set, Coroutine, Optional
 
 from src.ai.chart_signal_provider import ChartAiSignalProvider
 from src.configuration.config import settings
@@ -62,22 +62,32 @@ def _fetch_trending_candidates_sync(*args, **kwargs) -> List[Dict[str, Any]]:
         debug_label="fetch_trending_candidates",
     )
 
-
-def _normalize_lookup_address(address: str) -> str:
+def _address_in_open_positions(candidate: str, addresses: Set[str]) -> bool:
     """
-    Normalize an address for internal lookups:
-    - EVM → lowercase
-    - SOL → keep case
+    Return True if the candidate address is already in open positions.
+    - EVM: compare case-insensitive (lower)
+    - Non-EVM (e.g., SOL): compare exact string
+    """
+    if not candidate:
+        return False
+    return candidate in addresses
+
+
+def _price_get(price_map: Dict[str, float], address: str) -> Optional[float]:
+    """
+    Retrieve a price from a map while being tolerant to EVM address casing.
+    Never mutates or normalizes what we expose elsewhere.
     """
     if not address:
-        return ""
-    return address.lower() if address.startswith("0x") else address
+        return None
+    if address in price_map:
+        return price_map.get(address)
+    return None
 
 
 class TrendingJob:
     """
     Orchestrator pipeline:
-
       fetch → hard filter → quality filter → de-dup (open positions) → preload prices
       → base scoring (0..100) → gate checks (recently traded, risk, prices, deviation)
       → Chart AI on survivors top-K → final score → risk & sizing → buy
@@ -115,11 +125,15 @@ class TrendingJob:
             return float(snapshot.cash or 0.0) if snapshot else 0.0
 
     def _open_sets(self) -> Tuple[Set[str], Set[str]]:
-        """Return sets of currently open symbols and addresses."""
+        """
+        Return sets for currently open positions:
+          - symbols: symbols uppercased (symbol matching is case-insensitive)
+          - addresses: addresses
+        """
         with _session() as db:
             positions = get_open_positions(db)
             symbols = {(p.symbol or "").upper() for p in positions if p.symbol}
-            addresses = {(p.address or "").lower() for p in positions if p.address}
+            addresses: Set[str] = {p.address for p in positions if getattr(p, "address", None)}
             return symbols, addresses
 
     def _per_buy_budget(self, free_cash: float) -> float:
@@ -191,43 +205,51 @@ class TrendingJob:
         kept.sort(key=lambda item: float(item.get(sort_key) or 0.0), reverse=True)
         kept = kept[: self.max_results]
 
-        # 6) Remove symbols/addresses already in open positions
-        open_symbols, open_addresses = self._open_sets()
-        candidates = [
-            item
-            for item in kept
-            if (item.get("symbol", "").upper() not in open_symbols)
-               and ((item.get("address") or "").lower() not in open_addresses)
-        ]
-        if not candidates:
-            log.info("[DEDUP] 0 candidates after removing open positions")
+        # 6) Remove symbols/addresses already in open positions (without normalizing exposed values)
+        symbols, addresses = self._open_sets()
+        pruned_candidates: List[Dict[str, Any]] = []
+        for item in kept:
+            symbol_key = (item.get("symbol") or "").upper()
+            address_key = item.get("address") or ""
+            if symbol_key in symbols:
+                log.debug("[DEDUP] skip already open %s (%s)", item.get("symbol"), address_key)
+                continue
+            if _address_in_open_positions(address_key, addresses):
+                log.debug("[DEDUP] skip already open %s (%s)", item.get("symbol"), address_key)
+                continue
+            pruned_candidates.append(item)
+
+        if not pruned_candidates:
+            log.debug("[DEDUP] 0 candidates after de-duplication")
             return
 
-        # 7) Preload best prices for decision quality (preserve SOL casing)
-        address_list = [item.get("address") or "" for item in candidates if item.get("address")]
+        # 7) Preload best prices for decision quality (preserve original casing)
+        address_list = [item.get("address") or "" for item in pruned_candidates if item.get("address")]
         best_price_by_address = preload_best_prices(address_list)
 
         # 8) Base scoring only (cheap)
-        candidates = self._compute_base_scores(candidates)
+        pruned_candidates = self._compute_base_scores(pruned_candidates)
 
         # 9) Gatekeeping BEFORE any AI calls (save cost/latency)
         cooldown_minutes = int(settings.DEXSCREENER_REBUY_COOLDOWN_MIN)
         max_price_deviation = float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER)
 
         eligible: List[Dict[str, Any]] = []
-        for item in sorted(candidates, key=lambda x: x["base_score"], reverse=True):
-            lookup_addr = _normalize_lookup_address(item.get("address") or "")
+        for item in sorted(pruned_candidates, key=lambda x: x["base_score"], reverse=True):
+            address_original = item.get("address") or ""
 
-            if lookup_addr and recently_traded(lookup_addr, minutes=cooldown_minutes):
-                log.debug("[GATE] skip recently traded %s", item.get("symbol"))
-                continue
+            # Recently traded gate — tolerate EVM casing without mutating stored data
+            if address_original:
+                if recently_traded(address_original, minutes=cooldown_minutes):
+                    log.debug("[GATE] skip recently traded %s (exact)", item.get("symbol"))
+                    continue
 
             decision = self.risk_manager.pre_entry_decision(item)
             if not decision.should_buy:
                 log.debug("[GATE] pre-entry block %s — %s", item.get("symbol"), decision.reason)
                 continue
 
-            dex_price = best_price_by_address.get(lookup_addr)
+            dex_price = _price_get(best_price_by_address, address_original)
             if dex_price is None or dex_price <= 0:
                 log.debug("[GATE] invalid DEX price for %s", item.get("symbol"))
                 continue
@@ -236,8 +258,10 @@ class TrendingJob:
             if dex_price and quoted_price:
                 low, high = sorted([dex_price, quoted_price])
                 if low > 0 and (high / low) > max_price_deviation:
-                    log.debug("[GATE] price deviation too large for %s (dex=%.6f quote=%.6f)",
-                              item.get("symbol"), dex_price, quoted_price)
+                    log.debug(
+                        "[GATE] price deviation too large for %s (dex=%.6f quote=%.6f)",
+                        item.get("symbol"), dex_price, quoted_price
+                    )
                     continue
 
             # enrich for later
@@ -295,11 +319,12 @@ class TrendingJob:
             order_notional = max(0.0, per_buy_usd * size_multiplier)
 
             if simulated_cash < order_notional or (simulated_cash - order_notional) < min_free_cash_usd:
-                log.debug("[BUY] Insufficient simulated cash for %s (need=%.2f, have=%.2f, min_free=%.2f)",
-                          item.get("symbol"), order_notional, simulated_cash, min_free_cash_usd)
+                log.debug(
+                    "[BUY] Insufficient simulated cash for %s (need=%.2f, have=%.2f, min_free=%.2f)",
+                    item.get("symbol"), order_notional, simulated_cash, min_free_cash_usd
+                )
                 break
 
-            # Enrich payload for execution/logging/audits
             payload = dict(item)
             payload["order_notional"] = order_notional
 
@@ -321,8 +346,10 @@ class TrendingJob:
             except Exception as exc:
                 log.warning("[BUY] Failed for %s: %s", item.get("symbol"), exc)
 
-        log.info("[SUMMARY] executed=%d / %d candidates (cash=%.2f → %.2f)",
-                 executed_buys, len(eligible), free_cash, simulated_cash)
+        log.info(
+            "[SUMMARY] executed=%d / %d candidates (cash=%.2f → %.2f)",
+            executed_buys, len(eligible), free_cash, simulated_cash
+        )
 
     def run(self) -> None:
         """Compatibility alias."""
