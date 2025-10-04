@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from collections import deque
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Deque, Tuple, Dict, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
@@ -15,67 +15,149 @@ from src.persistence.models import Position, Trade, Phase, Status, Side
 log = get_logger(__name__)
 
 # -----------------------------------------------------------------------------
-# Re-entry lock (in-memory). Clé: address -> eligible_at (datetime)
+# Re-entry lock (in-memory). Key: address -> eligible_at (timezone-aware datetime)
 # -----------------------------------------------------------------------------
-_REENTRY_LOCK: Dict[str, object] = {}
+_REENTRY_LOCK: Dict[str, datetime] = {}
+
 
 def _get_cooldown_seconds() -> int:
-    return int(getattr(settings, "REENTRY_COOLDOWN_SECONDS",
-                       getattr(settings, "COOLDOWN_SECONDS", 60)))
+    """
+    Return the re-entry cooldown in seconds.
+    Fallback kept for legacy 'COOLDOWN_SECONDS'.
+    """
+    return int(
+        getattr(settings, "REENTRY_COOLDOWN_SECONDS", getattr(settings, "COOLDOWN_SECONDS", 60))
+    )
 
-def _cleanup_reentry_lock(now) -> None:
-    """Remove stale locks (best-effort; O(n) on addresses count)."""
+
+def _ensure_aware_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    """
+    Ensure a datetime is timezone-aware (UTC). If value is None, return None.
+    If value is naive, assume UTC and attach tzinfo=UTC.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _cleanup_reentry_lock(now: datetime) -> None:
+    """
+    Remove stale in-memory locks. Best-effort; O(n) on the number of addresses.
+    """
     stale = [addr for addr, eligible_at in _REENTRY_LOCK.items() if eligible_at is not None and now >= eligible_at]
     for addr in stale:
         _REENTRY_LOCK.pop(addr, None)
 
-def _set_reentry_lock(address: str, eligible_at) -> None:
-    _REENTRY_LOCK[address] = eligible_at
 
-def _get_reentry_eligible_at(address: str):
-    return _REENTRY_LOCK.get(address)
+def _set_reentry_lock(address: str, eligible_at: datetime) -> None:
+    """Arm a temporary in-memory re-entry lock for the address."""
+    _REENTRY_LOCK[address] = _ensure_aware_datetime(eligible_at)  # always store aware
 
-def _cooldown_guard(address: str, position: Optional[Position]) -> None:
+
+def _get_reentry_eligible_at(address: str) -> Optional[datetime]:
+    """Return the in-memory re-entry eligibility for the address, if any (aware UTC)."""
+    return _ensure_aware_datetime(_REENTRY_LOCK.get(address))
+
+
+# -----------------------------------------------------------------------------
+# Position lookup helpers
+# -----------------------------------------------------------------------------
+def _get_active_position_by_address(db: Session, address: str) -> Optional[Position]:
     """
-    Enforce cooldown only when la dernière position a été fermée récemment.
-    - Si position inexistante -> pas de cooldown (1er BUY)
-    - Si position phase OPEN/PARTIAL -> pas de cooldown (DCA autorisé)
-    - Si position CLOSED -> cooldown (via closed_at et/ou lock en mémoire)
+    Return the most recent ACTIVE position (OPEN or PARTIAL) for this address.
+    We never look at CLOSED rows here.
     """
-    now = timezone_now()
+    return (
+        db.execute(
+            select(Position)
+            .where(
+                Position.address == address,
+                Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
+                )
+            .order_by(desc(Position.opened_at), desc(Position.id))
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _get_last_closed_position_for_cooldown(db: Session, address: str) -> Optional[Position]:
+    """
+    Return the most recently CLOSED position for cooldown enforcement purposes.
+    """
+    return (
+        db.execute(
+            select(Position)
+            .where(
+                Position.address == address,
+                Position.phase == Phase.CLOSED,
+                Position.closed_at.isnot(None),
+                )
+            .order_by(desc(Position.closed_at), desc(Position.id))
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _cooldown_guard(db: Session, address: str) -> None:
+    """
+    Strictly enforce business rules BEFORE accepting a BUY:
+
+    - Absolutely forbid DCA:
+        If any ACTIVE (OPEN or PARTIAL) position exists for this address,
+        reject immediately.
+    - When there is no active position, enforce the re-entry cooldown based on:
+        1) the most recent CLOSED position's closed_at
+        2) the in-memory re-entry lock
+
+    Raises:
+        RuntimeError: when a BUY would be a DCA or when cooldown has not elapsed yet.
+    """
+    now: datetime = timezone_now()  # should already be aware (UTC)
+    now = _ensure_aware_datetime(now)  # defensive
     _cleanup_reentry_lock(now)
-    cd = _get_cooldown_seconds()
+    cooldown_seconds = _get_cooldown_seconds()
 
-    if position is None:
-        return
+    active = _get_active_position_by_address(db, address)
+    if active is not None:
+        log.info(
+            "[SKIP][DCA_DISABLED] address=%s phase=%s — active position exists",
+            address,
+            active.phase,
+        )
+        raise RuntimeError("BUY rejected: a position is already OPEN or PARTIAL for this address.")
 
-    if position.phase in (Phase.OPEN, Phase.PARTIAL):
-        # DCA: autorisé
-        return
-
-    # Phase CLOSED -> regarder closed_at et lock en mémoire
-    eligible_from_closed_at = None
-    if position.closed_at:
-        eligible_from_closed_at = position.closed_at + timedelta(seconds=cd)
+    last_closed = _get_last_closed_position_for_cooldown(db, address)
+    eligible_from_closed: Optional[datetime] = None
+    if last_closed and last_closed.closed_at:
+        closed_at_aware = _ensure_aware_datetime(last_closed.closed_at)
+        eligible_from_closed = closed_at_aware + timedelta(seconds=cooldown_seconds)
 
     eligible_from_lock = _get_reentry_eligible_at(address)
-    # Choisir l'eligible_at la plus tardive
-    eligible_candidates = [t for t in (eligible_from_closed_at, eligible_from_lock) if t is not None]
-    eligible_at = max(eligible_candidates).astimezone() if eligible_candidates else None
+
+    candidates: List[datetime] = [
+        t for t in (eligible_from_closed, eligible_from_lock) if t is not None
+    ]
+    eligible_at: Optional[datetime] = max(candidates) if candidates else None
 
     if eligible_at is not None and now < eligible_at:
-        # Rejet explicite pour empêcher la réouverture trop tôt
-        delay = (eligible_at - now).total_seconds()
-        log.info("[SKIP][COOLDOWN] address=%s next=%s (remaining=%.1fs)", address, eligible_at, delay)
+        remaining = (eligible_at - now).total_seconds()
+        log.info("[SKIP][COOLDOWN] address=%s next=%s (remaining=%.1fs)", address, eligible_at, remaining)
         raise RuntimeError(f"BUY rejected by cooldown; next eligible at {eligible_at.isoformat()}")
+
 
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-
 def _compute_open_quantity_from_trades(db: Session, address: str) -> float:
     """
     Return current open quantity for an address as sum(BUY) - sum(SELL).
+    This spans lifecycles; prior CLOSED cycles should net to zero.
     """
     trades = db.execute(select(Trade).where(Trade.address == address)).scalars().all()
     open_qty = 0.0
@@ -88,10 +170,10 @@ def _compute_open_quantity_from_trades(db: Session, address: str) -> float:
             open_qty -= float(tr.qty)
     return max(0.0, open_qty)
 
+
 # -----------------------------------------------------------------------------
 # Commands
 # -----------------------------------------------------------------------------
-
 def buy(
         db: Session,
         symbol: str,
@@ -106,20 +188,20 @@ def buy(
         status: Status,
 ) -> Trade:
     """
-    Register a BUY trade. If a Position exists, **do not mutate** its snapshot fields
-    (qty, entry, tp1, tp2, stop). Only its phase can change (e.g., from CLOSED to OPEN).
+    Register a BUY trade for a **new lifecycle**:
 
-    Ajouts:
-      - Cooldown basé sur la dernière clôture + re-entry lock en mémoire.
-      - Logs explicites si rejeté par cooldown.
+    - DCA is forbidden. If an active position exists, the BUY is rejected.
+    - Snapshot fields (qty, entry, tp1, tp2, stop) are immutable per lifecycle.
+      A re-entry (after CLOSED) **always** creates a NEW Position row.
+    - Cooldown is enforced between lifecycles.
     """
     if float(price) <= 0.0:
         raise ValueError("BUY rejected: price must be > 0")
 
-    # Vérifier la règle de re-entry (cooldown)
-    position = db.execute(select(Position).where(Position.address == address)).scalars().first()
-    _cooldown_guard(address, position)
+    # Enforce "no DCA" + cooldown rules
+    _cooldown_guard(db, address)
 
+    # Create the BUY trade
     trade = Trade(
         side=Side.BUY,
         symbol=symbol,
@@ -132,25 +214,31 @@ def buy(
     )
     db.add(trade)
 
-    if position is None:
-        # First BUY creates an immutable snapshot (photo at open)
-        position = Position(
-            symbol=symbol,
-            chain=chain,
-            address=address,
-            qty=qty,            # snapshot at open (will never be mutated)
-            entry=price,        # snapshot at open (net fees visibles via PnL, pas ici)
-            tp1=tp1,
-            tp2=tp2,
-            stop=stop,
-            phase=Phase.OPEN
-        )
-        db.add(position)
-        log.info("BUY created position snapshot — symbol=%s address=%s qty=%s entry=%s", symbol, address, qty, price)
-    else:
-        # Snapshot is immutable. We only ensure the phase reflects the fact the address is not fully closed.
-        position.phase = Phase.OPEN
-        log.info("BUY on existing position — snapshot kept immutable; phase set to OPEN (address=%s)", address)
+    # Always create a fresh snapshot row for the lifecycle
+    position = Position(
+        symbol=symbol,
+        chain=chain,
+        address=address,
+        qty=qty,     # snapshot at open
+        entry=price, # snapshot at open
+        tp1=tp1,
+        tp2=tp2,
+        stop=stop,
+        phase=Phase.OPEN,
+    )
+    db.add(position)
+
+    log.info(
+        "BUY created new position snapshot — symbol=%s address=%s qty=%s entry=%s tp1=%s tp2=%s stop=%s",
+        symbol,
+        address,
+        qty,
+        price,
+        tp1,
+        tp2,
+        stop,
+    )
+    log.debug("Snapshot immutables locked for lifecycle — address=%s", address)
 
     db.commit()
     db.refresh(trade)
@@ -162,17 +250,17 @@ def _fifo_realized_for_sell(
         address: str,
         sell_qty: float,
         sell_price: float,
-        fee: float
+        fee: float,
 ) -> float:
     """
     Compute realized PnL for a SELL using FIFO lots built from prior trades of the same address.
 
     Fees handling:
         - Buy fees are allocated per-unit and subtracted when a lot is consumed.
-        - The **current** sell fee is distributed per-unit across the sold quantity and subtracted.
+        - The current sell fee is distributed per-unit across the sold quantity and subtracted.
 
-    En conditions normales, un oversell est empêché plus haut (sell()).
-    On garde toutefois une protection défensive (warning + ignore du résiduel).
+    In normal conditions, an oversell is prevented by sell(); we additionally keep a
+    defensive safeguard here.
     """
     sell_qty = float(sell_qty)
     sell_price = float(sell_price)
@@ -232,7 +320,8 @@ def _fifo_realized_for_sell(
     if remaining_to_sell > 1e-12:
         log.warning(
             "SELL qty exceeds available lots — address=%s residual=%s; ignoring residual for realized PnL.",
-            address, remaining_to_sell
+            address,
+            remaining_to_sell,
         )
 
     return round(realized, 8)
@@ -247,28 +336,32 @@ def sell(
         price: float,
         fee: float,
         status: Status,
-        phase: Phase
+        phase: Phase,
 ) -> Trade:
     """
-    Register a SELL trade, compute realized PnL using FIFO lots, and update the Position **phase only**.
-    Snapshot fields (qty, entry, tp1, tp2, stop) remain untouched.
+    Register a SELL trade, compute realized PnL with FIFO lots,
+    and update the Position **phase only** (snapshot immutables are never touched).
 
-    Ajouts:
-      - Blocage strict si la quantité vendue dépasse le restant ouvert (no oversell).
-      - À la fermeture complète, on arme un re-entry lock (cooldown).
+    Business rules:
+        - Price must be > 0 (guards wrong data that could lead to 0$ autosells).
+        - No oversell: the sold quantity cannot exceed the currently open quantity.
+        - When the open quantity becomes zero, the position is CLOSED and a cooldown lock is armed.
     """
     if float(price) <= 0.0:
         raise ValueError("SELL rejected: price must be > 0")
 
-    position = db.execute(select(Position).where(Position.address == address)).scalars().first()
+    # Use the ACTIVE position only (never pick a CLOSED row by accident)
+    position = _get_active_position_by_address(db, address)
 
-    # Contrôle d'oversell (strict)
+    # Oversell guard (strict)
     open_qty_before = _compute_open_quantity_from_trades(db, address)
     sell_qty = float(qty)
     if sell_qty > open_qty_before + 1e-9:
         log.error(
             "SELL exceeds open quantity — address=%s sell_qty=%.12f open_qty=%.12f",
-            address, sell_qty, open_qty_before
+            address,
+            sell_qty,
+            open_qty_before,
         )
         raise ValueError("SELL rejected: quantity exceeds currently open quantity")
 
@@ -282,7 +375,7 @@ def sell(
         )
     else:
         realized = 0.0 - float(fee or 0.0)
-        log.warning("SELL with no position snapshot — address=%s; realized set to -fee only.", address)
+        log.warning("SELL with no active position snapshot — address=%s; realized set to -fee only.", address)
 
     trade = Trade(
         side=Side.SELL,
@@ -301,19 +394,30 @@ def sell(
     if position is not None:
         open_qty_after = max(0.0, open_qty_before - sell_qty)
         if open_qty_after <= 1e-12:
-            position.phase = phase  # CLOSED or whatever was passed
-            position.closed_at = timezone_now()
+            position.phase = phase  # expected CLOSED on full exit
+            position.closed_at = _ensure_aware_datetime(timezone_now())
 
-            # Armer le cooldown (re-entry lock)
+            # Arm cooldown (re-entry lock)
             cd = _get_cooldown_seconds()
             eligible_at = position.closed_at + timedelta(seconds=cd)
             _set_reentry_lock(address, eligible_at)
             log.info("Position CLOSED — address=%s; re-entry locked until %s", address, eligible_at)
         else:
             position.phase = Phase.PARTIAL
+
         log.info(
             "SELL updated position phase — address=%s phase=%s (open_qty_after=%s)",
-            address, position.phase, open_qty_after
+            address,
+            position.phase,
+            open_qty_after,
+        )
+        log.debug(
+            "Lifecycle status after SELL — symbol=%s address=%s qty_sold=%s price=%s realized=%s",
+            symbol,
+            address,
+            qty,
+            price,
+            realized,
         )
 
     db.commit()

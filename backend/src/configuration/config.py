@@ -86,7 +86,6 @@ class Settings:
     DEXSCREENER_MAX_AGE_HOURS: float = float(os.getenv("DEXSCREENER_MAX_AGE_HOURS", "720"))
     DEXSCREENER_MAX_ABS_M5_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_M5_PCT", "25"))
     DEXSCREENER_MAX_ABS_H1_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_H1_PCT", "60"))
-    DEXSCREENER_MIN_QUALITY_SCORE: float = float(os.getenv("DEXSCREENER_MIN_QUALITY_SCORE", "50"))
     DEXSCREENER_REBUY_COOLDOWN_MIN: int = int(os.getenv("DEXSCREENER_REBUY_COOLDOWN_MIN", "45"))
 
     # Cache
@@ -100,6 +99,11 @@ class Settings:
     SCORE_WEIGHT_MOMENTUM: float = float(os.getenv("SCORE_WEIGHT_MOMENTUM", "1.3"))
     SCORE_WEIGHT_ORDER_FLOW: float = float(os.getenv("SCORE_WEIGHT_ORDER_FLOW", "1.0"))
 
+    # --- Scoring thresholds (gates) ---
+    SCORE_MIN_QUALITY: float = float(os.getenv("SCORE_MIN_QUALITY", "50"))
+    SCORE_MIN_STATISTICS: float = float(os.getenv("SCORE_MIN_RANK", "55"))
+    SCORE_MIN_ENTRY: float = float(os.getenv("SCORE_MIN_ENTRY", "60"))
+
     # AI adjustment config
     SCORE_AI_DELTA_MULTIPLIER: float = float(os.getenv("SCORE_AI_DELTA_MULTIPLIER", "1.5"))
     SCORE_AI_MAX_ABS_DELTA_POINTS: float = float(os.getenv("SCORE_AI_MAX_ABS_DELTA_POINTS", "20.0"))
@@ -108,8 +112,8 @@ class Settings:
     # OpenAI
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5-mini")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    
-    # ---- Chart-based AI Signal (disabled by default) ----
+
+    # ---- Chart-based AI Signal ----
     CHART_AI_ENABLED: bool = _as_bool(os.getenv("CHART_AI_ENABLED"), True)
     CHART_AI_SAVE_SCREENSHOTS: bool = _as_bool(os.getenv("CHART_AI_SAVE_SCREENSHOTS"), True)
     SCREENSHOT_DIR: str = os.getenv("SCREENSHOT_DIR", str(Path(__file__).resolve().parents[2] / "data" / "screenshots"))
