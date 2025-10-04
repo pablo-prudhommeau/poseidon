@@ -6,15 +6,10 @@ from typing import Any, Dict, List, Tuple, Set, Coroutine, Optional
 from src.ai.chart_signal_provider import ChartAiSignalProvider
 from src.configuration.config import settings
 from src.core.risk_manager import AdaptiveRiskManager
-from src.core.scoring import ScoringEngine
 from src.core.trader import Trader
-from src.core.trending_quality import apply_quality_filter
+from src.core.trending_scoring import apply_quality_filter, ScoringEngine
 from src.core.trending_utils import (
-    filter_strict,
-    soft_fill,
-    recently_traded,
-    preload_best_prices,
-    _age_hours,
+    filter_strict, soft_fill, recently_traded, preload_best_prices, _age_hours,
 )
 from src.logging.logger import get_logger
 from src.persistence.dao.portfolio_snapshots import get_latest_portfolio
@@ -25,11 +20,6 @@ log = get_logger(__name__)
 
 
 def _run_coro_in_fresh_loop(coro: Coroutine[Any, Any, Any], *, debug_label: str = "") -> Any:
-    """
-    Run an async coroutine in an isolated event loop.
-    Falls back to a fresh loop when the debugger's asyncio patch causes
-    'Event loop is closed' with asyncio.run(...).
-    """
     try:
         return asyncio.run(coro)
     except RuntimeError as exc:
@@ -54,30 +44,16 @@ def _run_coro_in_fresh_loop(coro: Coroutine[Any, Any, Any], *, debug_label: str 
 
 
 def _fetch_trending_candidates_sync(*args, **kwargs) -> List[Dict[str, Any]]:
-    """Synchronous wrapper around the async DexScreener trending fetch."""
-    # Local import to avoid circular dependencies
     from src.integrations.dexscreener_client import fetch_trending_candidates
-    return _run_coro_in_fresh_loop(
-        fetch_trending_candidates(*args, **kwargs),
-        debug_label="fetch_trending_candidates",
-    )
+    return _run_coro_in_fresh_loop(fetch_trending_candidates(*args, **kwargs),
+                                   debug_label="fetch_trending_candidates")
+
 
 def _address_in_open_positions(candidate: str, addresses: Set[str]) -> bool:
-    """
-    Return True if the candidate address is already in open positions.
-    - EVM: compare case-insensitive (lower)
-    - Non-EVM (e.g., SOL): compare exact string
-    """
-    if not candidate:
-        return False
-    return candidate in addresses
+    return bool(candidate) and candidate in addresses
 
 
 def _price_get(price_map: Dict[str, float], address: str) -> Optional[float]:
-    """
-    Retrieve a price from a map while being tolerant to EVM address casing.
-    Never mutates or normalizes what we expose elsewhere.
-    """
     if not address:
         return None
     if address in price_map:
@@ -87,14 +63,14 @@ def _price_get(price_map: Dict[str, float], address: str) -> Optional[float]:
 
 class TrendingJob:
     """
-    Orchestrator pipeline:
-      fetch → hard filter → quality filter → de-dup (open positions) → preload prices
-      → base scoring (0..100) → gate checks (recently traded, risk, prices, deviation)
-      → Chart AI on survivors top-K → final score → risk & sizing → buy
+    Pipeline (gates explicites) :
+      1) QUALITY GATE     → qualityScore >= min
+      2) STATISTICS GATE  → statScore   >= min
+      3) AI GATE          → entryScore  >= min
+      (puis sizing & buy au fil de l'eau)
     """
 
     def __init__(self) -> None:
-        # Baseline selection knobs
         self.interval: str = settings.TREND_INTERVAL.lower()
         self.page_size: int = settings.TREND_PAGE_SIZE
         self.max_results: int = settings.TREND_MAX_RESULTS
@@ -108,28 +84,23 @@ class TrendingJob:
         self.soft_fill_min: int = settings.TREND_SOFT_FILL_MIN
         self.soft_fill_sort: str = settings.TREND_SOFT_FILL_SORT
 
-        # Execution and risk
         self.trader = Trader()
         self.risk_manager = AdaptiveRiskManager()
 
-        # AI
         self.chart_ai = ChartAiSignalProvider()
         self.chart_ai_top_k: int = int(getattr(settings, "TOP_K_CANDIDATES_FOR_CHART_AI"))
         self.chart_ai_timeframe: int = int(getattr(settings, "CHART_AI_TIMEFRAME"))
         self.chart_ai_lookback: int = int(getattr(settings, "CHART_AI_LOOKBACK_MINUTES"))
 
+        self.min_statistics_score: float = float(getattr(settings, "SCORE_MIN_STATISTICS"))
+        self.min_entry_score: float = float(getattr(settings, "SCORE_MIN_ENTRY"))
+
     def _free_cash(self) -> float:
-        """Return the current free cash from the latest portfolio snapshot."""
         with _session() as db:
             snapshot = get_latest_portfolio(db, create_if_missing=True)
             return float(snapshot.cash or 0.0) if snapshot else 0.0
 
     def _open_sets(self) -> Tuple[Set[str], Set[str]]:
-        """
-        Return sets for currently open positions:
-          - symbols: symbols uppercased (symbol matching is case-insensitive)
-          - addresses: addresses
-        """
         with _session() as db:
             positions = get_open_positions(db)
             symbols = {(p.symbol or "").upper() for p in positions if p.symbol}
@@ -137,30 +108,15 @@ class TrendingJob:
             return symbols, addresses
 
     def _per_buy_budget(self, free_cash: float) -> float:
-        """Compute the per-buy budget using a fraction of free cash."""
         fraction = float(settings.TREND_PER_BUY_FRACTION)
         return max(1.0, free_cash * fraction)
 
-    def _compute_base_scores(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Compute base scores (0..100) for candidates — no Chart AI here.
-        Populates `base_score` and initializes `final_score` with the same value.
-        """
-        if not candidates:
-            return []
-        engine = ScoringEngine().fit(candidates)
-        for item in candidates:
-            item["base_score"] = float(engine.base_score(item))
-            item["final_score"] = item["base_score"]
-        return candidates
-
     def run_once(self) -> None:
-        """Run one full trending cycle."""
         if not settings.TREND_ENABLE:
             log.info("Trending disabled")
             return
 
-        # 1) Fetch candidates from DexScreener
+        # 1) Fetch
         try:
             rows = _fetch_trending_candidates_sync()
         except Exception as exc:
@@ -183,125 +139,97 @@ class TrendingJob:
         )
         log.info("[FILTER] kept=%d rejected=%s", len(kept), rejected_counts)
 
-        # 3) Soft-fill to ensure a minimum pool
+        # 3) Soft-fill
         need_minimum = max(self.soft_fill_min, len(kept))
         kept = soft_fill(
-            rows,
-            kept,
+            rows, kept,
             need_min=need_minimum,
             min_vol_usd=self.min_volume_usd,
             min_liq_usd=self.min_liquidity_usd,
             sort_key=self.soft_fill_sort,
         )
 
-        # 4) Quality filters (no AI here)
+        # 4) QUALITY GATE (gate #1)
         kept = apply_quality_filter(kept)
         if not kept:
-            log.info("[QUALITY] 0 candidates after quality filter")
+            log.info("[QUALITY] 0 candidates after gate #1")
             return
 
-        # 5) Sort and clip by a deterministic key to stabilize cohorts
+        # 5) Stabilise cohorte
         sort_key = self.soft_fill_sort if self.soft_fill_sort in {"vol24h", "liqUsd"} else "vol24h"
         kept.sort(key=lambda item: float(item.get(sort_key) or 0.0), reverse=True)
         kept = kept[: self.max_results]
 
-        # 6) Remove symbols/addresses already in open positions (without normalizing exposed values)
+        # 6) Dedup open positions
         symbols, addresses = self._open_sets()
-        pruned_candidates: List[Dict[str, Any]] = []
+        pruned: List[Dict[str, Any]] = []
         for item in kept:
-            symbol_key = (item.get("symbol") or "").upper()
-            address_key = item.get("address") or ""
-            if symbol_key in symbols:
-                log.debug("[DEDUP] skip already open %s (%s)", item.get("symbol"), address_key)
+            sym = (item.get("symbol") or "").upper()
+            addr = item.get("address") or ""
+            if sym in symbols or _address_in_open_positions(addr, addresses):
+                log.debug("[DEDUP] skip already open %s (%s)", item.get("symbol"), addr)
                 continue
-            if _address_in_open_positions(address_key, addresses):
-                log.debug("[DEDUP] skip already open %s (%s)", item.get("symbol"), address_key)
-                continue
-            pruned_candidates.append(item)
-
-        if not pruned_candidates:
+            pruned.append(item)
+        if not pruned:
             log.debug("[DEDUP] 0 candidates after de-duplication")
             return
 
-        # 7) Preload best prices for decision quality (preserve original casing)
-        address_list = [item.get("address") or "" for item in pruned_candidates if item.get("address")]
+        # 7) Preload prices (pré-décision)
+        address_list = [it.get("address") or "" for it in pruned if it.get("address")]
         best_price_by_address = preload_best_prices(address_list)
 
-        # 8) Base scoring only (cheap)
-        pruned_candidates = self._compute_base_scores(pruned_candidates)
+        # 8) STATISTICS SCORE (gate #2)
+        engine = ScoringEngine().fit(pruned)
+        stat_ready: List[Dict[str, Any]] = []
+        for it in pruned:
+            s = engine.stat_score(it)
+            it["statScore"] = s
+            if s >= self.min_statistics_score:
+                stat_ready.append(it)
+            else:
+                log.debug("[STATS][DROP] %s — statScore=%.2f<%.2f",
+                          it.get("symbol"), s, self.min_statistics_score)
+        if not stat_ready:
+            log.info("[STATS] 0 candidates after gate #2")
+            return
 
-        # 9) Gatekeeping BEFORE any AI calls (save cost/latency)
+        # 9) Gatekeeping hors scoring (recently traded, risk, price sanity)
         cooldown_minutes = int(settings.DEXSCREENER_REBUY_COOLDOWN_MIN)
         max_price_deviation = float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER)
 
         eligible: List[Dict[str, Any]] = []
-        for item in sorted(pruned_candidates, key=lambda x: x["base_score"], reverse=True):
-            address_original = item.get("address") or ""
+        for item in sorted(stat_ready, key=lambda x: x["statScore"], reverse=True):
+            addr = item.get("address") or ""
 
-            # Recently traded gate — tolerate EVM casing without mutating stored data
-            if address_original:
-                if recently_traded(address_original, minutes=cooldown_minutes):
-                    log.debug("[GATE] skip recently traded %s (exact)", item.get("symbol"))
-                    continue
+            if addr and recently_traded(addr, minutes=cooldown_minutes):
+                log.debug("[GATE][COOLDOWN] %s", item.get("symbol"))
+                continue
 
             decision = self.risk_manager.pre_entry_decision(item)
             if not decision.should_buy:
-                log.debug("[GATE] pre-entry block %s — %s", item.get("symbol"), decision.reason)
+                log.debug("[GATE][RISK] %s — %s", item.get("symbol"), decision.reason)
                 continue
 
-            dex_price = _price_get(best_price_by_address, address_original)
+            dex_price = _price_get(best_price_by_address, addr)
             if dex_price is None or dex_price <= 0:
-                log.debug("[GATE] invalid DEX price for %s", item.get("symbol"))
+                log.debug("[GATE][PRICE] invalid DEX price for %s", item.get("symbol"))
                 continue
 
             quoted_price = float(item.get("price") or 0.0)
             if dex_price and quoted_price:
                 low, high = sorted([dex_price, quoted_price])
                 if low > 0 and (high / low) > max_price_deviation:
-                    log.debug(
-                        "[GATE] price deviation too large for %s (dex=%.6f quote=%.6f)",
-                        item.get("symbol"), dex_price, quoted_price
-                    )
+                    log.debug("[GATE][DEV] %s dex=%.6f quote=%.6f", item.get("symbol"), dex_price, quoted_price)
                     continue
 
-            # enrich for later
             item["dex_price"] = dex_price
             eligible.append(item)
 
         if not eligible:
-            log.info("[GATE] 0 candidates after checks")
+            log.info("[GATE] 0 candidates after risk/price checks")
             return
 
-        # 10) Chart AI strictly last, on survivors only (top-K by base_score)
-        top_for_ai = sorted(eligible, key=lambda x: x["base_score"], reverse=True)[: max(0, self.chart_ai_top_k)]
-        engine_for_ai = ScoringEngine().fit(eligible)
-
-        for item in top_for_ai:
-            try:
-                token_age_hours = _age_hours(int(item.get("pairCreatedAt") or 0))
-                signal = self.chart_ai.predict(
-                    symbol=(item.get("symbol") or ""),
-                    chain_name=item.get("chain") or None,
-                    pair_address=item.get("address") or None,
-                    timeframe_minutes=self.chart_ai_timeframe,
-                    lookback_minutes=self.chart_ai_lookback,
-                    token_age_hours=token_age_hours,
-                )
-            except Exception:
-                log.exception("[AI] ChartAI failed for %s", item.get("symbol") or item.get("address"))
-                continue
-
-            if signal is None:
-                continue
-
-            item["ai_delta"] = float(signal.quality_score_delta)
-            item["ai_probability_buy"] = float(signal.probability_tp1_before_sl)
-            item["final_score"] = float(engine_for_ai.apply_ai_adjustment(item["base_score"], item["ai_delta"]))
-
-        # If no AI delta, final_score stays == base_score
-        eligible.sort(key=lambda x: x.get("final_score", x["base_score"]), reverse=True)
-
-        # 11) Execution constraints
+        # 10) AI GATE (gate #3) + BUY au fil de l'eau
         free_cash = self._free_cash()
         per_buy_usd = self._per_buy_budget(free_cash)
         min_free_cash_usd = float(settings.TREND_MIN_FREE_CASH_USD)
@@ -309,48 +237,73 @@ class TrendingJob:
 
         simulated_cash = free_cash
         executed_buys = 0
+        ai_budget = max(0, self.chart_ai_top_k)
 
-        for item in eligible:
+        for item in sorted(eligible, key=lambda x: x["statScore"], reverse=True):
             if executed_buys >= max_buys_per_run:
                 log.debug("[BUY] Max buys per run reached (%d)", max_buys_per_run)
                 break
 
+            # IA si budget (sinon entryScore = statScore)
+            entry_score = float(item["statScore"])
+            if ai_budget > 0:
+                try:
+                    token_age_hours = _age_hours(int(item.get("pairCreatedAt") or 0))
+                    signal = self.chart_ai.predict(
+                        symbol=(item.get("symbol") or ""),
+                        chain_name=item.get("chain") or None,
+                        pair_address=item.get("address") or None,
+                        timeframe_minutes=self.chart_ai_timeframe,
+                        lookback_minutes=self.chart_ai_lookback,
+                        token_age_hours=token_age_hours,
+                    )
+                except Exception:
+                    log.exception("[AI] ChartAI failed for %s", item.get("symbol") or item.get("address"))
+                    signal = None
+                ai_budget -= 1
+
+                if signal is not None:
+                    item["aiDelta"] = float(signal.quality_score_delta)
+                    item["aiBuyProb"] = float(signal.probability_tp1_before_sl)
+                    entry_score = engine.apply_ai_adjustment(item["statScore"], item["aiDelta"])
+
+            item["entryScore"] = entry_score
+
+            # Gate #3 : entryScore minimal
+            if entry_score < self.min_entry_score:
+                log.debug("[AI][DROP] %s — entryScore=%.2f<%.2f (stat=%.2f aiΔ=%.2f prob=%.3f)",
+                          item.get("symbol"), entry_score, self.min_entry_score,
+                          item["statScore"], item.get("aiDelta", 0.0), item.get("aiBuyProb", 0.0))
+                continue
+
+            # Sizing & cash checks
             size_multiplier = self.risk_manager.size_multiplier(item)
             order_notional = max(0.0, per_buy_usd * size_multiplier)
-
             if simulated_cash < order_notional or (simulated_cash - order_notional) < min_free_cash_usd:
-                log.debug(
-                    "[BUY] Insufficient simulated cash for %s (need=%.2f, have=%.2f, min_free=%.2f)",
-                    item.get("symbol"), order_notional, simulated_cash, min_free_cash_usd
-                )
-                break
+                log.debug("[BUY][CASH_SKIP] %s need=%.2f have=%.2f min_free=%.2f",
+                          item.get("symbol"), order_notional, simulated_cash, min_free_cash_usd)
+                continue
 
             payload = dict(item)
             payload["order_notional"] = order_notional
 
+            self.trader.buy(payload)
+            executed_buys += 1
+            simulated_cash -= order_notional
             log.info(
-                "[BUY] %s base=%.2f final=%.2f aiΔ=%.2f prob=%.3f size×=%.2f notional=%.2f",
+                "[BUY] %s quality=%.1f stat=%.1f entry=%.1f aiΔ=%.2f prob=%.3f size×=%.2f notional=%.2f",
                 item.get("symbol"),
-                item.get("base_score"),
-                item.get("final_score", item.get("base_score")),
-                item.get("ai_delta", 0.0),
-                item.get("ai_probability_buy", 0.0),
+                item.get("qualityScore", 0.0),
+                item["statScore"],
+                entry_score,
+                item.get("aiDelta", 0.0),
+                item.get("aiBuyProb", 0.0),
                 size_multiplier,
                 order_notional,
             )
 
-            try:
-                self.trader.buy(payload)
-                executed_buys += 1
-                simulated_cash -= order_notional
-            except Exception as exc:
-                log.warning("[BUY] Failed for %s: %s", item.get("symbol"), exc)
-
-        log.info(
-            "[SUMMARY] executed=%d / %d candidates (cash=%.2f → %.2f)",
-            executed_buys, len(eligible), free_cash, simulated_cash
-        )
+        log.info("[SUMMARY] executed=%d / %d candidates (cash=%.2f → %.2f)",
+                 executed_buys, len(eligible), free_cash, simulated_cash)
 
     def run(self) -> None:
-        """Compatibility alias."""
         self.run_once()

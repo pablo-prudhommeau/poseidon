@@ -1,6 +1,6 @@
-<svg [attr.width]="width"
-     [attr.height]="height"
-     [attr.viewBox]="'0 0 ' + width + ' ' + height"
+<svg [attr.width]="width()"
+     [attr.height]="height()"
+     [attr.viewBox]="'0 0 ' + width() + ' ' + height()"
      preserveAspectRatio="none"
      class="block">
 	<path [attr.d]="pathData()"

@@ -31,7 +31,7 @@ def build_chartist_user_prompt(
         f"Asset: {label}\n"
         f"Timeframe: {timeframe_minutes} minutes per candle\n"
         f"Lookback: last {lookback_minutes} minutes\n"
-        "Task: detect actionable short-term patterns and return probabilities relevant to Poseidon's scoring:\n"
+        "Task: detect actionable short-term patterns and return probabilities:\n"
         "- tp1_probability: probability that TP1 is reached BEFORE any stop loss within the next 30–60 minutes.\n"
         "- sl_before_tp_probability: probability that a typical stop loss is hit BEFORE TP1 in the same horizon.\n"
         "- trend_state: one of ['uptrend','downtrend','range','transition'].\n"
