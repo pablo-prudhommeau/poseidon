@@ -1,0 +1,141 @@
+<div class="mx-auto px-6 space-y-6">
+	<!-- KPIs (dataset brut) -->
+	<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+		<p-card>
+			<ng-template pTemplate="title">Total Evaluations</ng-template>
+			<div class="text-3xl font-semibold">{{ kpiTotal() | number }}</div>
+			<div class="text-sm opacity-70">Persisted candidate evaluations</div>
+		</p-card>
+		<p-card>
+			<ng-template pTemplate="title">Average Final Score</ng-template>
+			<div class="text-3xl font-semibold">{{ kpiAverageFinal() | number:'1.2-2' }}</div>
+			<div class="text-sm opacity-70">Across current dataset</div>
+		</p-card>
+		<p-card>
+			<ng-template pTemplate="title">With AI Analysis</ng-template>
+			<div class="text-3xl font-semibold">{{ kpiWithAi() | number }}</div>
+			<div class="text-sm opacity-70">Rows with AI probability or delta</div>
+		</p-card>
+	</div>
+
+	<!-- KPIs (basées sur l’outcome) -->
+	<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+		<p-card>
+			<ng-template pTemplate="title">Outcomes</ng-template>
+			<div class="text-3xl font-semibold">{{ kpiOutCount() | number }}</div>
+			<div class="text-sm opacity-70">Closed trades linked to evaluations</div>
+		</p-card>
+		<p-card>
+			<ng-template pTemplate="title">Win-Rate</ng-template>
+			<div class="text-3xl font-semibold">
+				{{ kpiOutWinRate() | number:'1.0-2' }}%
+			</div>
+			<div class="text-sm opacity-70">Share of profitable outcomes</div>
+		</p-card>
+		<p-card>
+			<ng-template pTemplate="title">Avg PnL (%)</ng-template>
+			<div class="text-3xl font-semibold">
+				{{ kpiOutAvgPct() | number:'1.2-2' }}
+			</div>
+			<div class="text-sm opacity-70">Average realized PnL across outcomes</div>
+		</p-card>
+	</div>
+
+	<!-- Charts (dataset brut) -->
+	<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+		<p-card>
+			<ng-template pTemplate="title">Score Distribution</ng-template>
+			<apx-chart [series]="histSeries" [chart]="histChart" [xaxis]="histXAxis" [yaxis]="histYAxis"
+			           [dataLabels]="histDataLabels" [tooltip]="histTooltip"
+			           [legend]="histLegend" [grid]="histGrid" [theme]="histTheme"></apx-chart>
+		</p-card>
+
+		<p-card>
+			<ng-template pTemplate="title">AI Probability Calibration</ng-template>
+			<apx-chart [series]="calibSeries" [chart]="calibChart" [xaxis]="calibXAxis" [yaxis]="calibYAxis"
+			           [markers]="calibMarkers" [stroke]="calibStroke" [tooltip]="calibTooltip"
+			           [legend]="calibLegend" [grid]="calibGrid" [theme]="calibTheme"></apx-chart>
+		</p-card>
+
+		<p-card>
+			<ng-template pTemplate="title">Token Age vs Final Score</ng-template>
+			<apx-chart [series]="ageSeries" [chart]="ageChart" [xaxis]="ageXAxis" [yaxis]="ageYAxis"
+			           [markers]="ageMarkers" [stroke]="ageStroke" [tooltip]="ageTooltip"
+			           [legend]="ageLegend" [grid]="ageGrid" [theme]="ageTheme"></apx-chart>
+		</p-card>
+	</div>
+
+	<div>
+		<p-card>
+			<ng-template pTemplate="title">Avg Final Score by Volume × Liquidity</ng-template>
+			<apx-chart [series]="heatSeries" [chart]="heatChart" [xaxis]="heatXAxis" [yaxis]="heatYAxis"
+			           [dataLabels]="heatDataLabels" [tooltip]="heatTooltip"
+			           [legend]="heatLegend" [grid]="heatGrid" [theme]="heatTheme"></apx-chart>
+		</p-card>
+	</div>
+
+	<!-- Charts (basés sur l’outcome) -->
+	<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+		<p-card>
+			<ng-template pTemplate="title">Outcome PnL% Distribution</ng-template>
+			<apx-chart [series]="outHistSeries" [chart]="outHistChart" [xaxis]="outHistXAxis" [yaxis]="outHistYAxis"
+			           [dataLabels]="outHistDataLabels" [tooltip]="outHistTooltip"
+			           [legend]="outHistLegend" [grid]="outHistGrid" [theme]="outHistTheme"></apx-chart>
+		</p-card>
+
+		<p-card>
+			<ng-template pTemplate="title">Win-Rate by Final Score</ng-template>
+			<apx-chart [series]="winByScoreSeries" [chart]="winByScoreChart" [xaxis]="winByScoreXAxis" [yaxis]="winByScoreYAxis"
+			           [markers]="winByScoreMarkers" [stroke]="winByScoreStroke" [tooltip]="winByScoreTooltip"
+			           [legend]="winByScoreLegend" [grid]="winByScoreGrid" [theme]="winByScoreTheme"></apx-chart>
+		</p-card>
+
+		<p-card>
+			<ng-template pTemplate="title">Holding Time vs PnL%</ng-template>
+			<apx-chart [series]="holdScatterSeries" [chart]="holdScatterChart" [xaxis]="holdScatterXAxis" [yaxis]="holdScatterYAxis"
+			           [markers]="holdScatterMarkers" [stroke]="holdScatterStroke" [tooltip]="holdScatterTooltip"
+			           [legend]="holdScatterLegend" [grid]="holdScatterGrid" [theme]="holdScatterTheme"></apx-chart>
+		</p-card>
+	</div>
+
+	<div>
+		<p-card>
+			<ng-template pTemplate="title">Avg Outcome PnL% by Volume × Liquidity</ng-template>
+			<apx-chart [series]="outHeatSeries" [chart]="outHeatChart" [xaxis]="outHeatXAxis" [yaxis]="outHeatYAxis"
+			           [dataLabels]="outHeatDataLabels" [tooltip]="outHeatTooltip"
+			           [legend]="outHeatLegend" [grid]="outHeatGrid" [theme]="outHeatTheme"></apx-chart>
+		</p-card>
+	</div>
+
+	<!-- Toolbar -->
+	<div class="flex items-center gap-3">
+    <span class="p-input-icon-left w-full md:w-80">
+      <i class="pi pi-search"></i>
+      <input pInputText #q type="text" [value]="quickFilterText"
+             (input)="onQuickFilterChange(q.value)"
+             placeholder="Filter by any column..." class="w-full" />
+    </span>
+	</div>
+
+	<!-- Grid -->
+	<ag-grid-angular class="w-full" domLayout="autoHeight"
+	                 [rowData]="rowData()" [columnDefs]="columnDefs" [defaultColDef]="defaultColDef"
+	                 [theme]="agGridTheme" (rowClicked)="onRowClicked($event)" (gridReady)="onGridReady($event)">
+	</ag-grid-angular>
+
+	<!-- RAW dialog -->
+	<p-dialog [(visible)]="rawVisible" [modal]="true" [dismissableMask]="true" [style]="{ width: '90vw' }"
+	          [contentStyle]="{ 'max-height': '75vh', 'overflow': 'auto' }">
+		<ng-template pTemplate="header">
+			Raw payloads — {{ selected()?.symbol }} ({{ selected()?.address | slice: -6 }})
+		</ng-template>
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+			<p-card><ng-template pTemplate="title">Dexscreener</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.dexscreener | json }}</pre></p-card>
+			<p-card><ng-template pTemplate="title">AI</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.ai | json }}</pre></p-card>
+			<p-card><ng-template pTemplate="title">Risk</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.risk | json }}</pre></p-card>
+			<p-card><ng-template pTemplate="title">Pricing</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.pricing | json }}</pre></p-card>
+			<p-card><ng-template pTemplate="title">Settings</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.settings | json }}</pre></p-card>
+			<p-card><ng-template pTemplate="title">Order</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.order | json }}</pre></p-card>
+		</div>
+	</p-dialog>
+</div>

@@ -1,0 +1,42 @@
+<div class="mx-auto px-6 space-y-8">
+	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+		<p-card>
+			<ng-template pTemplate="title">Unrealized P&L</ng-template>
+			<div class="mt-2">
+				<pnl-badge [value]="unrealized() || 0"></pnl-badge>
+			</div>
+		</p-card>
+
+		<p-card>
+			<ng-template pTemplate="title">Realized P&L</ng-template>
+			<div class="flex items-center gap-2">
+				<span class="text-slate-200 text-sm">Total:</span>
+				<pnl-badge [value]="realizedTotal() || 0"></pnl-badge>
+				<span class="text-slate-200 text-sm">24h:</span>
+				<pnl-badge [value]="realized24h() || 0"></pnl-badge>
+			</div>
+		</p-card>
+
+		<p-card>
+			<ng-template pTemplate="title">Equity</ng-template>
+			<div class="text-2xl font-semibold text-white">$ {{ equity() | number:'1.2-2' }}</div>
+			<sparkline *ngIf="(spark()?.length ?? 0) > 1" [points]="spark()"></sparkline>
+		</p-card>
+
+		<p-card>
+			<ng-template pTemplate="title">Cash</ng-template>
+			<div class="text-2xl font-semibold text-white">$ {{ cash() | number:'1.2-2' }}</div>
+			<div class="text-xs text-slate-400">Holdings: $ {{ holdings() | number:'1.2-2' }}</div>
+		</p-card>
+	</div>
+
+	<p-card>
+		<ng-template pTemplate="title">Open Positions</ng-template>
+		<positions-table></positions-table>
+	</p-card>
+
+	<p-card>
+		<ng-template pTemplate="title">Recent Trades</ng-template>
+		<trades-table></trades-table>
+	</p-card>
+</div>

@@ -1,0 +1,39 @@
+:host {
+    position: absolute;
+    right: -8px;
+    bottom: -12px;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.pulse-slow {
+    animation: connectionPulse 2.6s ease-in-out infinite;
+}
+
+@keyframes connectionPulse {
+    0% {
+        opacity: 0.70;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0.70;
+    }
+}
+
+.spinner-ring {
+    border: 2px solid;
+    border-radius: 9999px;
+    border-color: currentColor transparent currentColor transparent;
+    animation: spinnerRotate 1.0s linear infinite;
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+@keyframes spinnerRotate {
+    to {
+        transform: rotate(360deg);
+    }
+}
+  

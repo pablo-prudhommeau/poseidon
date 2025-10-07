@@ -33,8 +33,12 @@
         "@primeuix/themes": "1.2.5",
         "@tailwindcss/postcss": "4.1.13",
         "ag-grid-angular": "34.2.0",
+        "ag-grid-community": "34.2.0",
+        "apexcharts": "5.3.5",
+        "ng-apexcharts": "2.0.3",
+        "primeicons": "7.0.0",
         "primeng": "20.2.0",
-        "rxjs": "7.8.1",
+        "rxjs": "7.8.2",
         "tailwindcss-primeui": "0.6.1",
         "tslib": "2.3.0",
         "zone.js": "0.15.0"

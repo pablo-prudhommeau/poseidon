@@ -1,5 +1,11 @@
 <nav class="flex justify-between mx-auto px-6 py-6">
-	<img src="assets/poseidon.png" alt="Poseidon" class="h-32 w-auto"/>
+	<div class="flex items-center gap-4">
+		<div class="relative inline-block">
+			<img src="assets/poseidon.png" alt="Poseidon" class="h-32 w-auto"/>
+			<app-connection-overlay-pill></app-connection-overlay-pill>
+		</div>
+	</div>
+	<app-paper-mode-control></app-paper-mode-control>
 	<div class="flex-none">
 		<div class="flex items-center gap-1 rounded-full bg-white/5 border border-white/10 backdrop-blur shadow-sm px-1 py-1 text-sm"
 		     role="navigation"
@@ -14,7 +20,7 @@
              transition-colors"
 			   [attr.aria-label]="getAriaLabel(item)">
 				<span class="inline-flex">
-			        <i *ngIf="item.icon === 'home'" class="fa fa-home"></i>
+			        <i [class]="'fa fa-' + item.icon"></i>
 		        </span>
 				<span class="font-medium">{{ item.label }}</span>
 			</a>

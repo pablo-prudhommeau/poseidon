@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Enum as SqlAchemyEnum, Float, Integer, String, func
+from sqlalchemy import Enum as SqlAchemyEnum, Float, Integer, String, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.utils import timezone_now
@@ -82,3 +82,70 @@ class PortfolioSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<Snapshot equity={self.equity} cash={self.cash} holdings={self.holdings}>"
+
+
+class Analytics(Base):
+    """
+    Une ligne par candidature (évaluation) — enrichie plus tard par l’outcome trade.
+    Tous les champs sont NOT NULL ; les 'raw_*' capturent les payloads bruts.
+    """
+    __tablename__ = "analytics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Identification
+    symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
+    chain: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    address: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+
+    # Timing
+    evaluated_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    # Ranking / Scores
+    rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    statistics_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    entry_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    final_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # AI (OpenAI / Chart AI)
+    ai_probability_tp1_before_sl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    ai_quality_score_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # Fundamentals
+    token_age_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume24h_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    liquidity_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    pct_5m: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    pct_1h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    pct_24h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # Pricing au moment de la décision
+    dex_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    quoted_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # Décision + sizing/budget
+    decision: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    decision_reason: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    sizing_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    order_notional_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    free_cash_before_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    free_cash_after_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # RAW payloads (bruts)
+    raw_dexscreener: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    raw_ai: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    raw_risk: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    raw_pricing: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    raw_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    raw_order_result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    # Outcome (renseigné à la clôture du trade)
+    has_outcome: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    outcome_trade_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    outcome_closed_at: Mapped[datetime] = mapped_column(nullable=False, default=timezone_now)
+    outcome_holding_minutes: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    outcome_pnl_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    outcome_pnl_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    outcome_was_profit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    outcome_exit_reason: Mapped[str] = mapped_column(String(64), nullable=False, default="")

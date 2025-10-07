@@ -10,7 +10,7 @@ from src.logging.logger import get_logger
 from src.persistence.dao import trades
 from src.persistence.dao.trades import _compute_open_quantity_from_trades
 from src.persistence.db import _session
-from src.persistence.models import Position, PortfolioSnapshot, Trade, Status, Phase
+from src.persistence.models import Position, PortfolioSnapshot, Trade, Status, Phase, Analytics
 
 log = get_logger(__name__)
 
@@ -27,8 +27,9 @@ def reset_paper(database_session: Session) -> None:
         session.execute(delete(Trade))
         session.execute(delete(Position))
         session.execute(delete(PortfolioSnapshot))
+        session.execute(delete(Analytics))
         session.commit()
-        log.info("Paper state has been reset (trades, positions, snapshots removed).")
+        log.info("Paper state has been reset (trades, positions, snapshots, analytics removed).")
 
 
 def _evaluate_position_thresholds_and_execute(
@@ -79,10 +80,7 @@ def _evaluate_position_thresholds_and_execute(
     if stop > 0.0 and last_price_value <= stop:
         sell_quantity = _compute_open_quantity_from_trades(database_session, position.address)
         if sell_quantity <= 0.0:
-            log.debug(
-                "[AUTOSELL][SL] Ignored because open quantity is zero — address=%s",
-                position.address,
-            )
+            log.debug("[AUTOSELL][SL] Ignored because open quantity is zero — address=%s", position.address)
             return created_trades
 
         trade = trades.sell(
@@ -110,10 +108,7 @@ def _evaluate_position_thresholds_and_execute(
     if tp2 > 0.0 and last_price_value >= tp2 and position_quantity > 0.0:
         sell_quantity = _compute_open_quantity_from_trades(database_session, position.address)
         if sell_quantity <= 0.0:
-            log.debug(
-                "[AUTOSELL][TP2] Ignored because open quantity is zero — address=%s",
-                position.address,
-            )
+            log.debug("[AUTOSELL][TP2] Ignored because open quantity is zero — address=%s", position.address)
             return created_trades
 
         trade = trades.sell(
@@ -181,7 +176,6 @@ def check_thresholds_and_autosell(database_session: Session, symbol: str, last_p
     created_trades: List[Trade] = []
     last_price_value = float(last_price or 0.0)
     if last_price_value <= 0.0:
-        log.debug("Skip autosell for %s due to non-positive last price: %s", symbol, last_price_value)
         return created_trades
 
     positions = (
@@ -200,7 +194,6 @@ def check_thresholds_and_autosell(database_session: Session, symbol: str, last_p
 
     if created_trades:
         database_session.commit()
-        log.debug("Autosell committed for %s — trades_created=%d", symbol, len(created_trades))
     return created_trades
 
 
@@ -217,7 +210,6 @@ def check_thresholds_and_autosell_for_address(
     created_trades: List[Trade] = []
     last_price_value = float(last_price or 0.0)
     if not address or last_price_value <= 0.0:
-        log.debug("Skip autosell for address=%s due to missing address or non-positive price=%s", address, last_price)
         return created_trades
 
     position = (
@@ -231,16 +223,10 @@ def check_thresholds_and_autosell_for_address(
         .first()
     )
     if not position:
-        log.debug("No ACTIVE position found for address=%s — nothing to autosell.", address)
         return created_trades
 
     created_trades = _evaluate_position_thresholds_and_execute(database_session, position, last_price_value)
 
     if created_trades:
         database_session.commit()
-        log.debug(
-            "Autosell committed for address=%s — trades_created=%d",
-            address,
-            len(created_trades),
-        )
     return created_trades

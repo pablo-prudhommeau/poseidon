@@ -1,0 +1,23 @@
+<div class="inline-flex items-center gap-2 p-0.5 rounded-full text-xs font-semibold uppercase tracking-wide
+             ring-1 shadow-sm backdrop-blur select-none relative
+             bg-white/5 text-slate-200"
+     [ngClass]="{
+        'text-emerald-300 ring-emerald-400/30 pulse-slow bg-emerald-900/20': isOpen(),
+        'text-amber-300 ring-amber-400/30 bg-amber-900/20': isConnecting(),
+        'text-rose-300 ring-rose-400/30 bg-rose-900/20': isClosed()
+      }"
+     aria-live="polite"
+     [attr.aria-label]="'WebSocket status: ' + label()">
+
+	<!-- Animated spinner ring shown only while connecting -->
+	<span *ngIf="isConnecting()" class="spinner-ring absolute -inset-1 rounded-full" aria-hidden="true"></span>
+
+	<!-- Status dot -->
+	<span class="inline-block h-3 w-3 rounded-full" [ngClass]="{
+        'bg-emerald-400': isOpen(),
+        'bg-amber-400': isConnecting(),
+        'bg-rose-400': isClosed()
+      }"></span>
+
+</div>
+  
