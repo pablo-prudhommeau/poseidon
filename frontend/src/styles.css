@@ -3,22 +3,6 @@
 
 @plugin "tailwindcss-primeui";
 
-:root {
-    --bg: #0e1320;
-    --card: #141b2d;
-    --muted: #8aa0b4;
-}
-
-html, body {
-    height: 100%;
-}
-
-body {
-    margin: 0;
-    background: var(--bg);
-    color: #e8eef6;
-}
-
 @keyframes flashUp {
     0% {
         background: rgba(34, 197, 94, 0.25);
@@ -62,4 +46,23 @@ body {
 
 .img-fade.is-loaded {
     opacity: 1;
+}
+
+.apexcharts-canvas, .apexcharts-tooltip, .apexcharts-menu, .apexcharts-legend {
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+.apexcharts-tooltip {
+    background: #121417 !important;
+    border: 1px solid #2a2f36 !important;
+    color: #e5e7eb !important;
+}
+
+.apexcharts-menu {
+    background: #0e1114 !important;
+    border: 1px solid #2a2f36 !important;
+}
+
+.apexcharts-xaxis text, .apexcharts-yaxis text, .apexcharts-legend-text {
+    fill: #cbd5e1 !important;
 }

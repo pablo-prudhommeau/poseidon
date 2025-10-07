@@ -1,32 +1,41 @@
 import {CommonModule} from '@angular/common';
-import {Component} from '@angular/core';
+import {Component, inject, OnInit} from '@angular/core';
 import {RouterModule} from '@angular/router';
+import {WebSocketService} from '../core/websocket.service';
+import {ConnectionOverlayPillComponent} from '../widgets/connection-overlay-pill.component';
+import {PaperModeControlComponent} from '../widgets/paper-mode-control.component';
 
-type IconName = 'home' | 'wrench';
-
-interface NavItem {
+interface NavigationItem {
     label: string;
     route: string;
-    icon: IconName;
+    icon: string;
     exact: boolean;
 }
 
 @Component({
     standalone: true,
     selector: 'app-nav',
-    imports: [CommonModule, RouterModule],
+    imports: [CommonModule, RouterModule, ConnectionOverlayPillComponent, PaperModeControlComponent],
     templateUrl: './navigation.component.html'
 })
-export class NavigationComponent {
-    public readonly items: ReadonlyArray<NavItem> = [
-        {label: 'Home', route: '/', icon: 'home', exact: true}
+export class NavigationComponent implements OnInit {
+
+    private webSocketService = inject(WebSocketService);
+
+    public readonly items: ReadonlyArray<NavigationItem> = [
+        {label: 'Home', route: '/', icon: 'home', exact: true},
+        {label: 'Analytics', route: '/analytics', icon: 'chart-area', exact: false}
     ];
 
-    constructor() {
-        console.info('poseidon.ui.navbar — initialized (items:', this.items.length, ')');
+    ngOnInit(): void {
+        this.webSocketService.connect();
     }
 
-    public getAriaLabel(item: NavItem): string {
+    public trackByRoute(_: number, item: NavigationItem): string {
+        return item.route;
+    }
+
+    public getAriaLabel(item: NavigationItem): string {
         return `Navigate to ${item.label}`;
     }
 }

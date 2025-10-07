@@ -1,32 +1,25 @@
-import {Injectable, signal} from '@angular/core';
-import {Portfolio, Position, Trade} from './models';
+import { Injectable, signal } from '@angular/core';
+import {Analytics, Portfolio, Position, Trade} from './models';
 
-type WebsocketMessage =
+type WsMsg =
     | { type: 'init'; payload: any }
     | { type: 'portfolio'; payload: any }
     | { type: 'positions'; payload: any[] }
     | { type: 'trade'; payload: any }
+    | { type: 'analytics'; payload: any }
     | { type: string; payload?: any };
 
 export type Status = 'connecting' | 'open' | 'closed';
 
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class WebSocketService {
-    private prevLastByAddress: Record<string, number> = {};
-    private socket?: WebSocket;
+    private sock?: WebSocket;
 
     status = signal<Status>('closed');
     portfolio = signal<Portfolio | null>(null);
     positions = signal<Position[]>([]);
     trades = signal<Trade[]>([]);
-
-    private toNumOrNull(v: any): number | null {
-        if (v === null || v === undefined) {
-            return null;
-        }
-        const n = Number(v);
-        return Number.isFinite(n) ? n : null;
-    }
+    analytics = signal<Analytics[]>([]);
 
     private defaultWsUrl(): string {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -34,71 +27,55 @@ export class WebSocketService {
     }
 
     connect(url = this.defaultWsUrl()) {
-        if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) {
-            return;
-        }
-
+        if (this.sock && (this.sock.readyState === 0 || this.sock.readyState === 1)) return;
         this.status.set('connecting');
-        this.socket = new WebSocket(url);
+        const s = new WebSocket(url);
+        this.sock = s;
 
-        this.socket.onopen = () => this.status.set('open');
+        s.onopen = () => this.status.set('open');
 
-        this.socket.onmessage = (ev) => {
+        s.onmessage = (ev) => {
             try {
-                const msg = JSON.parse(ev.data) as WebsocketMessage;
+                const msg = JSON.parse(ev.data) as WsMsg;
                 this.apply(msg);
-            } catch {
+            } catch (e) {
                 console.debug('Invalid WS message', ev.data);
             }
         };
 
-        this.socket.onerror = () => this.status.set('closed');
+        s.onerror = () => this.status.set('closed');
 
-        this.socket.onclose = () => {
+        s.onclose = () => {
             this.status.set('closed');
-            this.socket = undefined;
+            this.sock = undefined;
             setTimeout(() => this.connect(url), 3000);
         };
     }
 
-    private apply(msg: WebsocketMessage) {
+    private apply(msg: WsMsg) {
         switch (msg.type) {
-            case 'init':
-                this.portfolio.set(msg.payload?.portfolio ?? null);
-                this.positions.set(msg.payload?.positions ?? []);
-                this.trades.set(msg.payload?.trades ?? []);
-                break;
-            case 'portfolio':
-                this.portfolio.set(msg.payload ?? null);
-                break;
-            case 'positions': {
-                const incoming: Position[] = (msg.payload ?? []).map((p: any) => {
-                    const last = this.toNumOrNull(p.last_price);
-                    const entry = this.toNumOrNull(p.entry);
-                    const prev = this.prevLastByAddress[p.address];
-
-                    let dir: 'up' | 'down' | 'flat' = 'flat';
-                    if (last !== null) {
-                        if (prev !== undefined) {
-                            dir = last > prev ? 'up' : (last < prev ? 'down' : 'flat');
-                        }
-                        this.prevLastByAddress[p.address] = last;
-                    }
-
-                    let changePct: number | null = null;
-                    if (last !== null && entry !== null && entry > 0) {
-                        changePct = ((last - entry) / entry) * 100;
-                    }
-
-                    return {...p, last_price: last, _lastDir: dir, _changePct: changePct} as Position;
-                });
-
-                this.positions.set(incoming);
+            case 'init': {
+                const p = msg.payload;
+                this.portfolio.set(p?.portfolio ?? null);
+                this.positions.set(p?.positions ?? []);
+                this.trades.set(p?.trades ?? []);
+                const rows: Analytics[] = Array.isArray(p?.analytics) ? p.analytics : [];
+                const sorted = [...rows].sort((a, b) => (b.evaluatedAt || '').localeCompare(a.evaluatedAt || ''));
+                this.analytics.set(sorted.slice(0, 5000));
                 break;
             }
-            case 'trade':
-                this.trades.update(t => [msg.payload, ...t].slice(0, 100));
+            case 'portfolio': this.portfolio.set(msg.payload ?? null); break;
+            case 'positions': this.positions.set(msg.payload ?? []); break;
+            case 'trade': this.trades.update(t => [msg.payload, ...t].slice(0, 200)); break;
+            case 'analytics': {
+                const row = msg.payload as Analytics;
+                this.analytics.update(prev => {
+                    const i = prev.findIndex(r => r.id === row.id);
+                    if (i >= 0) { const cp = [...prev]; cp[i] = row; return cp; }
+                    return [row, ...prev].slice(0, 5000);
+                });
                 break;
+            }
         }
     }
 }

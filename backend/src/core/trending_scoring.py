@@ -259,5 +259,7 @@ def apply_quality_filter(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any
             kept.append(candidate)
             log.debug("[QUALITY][KEEP] %s (%s) — quality=%.2f≥%.2f", symbol_upper, short_address,
                       score, minimum_quality_score)
-
+        else:
+            log.debug("[QUALITY][DROP:SCORE] %s (%s) — quality=%.2f<%.2f ctx=%s",
+                      symbol_upper, short_address, score, minimum_quality_score, ctx)
     return kept

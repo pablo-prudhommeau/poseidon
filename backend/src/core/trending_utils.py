@@ -89,9 +89,6 @@ def _momentum_ok(p5: Optional[float], p1: Optional[float], p24: Optional[float])
         return False
     if p1 is not None and abs(p1) > cap_h1:
         return False
-    values = [v for v in (p5, p1, p24) if v is not None]
-    if len(values) >= 2 and any(values[i] > values[i + 1] + 2.0 for i in range(len(values) - 1)):
-        return False
     return True
 
 

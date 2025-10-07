@@ -1,0 +1,24 @@
+<div *ngIf="isPaperMode() && !isLoading()" class="group inline-flex items-center
+                rounded-full ring-1 ring-yellow-400/30 bg-yellow-500/15 text-yellow-300
+                backdrop-blur shadow-sm overflow-hidden select-none">
+
+	<div class="flex items-center gap-2 pl-3 pr-1 py-1 text-sm font-semibold uppercase tracking-wide">
+		<i class="fa fa-flask opacity-90"></i>
+		<span class="text-sm/6">PAPER MODE</span>
+	</div>
+
+	<!-- Integrated circular reset end-cap (only actionable part) -->
+	<button type="button"
+	        [disabled]="isResetting()"
+	        (click)="resetPaperPortfolio()"
+	        class="h-7 w-7 ml-2 my-0.5 inline-grid place-content-center rounded-full
+                     ring-1 ring-yellow-300/40 bg-yellow-400/10 transition
+                     hover:bg-yellow-400/20 active:scale-95 disabled:opacity-50 cursor-pointer"
+	        aria-label="Reset paper portfolio to $10,000">
+
+		<!-- Arrow icon; spins while resetting -->
+		<i *ngIf="!isResetting()" class="fa fa-undo text-xs"></i>
+		<i *ngIf="isResetting()" class="fa fa-spiral text-xs animate-spin"></i>
+	</button>
+</div>
+  
