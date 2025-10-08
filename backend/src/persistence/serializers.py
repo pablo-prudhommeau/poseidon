@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.persistence.db import _session
+from src.persistence.models import Trade, Position, PortfolioSnapshot, Analytics
 
 
-def serialize_trade(trade: Any) -> Dict[str, Any]:
+def serialize_trade(trade: Trade) -> Dict[str, Any]:
     """Serialize a Trade ORM object to a frontend-friendly dict."""
     return {
         "id": trade.id,
@@ -18,19 +18,19 @@ def serialize_trade(trade: Any) -> Dict[str, Any]:
         "fee": trade.fee,
         "pnl": trade.pnl,
         "status": trade.status,
-        "address": trade.address,
+        "address": trade.tokenAddress,
         "tx_hash": trade.tx_hash,
         "created_at": trade.created_at,
     }
 
 
-def serialize_position(position: Any, last_price: Optional[float] = None) -> Dict[str, Any]:
+def serialize_position(position: Position, last_price: Optional[float] = None) -> Dict[str, Any]:
     """Serialize a Position ORM object, optionally appending a live last_price."""
     data: Dict[str, Any] = {
         "id": position.id,
         "symbol": position.symbol,
         "chain": getattr(position, "chain", "unknown"),
-        "address": position.address,
+        "address": position.tokenAddress,
         "qty": position.qty,
         "entry": position.entry,
         "tp1": position.tp1,
@@ -47,7 +47,7 @@ def serialize_position(position: Any, last_price: Optional[float] = None) -> Dic
 
 
 def serialize_portfolio(
-        snapshot: Any,
+        snapshot: PortfolioSnapshot,
         equity_curve: Optional[List[Tuple[int, float]]] = None,
         realized_total: Optional[float] = None,
         realized_24h: Optional[float] = None,
@@ -69,12 +69,12 @@ def serialize_portfolio(
         return data
 
 
-def serialize_analytics(row: Any) -> Dict[str, Any]:
+def serialize_analytics(row: Analytics) -> Dict[str, Any]:
     return {
         "id": row.id,
         "symbol": row.symbol,
         "chain": row.chain,
-        "address": row.address,
+        "address": row.tokenAddress,
         "evaluatedAt": row.evaluated_at.isoformat(),
         "rank": row.rank,
         "scores": {
@@ -95,10 +95,6 @@ def serialize_analytics(row: Any) -> Dict[str, Any]:
             "pct1h": float(row.pct_1h),
             "pct24h": float(row.pct_24h),
         },
-        "pricing": {
-            "dex": float(row.dex_price),
-            "quoted": float(row.quoted_price),
-        },
         "decision": {
             "action": row.decision,
             "reason": row.decision_reason,
@@ -117,12 +113,10 @@ def serialize_analytics(row: Any) -> Dict[str, Any]:
             "wasProfit": bool(row.outcome_was_profit),
             "exitReason": row.outcome_exit_reason,
         },
-        # RAW blobs (toujours présents, jamais null)
         "raw": {
             "dexscreener": row.raw_dexscreener or {},
             "ai": row.raw_ai or {},
             "risk": row.raw_risk or {},
-            "pricing": row.raw_pricing or {},
             "settings": row.raw_settings or {},
             "order": row.raw_order_result or {},
         },

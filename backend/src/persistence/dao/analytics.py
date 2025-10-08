@@ -45,7 +45,7 @@ def attach_outcome_for_trade(
     row: Optional[Analytics] = (
         db.execute(
             select(Analytics)
-            .where(and_(Analytics.address == address,
+            .where(and_(Analytics.tokenAddress == address,
                         Analytics.evaluated_at <= closed_at,
                         Analytics.has_outcome == False))
             .order_by(desc(Analytics.evaluated_at), desc(Analytics.id))

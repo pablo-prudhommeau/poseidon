@@ -6,8 +6,8 @@ from typing import Optional
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
 
-from src.ai.chart_prompt import build_chartist_system_prompt, build_chartist_user_prompt, chartist_json_schema
 from src.configuration.config import settings
+from src.core.ai.chart_prompt import build_chartist_system_prompt, build_chartist_user_prompt, chartist_json_schema
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)
@@ -37,11 +37,9 @@ def _build_common_kwargs(
         "response_format": response_format,
     }
 
-    # Optional seed (safe on supported models)
     if getattr(settings, "CHART_AI_SEED", None) is not None:
         kwargs["seed"] = int(settings.CHART_AI_SEED)
 
-    # Temperature only for non-GPT-5 models
     if not _is_gpt5_family(model_name):
         temp = getattr(settings, "CHART_AI_TEMPERATURE", None)
         if temp is not None:

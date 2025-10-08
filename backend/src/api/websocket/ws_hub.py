@@ -6,11 +6,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
-from src.api.ws_manager import ws_manager
+from src.api.websocket.ws_manager import ws_manager
 from src.configuration.config import settings
-from src.core.pnl import fifo_realized_pnl, cash_from_trades, holdings_and_unrealized_from_trades
-from src.core.prices import merge_prices_with_entry
-from src.integrations.dexscreener_client import fetch_prices_by_addresses
+from src.core.utils.pnl_utils import fifo_realized_pnl, cash_from_trades, holdings_and_unrealized_from_trades
+from src.core.utils.price_utils import merge_prices_with_entry
+from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_token_addresses
 from src.logging.logger import get_logger
 from src.persistence.dao import trades as dao_trades
 from src.persistence.dao.analytics import get_recent_analytics
@@ -33,8 +33,8 @@ async def _send_init(ws: WebSocket, db: Session) -> None:
     snapshot = get_latest_portfolio(db)
     positions = get_open_positions(db)
 
-    addresses = [getattr(p, "address", "") for p in positions if getattr(p, "address", None)]
-    live_prices: Dict[str, float] = await fetch_prices_by_addresses(addresses)
+    tokenAddresses: List[str] = [p.tokenAddress for p in positions if p.tokenAddress]
+    live_prices: Dict[str, float] = await fetch_prices_by_token_addresses(tokenAddresses)
     price_map = merge_prices_with_entry(positions, live_prices)
 
     get_all = getattr(dao_trades, "get_all_trades", None)
@@ -64,7 +64,7 @@ async def _send_init(ws: WebSocket, db: Session) -> None:
     positions_payload: List[Dict[str, Any]] = []
     for p in positions:
         s = serialize_position(p)
-        s["last_price"] = price_map.get(getattr(p, "address", "") or None)
+        s["last_price"] = price_map.get(p.tokenAddress)
         positions_payload.append(s)
 
     trades_recent = get_recent_trades(db, limit=100)

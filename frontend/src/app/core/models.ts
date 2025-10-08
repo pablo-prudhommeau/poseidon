@@ -8,7 +8,8 @@ export type EquityCurvePoint = [number, number];
 export interface Position {
     id?: number;
     symbol: string;
-    address: string;
+    tokenAddress: string;
+    pairAddress: string;
     qty: number;
     entry: number;
     tp1: number;
@@ -34,7 +35,8 @@ export interface Trade {
     fee: number;
     pnl?: number | null;
     status: TradeMode;
-    address?: string;
+    tokenAddress?: string;
+    pairAddress?: string;
     tx_hash?: string | null;
     created_at: string;
 }
@@ -55,7 +57,8 @@ export interface Analytics {
     id: number;
     symbol: string;
     chain: string;
-    address: string;
+    tokenAddress: string;
+    pairAddress: string;
     evaluatedAt: string;
     rank: number;
     scores: {
@@ -75,10 +78,6 @@ export interface Analytics {
         pct5m: number;
         pct1h: number;
         pct24h: number;
-    };
-    pricing: {
-        dex: number;
-        quoted: number
     };
     decision: {
         action: string;
@@ -102,7 +101,6 @@ export interface Analytics {
         dexscreener: any;
         ai: any;
         risk: any;
-        pricing: any;
         settings: any;
         order: any;
     };

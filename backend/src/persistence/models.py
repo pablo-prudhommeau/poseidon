@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import Enum as SqlAchemyEnum, Float, Integer, String, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.core.utils import timezone_now
+from src.core.utils.date_utils import timezone_now
 from src.persistence.db import Base
 
 
@@ -34,7 +34,8 @@ class Position(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
     chain: Mapped[str] = mapped_column(String(32), nullable=False)
-    address: Mapped[str] = mapped_column(String(128), nullable=False)
+    tokenAddress: Mapped[str] = mapped_column(String(128), nullable=False)
+    pairAddress: Mapped[str] = mapped_column(String(128), nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
     entry: Mapped[float] = mapped_column(Float, nullable=False)
     tp1: Mapped[float] = mapped_column(Float, nullable=False)
@@ -46,7 +47,7 @@ class Position(Base):
     closed_at: Mapped[Optional[datetime]] = mapped_column(default=None, nullable=True)
 
     def __repr__(self) -> str:
-        return f"<Position {self.symbol} {self.address[-6:]} qty={self.qty} phase={self.phase}>"
+        return f"<Position {self.symbol} {self.tokenAddress[-6:]} qty={self.qty} phase={self.phase}>"
 
 
 class Trade(Base):
@@ -62,7 +63,8 @@ class Trade(Base):
     fee: Mapped[float] = mapped_column(Float, nullable=False)
     pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     status: Mapped[Status] = mapped_column(SqlAchemyEnum(Status), nullable=False)
-    address: Mapped[str] = mapped_column(String(128))
+    tokenAddress: Mapped[str] = mapped_column(String(128), nullable=False)
+    pairAddress: Mapped[str] = mapped_column(String(128), nullable=False)
     tx_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=timezone_now, nullable=False)
 
@@ -96,7 +98,12 @@ class Analytics(Base):
     # Identification
     symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
     chain: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
-    address: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    tokenAddress: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    pairAddress: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+
+    # Pricing
+    priceUsd: Mapped[float] = mapped_column(Float, nullable=False)
+    priceNative: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Timing
     evaluated_at: Mapped[datetime] = mapped_column(nullable=False)
@@ -120,10 +127,6 @@ class Analytics(Base):
     pct_1h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     pct_24h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
-    # Pricing au moment de la décision
-    dex_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    quoted_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-
     # Décision + sizing/budget
     decision: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
     decision_reason: Mapped[str] = mapped_column(String(256), nullable=False, default="")
@@ -136,7 +139,6 @@ class Analytics(Base):
     raw_dexscreener: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_ai: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_risk: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    raw_pricing: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_order_result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 

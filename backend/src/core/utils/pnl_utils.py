@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from enum import Enum
 from typing import Any, Deque, Dict, Iterable, Tuple
@@ -11,26 +11,11 @@ from src.persistence.models import Trade
 
 log = get_logger(__name__)
 
-# ---------------------------- extractors (no normalization) -------------------
-
-def _get_quantity(obj: Any) -> float:
-    return float(getattr(obj, "qty", getattr(obj, "quantity", 0.0)) or 0.0)
-
-def _get_price(obj: Any) -> float:
-    return float(getattr(obj, "price", getattr(obj, "price_usd", 0.0)) or 0.0)
-
-def _get_fee(obj: Any) -> float:
-    return float(getattr(obj, "fee", 0.0) or 0.0)
-
-def _get_address(obj: Any) -> str:
-    return getattr(obj, "address", "") or ""
-
-def _get_entry(obj: Any) -> float:
-    return float(getattr(obj, "entry", 0.0) or 0.0)
 
 def _get_created_at(obj: Any) -> datetime:
     dt = getattr(obj, "created_at", None).astimezone()
     return dt
+
 
 def _normalize_side(value: Any) -> str:
     if value is None:
@@ -44,13 +29,13 @@ def _normalize_side(value: Any) -> str:
             return str(value).upper()
     return str(value).upper()
 
+
 def _D(x: float | int | str) -> Decimal:
     try:
         return Decimal(str(x))
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
 
-# -------------------------------- Realized PnL --------------------------------
 
 def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Tuple[float, float]:
     """
@@ -63,10 +48,10 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Tup
 
     for tr in sorted(trades, key=_get_created_at):
         side = _normalize_side(getattr(tr, "side", None))
-        addr = _get_address(tr)
-        qty = _get_quantity(tr)
-        px = _get_price(tr)
-        fee = _get_fee(tr)
+        addr = tr.tokenAddress
+        qty = tr.qty
+        px = tr.price
+        fee = tr.fee
         if qty <= 0.0 or px <= 0.0:
             continue
 
@@ -103,7 +88,6 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Tup
         realized_recent.quantize(q, rounding=ROUND_HALF_UP)
     )
 
-# ----------------------------------- Cash -------------------------------------
 
 def cash_from_trades(start_cash: float, trades: Iterable[Any]) -> Tuple[float, float, float, float]:
     total_buys = _D(0)
@@ -112,9 +96,9 @@ def cash_from_trades(start_cash: float, trades: Iterable[Any]) -> Tuple[float, f
 
     for tr in trades:
         side = _normalize_side(getattr(tr, "side", None))
-        qty = _get_quantity(tr)
-        px = _get_price(tr)
-        fee = _get_fee(tr)
+        qty = tr.qty
+        px = tr.priceUsd
+        fee = tr.fee
         if qty <= 0.0 or px <= 0.0:
             continue
         notional = _D(px * qty)
@@ -133,9 +117,9 @@ def cash_from_trades(start_cash: float, trades: Iterable[Any]) -> Tuple[float, f
         float(total_fees.quantize(q, rounding=ROUND_HALF_UP)),
     )
 
-# -------------------------- Holdings / Unrealized -----------------------------
 
-def holdings_and_unrealized_from_trades(trades: Iterable[Trade], address_price: Dict[str, float]) -> Tuple[float, float]:
+def holdings_and_unrealized_from_trades(trades: Iterable[Trade], address_price: Dict[str, float]) -> Tuple[
+    float, float]:
     """
     Reconstitue les lots restants par **adresse telle quelle**, puis valorise avec `address_price`
     (clé = adresse d’origine), sans normalisation.
@@ -143,10 +127,10 @@ def holdings_and_unrealized_from_trades(trades: Iterable[Trade], address_price: 
     lots_by_addr: Dict[str, Deque[list[float]]] = defaultdict(deque)
     for tr in sorted(trades, key=_get_created_at):
         side = _normalize_side(getattr(tr, "side", None))
-        addr = _get_address(tr)
-        qty = _get_quantity(tr)
-        px = _get_price(tr)
-        fee = _get_fee(tr)
+        addr = tr.tokenAddress
+        qty = tr.qty
+        px = tr.price
+        fee = tr.fee
         if qty <= 0.0 or px <= 0.0:
             continue
         if side == "BUY":
@@ -178,12 +162,11 @@ def holdings_and_unrealized_from_trades(trades: Iterable[Trade], address_price: 
         unreal.quantize(q, rounding=ROUND_HALF_UP)
     )
 
-# ---------------------------------- Prices ------------------------------------
 
 async def latest_prices_for_positions(positions: Iterable[Any]) -> Dict[str, float]:
     """
     (Compat) Récupère les prix live **en conservant les clés** = adresses de `positions`.
     """
-    from src.integrations.dexscreener_client import fetch_prices_by_addresses
+    from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_token_addresses
     addrs = [getattr(p, "address", "") for p in positions if getattr(p, "address", None)]
-    return await fetch_prices_by_addresses(addrs)
+    return await fetch_prices_by_token_addresses(addrs)

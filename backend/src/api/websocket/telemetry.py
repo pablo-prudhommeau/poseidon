@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional
 
-from src.api.ws_manager import ws_manager
+from src.api.websocket.ws_manager import ws_manager
 from src.logging.logger import get_logger
 from src.persistence.dao.analytics import insert_analytics, attach_outcome_for_trade
 from src.persistence.db import _session

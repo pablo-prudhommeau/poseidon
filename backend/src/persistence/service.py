@@ -51,8 +51,8 @@ def _evaluate_position_thresholds_and_execute(
     last_price_value = float(last_price or 0.0)
     if last_price_value <= 0.0:
         log.debug(
-            "Skip threshold evaluation due to non-positive last price — address=%s price=%s",
-            position.address,
+            "Skip threshold evaluation due to non-positive last price — tokenAddress=%s price=%s",
+            position.tokenAddress,
             last_price_value,
         )
         return created_trades
@@ -60,8 +60,8 @@ def _evaluate_position_thresholds_and_execute(
     position_quantity = float(position.qty or 0.0)
     if position_quantity <= 0.0:
         log.debug(
-            "Skip threshold evaluation due to non-positive position quantity — address=%s qty=%s",
-            position.address,
+            "Skip threshold evaluation due to non-positive position quantity — tokenAddress=%s qty=%s",
+            position.tokenAddress,
             position_quantity,
         )
         return created_trades
@@ -78,16 +78,16 @@ def _evaluate_position_thresholds_and_execute(
 
     # 1) STOP ⇒ full exit
     if stop > 0.0 and last_price_value <= stop:
-        sell_quantity = _compute_open_quantity_from_trades(database_session, position.address)
+        sell_quantity = _compute_open_quantity_from_trades(database_session, position.tokenAddress)
         if sell_quantity <= 0.0:
-            log.debug("[AUTOSELL][SL] Ignored because open quantity is zero — address=%s", position.address)
+            log.debug("[AUTOSELL][SL] Ignored because open quantity is zero — tokenAddress=%s", position.tokenAddress)
             return created_trades
 
         trade = trades.sell(
             database_session,
             symbol=position.symbol,
             chain=position.chain,
-            address=position.address,
+            tokenAddress=position.tokenAddress,
             price=last_price_value,
             qty=sell_quantity,
             fee=fee,
@@ -98,7 +98,7 @@ def _evaluate_position_thresholds_and_execute(
         log.info(
             "[AUTOSELL][SL] %s (%s) sold_qty=%.8f price=%.10f",
             position.symbol,
-            (position.address or "")[-6:],
+            (position.tokenAddress or "")[-6:],
             sell_quantity,
             last_price_value,
         )
@@ -106,16 +106,16 @@ def _evaluate_position_thresholds_and_execute(
 
     # 2) TP2 ⇒ full exit
     if tp2 > 0.0 and last_price_value >= tp2 and position_quantity > 0.0:
-        sell_quantity = _compute_open_quantity_from_trades(database_session, position.address)
+        sell_quantity = _compute_open_quantity_from_trades(database_session, position.tokenAddress)
         if sell_quantity <= 0.0:
-            log.debug("[AUTOSELL][TP2] Ignored because open quantity is zero — address=%s", position.address)
+            log.debug("[AUTOSELL][TP2] Ignored because open quantity is zero — tokenAddress=%s", position.tokenAddress)
             return created_trades
 
         trade = trades.sell(
             database_session,
             symbol=position.symbol,
             chain=position.chain,
-            address=position.address,
+            tokenAddress=position.tokenAddress,
             price=last_price_value,
             qty=sell_quantity,
             fee=fee,
@@ -126,7 +126,7 @@ def _evaluate_position_thresholds_and_execute(
         log.info(
             "[AUTOSELL][TP2] %s (%s) sold_qty=%.8f price=%.10f",
             position.symbol,
-            (position.address or "")[-6:],
+            (position.tokenAddress or "")[-6:],
             sell_quantity,
             last_price_value,
         )
@@ -141,7 +141,7 @@ def _evaluate_position_thresholds_and_execute(
                 database_session,
                 symbol=position.symbol,
                 chain=position.chain,
-                address=position.address,
+                tokenAddress=position.tokenAddress,
                 price=last_price_value,
                 qty=partial_quantity,
                 fee=fee,
@@ -157,7 +157,7 @@ def _evaluate_position_thresholds_and_execute(
             log.info(
                 "[AUTOSELL][TP1] %s (%s) sold_qty=%.8f price=%.10f remaining_est=%.8f",
                 position.symbol,
-                (position.address or "")[-6:],
+                (position.tokenAddress or "")[-6:],
                 partial_quantity,
                 last_price_value,
                 remaining_estimated,
@@ -197,25 +197,25 @@ def check_thresholds_and_autosell(database_session: Session, symbol: str, last_p
     return created_trades
 
 
-def check_thresholds_and_autosell_for_address(
+def check_thresholds_and_autosell_for_token_address(
         database_session: Session,
-        address: str,
+        tokenAddress: str,
         last_price: float,
 ) -> List[Trade]:
     """
-    Autosell for a specific address based on thresholds and last price.
+    Autosell for a specific token address based on thresholds and last price.
 
-    Evaluates ACTIVE position only (OPEN or PARTIAL) for the address.
+    Evaluates ACTIVE position only (OPEN or PARTIAL) for the token address.
     """
     created_trades: List[Trade] = []
     last_price_value = float(last_price or 0.0)
-    if not address or last_price_value <= 0.0:
+    if not tokenAddress or last_price_value <= 0.0:
         return created_trades
 
     position = (
         database_session.execute(
             select(Position).where(
-                Position.address == address,
+                Position.tokenAddress == tokenAddress,
                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
                 )
         )

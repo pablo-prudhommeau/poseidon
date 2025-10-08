@@ -81,7 +81,7 @@ class ColorFormatter(logging.Formatter):
         self.converter = time.localtime
 
     def format(self, record: logging.LogRecord) -> str:
-        ct = self.converter(record.created)  # type: ignore[arg-type]
+        ct = self.converter(record.created)
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S", ct) + f".{int(record.msecs):03d}+0000"
 
         level_name = record.levelname.upper()
@@ -111,7 +111,7 @@ def _install_console_handler(root: logging.Logger) -> None:
 
     use_color = sys.stderr.isatty() and (not bool(getattr(settings, "NO_COLOR", False)))
     handler = logging.StreamHandler(stream=sys.stderr)
-    handler._poseidon_handler = True  # type: ignore[attr-defined]
+    handler._poseidon_handler = True
     handler.setLevel(logging.NOTSET)
     handler.setFormatter(ColorFormatter(use_color=use_color))
     root.addHandler(handler)
