@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+"""
+Trending job — LIVE pour EVM (LI.FI) **et** Solana (Jupiter).
+
+Rules:
+- Paper mode: unchanged.
+- Live mode:
+  - EVM: native -> ERC20 via LI.FI (same chain).
+  - Solana: SOL -> SPL via Jupiter (quote + swap build), fromAmount computed with live SOL/USD.
+"""
+
 import asyncio
+from decimal import Decimal, InvalidOperation, getcontext, ROUND_DOWN
 from typing import Any, Dict, List, Tuple, Set, Coroutine, Optional
 
 from src.ai.chart_signal_provider import ChartAiSignalProvider
@@ -23,14 +34,28 @@ from src.persistence.dao.positions import get_open_positions
 from src.persistence.db import _session
 from src.persistence.models import Analytics
 
+# EVM (LI.FI)
+from src.integrations.lifi_client import (
+    is_supported_evm_chain_key,
+    build_native_to_token_quote,
+)
+from src.core.evm_signer import build_default_evm_signer
+
+# Solana (Jupiter)
+from src.integrations.jupiter_client import (
+    is_solana_chain_key,
+    build_solana_native_to_token_route,
+)
+from src.core.solana_signer import build_default_solana_signer
+
+# Native price provider (SOL/USD, etc.)
+from src.integrations.native_price_provider import get_native_price_usd
+
 log = get_logger(__name__)
+getcontext().prec = 60  # high precision for monetary conversions
 
 
 def _run_coro_in_fresh_loop(coro: Coroutine[Any, Any, Any], *, debug_label: str = "") -> Any:
-    """
-    Run a coroutine in a fresh event loop when the current one is closed.
-    This protects long-lived processes that may recycle their loop.
-    """
     try:
         return asyncio.run(coro)
     except RuntimeError as exc:
@@ -42,7 +67,7 @@ def _run_coro_in_fresh_loop(coro: Coroutine[Any, Any, Any], *, debug_label: str 
             asyncio.set_event_loop(loop)
             result = loop.run_until_complete(coro)
             try:
-                loop.run_until_complete(loop.shutdown_asyncgens())
+                loop.shutdown_asyncgens()
             except Exception:
                 pass
             return result
@@ -72,17 +97,76 @@ def _price_get(price_map: Dict[str, float], address: str) -> Optional[float]:
     return None
 
 
-class TrendingJob:
-    """
-    Explicit gate pipeline:
-      1) QUALITY GATE     → qualityScore >= min
-      2) STATISTICS GATE  → statScore   >= min
-      3) AI GATE          → entryScore  >= min
-      (then sizing & buy along the way)
+# ---------------------- Conversions montant natif ----------------------
 
-    This version persists EVERY evaluated candidate (including SKIP reasons)
-    and broadcasts each row as 'analytics' on WebSocket for the Analytics UI.
+def _compute_from_amount_wei(order_usd: float, chain_key: str) -> Optional[int]:
     """
+    EVM: compute the native spend (in wei) from a USD budget using the live
+    USD price of the chain's native asset (ETH/BNB/MATIC/...).
+
+    Formula:
+        wei = floor( (order_usd / native_usd_price) * 1e18 )
+
+    This avoids relying on Dexscreener's `priceNative` which may be absent.
+    """
+    try:
+        native_usd = get_native_price_usd(chain_key)
+        if native_usd is None or native_usd <= 0:
+            log.debug("LIVE/EVM: cannot fetch native USD price for '%s'", chain_key)
+            return None
+        wei_dec = (Decimal(str(order_usd)) / native_usd) * (Decimal(10) ** 18)
+        wei_int = int(wei_dec.to_integral_value(rounding=ROUND_DOWN))
+        return wei_int if wei_int > 0 else None
+    except Exception as exc:
+        log.debug("LIVE/EVM: wei computation failed for '%s': %s", chain_key, exc)
+        return None
+
+
+def _compute_from_amount_lamports(order_usd: float, chain_key: str) -> Optional[int]:
+    """
+    Solana: compute lamports to spend from a USD budget using live SOL/USD price.
+
+    We DO NOT need token priceNative here; we just want to spend `order_usd`
+    in native SOL on Jupiter. Formula: lamports = floor((order_usd / SOL_USD) * 1e9).
+    """
+    try:
+        sol_usd = get_native_price_usd(chain_key)
+        if sol_usd is None or sol_usd <= 0:
+            log.debug("LIVE/SOL: could not fetch SOL/USD price — skipping route attach.")
+            return None
+        lamports_dec = (Decimal(str(order_usd)) / sol_usd) * (Decimal(10) ** 9)
+        lamports = int(lamports_dec.to_integral_value(rounding=ROUND_DOWN))
+        return lamports if lamports > 0 else None
+    except Exception as exc:
+        log.debug("LIVE/SOL: lamports computation failed: %s", exc)
+        return None
+
+
+# ---------------------- Extraction addresses/mints ----------------------
+
+def _evm_token_address(item: Dict[str, Any]) -> Optional[str]:
+    addr = str(item.get("address") or "").strip()
+    if addr:
+        return addr
+    for key in ("tokenAddress", "baseTokenAddress", "base_address", "token_address"):
+        cand = str(item.get(key) or "").strip()
+        if cand:
+            return cand
+    return None
+
+
+def _solana_mint(item: Dict[str, Any]) -> Optional[str]:
+    """
+    Dexscreener Solana returns the SPL mint directly in 'address'.
+    """
+    mint = str(item.get("address") or "").strip()
+    return mint or None
+
+
+# ---------------------- Classe principale ----------------------
+
+class TrendingJob:
+    """Evaluate trending pairs, gate by quality/statistics/AI, and buy as we go."""
 
     def __init__(self) -> None:
         self.interval: str = settings.TREND_INTERVAL.lower()
@@ -106,10 +190,10 @@ class TrendingJob:
         self.chart_ai_timeframe: int = int(getattr(settings, "CHART_AI_TIMEFRAME"))
         self.chart_ai_lookback: int = int(getattr(settings, "CHART_AI_LOOKBACK_MINUTES"))
 
-        self.min_statistics_score: float = float(getattr(settings, "SCORE_MIN_STATISTICS"))
+        self.min_rank: float = float(getattr(settings, "SCORE_MIN_RANK"))
         self.min_entry_score: float = float(getattr(settings, "SCORE_MIN_ENTRY"))
 
-    # --------------------------- Helpers (cash / positions) ---------------------------
+    # ---- Cash / positions ----
 
     def _free_cash(self) -> float:
         with _session() as db:
@@ -127,7 +211,72 @@ class TrendingJob:
         fraction = float(settings.TREND_PER_BUY_FRACTION)
         return max(1.0, free_cash * fraction)
 
-    # --------------------------- Telemetry persistence ---------------------------
+    # ---- LIVE route builders ----
+
+    @staticmethod
+    def _is_live_enabled() -> bool:
+        return (not settings.PAPER_MODE) and bool(settings.TRADING_LIVE_ENABLED)
+
+    def _maybe_attach_live_route(self, item: Dict[str, Any], *, order_usd: float) -> Optional[Dict[str, Any]]:
+        """
+        Build a live route for EVM (LI.FI) or Solana (Jupiter), depending on the chain.
+        """
+        if not self._is_live_enabled():
+            return None
+
+        chain_key = (item.get("chain") or "").strip().lower()
+
+        # EVM via LI.FI
+        if is_supported_evm_chain_key(chain_key):
+            token_addr = _evm_token_address(item)
+            if not token_addr:
+                log.debug("LIVE/EVM: missing token address for %s", item.get("symbol"))
+                return None
+            from_amount_wei = _compute_from_amount_wei(order_usd, chain_key)
+            if from_amount_wei is None:
+                log.debug("LIVE/EVM: cannot compute wei (price/priceNative missing) for %s", item.get("symbol"))
+                return None
+            try:
+                evm_signer = build_default_evm_signer()
+                evm_address = evm_signer.address
+                return build_native_to_token_quote(
+                    chain_key=chain_key,
+                    from_address=evm_address,
+                    to_token_address=token_addr,
+                    from_amount_wei=from_amount_wei,
+                    slippage=0.03,
+                )
+            except Exception as exc:
+                log.warning("LIVE/EVM: route build failed %s on %s: %s", item.get("symbol"), chain_key, exc)
+                return None
+
+        # Solana via Jupiter
+        if is_solana_chain_key(chain_key):
+            mint = _solana_mint(item)
+            if not mint:
+                log.debug("LIVE/SOL: mint not found for %s", item.get("symbol"))
+                return None
+            lamports = _compute_from_amount_lamports(order_usd, chain_key="solana")
+            if lamports is None:
+                log.debug("LIVE/SOL: cannot compute lamports (SOL/USD unavailable) for %s", item.get("symbol"))
+                return None
+            try:
+                sol_signer = build_default_solana_signer()
+                user_pubkey = sol_signer.public_key_base58
+                return build_solana_native_to_token_route(
+                    user_public_key=user_pubkey,
+                    output_mint=mint,
+                    amount_lamports=lamports,
+                    slippage_bps=300,
+                )
+            except Exception as exc:
+                log.warning("LIVE/SOL: route build failed %s: %s", item.get("symbol"), exc)
+                return None
+
+        # Chain not supported for live execution
+        return None
+
+    # ---- Telemetry ----
 
     def _persist_and_broadcast(
             self,
@@ -196,7 +345,7 @@ class TrendingJob:
                 "quotedPrice": float(quoted_price or item.get("price") or 0.0),
             },
             raw_settings={
-                "SCORE_MIN_STATISTICS": float(getattr(settings, "SCORE_MIN_STATISTICS")),
+                "SCORE_MIN_RANK": float(getattr(settings, "SCORE_MIN_RANK")),
                 "SCORE_MIN_ENTRY": float(getattr(settings, "SCORE_MIN_ENTRY")),
                 "REBUY_COOLDOWN_MIN": int(getattr(settings, "DEXSCREENER_REBUY_COOLDOWN_MIN")),
                 "MAX_PRICE_DEV": float(getattr(settings, "TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER")),
@@ -292,11 +441,11 @@ class TrendingJob:
         for item in pruned:
             statistics_score = engine.stat_score(item)
             item["statScore"] = statistics_score
-            if statistics_score >= self.min_statistics_score:
+            if statistics_score >= self.min_rank:
                 statistics_ready.append(item)
             else:
                 log.debug("[STATS][DROP] %s — statScore=%.2f<%.2f",
-                          item.get("symbol"), statistics_score, self.min_statistics_score)
+                          item.get("symbol"), statistics_score, self.min_rank)
 
         if not statistics_ready:
             log.info("[STATS] 0 candidates after gate #2.")
@@ -387,7 +536,6 @@ class TrendingJob:
                 if signal is not None:
                     ai_delta = float(signal.quality_score_delta)
                     ai_probability = float(signal.probability_tp1_before_sl)
-                    # IMPORTANT: call instance method (fixes previous crash)
                     entry_score = engine.apply_ai_adjustment(float(item["statScore"]), ai_delta)
 
             item["aiDelta"] = ai_delta
@@ -403,7 +551,7 @@ class TrendingJob:
                     quoted_price=float(item.get("price") or 0.0),
                 )
                 log.debug(
-                    "[AI][DROP] %s — entryScore=%.2f<%.2f (stat=%.2f aiΔ=%.2f prob=%.3f)",
+                    "[ENTRY][DROP] %s — entryScore=%.2f<%.2f (stat=%.2f aiΔ=%.2f prob=%.3f)",
                     item.get("symbol"), entry_score, self.min_entry_score,
                     item["statScore"], ai_delta, ai_probability,
                 )
@@ -441,11 +589,16 @@ class TrendingJob:
                 free_cash_after_usd=simulated_cash - order_notional,
             )
 
-            # Execute the order
+            # Build order payload
             order_payload = dict(item)
             order_payload["order_notional"] = order_notional
-            self.trader.buy(order_payload)
 
+            live_route = self._maybe_attach_live_route(item, order_usd=order_notional)
+            if live_route is not None:
+                order_payload["lifi_route"] = live_route  # same key; executor routes per chain
+                log.info("[LIVE][ROUTE] Attached route for %s on %s", item.get("symbol"), item.get("chain"))
+
+            self.trader.buy(order_payload)
             executed_buys += 1
             simulated_cash -= order_notional
 

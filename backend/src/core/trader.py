@@ -1,5 +1,23 @@
 from __future__ import annotations
 
+"""
+Trader service.
+
+Behavior:
+- PAPER mode (default): write paper trades to DB and broadcast updates.
+- LIVE mode (Option B): execute a provided LI.FI route on-chain using external signers:
+  * EVM: eth-account HD wallet (mnemonic in env, derived address)
+  * Solana: base58 secret key (no mnemonic ingestion in code)
+Requirements for LIVE execution:
+- settings.TRADING_LIVE_ENABLED must be true AND class attribute self.paper must be False.
+- The incoming payload must include a 'lifi_route' dictionary produced by LI.FI (/v1/quote, etc.).
+  We intentionally do not reconstruct a route here; upstream logic should obtain the route.
+
+Logging policy:
+- INFO for major steps and final outcomes.
+- DEBUG for low-level details; never log secrets or raw calldata.
+"""
+
 import asyncio
 from typing import Any, Dict, Optional, List
 
@@ -23,12 +41,13 @@ from src.persistence.db import _session
 from src.persistence.models import Status
 from src.persistence.serializers import serialize_trade, serialize_portfolio
 from src.persistence.service import check_thresholds_and_autosell
+from src.core.live_executor import LiveExecutionService
 
 log = get_logger(__name__)
 
 
 class Trader:
-    """PAPER trader by default."""
+    """Trader that operates in PAPER mode by default and supports opt-in LIVE execution."""
 
     def __init__(self) -> None:
         self.paper = settings.PAPER_MODE
@@ -41,7 +60,7 @@ class Trader:
         try:
             try:
                 asyncio.get_running_loop()
-                log.debug("Running loop detected, skipping sync DEX price for %s", address)
+                log.debug("Detected running event loop, skipping synchronous DEX price for %s", address)
                 return None
             except RuntimeError:
                 pass
@@ -54,7 +73,7 @@ class Trader:
             return None
 
     async def _recompute_and_broadcast(self) -> None:
-        """Recompute with PnL helpers, then broadcast positions and portfolio."""
+        """Recompute portfolio metrics with PnL helpers, then broadcast positions and portfolio."""
         with _session() as db:
             positions = get_open_positions(db)
             trades_rows = get_recent_trades(db, limit=10000)
@@ -89,12 +108,95 @@ class Trader:
         except RuntimeError:
             asyncio.run(self._recompute_and_broadcast())
 
+    @staticmethod
+    def _infer_route_network(route: Dict[str, Any]) -> str:
+        """
+        Infer whether a LI.FI route targets EVM or Solana.
+
+        Heuristics:
+        - EVM: 'transactionRequest' key is present with 'to' and 'data'.
+        - Solana: 'transaction' or 'transactions' includes a 'serializedTransaction' field (base64).
+        """
+        if isinstance(route, dict) and "transactionRequest" in route:
+            return "EVM"
+        if isinstance(route, dict) and ("transaction" in route or "transactions" in route):
+            return "SOLANA"
+        # Fallback to EVM to avoid accidental Solana signing with wrong data.
+        return "EVM"
+
+    async def _execute_live_buy(
+            self,
+            *,
+            symbol: str,
+            chain: str,
+            address: str,
+            qty: float,
+            price: float,
+            stop: float,
+            tp1: float,
+            tp2: float,
+            lifi_route: Dict[str, Any],
+    ) -> None:
+        """
+        Execute a live buy using a precomputed LI.FI route and persist the trade.
+
+        The route must be produced upstream via LI.FI API. We do not compute it here.
+        """
+        exec_service = LiveExecutionService()
+        try:
+            network = self._infer_route_network(lifi_route)
+            log.info("LIVE buy: executing route for %s on %s (chain=%s)", symbol, network, chain)
+
+            if network == "EVM":
+                tx_hash = await exec_service.evm_execute_route(lifi_route)
+                raw_result: Dict[str, Any] = {"network": "EVM", "tx_hash": tx_hash}
+                log.info("LIVE buy: EVM broadcast successful for %s, tx_hash=%s", symbol, tx_hash)
+            else:
+                signature = await exec_service.solana_execute_route(lifi_route)
+                raw_result = {"network": "SOLANA", "signature": signature}
+                log.info("LIVE buy: Solana broadcast successful for %s, signature=%s", symbol, signature)
+
+            # Persist the live trade result
+            with _session() as db:
+                trade = trades.buy(
+                    db=db,
+                    symbol=symbol,
+                    chain=chain,
+                    address=address,
+                    qty=qty,
+                    price=float(price),
+                    stop=float(stop),
+                    tp1=float(tp1),
+                    tp2=float(tp2),
+                    fee=0.0,
+                    status=Status.LIVE,
+                    raw_order_result=raw_result,
+                )
+                ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(trade)})
+        except Exception as exc:
+            log.exception("LIVE buy: execution failed for %s (%s): %s", symbol, address, exc)
+        finally:
+            try:
+                await exec_service.close()
+            except Exception:
+                pass
+            self._rebroadcast_portfolio()
+
     def buy(self, it: Dict[str, Any]) -> None:
-        """Open a (paper) position; supports adaptive overrides from the caller."""
+        """
+        Open a position in PAPER or LIVE mode.
+
+        PAPER:
+            - Compute thresholds, record paper trade, broadcast updates.
+        LIVE:
+            - Requires settings.TRADING_LIVE_ENABLED is True and class is not in PAPER mode.
+            - Requires 'lifi_route' provided in the payload 'it'.
+        """
         symbol = it.get("symbol")
         address = it.get("address") or ""
         chain = (it.get("chain") or "unknown").lower()
 
+        # Price discovery with DexScreener and optional fallback
         dex_price = self._dex_price_for_address(address)
         fallback_price: Optional[float] = None
         try:
@@ -107,28 +209,32 @@ class Trader:
 
         price = dex_price or fallback_price
         if not address or price is None:
-            log.debug("[BUY SKIP] %s addr/price invalid (addr=%s price=%s)", symbol, address, price)
+            log.debug("BUY skipped: invalid address/price (address=%s price=%s symbol=%s)", address, price, symbol)
             return
 
+        # Sanity check on price deviation vs. external reference (if both are present)
         max_mult = float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER)
         if dex_price is not None and fallback_price is not None:
-            lo, hi = sorted([dex_price, fallback_price])
-            if hi > 0 and (hi / lo) > max_mult:
-                log.warning("[BUY SKIP] %s price mismatch DEX %.6f vs ext %.6f (>x%.1f)", symbol, dex_price, fallback_price, max_mult)
+            low, high = sorted([dex_price, fallback_price])
+            if high > 0 and (high / low) > max_mult:
+                log.warning("BUY skipped: price mismatch for %s DEX=%.6f vs ext=%.6f (>x%.1f)", symbol, dex_price, fallback_price, max_mult)
                 return
 
+        # Order sizing
         order_notional = float(it.get("order_notional") or 0.0)
         if order_notional <= 0.0:
-            log.debug("[BUY SKIP] %s invalid order_notional=%s", symbol, order_notional)
+            log.debug("BUY skipped: invalid order_notional=%s for %s", order_notional, symbol)
             return
         qty = order_notional / float(price)
 
+        # Risk thresholds
         thresholds = AdaptiveRiskManager().compute_thresholds(float(price), it)
         stop = thresholds.stop_loss
         tp1 = thresholds.take_profit_tp1
         tp2 = thresholds.take_profit_tp2
 
-        if self.paper:
+        # PAPER mode (default)
+        if self.paper or not settings.TRADING_LIVE_ENABLED:
             with _session() as db:
                 trade = trades.buy(
                     db=db,
@@ -150,4 +256,42 @@ class Trader:
             self._rebroadcast_portfolio()
             return
 
-        log.warning("[LIVE BUY NOT IMPLEMENTED] %s (%s)", symbol, address)
+        # LIVE mode: execute a precomputed LI.FI route (Option B)
+        lifi_route = it.get("lifi_route")
+        if not isinstance(lifi_route, dict):
+            log.warning(
+                "LIVE buy skipped for %s: missing 'lifi_route' in payload. "
+                "Provide a LI.FI route object (from /v1/quote) or enable PAPER_MODE.",
+                symbol,
+            )
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                self._execute_live_buy(
+                    symbol=symbol,
+                    chain=chain,
+                    address=address,
+                    qty=qty,
+                    price=float(price),
+                    stop=float(stop),
+                    tp1=float(tp1),
+                    tp2=float(tp2),
+                    lifi_route=lifi_route,
+                )
+            )
+        except RuntimeError:
+            asyncio.run(
+                self._execute_live_buy(
+                    symbol=symbol,
+                    chain=chain,
+                    address=address,
+                    qty=qty,
+                    price=float(price),
+                    stop=float(stop),
+                    tp1=float(tp1),
+                    tp2=float(tp2),
+                    lifi_route=lifi_route,
+                )
+            )

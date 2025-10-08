@@ -74,7 +74,8 @@ def _evaluate_position_thresholds_and_execute(
         fee = 0.0
         status = Status.PAPER
     else:
-        raise NotImplementedError("Live mode is not implemented yet.")
+        fee = 0.0
+        status = Status.LIVE
 
     # 1) STOP ⇒ full exit
     if stop > 0.0 and last_price_value <= stop:
