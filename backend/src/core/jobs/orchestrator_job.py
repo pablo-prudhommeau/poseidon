@@ -3,28 +3,25 @@ import threading
 import time
 from typing import Optional, Dict, Any
 
-from src.api.ws_manager import ws_manager
+from src.api.websocket.ws_manager import ws_manager
 from src.configuration.config import settings
-from src.core.pnl import (
-    fifo_realized_pnl,
-    cash_from_trades,
-    holdings_and_unrealized_from_trades,
-)
-from src.integrations.dexscreener_client import fetch_prices_by_addresses
-from src.core.prices import merge_prices_with_entry
-from src.core.trending_job import TrendingJob
+from src.core.jobs.trending_job import TrendingJob
+from src.core.structures.structures import Mode
+from src.core.utils.pnl_utils import fifo_realized_pnl, cash_from_trades, holdings_and_unrealized_from_trades
+from src.core.utils.price_utils import merge_prices_with_entry
+from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_token_addresses
 from src.logging.logger import get_logger
 from src.persistence import dao
 from src.persistence.dao.portfolio_snapshots import snapshot_portfolio, equity_curve
 from src.persistence.dao.positions import (
     get_open_addresses,
-    serialize_positions_with_prices_by_address,
+    serialize_positions_with_prices_by_token_address,
     get_open_positions,
 )
 from src.persistence.dao.trades import get_recent_trades
 from src.persistence.db import _session
 from src.persistence.serializers import serialize_trade, serialize_portfolio
-from src.persistence.service import check_thresholds_and_autosell_for_address
+from src.persistence.service import check_thresholds_and_autosell_for_token_address
 
 log = get_logger(__name__)
 
@@ -42,7 +39,6 @@ def _loop() -> None:
         try:
             _trending_job.run_once()
         except Exception as exc:
-            # Protéger le thread pour ne jamais s'arrêter, mais loguer le contexte
             log.exception("Trending loop error: %s", exc)
         time.sleep(interval)
 
@@ -66,28 +62,11 @@ def ensure_started() -> None:
 
 def get_status() -> Dict[str, Any]:
     """Return a lightweight orchestrator status for the API/UI."""
-    # Expose aussi la config de cooldown utile pour le debug côté UI
-    cooldown = int(
-        getattr(settings, "REENTRY_COOLDOWN_SECONDS", getattr(settings, "COOLDOWN_SECONDS", 60))
-    )
     return {
-        "mode": "PAPER" if settings.PAPER_MODE else "LIVE",
+        "mode": Mode.PAPER if settings.PAPER_MODE else Mode.LIVE,
         "interval": int(settings.TREND_INTERVAL_SEC),
-        "reentry_cooldown_sec": cooldown,
         "prices_interval": int(settings.DEXSCREENER_FETCH_INTERVAL_SECONDS),
     }
-
-
-def reset_runtime_state() -> None:
-    """Clear in-memory runtime state for PAPER resets."""
-    try:
-        if _trending_job and _trending_job.trader:
-            t = _trending_job.trader
-            t.realized_pnl_usd = 0.0
-            log.info("Runtime trader state cleared")
-        log.info("Runtime safety state cleared")
-    except Exception:
-        log.exception("Failed to reset runtime state")
 
 
 async def _dex_prices_loop() -> None:
@@ -108,30 +87,25 @@ async def _dex_prices_loop() -> None:
                 addresses = get_open_addresses(db)
 
             if addresses:
-                # 1) Live prices with original keys preserved
-                live_prices: Dict[str, float] = await fetch_prices_by_addresses(addresses)
+                live_prices: Dict[str, float] = await fetch_prices_by_token_addresses(addresses)
 
                 with _session() as db:
-                    # Autosell uses ONLY live prices
                     for addr, price in (live_prices or {}).items():
-                        autos = check_thresholds_and_autosell_for_address(
-                            db, address=addr, last_price=price
+                        autos = check_thresholds_and_autosell_for_token_address(
+                            db, tokenAddress=addr, last_price=price
                         )
-                        # Broadcast each trade emitted by autosell (incl. CLOSED)
                         for tr in autos:
                             ws_manager.broadcast_json_threadsafe(
                                 {"type": "trade", "payload": serialize_trade(tr)}
                             )
 
-                    # Positions payload for UI (live or entry fallback)
                     positions = get_open_positions(db)
                     display_prices = merge_prices_with_entry(positions, live_prices)
-                    pos_payload = serialize_positions_with_prices_by_address(db, display_prices)
+                    pos_payload = serialize_positions_with_prices_by_token_address(db, display_prices)
                     ws_manager.broadcast_json_threadsafe(
                         {"type": "positions", "payload": pos_payload}
                     )
 
-                    # Portfolio valued with display_prices, PnL from trade truth
                     get_all = getattr(dao, "get_all_trades", None)
                     trades = get_all(db) if callable(get_all) else get_recent_trades(db, limit=10000)
 

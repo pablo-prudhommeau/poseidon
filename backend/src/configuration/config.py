@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+"""
+Centralized settings for Poseidon.
+
+- All values are read from environment variables with safe defaults for local/dev.
+- Boolean parser accepts: 1, true, yes, y, on.
+- This file includes live trading switches and chain-specific settings for Option B:
+  * EVM: HD derivation via eth-account (no bip-utils)
+  * Solana: base58-encoded secret key (no mnemonic ingestion in code)
+"""
+
 import os
 from pathlib import Path
 
@@ -12,34 +22,23 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
 
 
 class Settings:
-    # API
+    # --- API ---
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
 
-    # Core / modes
+    # --- Core / modes ---
     PAPER_MODE: bool = _as_bool(os.getenv("PAPER_MODE"), True)
     PAPER_STARTING_CASH: float = float(os.getenv("PAPER_STARTING_CASH", "10000"))
     BASE_CURRENCY: str = os.getenv("BASE_CURRENCY", "EUR")
 
-    # Database
+    # --- Database ---
     DATABASE_URL: str = os.getenv("DATABASE_URL", str(Path(__file__).resolve().parents[2] / "data" / "poseidon.db"))
 
-    # Infra / chain
-    QUICKNODE_URL: str = os.getenv("QUICKNODE_URL", "")
-    UNISWAP_FACTORY_ADDRESS: str = os.getenv(
-        "UNISWAP_FACTORY_ADDRESS",
-        "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
-    )
-    WETH_ADDRESS: str = os.getenv(
-        "WETH_ADDRESS",
-        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-    )
-
-    # Debug / logging
+    # --- Debug / logging ---
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "WARNING").upper()
     LOG_LEVEL_POSEIDON: str = os.getenv("LOG_LEVEL_POSEIDON", "DEBUG").upper()
     LOG_LEVEL_LIB_REQUESTS: str = os.getenv("LOG_LEVEL_LIB_REQUESTS", "WARNING").upper()
-    LOG_LEVEL_LIB_URLLIB3: str = os.getenv("LOG_LEVEL_LIB_URLLIB3", "WARNING".upper())
+    LOG_LEVEL_LIB_URLLIB3: str = os.getenv("LOG_LEVEL_LIB_URLLIB3", "WARNING").upper()
     LOG_LEVEL_LIB_WEBSOCKETS: str = os.getenv("LOG_LEVEL_LIB_WEBSOCKETS", "WARNING").upper()
     LOG_LEVEL_LIB_HTTPX: str = os.getenv("LOG_LEVEL_LIB_HTTPX", "WARNING").upper()
     LOG_LEVEL_LIB_HTTPCORE: str = os.getenv("LOG_LEVEL_LIB_HTTPCORE", "WARNING").upper()
@@ -47,11 +46,11 @@ class Settings:
     LOG_LEVEL_LIB_ANYIO: str = os.getenv("LOG_LEVEL_LIB_ANYIO", "WARNING").upper()
     LOG_LEVEL_LIB_OPENAI: str = os.getenv("LOG_LEVEL_LIB_OPENAI", "WARNING").upper()
 
-    # Telegram
+    # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
-    # Trending
+    # --- Trending ---
     TREND_ENABLE: bool = _as_bool(os.getenv("TREND_ENABLE"), True)
     TREND_INTERVAL: str = os.getenv("TREND_INTERVAL", "1h").lower()
     TREND_PAGE_SIZE: int = int(os.getenv("TREND_PAGE_SIZE", "100"))
@@ -74,10 +73,10 @@ class Settings:
     TRENDING_TP2_EXIT_FRACTION: float = float(os.getenv("TRENDING_TP2_EXIT_FRACTION", "0.30"))
     TRENDING_TP1_TAKE_PROFIT_FRACTION: float = float(os.getenv("TRENDING_TP1_TAKE_PROFIT_FRACTION", "0.35"))
 
-    # Market data
+    # --- Market data ---
     MARKETDATA_MAX_STALE_SECONDS: int = int(os.getenv("MARKETDATA_MAX_STALE_SECONDS", "180"))
 
-    # Dexscreener client
+    # --- Dexscreener client ---
     DEXSCREENER_BASE_URL: str = os.getenv("DEXSCREENER_BASE_URL", "https://api.dexscreener.com")
     DEXSCREENER_FETCH_INTERVAL_SECONDS: int = int(os.getenv("DEXSCREENER_FETCH_INTERVAL_SECONDS", "10"))
     DEXSCREENER_MAX_ADDRESSES_PER_CALL: int = int(os.getenv("DEXSCREENER_MAX_ADDRESSES_PER_CALL", "20"))
@@ -86,13 +85,14 @@ class Settings:
     DEXSCREENER_MAX_AGE_HOURS: float = float(os.getenv("DEXSCREENER_MAX_AGE_HOURS", "720"))
     DEXSCREENER_MAX_ABS_M5_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_M5_PCT", "25"))
     DEXSCREENER_MAX_ABS_H1_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_H1_PCT", "60"))
+    DEXSCREENER_MAX_ABS_H24_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_H24_PCT", "200"))
     DEXSCREENER_REBUY_COOLDOWN_MIN: int = int(os.getenv("DEXSCREENER_REBUY_COOLDOWN_MIN", "45"))
 
-    # Cache
+    # --- Cache ---
     CACHE_DIR: str = os.getenv("CACHE_DIR", "/app/data")
     CG_LIST_TTL_MIN: int = int(os.getenv("CG_LIST_TTL_MIN", "720"))
 
-    # Scoring weights (sum can be arbitrary; they will be normalized at runtime)
+    # --- Scoring weights (sum arbitrary; normalized at runtime) ---
     SCORE_WEIGHT_LIQUIDITY: float = float(os.getenv("SCORE_WEIGHT_LIQUIDITY", "1.0"))
     SCORE_WEIGHT_VOLUME: float = float(os.getenv("SCORE_WEIGHT_VOLUME", "1.0"))
     SCORE_WEIGHT_AGE: float = float(os.getenv("SCORE_WEIGHT_AGE", "0.7"))
@@ -104,21 +104,21 @@ class Settings:
     SCORE_MIN_STATISTICS: float = float(os.getenv("SCORE_MIN_RANK", "55"))
     SCORE_MIN_ENTRY: float = float(os.getenv("SCORE_MIN_ENTRY", "60"))
 
-    # AI adjustment config
+    # --- AI adjustment config ---
     SCORE_AI_DELTA_MULTIPLIER: float = float(os.getenv("SCORE_AI_DELTA_MULTIPLIER", "1.5"))
     SCORE_AI_MAX_ABS_DELTA_POINTS: float = float(os.getenv("SCORE_AI_MAX_ABS_DELTA_POINTS", "20.0"))
     TOP_K_CANDIDATES_FOR_CHART_AI: int = int(os.getenv("TOP_K_CANDIDATES_FOR_CHART_AI", "12"))
 
-    # OpenAI
+    # --- OpenAI ---
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5-mini")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
-    # ---- Chart-based AI Signal ----
+    # --- Chart-based AI Signal ---
     CHART_AI_ENABLED: bool = _as_bool(os.getenv("CHART_AI_ENABLED"), True)
     CHART_AI_SAVE_SCREENSHOTS: bool = _as_bool(os.getenv("CHART_AI_SAVE_SCREENSHOTS"), True)
     SCREENSHOT_DIR: str = os.getenv("SCREENSHOT_DIR", str(Path(__file__).resolve().parents[2] / "data" / "screenshots"))
 
-    # Headless capture
+    # --- Headless capture ---
     CHART_AI_TIMEFRAME: int = int(os.getenv("CHART_AI_TIMEFRAME", "5"))
     CHART_AI_LOOKBACK_MINUTES: int = int(os.getenv("CHART_AI_LOOKBACK_MINUTES", "120"))
     CHART_CAPTURE_TIMEOUT_SEC: int = int(os.getenv("CHART_CAPTURE_TIMEOUT_SEC", "15"))
@@ -129,9 +129,18 @@ class Settings:
     CHART_CAPTURE_WAIT_CANVAS_MS: int = int(os.getenv("CHART_CAPTURE_WAIT_CANVAS_MS", "30000"))
     CHART_CAPTURE_AFTER_RENDER_MS: int = int(os.getenv("CHART_CAPTURE_AFTER_RENDER_MS", "900"))
 
-    # Rate limiting / cache
+    # --- Rate limiting / cache ---
     CHART_AI_MIN_CACHE_SECONDS: int = int(os.getenv("CHART_AI_MIN_CACHE_SECONDS", "60"))
     CHART_AI_MAX_REQUESTS_PER_MINUTE: int = int(os.getenv("CHART_AI_MAX_REQUESTS_PER_MINUTE", "10"))
 
+    # --- On-chain settings ---
+    WETH_ADDRESS: str = os.getenv("WETH_ADDRESS", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+    EVM_RPC_URL: str = os.getenv("EVM_RPC_URL", "")
+    EVM_MNEMONIC: str = os.getenv("EVM_MNEMONIC", "")
+    EVM_DERIVATION_INDEX: int = int(os.getenv("EVM_DERIVATION_INDEX", "0"))
+    SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "")
+    SOLANA_SECRET_KEY_BASE58: str = os.getenv("SOLANA_SECRET_KEY_BASE58", "")
+    LIFI_BASE_URL: str = os.getenv("LIFI_BASE_URL", "https://li.quest")
 
-settings = Settings()
+
+settings: Settings = Settings()

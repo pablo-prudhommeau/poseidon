@@ -1,11 +1,10 @@
 import {HttpClient} from '@angular/common/http';
 import {inject, Injectable} from '@angular/core';
-import {Analytics, Portfolio, Position, Trade, TradeMode} from './core/models';
+import {TradeMode} from './core/models';
 
 export interface AppStatus {
     mode: TradeMode;
     interval: number;
-    reentry_cooldown_sec: number;
     prices_interval: number;
 }
 

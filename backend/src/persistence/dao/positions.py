@@ -16,7 +16,7 @@ def get_open_addresses(database_session: Session) -> List[str]:
     """
     rows = (
         database_session.execute(
-            select(Position.address).where(
+            select(Position.tokenAddress).where(
                 or_(Position.phase == Phase.OPEN, Position.phase == Phase.PARTIAL)
             )
         )
@@ -38,7 +38,7 @@ def get_open_positions(database_session: Session) -> List[Position]:
     return list(database_session.execute(statement).scalars().all())
 
 
-def serialize_positions_with_prices_by_address(
+def serialize_positions_with_prices_by_token_address(
         database_session: Session,
         address_price: Dict[str, float],
 ) -> List[dict]:
@@ -49,7 +49,7 @@ def serialize_positions_with_prices_by_address(
     payload: List[dict] = []
     for position in positions:
         last_price_value = None
-        if position.address:
-            last_price_value = address_price.get(position.address)
+        if position.tokenAddress:
+            last_price_value = address_price.get(position.tokenAddress)
         payload.append(serialize_position(position, last_price_value))
     return payload

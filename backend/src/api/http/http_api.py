@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.core import orchestrator
-from src.core.utils import timezone_now
+from src.core.jobs import orchestrator_job
+from src.core.utils.date_utils import timezone_now
 from src.logging.logger import get_logger
 from src.persistence import service
 from src.persistence.dao.portfolio_snapshots import (
@@ -41,6 +41,5 @@ async def get_health(db: Session = Depends(get_db)) -> Dict[str, Any]:
 def reset_paper(db: Session = Depends(get_db)) -> Dict[str, bool]:
     service.reset_paper(db)
     ensure_initial_cash(db)
-    orchestrator.reset_runtime_state()
     log.info("Paper mode has been reset and initial cash ensured")
     return {"ok": True}

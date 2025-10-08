@@ -4,9 +4,9 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
 
-from src.ai.chart_capture import ChartCaptureService, ChartCaptureResult, ChartCaptureError
-from src.ai.chart_openai_client import ChartOpenAiClient, ChartAiOutput
 from src.configuration.config import settings
+from src.core.ai.chart_capture import ChartCaptureResult, ChartCaptureError, ChartCaptureService
+from src.core.ai.chart_openai_client import ChartAiOutput, ChartOpenAiClient
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)
@@ -15,8 +15,8 @@ log = get_logger(__name__)
 @dataclass(frozen=True)
 class ChartAiSignal:
     """Chart-based AI signal for blending into the quality score."""
-    probability_tp1_before_sl: float  # 0..1
-    quality_score_delta: float  # -20..+20
+    probability_tp1_before_sl: float
+    quality_score_delta: float
     meta: Dict[str, Any]
 
 
@@ -89,7 +89,6 @@ class ChartAiSignalProvider:
         if analysis is None:
             return None
 
-        # The primary signal: probability that TP1 occurs before SL soon.
         prob = float(analysis.tp1_probability)
         delta = float(analysis.quality_score_delta)
 

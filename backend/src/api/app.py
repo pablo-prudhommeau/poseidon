@@ -6,10 +6,10 @@ from typing import Any, Dict, List
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.http_api import router as http_router
-from src.api.ws_hub import router as ws_router
-from src.api.ws_manager import ws_manager
-from src.core.orchestrator import ensure_started, get_status
+from src.api.http.http_api import router as http_router
+from src.api.websocket.ws_hub import router as ws_router
+from src.api.websocket.ws_manager import ws_manager
+from src.core.jobs.orchestrator_job import ensure_started, get_status
 from src.logging.logger import get_logger
 from src.persistence.db import init_db
 

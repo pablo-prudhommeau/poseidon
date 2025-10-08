@@ -45,12 +45,7 @@ class ChartCaptureService:
     """
 
     def __init__(self) -> None:
-        # key -> (timestamp, png_bytes, source, persisted_path)
         self._cache: Dict[str, tuple[float, bytes, str, str | None]] = {}
-
-    # ----------------------------
-    # Helpers (naming: explicit, no abbreviations)
-    # ----------------------------
 
     @staticmethod
     def _sanitize_identifier(value: str) -> str:
@@ -131,13 +126,12 @@ class ChartCaptureService:
             toolbar = frame.locator("#header-toolbar-intervals")
             toolbar.wait_for(state="visible", timeout=int(settings.CHART_CAPTURE_WAIT_CANVAS_MS))
 
-            candidates = self._map_interval_to_toolbar_values(interval)  # e.g. "D" -> ["1D","D"]
+            candidates = self._map_interval_to_toolbar_values(interval)
             for value in candidates:
                 button = toolbar.locator(f"button[role='radio'][data-value='{value}']").first
                 if button.count() == 0:
                     continue
 
-                # Already active? we're done.
                 try:
                     aria_checked = (button.get_attribute("aria-checked") or "").lower()
                     if aria_checked == "true":
@@ -146,21 +140,18 @@ class ChartCaptureService:
                 except Exception:
                     pass
 
-                # Click + short polling on aria-checked to turn true
                 button.click()
-                deadline = time.time() + 2.5  # ~2.5s max
+                deadline = time.time() + 2.5
                 while time.time() < deadline:
                     try:
                         if (button.get_attribute("aria-checked") or "").lower() == "true":
-                            page.wait_for_timeout(300)  # let TV recompose
+                            page.wait_for_timeout(300)
                             log.debug("ChartCapture: toolbar interval set to %s", value)
                             return True
                     except Exception:
-                        # element may be re-created; re-query it
                         button = toolbar.locator(f"button[role='radio'][data-value='{value}']").first
                     page.wait_for_timeout(80)
 
-                # As a second check, see if any active radio matches our target (DOM may swap nodes)
                 active = toolbar.locator("button[role='radio'][aria-checked='true']").first
                 if active.count() > 0:
                     try:
@@ -179,7 +170,6 @@ class ChartCaptureService:
         except Exception as exc:
             log.debug("ChartCapture: toolbar operation failed (%s)", exc)
             return False
-
 
     def _try_set_tradingview_interval_via_keyboard(self, page, interval: str) -> bool:
         """
@@ -242,10 +232,6 @@ class ChartCaptureService:
             return "D"
         return "W"
 
-    # ----------------------------
-    # Core screenshot routine
-    # ----------------------------
-
     def _screenshot_dexscreener_fullpage(
             self,
             target_url: str,
@@ -291,13 +277,11 @@ class ChartCaptureService:
                 page.goto(target_url, wait_until="domcontentloaded")
                 page.wait_for_selector("iframe", state="attached")
 
-                # Apply interval via toolbar first; fallback to keyboard.
                 if interval:
                     applied = self._try_set_tradingview_interval_via_toolbar(page, interval)
                     if not applied:
                         self._try_set_tradingview_interval_via_keyboard(page, interval)
 
-                # Ensure a visible canvas exists before capture (TradingView can be slow).
                 frame_loc = page.frame_locator("iframe").first
                 try:
                     frame_loc.locator("canvas").first.wait_for(
@@ -322,10 +306,6 @@ class ChartCaptureService:
                         context.close()
                 finally:
                     browser.close()
-
-    # ----------------------------
-    # Public API
-    # ----------------------------
 
     def capture_chart_png(
             self,
@@ -372,11 +352,9 @@ class ChartCaptureService:
             preferred_interval = self._select_interval_from_age_hours(float(token_age_hours))
             log.debug("ChartCapture: token_age=%.2f hours -> interval=%s", float(token_age_hours), preferred_interval)
         else:
-            # Fallback mapping from configured timeframe
             preferred_interval = "D" if int(timeframe_minutes) >= 60 * 24 else str(int(timeframe_minutes))
             log.debug("ChartCapture: using fallback interval from timeframe -> interval=%s", preferred_interval)
 
-        # Cache key includes the chosen interval
         cache_key = f"{chain_name}:{pair_address}:{preferred_interval}:{timeframe_minutes}:{lookback_minutes}"
         now = time.time()
         cached = self._cache.get(cache_key)
@@ -396,7 +374,6 @@ class ChartCaptureService:
         identifier_raw = f"{chain_name}:{pair_address}"
         identifier = self._sanitize_identifier(identifier_raw)
 
-        # Build URL and capture
         url = self._build_dexscreener_url(chain_name, pair_address, interval=preferred_interval)
         try:
             png = self._screenshot_dexscreener_fullpage(
@@ -430,5 +407,4 @@ class ChartCaptureService:
             )
         except Exception as exc:
             log.warning("ChartCapture: DexScreener failed for %s/%s: %s", chain_name, pair_address, exc)
-            # Raise a clear error to avoid 'NoneType' usage upstream
             raise ChartCaptureError(f"Dexscreener capture failed for {chain_name}/{pair_address}") from exc
