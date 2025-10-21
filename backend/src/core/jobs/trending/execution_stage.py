@@ -10,7 +10,7 @@ from src.core.gates.trader import Trader
 from src.core.gates.trending_scoring import ScoringEngine
 from src.core.onchain.evm_signer import build_default_evm_signer
 from src.core.onchain.solana_signer import build_default_solana_signer
-from src.core.structures.structures import Candidate, OrderPayload, LifiRoute
+from src.core.structures.structures import Candidate, OrderPayload, LifiRoute, Token
 from src.core.utils.date_utils import timezone_now
 from src.core.utils.format_utils import _age_hours
 from src.integrations.lifi.lifi_client import build_native_to_token_route, resolve_lifi_chain_id
@@ -409,11 +409,15 @@ class AiExecutionStage:
                         candidate.chain_name,
                     )
 
-            order_payload = OrderPayload(
+            token = Token(
                 symbol=candidate.symbol,
                 chain=candidate.chain_name,
-                address=candidate.token_address,
-                price=candidate.price_native,
+                tokenAddress=candidate.token_address,
+                pairAddress=candidate.pair_address
+            )
+            order_payload = OrderPayload(
+                token=token,
+                price=candidate.price_usd,
                 order_notional=order_notional,
                 original_candidate=candidate,
                 lifi_route=lifi_route,

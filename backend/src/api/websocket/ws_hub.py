@@ -10,7 +10,7 @@ from src.api.websocket.ws_manager import ws_manager
 from src.configuration.config import settings
 from src.core.utils.pnl_utils import fifo_realized_pnl, cash_from_trades, holdings_and_unrealized_from_trades
 from src.core.utils.price_utils import merge_prices_with_entry
-from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_token_addresses
+from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_tokens
 from src.logging.logger import get_logger
 from src.persistence.dao import trades as dao_trades
 from src.persistence.dao.analytics import get_recent_analytics
@@ -34,7 +34,7 @@ async def _send_init(ws: WebSocket, db: Session) -> None:
     positions = get_open_positions(db)
 
     tokenAddresses: List[str] = [p.tokenAddress for p in positions if p.tokenAddress]
-    live_prices: Dict[str, float] = await fetch_prices_by_token_addresses(tokenAddresses)
+    live_prices: Dict[str, float] = await fetch_prices_by_tokens(tokenAddresses)
     price_map = merge_prices_with_entry(positions, live_prices)
 
     get_all = getattr(dao_trades, "get_all_trades", None)

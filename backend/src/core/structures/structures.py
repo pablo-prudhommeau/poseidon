@@ -3,8 +3,22 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping, MutableMapping, List, Optional, TypeVar, Any, Dict
 
+from src.core.utils.format_utils import _tail
+
 logger = logging.getLogger(__name__)
 
+@dataclass
+class Token:
+    symbol: str
+    chain: str
+    tokenAddress: str
+    pairAddress: str
+
+    def __str__(self) -> str:
+        return (f"[{self.symbol} "
+                f"chain={self.chain} "
+                f"tokenAddress={_tail(self.tokenAddress)} "
+                f"pairAddress=…{_tail(self.pairAddress)}]")
 
 class TransactionBucket:
     """
@@ -213,9 +227,7 @@ class OrderPayload:
     Typed input contract expected by Trader.buy().
     Upstream (e.g. TrendingJob) typically provides these fields.
     """
-    symbol: str
-    chain: str
-    address: str
+    token: Token
     price: float
     order_notional: float
     original_candidate: Candidate

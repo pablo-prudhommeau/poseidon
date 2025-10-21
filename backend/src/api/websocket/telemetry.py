@@ -36,7 +36,7 @@ class TelemetryService:
 
     @staticmethod
     def link_trade_outcome(
-            address: str,
+            token_address: str,
             trade_id: int,
             closed_at: datetime,
             pnl_pct: float,
@@ -52,7 +52,7 @@ class TelemetryService:
         with _session() as db:
             row = attach_outcome_for_trade(
                 db,
-                address=address,
+                address=token_address,
                 closed_at=closed_at,
                 trade_id=trade_id,
                 pnl_pct=pnl_pct,

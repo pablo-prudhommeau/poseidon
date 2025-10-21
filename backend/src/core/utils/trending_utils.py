@@ -21,7 +21,7 @@ from src.configuration.config import settings
 from src.core.structures.structures import PriceMap, Candidate, TransactionSummary, ScoreComponents, TransactionBucket
 from src.core.utils.date_utils import timezone_now
 from src.core.utils.format_utils import _tail, _format, _age_hours
-from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_token_addresses_sync
+from src.integrations.dexscreener.dexscreener_client import fetch_price_by_tokens_sync
 from src.integrations.dexscreener.dexscreener_structures import NormalizedRow, TransactionActivity, TransactionCount
 from src.logging.logger import get_logger
 from src.persistence.db import _session
@@ -351,7 +351,7 @@ def preload_best_prices(addresses: List[str]) -> Dict[str, float]:
     deduped_in_order = [addr for addr in dict.fromkeys(a for a in addresses if a)]
     if not deduped_in_order:
         return {}
-    return fetch_prices_by_token_addresses_sync(deduped_in_order)
+    return fetch_price_by_tokens_sync(deduped_in_order)
 
 
 def _price_from(price_map: PriceMap, address: str) -> Optional[float]:

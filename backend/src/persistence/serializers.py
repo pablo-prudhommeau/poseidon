@@ -7,30 +7,44 @@ from src.persistence.models import Trade, Position, PortfolioSnapshot, Analytics
 
 
 def serialize_trade(trade: Trade) -> Dict[str, Any]:
-    """Serialize a Trade ORM object to a frontend-friendly dict."""
+    """
+    Serialize a Trade ORM object to a frontend-friendly dict.
+
+    Keys:
+        - 'address'     : token address (legacy for backward compatibility)
+        - 'pairAddress' : pool/pair address (pool-aware UIs should prefer this)
+    """
     return {
         "id": trade.id,
         "side": trade.side,
         "symbol": trade.symbol,
-        "chain": getattr(trade, "chain", "unknown"),
+        "chain": trade.chain,
         "price": trade.price,
         "qty": trade.qty,
         "fee": trade.fee,
         "pnl": trade.pnl,
         "status": trade.status,
         "address": trade.tokenAddress,
+        "pairAddress": trade.pairAddress,
         "tx_hash": trade.tx_hash,
         "created_at": trade.created_at,
     }
 
 
 def serialize_position(position: Position, last_price: Optional[float] = None) -> Dict[str, Any]:
-    """Serialize a Position ORM object, optionally appending a live last_price."""
+    """
+    Serialize a Position ORM object, optionally appending a live last_price.
+
+    Keys:
+        - 'address'     : token address (legacy)
+        - 'pairAddress' : pool address used for this lifecycle (when available)
+    """
     data: Dict[str, Any] = {
         "id": position.id,
         "symbol": position.symbol,
-        "chain": getattr(position, "chain", "unknown"),
+        "chain": position.chain,
         "address": position.tokenAddress,
+        "pairAddress": position.pairAddress,
         "qty": position.qty,
         "entry": position.entry,
         "tp1": position.tp1,
@@ -39,7 +53,7 @@ def serialize_position(position: Position, last_price: Optional[float] = None) -
         "phase": position.phase,
         "opened_at": position.opened_at,
         "updated_at": position.updated_at,
-        "closed_at": getattr(position, "closed_at", None),
+        "closed_at": position.closed_at
     }
     if last_price is not None:
         data["last_price"] = float(last_price)
@@ -52,7 +66,9 @@ def serialize_portfolio(
         realized_total: Optional[float] = None,
         realized_24h: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Serialize a PortfolioSnapshot with optional equity curve and realized PnL."""
+    """
+    Serialize a PortfolioSnapshot with optional equity curve and realized PnL.
+    """
     with _session():
         data: Dict[str, Any] = {
             "equity": snapshot.equity,
@@ -70,6 +86,9 @@ def serialize_portfolio(
 
 
 def serialize_analytics(row: Analytics) -> Dict[str, Any]:
+    """
+    Serialize Analytics row with raw payloads.
+    """
     return {
         "id": row.id,
         "symbol": row.symbol,

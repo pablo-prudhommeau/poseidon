@@ -9,7 +9,7 @@ from src.core.jobs.trending_job import TrendingJob
 from src.core.structures.structures import Mode
 from src.core.utils.pnl_utils import fifo_realized_pnl, cash_from_trades, holdings_and_unrealized_from_trades
 from src.core.utils.price_utils import merge_prices_with_entry
-from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_token_addresses
+from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_tokens
 from src.logging.logger import get_logger
 from src.persistence import dao
 from src.persistence.dao.portfolio_snapshots import snapshot_portfolio, equity_curve
@@ -87,7 +87,7 @@ async def _dex_prices_loop() -> None:
                 addresses = get_open_addresses(db)
 
             if addresses:
-                live_prices: Dict[str, float] = await fetch_prices_by_token_addresses(addresses)
+                live_prices: Dict[str, float] = await fetch_prices_by_tokens(addresses)
 
                 with _session() as db:
                     for addr, price in (live_prices or {}).items():

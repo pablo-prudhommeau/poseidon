@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from src.core.structures.structures import Token
 from src.integrations.dexscreener.dexscreener_constants import JSON
 
 
@@ -255,3 +256,8 @@ class NormalizedRow:
     txns: Optional[TransactionActivity] = None
     fdv: Optional[float] = None
     marketCap: Optional[float] = None
+
+@dataclass
+class TokenPrice:
+    token: Token
+    priceUsd: float
