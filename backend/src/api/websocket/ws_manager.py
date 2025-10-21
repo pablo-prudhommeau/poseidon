@@ -74,7 +74,6 @@ class WsManager:
             try:
                 await ws.send_json(payload)
             except Exception as exc:
-                # Mark as stale; cleanup after loop to avoid set mutation mid-iteration
                 stale.append(ws)
                 log.debug("Broadcast to a client failed; scheduling removal: %r", exc)
         for dead in stale:
@@ -93,7 +92,6 @@ class WsManager:
             payload = self._to_json_compatible(data)
             asyncio.run_coroutine_threadsafe(self.broadcast_json(payload), self._loop)
         except Exception as exc:
-            # Do not raise; broadcasting should never crash the caller.
             log.debug("broadcast_json_threadsafe failed: %r", exc)
 
 

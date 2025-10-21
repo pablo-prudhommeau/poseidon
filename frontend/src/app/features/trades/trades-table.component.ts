@@ -1,17 +1,26 @@
-import {Component, computed, inject} from '@angular/core';
-import {AgGridAngular} from 'ag-grid-angular';
-import {ColDef, ValueFormatterParams, ValueGetterParams} from 'ag-grid-community';
-import {balhamDarkThemeCompact} from '../../ag-grid.theme';
-import {DateFormattingService} from '../../core/date-formatting.service';
-import {DefiIconsService} from '../../core/defi-icons.service';
-import {NumberFormattingService} from '../../core/number-formatting.service';
-import {WebSocketService} from '../../core/websocket.service';
+import {JsonPipe} from '@angular/common';
+import { Component, computed, inject, signal } from '@angular/core';
+import { AgGridAngular } from 'ag-grid-angular';
+import { ColDef, ValueFormatterParams, ValueGetterParams } from 'ag-grid-community';
+import { DialogModule } from 'primeng/dialog';
+import { ButtonModule } from 'primeng/button';
+import { balhamDarkThemeCompact } from '../../ag-grid.theme';
+import { DateFormattingService } from '../../core/date-formatting.service';
+import { DefiIconsService } from '../../core/defi-icons.service';
+import { NumberFormattingService } from '../../core/number-formatting.service';
+import { WebSocketService } from '../../core/websocket.service';
 
+/**
+ * TradesTableComponent
+ * --------------------
+ * Displays recent trades with a pinned 'Actions' column that opens a details modal.
+ * The Symbol column uses DefiIconsService to render a triple icon (chain+token+pair).
+ */
 @Component({
     standalone: true,
     selector: 'trades-table',
-    imports: [AgGridAngular],
-    templateUrl: './trades-table.component.html'
+    imports: [AgGridAngular, DialogModule, ButtonModule, JsonPipe],
+    templateUrl: './trades-table.component.html',
 })
 export class TradesTableComponent {
     public readonly agGridTheme = balhamDarkThemeCompact;
@@ -26,14 +35,30 @@ export class TradesTableComponent {
         return Array.isArray(rows) ? [...rows] : [];
     });
 
+    // Modal state
+    public readonly detailsVisible = signal<boolean>(false);
+    public readonly selectedRow = signal<any | null>(null);
+
+    public openDetails(row: any): void {
+        this.selectedRow.set(row);
+        this.detailsVisible.set(true);
+        console.info('[UI][TRADES][DETAILS] open', {
+            symbol: row?.symbol,
+            chain: row?.chain,
+            tokenAddress: row?.tokenAddress ?? row?.address,
+            pairAddress: row?.pairAddress,
+            side: row?.side,
+        });
+    }
+
     public readonly columnDefinitions: ColDef[] = [
         {
             headerName: 'Symbol',
             field: 'symbol',
             sortable: true,
             filter: true,
-            cellRenderer: this.defiIconService.tokenChainChipRenderer,
-            flex: 1.2
+            cellRenderer: this.defiIconService.tokenChainPairChipRenderer,
+            flex: 1.2,
         },
         {
             headerName: 'Date',
@@ -41,7 +66,7 @@ export class TradesTableComponent {
             sortable: true,
             filter: 'agDateColumnFilter',
             valueGetter: (p: ValueGetterParams) => p.data?.created_at ?? p.data?.date ?? null,
-            flex: 1
+            flex: 1,
         },
         {
             headerName: 'Side',
@@ -55,9 +80,15 @@ export class TradesTableComponent {
                 } else if (p.value === 'SELL') {
                     colorClass = 'bg-indigo-500';
                 }
-                return '<span class="' + colorClass + ' saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">' + p.value + '</span>';
+                return (
+                    '<span class="' +
+                    colorClass +
+                    ' saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">' +
+                    p.value +
+                    '</span>'
+                );
             },
-            flex: 0.5
+            flex: 0.5,
         },
         {
             headerName: 'Quantity',
@@ -67,7 +98,7 @@ export class TradesTableComponent {
             filter: 'agNumberColumnFilter',
             valueFormatter: (p: ValueFormatterParams) => this.numberFormattingService.formatNumber(p.value, 2, 6),
             cellClass: 'text-right whitespace-nowrap',
-            flex: 1.3
+            flex: 1.3,
         },
         {
             headerName: 'Price',
@@ -77,7 +108,7 @@ export class TradesTableComponent {
             filter: 'agNumberColumnFilter',
             valueFormatter: (p: ValueFormatterParams) => this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
             cellClass: 'text-right whitespace-nowrap',
-            flex: 1.1
+            flex: 1.1,
         },
         {
             headerName: 'P&L',
@@ -91,23 +122,42 @@ export class TradesTableComponent {
                 if (n === null) {
                     return 'text-right whitespace-nowrap';
                 }
-                return n > 0 ? 'text-right whitespace-nowrap text-green-400' : (n < 0 ? 'text-right whitespace-nowrap text-red-400' : 'text-right whitespace-nowrap');
+                return n > 0
+                    ? 'text-right whitespace-nowrap text-green-400'
+                    : n < 0
+                        ? 'text-right whitespace-nowrap text-red-400'
+                        : 'text-right whitespace-nowrap';
             },
-            flex: 1
+            flex: 1,
         },
         {
             headerName: 'Status',
             field: 'status',
             sortable: true,
             filter: true,
-            flex: 0.5
-        }
+            flex: 0.5,
+        },
+        // -------- Actions column (pinned right) --------
+        {
+            headerName: '',
+            colId: 'actions',
+            pinned: 'right',
+            width: 70,
+            suppressHeaderMenuButton: true,
+            sortable: false,
+            filter: false,
+            cellRenderer: () =>
+                `<button class="p-button p-component p-button-sm p-button-rounded p-button-text" title="Details">
+           <span class="pi pi-search"></span>
+         </button>`,
+            onCellClicked: (p) => this.openDetails(p.data),
+        },
     ];
 
     public readonly defaultColumnDefinition: ColDef = {
         resizable: true,
         sortable: true,
         filter: true,
-        flex: 1
+        flex: 1,
     };
 }

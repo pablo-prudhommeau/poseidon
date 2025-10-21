@@ -4,5 +4,87 @@
 		[columnDefs]="columnDefinitions"
 		[defaultColDef]="defaultColumnDefinition"
 		[rowData]="tradesRowData()"
-		[theme]="agGridTheme">
+		[theme]="agGridTheme"
+>
 </ag-grid-angular>
+
+<p-dialog
+		[visible]="detailsVisible()"
+		(visibleChange)="detailsVisible.set($event)"
+		(onHide)="detailsVisible.set(false)"
+		[modal]="true"
+		[draggable]="false"
+		[dismissableMask]="true"
+		[breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }"
+		[style]="{ width: '48rem' }"
+>
+	<ng-template pTemplate="header">
+		<div class="flex items-center gap-3">
+			<span class="font-semibold text-lg">{{ selectedRow()?.symbol }}</span>
+			<span class="opacity-70 text-sm">{{ selectedRow()?.chain }}</span>
+			<span class="opacity-70 text-sm">· {{ selectedRow()?.side }}</span>
+		</div>
+	</ng-template>
+
+	<div class="grid grid-cols-12 gap-4 text-sm">
+		<div class="col-span-12 md:col-span-6">
+			<div class="opacity-70">Token</div>
+			<div class="font-mono break-all">{{ selectedRow()?.tokenAddress || selectedRow()?.address }}</div>
+		</div>
+		<div class="col-span-12 md:col-span-6">
+			<div class="opacity-70">Pair</div>
+			<div class="font-mono break-all">{{ selectedRow()?.pairAddress }}</div>
+		</div>
+
+		<div class="col-span-4">
+			<div class="opacity-70">Quantity</div>
+			<div class="font-semibold">{{ selectedRow()?.qty }}</div>
+		</div>
+		<div class="col-span-4">
+			<div class="opacity-70">Price</div>
+			<div class="font-semibold">{{ selectedRow()?.price }}</div>
+		</div>
+		<div class="col-span-4">
+			<div class="opacity-70">P&L</div>
+			<div class="font-semibold">{{ selectedRow()?.pnl }}</div>
+		</div>
+
+		<div class="col-span-6">
+			<div class="opacity-70">Date</div>
+			<div class="font-semibold">{{ selectedRow()?.created_at || selectedRow()?.date }}</div>
+		</div>
+		<div class="col-span-6">
+			<div class="opacity-70">Status</div>
+			<div class="font-semibold">{{ selectedRow()?.status }}</div>
+		</div>
+
+		<div class="col-span-12">
+			<div class="opacity-70">Links</div>
+			<div class="flex flex-wrap gap-2 mt-1">
+				<a
+						class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
+						[href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.pairAddress || '')"
+						target="_blank"
+						rel="noreferrer"
+				>Dexscreener (Pair)</a
+				>
+				<a
+						class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
+						[href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.tokenAddress || selectedRow()?.address || '')"
+						target="_blank"
+						rel="noreferrer"
+				>Dexscreener (Token)</a
+				>
+			</div>
+		</div>
+
+		<div class="col-span-12">
+			<div class="opacity-70">Raw</div>
+			<pre class="text-xs overflow-auto max-h-80">{{ selectedRow() | json }}</pre>
+		</div>
+	</div>
+
+	<ng-template pTemplate="footer">
+		<button pButton type="button" label="Close" class="p-button-text" (click)="detailsVisible.set(false)"></button>
+	</ng-template>
+</p-dialog>

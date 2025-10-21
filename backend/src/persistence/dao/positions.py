@@ -5,25 +5,38 @@ from typing import List, Dict
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
+from src.core.structures.structures import Token
+from src.integrations.dexscreener.dexscreener_structures import TokenPrice
 from src.persistence.models import Position, Phase
 from src.persistence.serializers import serialize_position
 
 
-def get_open_addresses(database_session: Session) -> List[str]:
+def get_open_tokens(database_session: Session) -> List[Token]:
     """
-    Return lowercased addresses for all ACTIVE positions (OPEN or PARTIAL).
-    Empty strings are filtered out.
+    Return tokens (chain, symbol, token address, pair address) for all ACTIVE positions (OPEN or PARTIAL).
     """
-    rows = (
-        database_session.execute(
-            select(Position.tokenAddress).where(
-                or_(Position.phase == Phase.OPEN, Position.phase == Phase.PARTIAL)
+    statement = (
+        select(
+            Position.chain,
+            Position.symbol,
+            Position.tokenAddress,
+            Position.pairAddress,
+        )
+        .where(or_(Position.phase == Phase.OPEN, Position.phase == Phase.PARTIAL))
+        .order_by(Position.opened_at.desc())
+    )
+    results = database_session.execute(statement).all()
+    tokens: List[Token] = []
+    for chain, symbol, token_address, pair_address in results:
+        tokens.append(
+            Token(
+                chain=chain,
+                symbol=symbol,
+                tokenAddress=token_address,
+                pairAddress=pair_address,
             )
         )
-        .scalars()
-        .all()
-    )
-    return [address for address in rows if address]
+    return tokens
 
 
 def get_open_positions(database_session: Session) -> List[Position]:
@@ -38,18 +51,23 @@ def get_open_positions(database_session: Session) -> List[Position]:
     return list(database_session.execute(statement).scalars().all())
 
 
-def serialize_positions_with_prices_by_token_address(
-        database_session: Session,
-        address_price: Dict[str, float],
+def serialize_positions_with_token_prices(
+        positions: List[Position],
+        token_prices: List[TokenPrice],
 ) -> List[dict]:
     """
-    Serialize ACTIVE positions and attach a live last_price by address when available.
+    Serialize ACTIVE positions and attach a live last_price by token when available.
     """
-    positions = get_open_positions(database_session)
     payload: List[dict] = []
     for position in positions:
-        last_price_value = None
-        if position.tokenAddress:
-            last_price_value = address_price.get(position.tokenAddress)
-        payload.append(serialize_position(position, last_price_value))
+        serialized = serialize_position(position)
+        for token_price in token_prices:
+            if (token_price.token.chain == position.chain
+                and token_price.token.symbol == position.symbol
+                and token_price.token.tokenAddress == position.tokenAddress
+                and token_price.token.pairAddress == position.pairAddress
+            ):
+                serialized["last_price"] = token_price.priceUsd
+                payload.append(serialized)
+                break
     return payload

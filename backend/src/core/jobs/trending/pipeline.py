@@ -43,13 +43,13 @@ class TrendingPipeline:
         if not pruned_candidates:
             return
 
-        best_price_by_address = self.gates_stage.preload_best_prices(pruned_candidates)
+        token_prices = self.gates_stage.preload_best_prices(pruned_candidates)
 
         statistics_ready, engine = self.gates_stage.apply_statistics_gate(pruned_candidates)
         if not statistics_ready:
             return
 
-        eligible_candidates = self.gates_stage.apply_risk_and_price_gates(statistics_ready, best_price_by_address)
+        eligible_candidates = self.gates_stage.apply_risk_and_price_gates(statistics_ready, token_prices)
         if not eligible_candidates:
             return
 

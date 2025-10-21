@@ -113,7 +113,7 @@
       <i class="pi pi-search"></i>
       <input pInputText #q type="text" [value]="quickFilterText"
              (input)="onQuickFilterChange(q.value)"
-             placeholder="Filter by any column..." class="w-full" />
+             placeholder="Filter by any column..." class="w-full"/>
     </span>
 	</div>
 
@@ -127,14 +127,29 @@
 	<p-dialog [(visible)]="rawVisible" [modal]="true" [dismissableMask]="true" [style]="{ width: '90vw' }"
 	          [contentStyle]="{ 'max-height': '75vh', 'overflow': 'auto' }">
 		<ng-template pTemplate="header">
-			Raw payloads — {{ selected()?.symbol }} ({{ selected()?.address | slice: -6 }})
+			Raw payloads — {{ selected()?.symbol }} (Token address {{ selected()?.tokenAddress | slice: -6 }}, Pair address {{ selected()?.pairAddress | slice: -6 }})
 		</ng-template>
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-			<p-card><ng-template pTemplate="title">Dexscreener</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.dexscreener | json }}</pre></p-card>
-			<p-card><ng-template pTemplate="title">AI</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.ai | json }}</pre></p-card>
-			<p-card><ng-template pTemplate="title">Risk</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.risk | json }}</pre></p-card>
-			<p-card><ng-template pTemplate="title">Settings</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.settings | json }}</pre></p-card>
-			<p-card><ng-template pTemplate="title">Order</ng-template><pre class="whitespace-pre-wrap">{{ selected()?.raw?.order | json }}</pre></p-card>
+			<p-card>
+				<ng-template pTemplate="title">Dexscreener</ng-template>
+				<pre class="whitespace-pre-wrap">{{ selected()?.raw?.dexscreener | json }}</pre>
+			</p-card>
+			<p-card>
+				<ng-template pTemplate="title">AI</ng-template>
+				<pre class="whitespace-pre-wrap">{{ selected()?.raw?.ai | json }}</pre>
+			</p-card>
+			<p-card>
+				<ng-template pTemplate="title">Risk</ng-template>
+				<pre class="whitespace-pre-wrap">{{ selected()?.raw?.risk | json }}</pre>
+			</p-card>
+			<p-card>
+				<ng-template pTemplate="title">Settings</ng-template>
+				<pre class="whitespace-pre-wrap">{{ selected()?.raw?.settings | json }}</pre>
+			</p-card>
+			<p-card>
+				<ng-template pTemplate="title">Order</ng-template>
+				<pre class="whitespace-pre-wrap">{{ selected()?.raw?.order | json }}</pre>
+			</p-card>
 		</div>
 	</p-dialog>
 </div>

@@ -18,11 +18,13 @@ from typing import (
 from sqlalchemy import select
 
 from src.configuration.config import settings
-from src.core.structures.structures import PriceMap, Candidate, TransactionSummary, ScoreComponents, TransactionBucket
+from src.core.structures.structures import Candidate, TransactionSummary, ScoreComponents, TransactionBucket, \
+    Token
 from src.core.utils.date_utils import timezone_now
 from src.core.utils.format_utils import _tail, _format, _age_hours
-from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_token_addresses_sync
-from src.integrations.dexscreener.dexscreener_structures import NormalizedRow, TransactionActivity, TransactionCount
+from src.integrations.dexscreener.dexscreener_client import fetch_price_by_tokens_sync
+from src.integrations.dexscreener.dexscreener_structures import NormalizedRow, TransactionActivity, TransactionCount, \
+    TokenPrice
 from src.logging.logger import get_logger
 from src.persistence.db import _session
 from src.persistence.models import Trade
@@ -93,6 +95,7 @@ def _momentum_ok(p5: Optional[float], p1: Optional[float], p24: Optional[float])
         return False
     return True
 
+
 def _make_transaction_bucket(source: Optional[TransactionCount]) -> TransactionBucket:
     """
     Convert a Dexscreener TransactionCount into a core TransactionBucket.
@@ -108,6 +111,7 @@ def _make_transaction_bucket(source: Optional[TransactionCount]) -> TransactionB
     bucket.buys = float(source.buys)
     bucket.sells = float(source.sells)
     return bucket
+
 
 def _make_transaction_summary(activity: Optional[TransactionActivity]) -> TransactionSummary:
     """
@@ -127,6 +131,7 @@ def _make_transaction_summary(activity: Optional[TransactionActivity]) -> Transa
     summary.h6 = _make_transaction_bucket(activity.h6)
     summary.h24 = _make_transaction_bucket(activity.h24)
     return summary
+
 
 def _candidate_from_normalized_row(row: NormalizedRow) -> Candidate:
     """
@@ -341,28 +346,50 @@ def recently_traded(address: str, minutes: int = 45) -> bool:
         return (now - created) < timedelta(minutes=minutes)
 
 
-def preload_best_prices(addresses: List[str]) -> Dict[str, float]:
+def preload_best_prices(candidates: List[Candidate]) -> List[TokenPrice]:
     """
     Deduplicate and fetch best prices for a list of addresses (address → price).
     Keeps input order of first occurrence.
     """
-    if not addresses:
-        return {}
-    deduped_in_order = [addr for addr in dict.fromkeys(a for a in addresses if a)]
-    if not deduped_in_order:
-        return {}
-    return fetch_prices_by_token_addresses_sync(deduped_in_order)
+    if not candidates:
+        return []
+    deduped_tokens_in_order: List[Token] = []
+    seen_keys: Set[Tuple[str, str, str, str]] = set()
+    for candidate in candidates:
+        key = (
+            candidate.symbol or "",
+            candidate.chain_name or "",
+            candidate.token_address or "",
+            candidate.pair_address or "",
+        )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_tokens_in_order.append(
+            Token(
+                symbol=candidate.symbol,
+                chain=candidate.chain_name,
+                tokenAddress=candidate.token_address,
+                pairAddress=candidate.pair_address,
+            )
+        )
+    if not deduped_tokens_in_order:
+        return []
+    return fetch_price_by_tokens_sync(deduped_tokens_in_order)
 
 
-def _price_from(price_map: PriceMap, address: str) -> Optional[float]:
+def _price_from(token_prices: List[TokenPrice], candidate: Candidate) -> Optional[float]:
     """
-    Fetch a price from a map by address; returns None for empty or missing keys.
-    Avoids dict.get() for readability and to stay consistent with our style guide.
+    Fetch a price from a list of TokenPrice objects matching the candidate's chain, symbol, token address and pair address.
     """
-    if not address:
-        return None
-    if address in price_map:
-        return price_map[address]
+    for token_price in token_prices:
+        if (
+            token_price.token.symbol == candidate.symbol
+            and token_price.token.chain == candidate.chain_name
+            and token_price.token.tokenAddress == candidate.token_address
+            and token_price.token.pairAddress == candidate.pair_address
+        ):
+            return token_price.priceUsd
     return None
 
 

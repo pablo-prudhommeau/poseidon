@@ -6,9 +6,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
+from src.core.structures.structures import Token
 from src.logging.logger import get_logger
 from src.persistence.dao import trades
-from src.persistence.dao.trades import _compute_open_quantity_from_trades
+from src.persistence.dao.trades import compute_open_quantity_for_position
 from src.persistence.db import _session
 from src.persistence.models import Position, PortfolioSnapshot, Trade, Status, Phase, Analytics
 
@@ -29,7 +30,7 @@ def reset_paper(database_session: Session) -> None:
         session.execute(delete(PortfolioSnapshot))
         session.execute(delete(Analytics))
         session.commit()
-        log.info("Paper state has been reset (trades, positions, snapshots, analytics removed).")
+        log.info("[SERVICE][RESET] Paper state has been reset (trades, positions, snapshots, analytics removed).")
 
 
 def _evaluate_position_thresholds_and_execute(
@@ -51,8 +52,9 @@ def _evaluate_position_thresholds_and_execute(
     last_price_value = float(last_price or 0.0)
     if last_price_value <= 0.0:
         log.debug(
-            "Skip threshold evaluation due to non-positive last price — tokenAddress=%s price=%s",
+            "[AUTOSELL][SKIP] Non-positive last price — token=%s pair=%s price=%s",
             position.tokenAddress,
+            position.pairAddress,
             last_price_value,
         )
         return created_trades
@@ -60,8 +62,9 @@ def _evaluate_position_thresholds_and_execute(
     position_quantity = float(position.qty or 0.0)
     if position_quantity <= 0.0:
         log.debug(
-            "Skip threshold evaluation due to non-positive position quantity — tokenAddress=%s qty=%s",
+            "[AUTOSELL][SKIP] Non-positive position quantity — token=%s pair=%s qty=%s",
             position.tokenAddress,
+            position.pairAddress,
             position_quantity,
         )
         return created_trades
@@ -76,18 +79,27 @@ def _evaluate_position_thresholds_and_execute(
     else:
         raise NotImplementedError("Live mode is not implemented yet.")
 
+    token = Token(
+        symbol=position.symbol,
+        chain=position.chain,
+        tokenAddress=position.tokenAddress,
+        pairAddress=position.pairAddress,
+    )
+
     # 1) STOP ⇒ full exit
     if stop > 0.0 and last_price_value <= stop:
-        sell_quantity = _compute_open_quantity_from_trades(database_session, position.tokenAddress)
+        sell_quantity = compute_open_quantity_for_position(database_session, position)
         if sell_quantity <= 0.0:
-            log.debug("[AUTOSELL][SL] Ignored because open quantity is zero — tokenAddress=%s", position.tokenAddress)
+            log.debug(
+                "[AUTOSELL][SL] Ignored because open quantity is zero — token=%s pair=%s",
+                position.tokenAddress,
+                position.pairAddress,
+            )
             return created_trades
 
         trade = trades.sell(
             database_session,
-            symbol=position.symbol,
-            chain=position.chain,
-            tokenAddress=position.tokenAddress,
+            token=token,
             price=last_price_value,
             qty=sell_quantity,
             fee=fee,
@@ -96,9 +108,10 @@ def _evaluate_position_thresholds_and_execute(
         )
         created_trades.append(trade)
         log.info(
-            "[AUTOSELL][SL] %s (%s) sold_qty=%.8f price=%.10f",
+            "[AUTOSELL][SL] %s token=%s pair=%s sold_qty=%.8f price=%.10f",
             position.symbol,
-            (position.tokenAddress or "")[-6:],
+            position.tokenAddress,
+            position.pairAddress,
             sell_quantity,
             last_price_value,
         )
@@ -106,16 +119,18 @@ def _evaluate_position_thresholds_and_execute(
 
     # 2) TP2 ⇒ full exit
     if tp2 > 0.0 and last_price_value >= tp2 and position_quantity > 0.0:
-        sell_quantity = _compute_open_quantity_from_trades(database_session, position.tokenAddress)
+        sell_quantity = compute_open_quantity_for_position(database_session, position)
         if sell_quantity <= 0.0:
-            log.debug("[AUTOSELL][TP2] Ignored because open quantity is zero — tokenAddress=%s", position.tokenAddress)
+            log.debug(
+                "[AUTOSELL][TP2] Ignored because open quantity is zero — token=%s pair=%s",
+                position.tokenAddress,
+                position.pairAddress,
+            )
             return created_trades
 
         trade = trades.sell(
             database_session,
-            symbol=position.symbol,
-            chain=position.chain,
-            tokenAddress=position.tokenAddress,
+            token=token,
             price=last_price_value,
             qty=sell_quantity,
             fee=fee,
@@ -124,9 +139,10 @@ def _evaluate_position_thresholds_and_execute(
         )
         created_trades.append(trade)
         log.info(
-            "[AUTOSELL][TP2] %s (%s) sold_qty=%.8f price=%.10f",
+            "[AUTOSELL][TP2] %s token=%s pair=%s sold_qty=%.8f price=%.10f",
             position.symbol,
-            (position.tokenAddress or "")[-6:],
+            position.tokenAddress,
+            position.pairAddress,
             sell_quantity,
             last_price_value,
         )
@@ -139,9 +155,7 @@ def _evaluate_position_thresholds_and_execute(
         if partial_quantity > 0.0:
             trade = trades.sell(
                 database_session,
-                symbol=position.symbol,
-                chain=position.chain,
-                tokenAddress=position.tokenAddress,
+                token=token,
                 price=last_price_value,
                 qty=partial_quantity,
                 fee=fee,
@@ -155,9 +169,10 @@ def _evaluate_position_thresholds_and_execute(
 
             remaining_estimated = float((position.qty or 0.0) - partial_quantity)
             log.info(
-                "[AUTOSELL][TP1] %s (%s) sold_qty=%.8f price=%.10f remaining_est=%.8f",
+                "[AUTOSELL][TP1] %s token=%s pair=%s sold_qty=%.8f price=%.10f remaining_est=%.8f",
                 position.symbol,
-                (position.tokenAddress or "")[-6:],
+                position.tokenAddress,
+                position.pairAddress,
                 partial_quantity,
                 last_price_value,
                 remaining_estimated,
@@ -166,9 +181,9 @@ def _evaluate_position_thresholds_and_execute(
     return created_trades
 
 
-def check_thresholds_and_autosell(database_session: Session, symbol: str, last_price: float) -> List[Trade]:
+def check_thresholds_and_autosell(database_session: Session, token: Token, last_price: float) -> List[Trade]:
     """
-    Autosell positions for a symbol based on tp1/tp2/stop thresholds and last price.
+    Autosell positions for a token based on tp1/tp2/stop thresholds and last price.
 
     Evaluates ACTIVE positions only (OPEN and PARTIAL).
     Executes at most one action per position per invocation (SL > TP2 > TP1).
@@ -181,7 +196,7 @@ def check_thresholds_and_autosell(database_session: Session, symbol: str, last_p
     positions = (
         database_session.execute(
             select(Position).where(
-                Position.symbol == symbol,
+                Position.symbol == token.symbol,
                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
                 )
         )
@@ -199,7 +214,7 @@ def check_thresholds_and_autosell(database_session: Session, symbol: str, last_p
 
 def check_thresholds_and_autosell_for_token_address(
         database_session: Session,
-        tokenAddress: str,
+        token: Token,
         last_price: float,
 ) -> List[Trade]:
     """
@@ -209,13 +224,16 @@ def check_thresholds_and_autosell_for_token_address(
     """
     created_trades: List[Trade] = []
     last_price_value = float(last_price or 0.0)
-    if not tokenAddress or last_price_value <= 0.0:
+    if not token or last_price_value <= 0.0:
         return created_trades
 
     position = (
         database_session.execute(
             select(Position).where(
-                Position.tokenAddress == tokenAddress,
+                Position.chain == token.chain,
+                Position.symbol == token.symbol,
+                Position.tokenAddress == token.tokenAddress,
+                Position.pairAddress == token.pairAddress,
                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
                 )
         )

@@ -1,9 +1,27 @@
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Mapping, MutableMapping, List, Optional, TypeVar, Any, Dict
+from typing import Mapping, List, Optional, Any, Dict
+
+from pydantic import BaseModel
+
+from src.core.utils.format_utils import _tail
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Token:
+    symbol: str
+    chain: str
+    tokenAddress: str
+    pairAddress: str
+
+    def __str__(self) -> str:
+        return (f"[{self.symbol} "
+                f"chain={self.chain} "
+                f"tokenAddress={_tail(self.tokenAddress)} "
+                f"pairAddress=…{_tail(self.pairAddress)}]")
 
 
 class TransactionBucket:
@@ -33,6 +51,7 @@ class TransactionSummary:
     def to_plain_dict(self) -> Dict[str, Dict[str, float]]:
         def conv(bucket: Optional[TransactionBucket]) -> Dict[str, float]:
             return bucket.to_plain_dict() if bucket is not None else {}
+
         return {
             "m5": conv(self.m5),
             "h1": conv(self.h1),
@@ -74,12 +93,6 @@ class CandidateScoringInput:
     m1: object
     m5: object
     qualityScore: float
-
-
-PriceMap = Mapping[str, float]
-MutablePriceMap = MutableMapping[str, float]
-
-T = TypeVar("T")
 
 
 @dataclass
@@ -213,9 +226,7 @@ class OrderPayload:
     Typed input contract expected by Trader.buy().
     Upstream (e.g. TrendingJob) typically provides these fields.
     """
-    symbol: str
-    chain: str
-    address: str
+    token: Token
     price: float
     order_notional: float
     original_candidate: Candidate
@@ -268,3 +279,57 @@ class RiskDiagnostics:
             "pct1h": float(self.percent_1h),
             "buy_ratio": float(self.buy_ratio)
         }
+
+
+@dataclass(frozen=True)
+class RealizedPnl:
+    """
+    Realized PnL results from processing a set of trades.
+    """
+    total: float
+    recent: float
+
+
+@dataclass(frozen=True)
+class CashFromTrades:
+    """
+    Cash flow results from processing a set of trades.
+    """
+    cash: float
+    total_buys: float
+    total_sells: float
+    total_fees: float
+
+
+@dataclass(frozen=True)
+class HoldingsAndUnrealizedFromTrades:
+    """
+    Holdings and unrealized PnL results from processing a set of trades.
+    """
+    holdings: float
+    unrealized_pnl: float
+
+
+@dataclass(frozen=True)
+class EquityCurvePoint:
+    """
+    Equity curve point as (timestamp, equity) tuple.
+    """
+    timestamp: int
+    equity: float
+
+
+@dataclass(frozen=True)
+class EquityCurve:
+    """
+    Equity curve as a list of (timestamp, equity) points.
+    """
+    points: List[EquityCurvePoint]
+
+
+class WebsocketInboundMessage(BaseModel):
+    """
+    Strictly typed websocket inbound message structure.
+    """
+    type: str
+    payload: Optional[Dict[str, Any]] = None

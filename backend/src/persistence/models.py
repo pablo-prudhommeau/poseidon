@@ -28,7 +28,9 @@ class Status(Enum):
 
 
 class Position(Base):
-    """Open/closed positions with entry, thresholds, and lifecycle metadata."""
+    """
+    Open/closed positions with entry, thresholds, and lifecycle metadata.
+    """
     __tablename__ = "positions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -51,7 +53,9 @@ class Position(Base):
 
 
 class Trade(Base):
-    """Executed trades (paper/live), including realized PnL and bookkeeping."""
+    """
+    Executed trades (paper/live), including realized PnL and bookkeeping.
+    """
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -88,8 +92,8 @@ class PortfolioSnapshot(Base):
 
 class Analytics(Base):
     """
-    Une ligne par candidature (évaluation) — enrichie plus tard par l’outcome trade.
-    Tous les champs sont NOT NULL ; les 'raw_*' capturent les payloads bruts.
+    One row per evaluated candidate — later enriched by the trade outcome.
+    All fields are NOT NULL; the 'raw_*' columns capture the unstructured payloads.
     """
     __tablename__ = "analytics"
 
@@ -127,7 +131,7 @@ class Analytics(Base):
     pct_1h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     pct_24h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
-    # Décision + sizing/budget
+    # Decision + sizing/budget
     decision: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
     decision_reason: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     sizing_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -135,14 +139,14 @@ class Analytics(Base):
     free_cash_before_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     free_cash_after_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
-    # RAW payloads (bruts)
+    # RAW payloads
     raw_dexscreener: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_ai: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_risk: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     raw_order_result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
-    # Outcome (renseigné à la clôture du trade)
+    # Outcome (filled at close)
     has_outcome: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     outcome_trade_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     outcome_closed_at: Mapped[datetime] = mapped_column(nullable=False, default=timezone_now)

@@ -1,67 +1,96 @@
 // src/app/core/defi-icons.service.ts
-import {HttpClient} from '@angular/common/http';
-import {Inject, Injectable, LOCALE_ID} from '@angular/core';
-import {ICellRendererParams} from 'ag-grid-community';
-import {catchError, firstValueFrom, map, of, timeout} from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { Inject, Injectable, LOCALE_ID } from '@angular/core';
+import { ICellRendererParams } from 'ag-grid-community';
+import { catchError, firstValueFrom, map, of, timeout } from 'rxjs';
 
 /**
  * DefiIconsService
  * ----------------
- * Renders a compact “chip” for DeFi assets (chain + token icon + symbol) inside AG Grid.
+ * Renders compact “chips” for DeFi assets (chain + token [+ pair]) inside AG Grid.
  *
- * Goals:
- * - Always show TWO stable circular slots (chain + token) to prevent layout shifts.
- * - Lazy-load images with a fade-in transition.
- * - Resolve the **real token image** via DexScreener API; cache results.
- * - Fall back to DexScreener token-icons then TrustWallet (jsDelivr) if no API image is available.
- * - Provide a robust, dependency-free DOM implementation suitable for AG Grid cellRenderer.
+ * Triple icon (chain, token, pair) + persistent cache (memory + localStorage TTL).
  *
- * Logging:
- * - INFO on first construction.
- * - VERBOSE logs can be toggled with `enableVerboseLogging` if needed during debugging.
+ * Logging: [UI][ICONS][...]
  */
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class DefiIconsService {
-    /** Toggle for very detailed logs (kept false in production). */
     private readonly enableVerboseLogging = false;
 
-    /** Cache of promises resolving the DexScreener CMS image URL per (chain:address:size). */
+    // localStorage persistence
+    private readonly lsPrefix = 'poseidon.iconcache.';
+    private readonly lsTtlMs = 1000 * 60 * 60 * 24 * 7; // 7 days
+
+    // Promises cache for Dexscreener image lookups
     private readonly dexImagePromiseCache = new Map<string, Promise<string | null>>();
 
-    /** Cache of already working icon URLs, by logical key (token or chain). */
+    // In-memory caches
     private readonly tokenIconCache = new Map<string, string>();
     private readonly chainIconCache = new Map<string, string>();
+    private readonly pairIconCache = new Map<string, string>();
 
-    constructor(
-        @Inject(LOCALE_ID) private readonly localeId: string,
-        private readonly http: HttpClient
-    ) {
-        console.info('poseidon.util.defi-icons — initialized');
+    constructor(@Inject(LOCALE_ID) private readonly localeId: string, private readonly http: HttpClient) {
+        console.info('[UI][ICONS] DefiIconsService initialized');
     }
 
     /**
-     * AG Grid cellRenderer.
-     * Arrow function so `this` stays correctly bound even when AG Grid invokes it as a standalone function.
+     * AG Grid renderer — chain + token + pair (if available).
      */
-    public readonly tokenChainChipRenderer = (params: ICellRendererParams): HTMLElement => {
+    public readonly tokenChainPairChipRenderer = (params: ICellRendererParams): HTMLElement => {
         const row = params.data ?? {};
         const chainName = String(row.chain ?? '').toLowerCase();
-        const tokenAddress = String(row.address ?? '').toLowerCase();
+        const tokenAddress = String(row.address ?? row.tokenAddress ?? '').toLowerCase();
+        const pairAddress = String(row.pairAddress ?? '').toLowerCase();
         const tokenSymbol = String(row.symbol ?? params.value ?? '').toUpperCase();
 
         const root = document.createElement('span');
         root.className = 'inline-flex items-center gap-2';
 
-        // CHAIN CIRCLE
+        // CHAIN
         const chainKey = chainName || 'unknown';
         const chainCandidates = this.buildChainIconCandidates(chainKey);
         const chainCircle = this.createIconCircle(chainCandidates, `chain:${chainKey}`, 'chain');
 
-        // TOKEN CIRCLE
+        // TOKEN
         const tokenKey = `${chainName}:${tokenAddress}`;
         const tokenCircle = this.createTokenCircle(chainName, tokenAddress, tokenSymbol, tokenKey);
 
-        // LABEL
+        // PAIR
+        const pairCircle =
+            pairAddress && chainName
+                ? this.createPairCircle(chainName, pairAddress, `pair:${chainName}:${pairAddress}`)
+                : this.createFixedCircleWrapper(); // empty footprint to keep layout stable
+
+        const label = document.createElement('span');
+        label.className = 'font-medium';
+        label.textContent = tokenSymbol || '—';
+
+        root.appendChild(chainCircle);
+        root.appendChild(tokenCircle);
+        root.appendChild(pairCircle);
+        root.appendChild(label);
+        return root;
+    };
+
+    /**
+     * Legacy (2 icons) kept for compat if used ailleurs.
+     */
+    public readonly tokenChainChipRenderer = (params: ICellRendererParams): HTMLElement => {
+        const row = params.data ?? {};
+        const chainName = String(row.chain ?? '').toLowerCase();
+        const tokenAddress = String(row.address ?? row.tokenAddress ?? '').toLowerCase();
+        const tokenSymbol = String(row.symbol ?? params.value ?? '').toUpperCase();
+
+        const root = document.createElement('span');
+        root.className = 'inline-flex items-center gap-2';
+
+        const chainKey = chainName || 'unknown';
+        const chainCandidates = this.buildChainIconCandidates(chainKey);
+        const chainCircle = this.createIconCircle(chainCandidates, `chain:${chainKey}`, 'chain');
+
+        const tokenKey = `${chainName}:${tokenAddress}`;
+        const tokenCircle = this.createTokenCircle(chainName, tokenAddress, tokenSymbol, tokenKey);
+
         const label = document.createElement('span');
         label.className = 'font-medium';
         label.textContent = tokenSymbol || '—';
@@ -72,61 +101,107 @@ export class DefiIconsService {
         return root;
     };
 
-    // ===================================================================================
-    // TOKEN CIRCLE (tries real DexScreener CMS image first, then falls back to CDNs)
-    // ===================================================================================
+    // =============================================================================
+    // TOKEN + PAIR
+    // =============================================================================
 
-    /**
-     * Create the TOKEN icon circle:
-     * 1) Resolve the real DexScreener CMS image (cached).
-     * 2) If unavailable, try fallbacks: Dex token-icons → TrustWallet.
-     * The circle footprint is always 16×16, with a placeholder underneath the image.
-     */
-    private createTokenCircle(
-        chainName: string,
-        tokenAddress: string,
-        tokenSymbol: string,
-        cacheKey: string
-    ): HTMLSpanElement {
+    private createTokenCircle(chainName: string, tokenAddress: string, tokenSymbol: string, cacheKey: string): HTMLSpanElement {
         const wrapper = this.createFixedCircleWrapper();
 
-        // Placeholder visible until an image loads
         const placeholder = this.createPlaceholder();
         wrapper.appendChild(placeholder);
 
-        // Image (lazy + fade)
         const image = this.createCircleImage('token');
         wrapper.appendChild(image);
 
-        // If a working URL was already cached, apply immediately
-        const cachedUrl = this.tokenIconCache.get(cacheKey);
-        if (cachedUrl) {
-            this.applyImage(image, placeholder, cachedUrl);
-            this.logVerbose('token cache hit', {cacheKey, cachedUrl});
+        // persistent cache
+        const persistent = this.getFromLocalStorage(cacheKey);
+        if (persistent) {
+            this.applyImage(image, placeholder, persistent);
+            this.tokenIconCache.set(cacheKey, persistent);
+            this.logVerbose('token persistent cache hit', { cacheKey });
             return wrapper;
         }
 
-        // 1) Try the real DexScreener CMS image
+        // memory cache
+        const cachedUrl = this.tokenIconCache.get(cacheKey);
+        if (cachedUrl) {
+            this.applyImage(image, placeholder, cachedUrl);
+            this.logVerbose('token memory cache hit', { cacheKey });
+            return wrapper;
+        }
+
+        // 1) Dex CMS
         this.resolveDexTokenImageUrl(chainName, tokenAddress, tokenSymbol, 64)
             .then((resolvedUrl) => {
                 if (resolvedUrl) {
                     this.applyImage(image, placeholder, resolvedUrl);
                     this.tokenIconCache.set(cacheKey, resolvedUrl);
-                    this.logVerbose('dex cms resolved', {cacheKey, resolvedUrl});
+                    this.persistUrl(cacheKey, resolvedUrl);
+                    this.tryPersistAsDataUrl(cacheKey, resolvedUrl).catch(() => {});
+                    this.logVerbose('dex cms resolved (token)', { cacheKey, resolvedUrl });
                     return;
                 }
                 // 2) Fallbacks
                 this.startTokenFallback(image, placeholder, chainName, tokenAddress, cacheKey);
             })
             .catch((error) => {
-                this.logVerbose('dex cms error', {cacheKey, error});
+                this.logVerbose('dex cms error (token)', { cacheKey, error });
                 this.startTokenFallback(image, placeholder, chainName, tokenAddress, cacheKey);
             });
 
         return wrapper;
     }
 
-    /** Start fallback loading for the token icon. */
+    private createPairCircle(chainName: string, pairAddress: string, cacheKey: string): HTMLSpanElement {
+        const wrapper = this.createFixedCircleWrapper();
+
+        const placeholder = this.createPlaceholder();
+        wrapper.appendChild(placeholder);
+
+        const image = this.createCircleImage('pair');
+        wrapper.appendChild(image);
+
+        // persistent cache
+        const persistent = this.getFromLocalStorage(cacheKey);
+        if (persistent) {
+            this.applyImage(image, placeholder, persistent);
+            this.pairIconCache.set(cacheKey, persistent);
+            this.logVerbose('pair persistent cache hit', { cacheKey });
+            return wrapper;
+        }
+
+        // memory cache
+        const cachedUrl = this.pairIconCache.get(cacheKey);
+        if (cachedUrl) {
+            this.applyImage(image, placeholder, cachedUrl);
+            this.logVerbose('pair memory cache hit', { cacheKey });
+            return wrapper;
+        }
+
+        this.resolveDexPairImageUrl(chainName, pairAddress, 64)
+            .then((resolvedUrl) => {
+                if (resolvedUrl) {
+                    this.applyImage(image, placeholder, resolvedUrl);
+                    this.pairIconCache.set(cacheKey, resolvedUrl);
+                    this.persistUrl(cacheKey, resolvedUrl);
+                    this.tryPersistAsDataUrl(cacheKey, resolvedUrl).catch(() => {});
+                    this.logVerbose('dex cms resolved (pair)', { cacheKey, resolvedUrl });
+                    return;
+                }
+                image.removeAttribute('src');
+                image.style.opacity = '0';
+                this.logVerbose('pair image not found; placeholder kept', { cacheKey });
+            })
+            .catch((error) => {
+                this.logVerbose('dex cms error (pair)', { cacheKey, error });
+                image.removeAttribute('src');
+                image.style.opacity = '0';
+            });
+
+        return wrapper;
+    }
+
     private startTokenFallback(
         image: HTMLImageElement,
         placeholder: HTMLElement,
@@ -142,58 +217,41 @@ export class DefiIconsService {
                 const candidate = fallbacks[index++] || '';
                 image.onerror = tryNext;
                 image.onload = () => {
-                    this.applyImage(image, placeholder, image.currentSrc || image.src);
-                    this.tokenIconCache.set(cacheKey, image.currentSrc || image.src);
-                    this.logVerbose('token fallback success', {cacheKey, url: candidate});
+                    const ok = image.currentSrc || image.src;
+                    this.applyImage(image, placeholder, ok);
+                    this.tokenIconCache.set(cacheKey, ok);
+                    this.persistUrl(cacheKey, ok);
+                    this.tryPersistAsDataUrl(cacheKey, ok).catch(() => {});
+                    this.logVerbose('token fallback success', { cacheKey, url: ok });
                 };
                 image.src = candidate;
             } else {
-                // No candidate worked: keep the placeholder, hide the <img>
                 image.removeAttribute('src');
                 image.style.opacity = '0';
-                this.logVerbose('token fallback exhausted', {cacheKey});
+                this.logVerbose('token fallback exhausted', { cacheKey });
             }
         };
 
         tryNext();
     }
 
-    // ===================================================================================
-    // DEXSCREENER API (resolve real CMS image)
-    // ===================================================================================
+    // =============================================================================
+    // Dexscreener API resolvers
+    // =============================================================================
 
-    /**
-     * Resolve the real DexScreener CMS image URL for a token.
-     * Response shape: https://api.dexscreener.com/latest/dex/tokens/{address}
-     */
-    private resolveDexTokenImageUrl(
-        chainName: string,
-        tokenAddress: string,
-        tokenSymbol: string,
-        size = 64
-    ): Promise<string | null> {
-        if (!chainName || !tokenAddress) {
-            return Promise.resolve(null);
-        }
+    private resolveDexTokenImageUrl(chainName: string, tokenAddress: string, tokenSymbol: string, size = 64): Promise<string | null> {
+        if (!chainName || !tokenAddress) return Promise.resolve(null);
 
-        const cacheKey = `${chainName}:${tokenAddress}:${size}`;
+        const cacheKey = `token:${chainName}:${tokenAddress}:${size}`;
         const cachedPromise = this.dexImagePromiseCache.get(cacheKey);
-        if (cachedPromise) {
-            return cachedPromise;
-        }
+        if (cachedPromise) return cachedPromise;
 
         const request$ = this.http
             .get<any>(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`)
-            .pipe(
-                timeout(3500),
-                map((res) => this.extractDexImageUrlFromResponse(res)),
-                catchError(() => of(null))
-            );
+            .pipe(timeout(3500), map((res) => this.extractDexImageUrlFromResponse(res)), catchError(() => of(null)));
 
         const promise = firstValueFrom(request$).then((url) => {
-            if (!url) {
-                return null;
-            }
+            if (!url) return null;
             const normalized = this.normalizeExternalImageUrl(url);
             return this.withDexImageParams(normalized, size);
         });
@@ -202,7 +260,46 @@ export class DefiIconsService {
         return promise;
     }
 
-    /** Extract a usable image URL from various possible places in DexScreener response. */
+    private resolveDexPairImageUrl(chainName: string, pairAddress: string, size = 64): Promise<string | null> {
+        if (!chainName || !pairAddress) return Promise.resolve(null);
+
+        const cacheKey = `pair:${chainName}:${pairAddress}:${size}`;
+        const cachedPromise = this.dexImagePromiseCache.get(cacheKey);
+        if (cachedPromise) return cachedPromise;
+
+        const request$ = this.http
+            .get<any>(`https://api.dexscreener.com/latest/dex/pairs/${chainName}/${pairAddress}`)
+            .pipe(
+                timeout(3500),
+                map((res) => {
+                    const pair = Array.isArray(res?.pairs) ? res.pairs[0] : res?.pair ?? res;
+                    const directCandidates = [
+                        pair?.info?.imageUrl,
+                        pair?.info?.headerImage,
+                        pair?.baseToken?.logo,
+                        pair?.baseToken?.logoUrl,
+                        pair?.baseToken?.image,
+                        pair?.baseToken?.icon,
+                        pair?.baseToken?.logoURI,
+                    ].filter(Boolean);
+                    if (directCandidates.length > 0) return String(directCandidates[0]);
+                    const id = pair?.info?.imageId || pair?.info?.imageHash || pair?.baseToken?.imageId;
+                    if (id) return `https://cdn.dexscreener.com/cms/images/${id}`;
+                    return null;
+                }),
+                catchError(() => of(null))
+            );
+
+        const promise = firstValueFrom(request$).then((url) => {
+            if (!url) return null;
+            const normalized = this.normalizeExternalImageUrl(url);
+            return this.withDexImageParams(normalized, size);
+        });
+
+        this.dexImagePromiseCache.set(cacheKey, promise);
+        return promise;
+    }
+
     private extractDexImageUrlFromResponse(response: any): string | null {
         const pairs: any[] = Array.isArray(response?.pairs) ? response.pairs : [];
         for (const pair of pairs) {
@@ -213,37 +310,25 @@ export class DefiIconsService {
                 pair?.baseToken?.logoUrl,
                 pair?.baseToken?.image,
                 pair?.baseToken?.icon,
-                pair?.baseToken?.logoURI
+                pair?.baseToken?.logoURI,
             ].filter(Boolean);
-
-            if (directCandidates.length > 0) {
-                return String(directCandidates[0]);
-            }
-
+            if (directCandidates.length > 0) return String(directCandidates[0]);
             const id = pair?.info?.imageId || pair?.info?.imageHash || pair?.baseToken?.imageId;
-            if (id) {
-                return `https://cdn.dexscreener.com/cms/images/${id}`;
-            }
+            if (id) return `https://cdn.dexscreener.com/cms/images/${id}`;
         }
         return null;
     }
 
-    /** Add CMS query parameters for crisp, square images. */
     private withDexImageParams(url: string, size: number): string {
-        // 1) Normaliser d’abord (ipfs/ar/relative)
         const normalized = this.normalizeExternalImageUrl(url);
         try {
             const u = new URL(normalized, 'https://cdn.dexscreener.com');
-            // Imgix params
             u.searchParams.set('w', String(size));
             u.searchParams.set('h', String(size));
-            u.searchParams.set('fit', 'crop');     // ou 'cover'
-            u.searchParams.set('q', '90');         // quality
-            u.searchParams.set('fm', 'webp');      // format (PAS "format=auto")
-            // Optionnel: densité d’écran
-            if (window.devicePixelRatio >= 2) {
-                u.searchParams.set('dpr', '2');
-            }
+            u.searchParams.set('fit', 'crop');
+            u.searchParams.set('q', '90');
+            u.searchParams.set('fm', 'webp');
+            if (window.devicePixelRatio >= 2) u.searchParams.set('dpr', '2');
             return u.toString();
         } catch {
             const sep = normalized.includes('?') ? '&' : '?';
@@ -251,11 +336,10 @@ export class DefiIconsService {
         }
     }
 
-    // ===================================================================================
-    // CHAIN + TOKEN FALLBACK CANDIDATES
-    // ===================================================================================
+    // =============================================================================
+    // Candidates + mapping
+    // =============================================================================
 
-    /** Build the list of token fallback URLs (Dex token-icons → TrustWallet). */
     private buildTokenFallbackCandidates(chainName: string, tokenAddress: string): string[] {
         const list: string[] = [];
         if (chainName && tokenAddress) {
@@ -270,15 +354,13 @@ export class DefiIconsService {
         return list;
     }
 
-    /** DeFiLlama chain icons with safe fallback. */
     private buildChainIconCandidates(chainName: string): string[] {
         return [
             ...(chainName ? [`https://icons.llamao.fi/icons/chains/rsz_${chainName}.jpg`] : []),
-            'https://icons.llamao.fi/icons/chains/rsz_unknown.jpg'
+            'https://icons.llamao.fi/icons/chains/rsz_unknown.jpg',
         ];
     }
 
-    /** Map Poseidon chain names to TrustWallet folder names. */
     private mapChainToTrustWalletFolder(chainName: string): string | null {
         switch (chainName) {
             case 'eth':
@@ -308,20 +390,15 @@ export class DefiIconsService {
         }
     }
 
-    // ===================================================================================
-    // GENERIC ICON CIRCLE (used for chain icons from a candidates list)
-    // ===================================================================================
+    // =============================================================================
+    // Generic circle for a list of candidate URLs (used by CHAIN)
+    // =============================================================================
 
     /**
-     * Create a fixed-size circular icon slot from a list of candidate URLs.
-     * Keeps a placeholder under the image to prevent layout shifts.
-     * Results are cached per kind (chain / token).
+     * Create a fixed-size circular icon from a list of candidate URLs.
+     * Uses memory + localStorage caches. Keeps a placeholder until one candidate loads.
      */
-    private createIconCircle(
-        srcCandidates: string[],
-        cacheKey: string,
-        kind: 'chain' | 'token'
-    ): HTMLSpanElement {
+    private createIconCircle(srcCandidates: string[], cacheKey: string, kind: 'chain' | 'token' | 'pair'): HTMLSpanElement {
         const wrapper = this.createFixedCircleWrapper();
 
         const placeholder = this.createPlaceholder();
@@ -330,29 +407,38 @@ export class DefiIconsService {
         const image = this.createCircleImage(kind);
         wrapper.appendChild(image);
 
-        const cache = kind === 'token' ? this.tokenIconCache : this.chainIconCache;
+        // persistent cache
+        const persistent = this.getFromLocalStorage(cacheKey);
+        if (persistent) {
+            this.applyImage(image, placeholder, persistent);
+            this.getCacheForKind(kind).set(cacheKey, persistent);
+            this.logVerbose(`${kind} persistent cache hit`, { cacheKey });
+            return wrapper;
+        }
+
+        // memory cache
+        const cache = this.getCacheForKind(kind);
         const cachedUrl = cache.get(cacheKey);
-        const orderedCandidates = cachedUrl ? [cachedUrl, ...srcCandidates] : srcCandidates.slice();
+        const ordered = cachedUrl ? [cachedUrl, ...srcCandidates] : srcCandidates.slice();
 
         let index = 0;
         const tryNext = () => {
-            if (index < orderedCandidates.length) {
-                const candidate = orderedCandidates[index++] || '';
+            if (index < ordered.length) {
+                const candidate = ordered[index++] || '';
                 image.onerror = tryNext;
                 image.onload = () => {
-                    image.classList.add('is-loaded');
-                    placeholder.style.opacity = '0';
                     const ok = image.currentSrc || image.src;
-                    if (ok) {
-                        cache.set(cacheKey, ok);
-                    }
-                    this.logVerbose(`${kind} candidate success`, {cacheKey, url: ok});
+                    this.applyImage(image, placeholder, ok);
+                    cache.set(cacheKey, ok);
+                    this.persistUrl(cacheKey, ok);
+                    this.tryPersistAsDataUrl(cacheKey, ok).catch(() => {});
+                    this.logVerbose(`${kind} candidate success`, { cacheKey, url: ok });
                 };
                 image.src = candidate;
             } else {
                 image.removeAttribute('src');
                 image.style.opacity = '0';
-                this.logVerbose(`${kind} candidates exhausted`, {cacheKey});
+                this.logVerbose(`${kind} candidates exhausted`, { cacheKey });
             }
         };
 
@@ -360,26 +446,29 @@ export class DefiIconsService {
         return wrapper;
     }
 
-    // ===================================================================================
-    // DOM HELPERS (fixed 16×16 circle, lazy + fade)
-    // ===================================================================================
+    private getCacheForKind(kind: 'chain' | 'token' | 'pair'): Map<string, string> {
+        if (kind === 'token') return this.tokenIconCache;
+        if (kind === 'pair') return this.pairIconCache;
+        return this.chainIconCache;
+    }
 
-    /** Fixed 16×16 wrapper: prevents layout shifts even when images fail or are slow. */
+    // =============================================================================
+    // DOM helpers
+    // =============================================================================
+
     private createFixedCircleWrapper(): HTMLSpanElement {
         const element = document.createElement('span');
         element.className = 'relative inline-block h-4 w-4 align-middle';
         return element;
     }
 
-    /** Neutral placeholder circle displayed until the image loads. */
     private createPlaceholder(): HTMLSpanElement {
         const element = document.createElement('span');
         element.className = 'absolute inset-0 rounded-full';
         return element;
     }
 
-    /** Image element positioned over the placeholder; uses fade-in CSS. */
-    private createCircleImage(alt: 'chain' | 'token'): HTMLImageElement {
+    private createCircleImage(alt: 'chain' | 'token' | 'pair'): HTMLImageElement {
         const img = document.createElement('img');
         img.loading = 'lazy';
         img.alt = alt;
@@ -389,34 +478,72 @@ export class DefiIconsService {
         return img;
     }
 
-    /** Apply a validated image URL and perform the fade-in + placeholder removal. */
     private applyImage(image: HTMLImageElement, placeholder: HTMLElement, url: string): void {
         image.onload = () => {
-            image.classList.add('is-loaded'); // relies on .img-fade {opacity:0} + .is-loaded {opacity:1}
+            image.classList.add('is-loaded');
             placeholder.style.opacity = '0';
         };
         image.onerror = () => {
-            image.style.opacity = '0'; // keep placeholder
+            image.style.opacity = '0';
         };
         image.src = url;
     }
 
-    // ===================================================================================
-    // Logging
-    // ===================================================================================
+    // =============================================================================
+    // Persistence (localStorage)
+    // =============================================================================
+
+    private getFromLocalStorage(key: string): string | null {
+        try {
+            const raw = localStorage.getItem(this.lsPrefix + key);
+            if (!raw) return null;
+            const stored = JSON.parse(raw) as { src: string; updatedAt: number };
+            const fresh = Date.now() - stored.updatedAt < this.lsTtlMs;
+            return fresh && stored.src ? stored.src : null;
+        } catch {
+            return null;
+        }
+    }
+
+    private persistUrl(key: string, src: string): void {
+        try {
+            localStorage.setItem(this.lsPrefix + key, JSON.stringify({ src, updatedAt: Date.now() }));
+        } catch {
+            // ignore quota
+        }
+    }
+
+    private async tryPersistAsDataUrl(key: string, src: string): Promise<void> {
+        try {
+            const resp = await fetch(src, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+            if (!resp.ok) return;
+            const blob = await resp.blob();
+            const dataUrl = await this.blobToDataUrl(blob);
+            this.persistUrl(key, dataUrl);
+        } catch {
+            // ignore
+        }
+    }
+
+    private blobToDataUrl(blob: Blob): Promise<string> {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    // =============================================================================
+    // Logging + normalization
+    // =============================================================================
 
     private logVerbose(message: string, data?: unknown): void {
-        if (!this.enableVerboseLogging) {
-            return;
-        }
-        // eslint-disable-next-line no-console
-        console.debug(`poseidon.util.defi-icons — ${message}`, data ?? '');
+        if (!this.enableVerboseLogging) return;
+        console.debug('[UI][ICONS]', message, data ?? '');
     }
 
     private normalizeExternalImageUrl(raw: string): string {
-        if (!raw) {
-            return raw;
-        }
+        if (!raw) return raw;
         if (raw.startsWith('ipfs://')) {
             const path = raw.replace(/^ipfs:\/\//, '').replace(/^ipfs\//, '');
             return `https://cloudflare-ipfs.com/ipfs/${path}`;

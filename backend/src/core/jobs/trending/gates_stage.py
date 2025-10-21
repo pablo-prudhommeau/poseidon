@@ -4,8 +4,9 @@ from typing import List, Tuple
 
 from src.configuration.config import settings
 from src.core.gates.trending_scoring import ScoringEngine
-from src.core.structures.structures import Candidate, MutablePriceMap, PriceMap
+from src.core.structures.structures import Candidate
 from src.core.utils.trending_utils import preload_best_prices, recently_traded, _price_from
+from src.integrations.dexscreener.dexscreener_structures import TokenPrice
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)
@@ -19,10 +20,8 @@ class CandidateGatesStage:
     def __init__(self) -> None:
         self.minimum_statistics_score: float = settings.SCORE_MIN_STATISTICS
 
-    def preload_best_prices(self, candidates: List[Candidate]) -> MutablePriceMap:
-        """Preload best prices for the short list."""
-        address_list = [c.token_address for c in candidates if c.token_address]
-        return preload_best_prices(address_list)
+    def preload_best_prices(self, candidates: List[Candidate]) -> List[TokenPrice]:
+        return preload_best_prices(candidates)
 
     def apply_statistics_gate(self, candidates: List[Candidate]) -> Tuple[List[Candidate], ScoringEngine]:
         """Statistics scoring and filtering."""
@@ -40,7 +39,7 @@ class CandidateGatesStage:
             log.info("[TREND][GATE][STAT] 0 candidates after gate #2.")
         return ready, engine
 
-    def apply_risk_and_price_gates(self, candidates: List[Candidate], price_map: PriceMap) -> List[Candidate]:
+    def apply_risk_and_price_gates(self, candidates: List[Candidate], token_prices: List[TokenPrice]) -> List[Candidate]:
         """Cooldown, risk manager, and price sanity checks."""
         from src.core.gates.risk_manager import AdaptiveRiskManager
 
@@ -64,7 +63,7 @@ class CandidateGatesStage:
                                                              f"RISK:{pre_decision.reason}")
                 continue
 
-            dex_price = _price_from(price_map, candidate.token_address)
+            dex_price = _price_from(token_prices, candidate)
             if dex_price is None or dex_price <= 0.0:
                 log.debug("[TREND][GATE][PRICE] Invalid DEX price for %s", candidate.symbol)
                 from src.core.jobs.trending.execution_stage import AnalyticsRecorder

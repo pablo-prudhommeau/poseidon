@@ -1,16 +1,27 @@
-import {Component, computed, inject} from '@angular/core';
-import {AgGridAngular} from 'ag-grid-angular';
-import {CellClassParams, ColDef, ValueFormatterParams, ValueGetterParams} from 'ag-grid-community';
-import {balhamDarkThemeCompact} from '../../ag-grid.theme';
-import {DefiIconsService} from '../../core/defi-icons.service';
-import {NumberFormattingService} from '../../core/number-formatting.service';
-import {WebSocketService} from '../../core/websocket.service';
+import {JsonPipe} from '@angular/common';
+import { Component, computed, inject, signal } from '@angular/core';
+import { AgGridAngular } from 'ag-grid-angular';
+import { CellClassParams, ColDef, ValueFormatterParams, ValueGetterParams } from 'ag-grid-community';
+import { DialogModule } from 'primeng/dialog';
+import { ButtonModule } from 'primeng/button';
+import { balhamDarkThemeCompact } from '../../ag-grid.theme';
+import { DefiIconsService } from '../../core/defi-icons.service';
+import { NumberFormattingService } from '../../core/number-formatting.service';
+import { WebSocketService } from '../../core/websocket.service';
 
+/**
+ * PositionsTableComponent
+ * -----------------------
+ * Displays open positions with a pinned 'Actions' column that opens a details modal.
+ * The Symbol column uses DefiIconsService to render a compact triple icon (chain+token+pair).
+ *
+ * Logging uses [UI][POSITIONS][...] tags.
+ */
 @Component({
     standalone: true,
     selector: 'positions-table',
-    imports: [AgGridAngular],
-    templateUrl: './positions-table.component.html'
+    imports: [AgGridAngular, DialogModule, ButtonModule, JsonPipe],
+    templateUrl: './positions-table.component.html',
 })
 export class PositionsTableComponent {
     public readonly agGridTheme = balhamDarkThemeCompact;
@@ -24,15 +35,31 @@ export class PositionsTableComponent {
         return Array.isArray(rows) ? [...rows] : [];
     });
 
+    // Modal state
+    public readonly detailsVisible = signal<boolean>(false);
+    public readonly selectedRow = signal<any | null>(null);
+
+    public openDetails(row: any): void {
+        this.selectedRow.set(row);
+        this.detailsVisible.set(true);
+        console.info('[UI][POSITIONS][DETAILS] open', {
+            symbol: row?.symbol,
+            chain: row?.chain,
+            tokenAddress: row?.address ?? row?.tokenAddress,
+            pairAddress: row?.pairAddress,
+        });
+    }
+
     public readonly columnDefinitions: ColDef[] = [
         {
             headerName: 'Symbol',
             field: 'symbol',
             sortable: true,
             filter: true,
-            cellRenderer: this.defiIconService.tokenChainChipRenderer,
-            comparator: (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, {sensitivity: 'base'}),
-            flex: 1.6
+            // Use triple icon renderer (chain + token + pair)
+            cellRenderer: this.defiIconService.tokenChainPairChipRenderer,
+            comparator: (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, { sensitivity: 'base' }),
+            flex: 1.6,
         },
         {
             headerName: 'Open date',
@@ -41,7 +68,7 @@ export class PositionsTableComponent {
             filter: 'agDateColumnFilter',
             valueGetter: (p: ValueGetterParams) => p.data?.opened_at ?? null,
             cellClass: 'whitespace-nowrap',
-            flex: 1.4
+            flex: 1.4,
         },
         {
             headerName: 'Quantity',
@@ -51,7 +78,7 @@ export class PositionsTableComponent {
             filter: 'agNumberColumnFilter',
             valueFormatter: (p: ValueFormatterParams) => this.numberFormattingService.formatNumber(p.value, 2, 4),
             cellClass: 'text-right whitespace-nowrap',
-            flex: 1.3
+            flex: 1.3,
         },
         {
             headerName: 'Entry',
@@ -61,7 +88,7 @@ export class PositionsTableComponent {
             filter: 'agNumberColumnFilter',
             valueFormatter: (p: ValueFormatterParams) => this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
             cellClass: 'text-right whitespace-nowrap',
-            flex: 1.1
+            flex: 1.1,
         },
         {
             headerName: 'TP1',
@@ -71,7 +98,7 @@ export class PositionsTableComponent {
             filter: 'agNumberColumnFilter',
             valueFormatter: (p: ValueFormatterParams) => this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
             cellClass: 'text-right whitespace-nowrap',
-            flex: 1.1
+            flex: 1.1,
         },
         {
             headerName: 'TP2',
@@ -81,7 +108,7 @@ export class PositionsTableComponent {
             filter: 'agNumberColumnFilter',
             valueFormatter: (p: ValueFormatterParams) => this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
             cellClass: 'text-right whitespace-nowrap',
-            flex: 1.1
+            flex: 1.1,
         },
         {
             headerName: 'Stop',
@@ -91,7 +118,7 @@ export class PositionsTableComponent {
             filter: 'agNumberColumnFilter',
             valueFormatter: (p: ValueFormatterParams) => this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
             cellClass: 'text-right whitespace-nowrap',
-            flex: 1.1
+            flex: 1.1,
         },
         {
             headerName: 'Δ %',
@@ -117,10 +144,10 @@ export class PositionsTableComponent {
                 p.value == null ? '—' : `${this.numberFormattingService.formatNumber(p.value, 2, 2)}%`,
             cellClassRules: {
                 'pct-up': (p) => (p.value ?? 0) > 0,
-                'pct-down': (p) => (p.value ?? 0) < 0
+                'pct-down': (p) => (p.value ?? 0) < 0,
             },
             cellClass: 'text-right whitespace-nowrap',
-            flex: 0.9
+            flex: 0.9,
         },
         {
             headerName: 'Phase',
@@ -133,7 +160,13 @@ export class PositionsTableComponent {
                 } else if (p.value === 'PARTIAL') {
                     colorClass = 'bg-yellow-600';
                 }
-                return '<span class="' + colorClass + ' saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">' + p.value + '</span>';
+                return (
+                    '<span class="' +
+                    colorClass +
+                    ' saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">' +
+                    p.value +
+                    '</span>'
+                );
             },
         },
         {
@@ -155,8 +188,23 @@ export class PositionsTableComponent {
                 }
                 return 'text-right whitespace-nowrap';
             },
-            flex: 1.2
-        }
+            flex: 1.2,
+        },
+        // -------- Actions column (pinned right) --------
+        {
+            headerName: '',
+            colId: 'actions',
+            pinned: 'right',
+            width: 70,
+            suppressHeaderMenuButton: true,
+            sortable: false,
+            filter: false,
+            cellRenderer: () =>
+                `<button class="p-button p-component p-button-sm p-button-rounded p-button-text" title="Details">
+           <span class="pi pi-search"></span>
+         </button>`,
+            onCellClicked: (p) => this.openDetails(p.data),
+        },
     ];
 
     public readonly defaultColumnDefinition: ColDef = {
@@ -164,6 +212,6 @@ export class PositionsTableComponent {
         sortable: true,
         filter: true,
         suppressHeaderMenuButton: false,
-        flex: 1
+        flex: 1,
     };
 }

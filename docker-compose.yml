@@ -8,9 +8,11 @@ services:
     environment:
       DATABASE_URL: "/app/db/poseidon.db"
       SCREENSHOT_DIR: "/app/data/screenshots"
+    env_file:
+      - .env
     volumes:
-      - /opt/poseidon/db:/app/db
-      - /opt/poseidon/screenshots:/app/data/screenshots
+      - ./db:/app/db
+      - ./screenshots:/app/data/screenshots
     ports:
       - "8000:8000"
     healthcheck:

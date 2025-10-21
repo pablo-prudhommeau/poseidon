@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
+from src.core.structures.structures import EquityCurve, EquityCurvePoint
 from src.logging.logger import get_logger
 from src.persistence.models import PortfolioSnapshot
 
@@ -22,7 +23,7 @@ def ensure_initial_cash(db: Session) -> PortfolioSnapshot:
     return snapshot
 
 
-def get_latest_portfolio(db: Session, create_if_missing: bool = False) -> Optional[PortfolioSnapshot]:
+def get_portfolio_snapshot(db: Session, create_if_missing: bool = False) -> Optional[PortfolioSnapshot]:
     """Return the latest portfolio snapshot; optionally create an initial one."""
     stmt = (
         select(PortfolioSnapshot)
@@ -35,21 +36,25 @@ def get_latest_portfolio(db: Session, create_if_missing: bool = False) -> Option
     return snapshot
 
 
-def equity_curve(db: Session, points: int = 60) -> List[Tuple[int, float]]:
+def equity_curve(db: Session, points: int = 60) -> EquityCurve:
     """Return a simplified equity curve as (timestamp, equity) points."""
     snapshots = list(
         db.execute(select(PortfolioSnapshot).order_by(PortfolioSnapshot.created_at.asc())).scalars().all()
     )
     if not snapshots:
-        return []
+        return EquityCurve(points=[])
 
     if len(snapshots) > points:
         step = max(1, len(snapshots) // points)
         snapshots = snapshots[::step]
 
-    out: List[Tuple[int, float]] = []
+    out = EquityCurve(points=[])
     for s in snapshots:
-        out.append((int(s.created_at.timestamp()), float(s.equity or 0.0)))
+        equity_curve_point = EquityCurvePoint(
+            timestamp=int(s.created_at.timestamp()),
+            equity=float(s.equity or 0.0),
+        )
+        out.points.append(equity_curve_point)
     return out
 
 

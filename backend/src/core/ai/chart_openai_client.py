@@ -36,15 +36,6 @@ def _build_common_kwargs(
         "messages": messages,
         "response_format": response_format,
     }
-
-    if getattr(settings, "CHART_AI_SEED", None) is not None:
-        kwargs["seed"] = int(settings.CHART_AI_SEED)
-
-    if not _is_gpt5_family(model_name):
-        temp = getattr(settings, "CHART_AI_TEMPERATURE", None)
-        if temp is not None:
-            kwargs["temperature"] = float(temp)
-
     return kwargs
 
 
