@@ -15,6 +15,7 @@ class Phase(Enum):
     OPEN = "OPEN"
     PARTIAL = "PARTIAL"
     CLOSED = "CLOSED"
+    STALED = "STALED"
 
 
 class Side(Enum):
@@ -38,7 +39,8 @@ class Position(Base):
     chain: Mapped[str] = mapped_column(String(32), nullable=False)
     tokenAddress: Mapped[str] = mapped_column(String(128), nullable=False)
     pairAddress: Mapped[str] = mapped_column(String(128), nullable=False)
-    qty: Mapped[float] = mapped_column(Float, nullable=False)
+    open_quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    current_quantity: Mapped[float] = mapped_column(Float, nullable=False)
     entry: Mapped[float] = mapped_column(Float, nullable=False)
     tp1: Mapped[float] = mapped_column(Float, nullable=False)
     tp2: Mapped[float] = mapped_column(Float, nullable=False)
@@ -49,7 +51,7 @@ class Position(Base):
     closed_at: Mapped[Optional[datetime]] = mapped_column(default=None, nullable=True)
 
     def __repr__(self) -> str:
-        return f"<Position {self.symbol} {self.tokenAddress[-6:]} qty={self.qty} phase={self.phase}>"
+        return f"<Position {self.symbol} {self.tokenAddress[-6:]} qty={self.open_quantity} phase={self.phase}>"
 
 
 class Trade(Base):

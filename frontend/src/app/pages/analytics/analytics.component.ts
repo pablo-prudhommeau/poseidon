@@ -1,424 +1,683 @@
-import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject, signal, ViewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { AgGridAngular } from 'ag-grid-angular';
-import type { ColDef, GridApi, GridReadyEvent, RowClickedEvent } from 'ag-grid-community';
-import type {
-    ApexAxisChartSeries,
-    ApexChart,
-    ApexDataLabels,
-    ApexGrid,
-    ApexLegend,
-    ApexMarkers,
-    ApexNonAxisChartSeries,
-    ApexStroke,
-    ApexTheme,
-    ApexTooltip,
-    ApexXAxis,
-    ApexYAxis,
-} from 'ng-apexcharts';
-import { NgApexchartsModule } from 'ng-apexcharts';
-import { ButtonModule } from 'primeng/button';
-import { CardModule } from 'primeng/card';
-import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
-import { balhamDarkThemeCompact } from '../../ag-grid.theme';
-import { Analytics } from '../../core/models';
-import { WebSocketService } from '../../core/websocket.service';
+// frontend/src/app/pages/analytics/analytics.component.ts
+import {CommonModule} from '@angular/common';
+import {AfterViewInit, Component, Directive, effect, ElementRef, EventEmitter, inject, OnDestroy, Output, signal} from '@angular/core';
+import {FormsModule} from '@angular/forms';
+
+import {ApexAnnotations, ApexAxisChartSeries, ApexChart, ApexDataLabels, ApexFill, ApexGrid, ApexLegend, ApexMarkers, ApexStroke, ApexTooltip, ApexXAxis, ApexYAxis, NgApexchartsModule} from 'ng-apexcharts';
+
+import {CardModule} from 'primeng/card';
+import {CheckboxModule} from 'primeng/checkbox';
+import {baseTheme} from '../../apex.theme';
+import type {Analytics} from '../../core/models';
+
+import {WebSocketService} from '../../core/websocket.service';
+
+/** Emits true/false when the element enters/leaves viewport (lazy build). */
+@Directive({selector: '[inViewport]', standalone: true})
+export class InViewportDirective implements AfterViewInit, OnDestroy {
+    @Output() inViewportChange = new EventEmitter<boolean>();
+    private io?: IntersectionObserver;
+
+    constructor(private el: ElementRef<HTMLElement>) {}
+
+    ngAfterViewInit(): void {
+        this.io = new IntersectionObserver(([entry]) => this.inViewportChange.emit(entry.isIntersecting), {
+            root: null, rootMargin: '200px', threshold: 0.01
+        });
+        this.io.observe(this.el.nativeElement);
+    }
+
+    ngOnDestroy(): void { this.io?.disconnect(); }
+}
+
+type XY = { x: number; y: number; meta?: any };
+type ChartKey =
+    | 'final' | 'quality' | 'statistics' | 'entry'
+    | 'liq' | 'vol'
+    | 'p5m' | 'p1h' | 'p6h' | 'p24h'
+    | 'age' | 'tx';
+
+const CHART_KEYS: ReadonlyArray<ChartKey> = [
+    'final', 'quality', 'statistics', 'entry',
+    'liq', 'vol',
+    'p5m', 'p1h', 'p6h', 'p24h',
+    'age', 'tx'
+];
 
 @Component({
-    standalone: true,
     selector: 'app-analytics',
-    imports: [CommonModule, FormsModule, AgGridAngular, NgApexchartsModule, DialogModule, ButtonModule, CardModule, InputTextModule],
-    templateUrl: './analytics.component.html',
+    standalone: true,
+    imports: [CommonModule, FormsModule, NgApexchartsModule, CardModule, CheckboxModule, InViewportDirective],
+    templateUrl: './analytics.component.html'
 })
 export class AnalyticsComponent {
     private readonly ws = inject(WebSocketService);
-    public readonly agGridTheme = balhamDarkThemeCompact;
 
-    public readonly analytics = signal<Analytics[]>([]);
-    public quickFilterText = '';
+    // ===== Dataset
+    readonly rows = signal<Analytics[]>([]);
 
-    public constructor() {
+    // ===== Controls (no heavy logic in template)
+    readonly yMode = signal<'pct' | 'usd'>('pct');
+    readonly showTrend = signal<boolean>(true);
+    readonly showQLines = signal<boolean>(true);
+    readonly logX = signal<boolean>(true);
+
+    /** Scatter decimation threshold (LTTB). */
+    readonly maxScatterPoints = signal<number>(600);
+
+    /** Visibility toggles per card (rebuilt only when visible). */
+    visible: Record<ChartKey, boolean> = {
+        final: false, quality: false, statistics: false, entry: false,
+        liq: false, vol: false,
+        p5m: false, p1h: false, p6h: false, p24h: false,
+        age: false, tx: false
+    };
+
+    constructor() {
         effect(() => {
-            const data = this.ws.analytics();
-            this.analytics.set(data);
-            this.rebuildAllCharts();
+            const data = (this.ws as any).analytics?.() ?? [];
+            if (Array.isArray(data)) {
+                this.rows.set(data as Analytics[]);
+            }
         });
     }
 
-    public readonly kpiTotal = computed(() => this.analytics().length);
-    public readonly kpiAverageFinal = computed(() => {
-        const rows = this.analytics();
-        return rows.length ? rows.reduce((sum, row) => sum + (row.scores?.final ?? 0), 0) / rows.length : 0;
-    });
-    public readonly kpiWithAi = computed(
-        () => this.analytics().filter((r) => (r.ai?.probabilityTp1BeforeSl ?? 0) > 0 || (r.ai?.qualityScoreDelta ?? 0) !== 0).length
-    );
-
-    private readonly outcomeRows = computed(() => this.analytics().filter((r) => r?.outcome?.hasOutcome === true));
-    public readonly kpiOutCount = computed(() => this.outcomeRows().length);
-    public readonly kpiOutWinRate = computed(() => {
-        const rows = this.outcomeRows();
-        if (!rows.length) return 0;
-        const wins = rows.filter((r) => !!r.outcome?.wasProfit).length;
-        return (wins / rows.length) * 100;
-    });
-    public readonly kpiOutAvgPct = computed(() => {
-        const rows = this.outcomeRows();
-        if (!rows.length) return 0;
-        return rows.reduce((sum, row) => sum + Number(row.outcome?.pnlPct ?? 0), 0) / rows.length;
-    });
-
-    @ViewChild(AgGridAngular) grid?: AgGridAngular;
-    private gridApi?: GridApi<Analytics>;
-
-    public readonly columnDefs: ColDef[] = [
-        { headerName: 'When', valueGetter: (p) => p.data.evaluatedAt, sort: 'desc', sortable: true, filter: 'agTextColumnFilter', width: 170 },
-        { headerName: 'Symbol', field: 'symbol', sortable: true, filter: 'agTextColumnFilter', width: 110 },
-        {
-            headerName: 'Final',
-            valueGetter: (p) => p.data.scores?.final,
-            sortable: true,
-            filter: 'agNumberColumnFilter',
-            width: 100,
-            valueFormatter: (p) => (p.value ?? 0).toFixed(2),
-        },
-        {
-            headerName: 'Q',
-            valueGetter: (p) => p.data.scores?.quality,
-            sortable: true,
-            filter: 'agNumberColumnFilter',
-            width: 90,
-            valueFormatter: (p) => (p.value ?? 0).toFixed(2),
-        },
-        {
-            headerName: 'Stat',
-            valueGetter: (p) => p.data.scores?.statistics,
-            sortable: true,
-            filter: 'agNumberColumnFilter',
-            width: 90,
-            valueFormatter: (p) => (p.value ?? 0).toFixed(2),
-        },
-        {
-            headerName: 'Entry',
-            valueGetter: (p) => p.data.scores?.entry,
-            sortable: true,
-            filter: 'agNumberColumnFilter',
-            width: 90,
-            valueFormatter: (p) => (p.value ?? 0).toFixed(2),
-        },
-        {
-            headerName: 'AI Prob.',
-            valueGetter: (p) => p.data.ai?.probabilityTp1BeforeSl,
-            sortable: true,
-            filter: 'agNumberColumnFilter',
-            width: 110,
-            valueFormatter: (p) => (p.value ?? 0).toFixed(2),
-        },
-        {
-            headerName: 'AI ΔQ',
-            valueGetter: (p) => p.data.ai?.qualityScoreDelta,
-            sortable: true,
-            filter: 'agNumberColumnFilter',
-            width: 100,
-            valueFormatter: (p) => (p.value ?? 0).toFixed(2),
-        },
-        { headerName: 'Age(h)', valueGetter: (p) => p.data.rawMetrics?.tokenAgeHours, sortable: true, filter: 'agNumberColumnFilter', width: 100 },
-        { headerName: 'Vol $', valueGetter: (p) => p.data.rawMetrics?.volume24hUsd, sortable: true, filter: 'agNumberColumnFilter', width: 110 },
-        { headerName: 'Liq $', valueGetter: (p) => p.data.rawMetrics?.liquidityUsd, sortable: true, filter: 'agNumberColumnFilter', width: 110 },
-        { headerName: 'Decision', valueGetter: (p) => p.data.decision?.action, sortable: true, filter: 'agTextColumnFilter', width: 110 },
-        { headerName: 'Reason', valueGetter: (p) => p.data.decision?.reason, sortable: true, filter: 'agTextColumnFilter', flex: 1, minWidth: 220 },
-        {
-            headerName: 'Outcome %',
-            valueGetter: (p) => (p.data.outcome?.hasOutcome ? p.data.outcome?.pnlPct ?? null : null),
-            sortable: true,
-            filter: 'agNumberColumnFilter',
-            width: 120,
-            valueFormatter: (p) => (p.value == null ? '' : Number(p.value).toFixed(2)),
-        },
-    ];
-    public readonly defaultColDef: ColDef = { resizable: true, floatingFilter: true };
-    public rowData = computed(() => this.analytics());
-
-    public onGridReady(event: GridReadyEvent): void {
-        this.gridApi = event.api as GridApi<Analytics>;
-        (this.gridApi as any).setGridOption?.('quickFilterText', this.quickFilterText);
+    // ===== Public API for template (simple & typed)
+    onAxisModeChange(mode: 'pct' | 'usd'): void {
+        this.yMode.set(mode);
+        this.rebuildVisible();
     }
 
-    public onQuickFilterChange(value: string): void {
-        this.quickFilterText = value;
-        this.gridApi && (this.gridApi as any).setGridOption?.('quickFilterText', value);
+    onToggleTrend(value: boolean): void {
+        this.showTrend.set(value);
+        this.rebuildVisible();
     }
 
-    public onRowClicked(event: RowClickedEvent<Analytics>): void {
-        this.selected.set(event.data);
-        this.rawVisible = true;
+    onToggleQLines(value: boolean): void {
+        this.showQLines.set(value);
+        this.rebuildVisible();
     }
 
-    private readonly apexTheme: ApexTheme = { mode: 'dark', palette: 'palette1' as any };
-    private readonly apexGrid: ApexGrid = { borderColor: 'rgba(255,255,255,0.06)', xaxis: { lines: { show: false } } };
-    private readonly darkTooltip: ApexTooltip = { theme: 'dark' };
-
-    public histSeries: ApexAxisChartSeries | ApexNonAxisChartSeries = [{ name: 'Rows', data: [] }];
-    public histChart: ApexChart = { type: 'bar', height: 260, toolbar: { show: false } };
-    public histXAxis: ApexXAxis = { categories: [], title: { text: 'Final score buckets' } };
-    public histYAxis: ApexYAxis = { title: { text: 'Count' } };
-    public histDataLabels: ApexDataLabels = { enabled: false };
-    public histTooltip: ApexTooltip = this.darkTooltip;
-    public histLegend: ApexLegend = { show: false };
-    public histGrid: ApexGrid = this.apexGrid;
-    public histTheme: ApexTheme = this.apexTheme;
-
-    public calibSeries: ApexAxisChartSeries | ApexNonAxisChartSeries = [{ name: 'Observed buy-rate (%)', data: [] }];
-    public calibChart: ApexChart = { type: 'line', height: 260, toolbar: { show: false } };
-    public calibXAxis: ApexXAxis = { categories: [], title: { text: 'Predicted probability bucket' } };
-    public calibYAxis: ApexYAxis = { title: { text: 'Buy-rate (%)' }, max: 100, min: 0 };
-    public calibMarkers: ApexMarkers = { size: 4 };
-    public calibStroke: ApexStroke = { width: 2 };
-    public calibTooltip: ApexTooltip = this.darkTooltip;
-    public calibLegend: ApexLegend = { show: true };
-    public calibGrid: ApexGrid = this.apexGrid;
-    public calibTheme: ApexTheme = this.apexTheme;
-
-    public ageSeries: ApexAxisChartSeries | ApexNonAxisChartSeries = [{ name: 'Candidates', data: [] }];
-    public ageChart: ApexChart = { type: 'scatter', height: 260, zoom: { enabled: true, type: 'xy' } };
-    public ageXAxis: ApexXAxis = { title: { text: 'Token age (hours)' } };
-    public ageYAxis: ApexYAxis = { title: { text: 'Final score' } };
-    public ageMarkers: ApexMarkers = { size: 4 };
-    public ageStroke: ApexStroke = { width: 1 };
-    public ageTooltip: ApexTooltip = this.darkTooltip;
-    public ageLegend: ApexLegend = { show: false };
-    public ageGrid: ApexGrid = this.apexGrid;
-    public ageTheme: ApexTheme = this.apexTheme;
-
-    public heatSeries: { name: string; data: { x: string; y: number }[] }[] = [];
-    public heatChart: ApexChart = { type: 'heatmap', height: 300, toolbar: { show: false } };
-    public heatXAxis: ApexXAxis = { title: { text: 'Volume 24h buckets ($)' }, categories: [] };
-    public heatYAxis: ApexYAxis = { title: { text: 'Liquidity buckets ($)' } };
-    public heatDataLabels: ApexDataLabels = { enabled: false };
-    public heatTooltip: ApexTooltip = this.darkTooltip;
-    public heatLegend: ApexLegend = { show: false };
-    public heatGrid: ApexGrid = this.apexGrid;
-    public heatTheme: ApexTheme = this.apexTheme;
-
-    public outHistSeries: ApexAxisChartSeries | ApexNonAxisChartSeries = [{ name: 'Rows', data: [] }];
-    public outHistChart: ApexChart = { type: 'bar', height: 260, toolbar: { show: false } };
-    public outHistXAxis: ApexXAxis = { categories: [], title: { text: 'Outcome PnL% buckets' } };
-    public outHistYAxis: ApexYAxis = { title: { text: 'Count' } };
-    public outHistDataLabels: ApexDataLabels = { enabled: false };
-    public outHistTooltip: ApexTooltip = this.darkTooltip;
-    public outHistLegend: ApexLegend = { show: false };
-    public outHistGrid: ApexGrid = this.apexGrid;
-    public outHistTheme: ApexTheme = this.apexTheme;
-
-    public winByScoreSeries: ApexAxisChartSeries | ApexNonAxisChartSeries = [{ name: 'Win-rate (%)', data: [] }];
-    public winByScoreChart: ApexChart = { type: 'line', height: 260, toolbar: { show: false } };
-    public winByScoreXAxis: ApexXAxis = { categories: [], title: { text: 'Final score bucket' } };
-    public winByScoreYAxis: ApexYAxis = { title: { text: 'Win-rate (%)' }, min: 0, max: 100 };
-    public winByScoreMarkers: ApexMarkers = { size: 4 };
-    public winByScoreStroke: ApexStroke = { width: 2 };
-    public winByScoreTooltip: ApexTooltip = this.darkTooltip;
-    public winByScoreLegend: ApexLegend = { show: true };
-    public winByScoreGrid: ApexGrid = this.apexGrid;
-    public winByScoreTheme: ApexTheme = this.apexTheme;
-
-    public holdScatterSeries: ApexAxisChartSeries | ApexNonAxisChartSeries = [{ name: 'Outcomes', data: [] }];
-    public holdScatterChart: ApexChart = { type: 'scatter', height: 260, zoom: { enabled: true, type: 'xy' } };
-    public holdScatterXAxis: ApexXAxis = { title: { text: 'Holding (minutes)' } };
-    public holdScatterYAxis: ApexYAxis = { title: { text: 'PnL (%)' } };
-    public holdScatterMarkers: ApexMarkers = { size: 4 };
-    public holdScatterStroke: ApexStroke = { width: 1 };
-    public holdScatterTooltip: ApexTooltip = this.darkTooltip;
-    public holdScatterLegend: ApexLegend = { show: false };
-    public holdScatterGrid: ApexGrid = this.apexGrid;
-    public holdScatterTheme: ApexTheme = this.apexTheme;
-
-    public outHeatSeries: { name: string; data: { x: string; y: number }[] }[] = [];
-    public outHeatChart: ApexChart = { type: 'heatmap', height: 300, toolbar: { show: false } };
-    public outHeatXAxis: ApexXAxis = { title: { text: 'Volume 24h buckets ($)' }, categories: [] };
-    public outHeatYAxis: ApexYAxis = { title: { text: 'Liquidity buckets ($)' } };
-    public outHeatDataLabels: ApexDataLabels = { enabled: false };
-    public outHeatTooltip: ApexTooltip = this.darkTooltip;
-    public outHeatLegend: ApexLegend = { show: false };
-    public outHeatGrid: ApexGrid = this.apexGrid;
-    public outHeatTheme: ApexTheme = this.apexTheme;
-
-    public rawVisible = false;
-    public readonly selected = signal<Analytics | undefined>(undefined);
-
-    private rebuildAllCharts(): void {
-        this.buildHistogram();
-        this.buildCalibration();
-        this.buildAgeScatter();
-        this.buildHeatmap();
-
-        this.buildOutcomeHistogram();
-        this.buildWinRateByScore();
-        this.buildHoldingScatter();
-        this.buildOutcomeHeatmap();
+    onToggleLogX(value: boolean): void {
+        this.logX.set(value);
+        // Les courbes X-log sont surtout liq/vol/age/tx, mais rebuildVisible() suffit
+        this.rebuildVisible();
     }
 
-    private buildHistogram(): void {
-        const values = this.analytics().map((r) => r.scores?.final ?? 0);
-        if (!values.length) {
-            this.histSeries = [{ name: 'Rows', data: [] }];
-            this.histXAxis = { categories: [] };
-            return;
+    onViewport(kind: ChartKey, isVisible: boolean): void {
+        this.visible[kind] = isVisible;
+        if (isVisible) {
+            this.rebuildOne(kind);
         }
-        const { counts, labels } = this.makeHistogram(values, 12);
-        this.histSeries = [{ name: 'Rows', data: counts }];
-        this.histXAxis = { categories: labels, title: { text: 'Final score buckets' } };
     }
 
-    private buildCalibration(): void {
-        const rows = this.analytics();
-        const probabilities = rows.map((r) => Number(r.ai?.probabilityTp1BeforeSl ?? 0));
-        if (!probabilities.length) {
-            this.calibSeries = [{ name: 'Observed buy-rate (%)', data: [] }];
-            this.calibXAxis = { categories: [] };
-            return;
+    // ===== Stats utils
+    private quantile(sorted: number[], q: number): number {
+        if (!sorted.length) {
+            return 0;
         }
-        const binCount = 10;
-        const { edges, indexOf, labels } = this.makeBins(probabilities, binCount);
-        const totals = Array.from({ length: binCount }, () => 0);
-        const buys = Array.from({ length: binCount }, () => 0);
-        for (const row of rows) {
-            const i = indexOf(Number(row.ai?.probabilityTp1BeforeSl ?? 0));
-            totals[i] += 1;
-            if ((row.decision?.action ?? '') === 'BUY') {
-                buys[i] += 1;
+        const pos = (sorted.length - 1) * q;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        const next = sorted[base + 1] ?? sorted[base];
+        return sorted[base] + (next - sorted[base]) * rest;
+    }
+
+    private decileEdges(xs: number[]): number[] {
+        const s = [...xs].sort((a, b) => a - b);
+        const edges: number[] = [];
+        for (let i = 0; i <= 10; i++) {
+            edges.push(this.quantile(s, i / 10));
+        }
+        return edges;
+    }
+
+    private binIndex(v: number, edges: number[]): number {
+        const last = edges.length - 2;
+        if (!isFinite(v)) {
+            return 0;
+        }
+        for (let i = 0; i < edges.length - 1; i++) {
+            if (v >= edges[i] && v <= edges[i + 1]) {
+                return Math.min(i, last);
             }
         }
-        const rate = totals.map((n, i) => (n ? (buys[i] / n) * 100 : 0));
-        this.calibSeries = [{ name: 'Observed buy-rate (%)', data: rate }];
-        this.calibXAxis = {
-            categories: labels ?? edges.slice(0, -1).map((e, i) => `${e.toFixed(2)}–${edges[i + 1].toFixed(2)}`),
-            title: { text: 'Predicted probability bucket' },
-        };
+        return last;
     }
 
-    private buildAgeScatter(): void {
-        const points = this.analytics().map((r) => ({
-            x: Number(r.rawMetrics?.tokenAgeHours ?? 0),
-            y: Number(r.scores?.final ?? 0),
-            name: r.symbol,
-        }));
-        this.ageSeries = [{ name: 'Candidates', data: points }];
+    private toY(r: Analytics): number {
+        return this.yMode() === 'pct' ? (r.outcome?.pnlPct ?? 0) : (r.outcome?.pnlUsd ?? 0);
     }
 
-    private buildHeatmap(): void {
-        const rows = this.analytics();
-        this.heatSeries = this.makeXYHeat(
-            rows.map((r) => Number(r.rawMetrics?.volume24hUsd ?? 0)),
-            rows.map((r) => Number(r.rawMetrics?.liquidityUsd ?? 0)),
-            rows.map((r) => Number(r.scores?.final ?? 0)),
-            8,
-            6
-        );
-    }
-
-    private buildOutcomeHistogram(): void {
-        const values = this.outcomeRows().map((r) => Number(r.outcome?.pnlPct ?? 0));
-        if (!values.length) {
-            this.outHistSeries = [{ name: 'Rows', data: [] }];
-            this.outHistXAxis = { categories: [] };
-            return;
+    private formatLogTick = (raw: number): string => {
+        const x = Math.pow(10, raw);
+        if (x >= 1_000_000) {
+            return `${(x / 1_000_000).toFixed(1)}M`;
         }
-        const { counts, labels } = this.makeHistogram(values, 12);
-        this.outHistSeries = [{ name: 'Rows', data: counts }];
-        this.outHistXAxis = { categories: labels, title: { text: 'Outcome PnL% buckets' } };
-    }
-
-    private buildWinRateByScore(): void {
-        const rows = this.outcomeRows();
-        if (!rows.length) {
-            this.winByScoreSeries = [{ name: 'Win-rate (%)', data: [] }];
-            this.winByScoreXAxis = { categories: [] };
-            return;
+        if (x >= 1_000) {
+            return `${(x / 1_000).toFixed(1)}K`;
         }
-        const finals = rows.map((r) => Number(r.scores?.final ?? 0));
-        const binCount = 10;
-        const { edges, indexOf } = this.makeBins(finals, binCount);
-        const totals = Array.from({ length: binCount }, () => 0);
-        const wins = Array.from({ length: binCount }, () => 0);
-        for (const row of rows) {
-            const i = indexOf(Number(row.scores?.final ?? 0));
-            totals[i] += 1;
-            if (row.outcome?.wasProfit) {
-                wins[i] += 1;
+        return x.toFixed(0);
+    };
+
+    // ===== LTTB decimation
+    private lttb(points: XY[], threshold: number): XY[] {
+        const data = points;
+        const n = data.length;
+        if (threshold >= n || threshold <= 0) {
+            return data;
+        }
+
+        const sampled: XY[] = [];
+        const bucketSize = (n - 2) / (threshold - 2);
+        let a = 0;
+        sampled.push(data[a]);
+
+        for (let i = 0; i < threshold - 2; i++) {
+            const start = Math.floor((i + 1) * bucketSize) + 1;
+            const end = Math.floor((i + 2) * bucketSize) + 1;
+            const endClamped = Math.min(end, n);
+
+            let avgX = 0, avgY = 0, count = 0;
+            for (let j = start; j < endClamped; j++) {
+                avgX += data[j].x;
+                avgY += data[j].y;
+                count++;
             }
+            avgX /= Math.max(count, 1);
+            avgY /= Math.max(count, 1);
+
+            let maxArea = -1;
+            let maxAreaPoint = data[start];
+            const ax = data[a].x, ay = data[a].y;
+            const rangeStart = Math.floor(i * bucketSize) + 1;
+            const rangeEnd = Math.floor((i + 1) * bucketSize) + 1;
+
+            for (let j = rangeStart; j < rangeEnd; j++) {
+                const p = data[j];
+                const area = Math.abs((ax - avgX) * (p.y - ay) - (ax - p.x) * (avgY - ay)) * 0.5;
+                if (area > maxArea) {
+                    maxArea = area;
+                    maxAreaPoint = p;
+                }
+            }
+
+            sampled.push(maxAreaPoint);
+            a = data.indexOf(maxAreaPoint);
         }
-        const rate = totals.map((n, i) => (n ? (wins[i] / n) * 100 : 0));
-        const labels = edges.slice(0, -1).map((e, i) => `${e.toFixed(1)}–${edges[i + 1].toFixed(1)}`);
-        this.winByScoreSeries = [{ name: 'Win-rate (%)', data: rate }];
-        this.winByScoreXAxis = { categories: labels, title: { text: 'Final score bucket' } };
+
+        sampled.push(data[n - 1]);
+        return sampled;
     }
 
-    private buildHoldingScatter(): void {
-        const points = this.outcomeRows().map((r) => ({
-            x: Number(r.outcome?.holdingMinutes ?? 0),
-            y: Number(r.outcome?.pnlPct ?? 0),
-            name: r.symbol,
-        }));
-        this.holdScatterSeries = [{ name: 'Outcomes', data: points }];
-    }
+    // ===== Builder Scatter + Trend/Q1/Q3
+    private buildScatterTrend(
+        args: { xName: string; x: (r: Analytics) => number; useLogX?: boolean }
+    ) {
+        const p = baseTheme();
 
-    private buildOutcomeHeatmap(): void {
-        const rows = this.outcomeRows();
-        this.outHeatSeries = this.makeXYHeat(
-            rows.map((r) => Number(r.rawMetrics?.volume24hUsd ?? 0)),
-            rows.map((r) => Number(r.rawMetrics?.liquidityUsd ?? 0)),
-            rows.map((r) => Number(r.outcome?.pnlPct ?? 0)),
-            8,
-            6
-        );
-    }
+        // Raw points
+        const raw: XY[] = [];
+        const xs: number[] = [];
+        const ys: number[] = [];
+        for (const r of this.rows()) {
+            const xRaw = args.x(r);
+            const y = this.toY(r);
+            if (!Number.isFinite(xRaw) || !Number.isFinite(y)) {
+                continue;
+            }
+            const xPlot = args.useLogX ? Math.log10(Math.max(1e-9, xRaw)) : xRaw;
+            raw.push({x: xPlot, y, meta: r});
+            xs.push(xPlot);
+            ys.push(y);
+        }
 
-    private makeBins(values: number[], bins: number) {
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const step = (max - min) / (bins || 1) || 1;
-        const edges = Array.from({ length: bins + 1 }, (_, i) => min + i * step);
-        const indexOf = (v: number) => Math.min(bins - 1, Math.max(0, Math.floor((v - min) / step)));
-        const labels = edges.slice(0, -1).map((e, i) => `${e.toFixed(2)}–${edges[i + 1].toFixed(2)}`);
-        return { edges, indexOf, labels };
-    }
-
-    private makeHistogram(values: number[], bins: number) {
-        const { edges, indexOf, labels } = this.makeBins(values, bins);
-        const counts = Array.from({ length: bins }, () => 0);
-        for (const v of values) counts[indexOf(v)]++;
-        return { counts, labels, edges };
-    }
-
-    private makeXYHeat(xs: number[], ys: number[], zs: number[], xBins: number, yBins: number) {
-        if (!xs.length) return [];
-        const mk = (vals: number[], n: number) => {
-            const mn = Math.min(...vals);
-            const mx = Math.max(...vals);
-            const st = (mx - mn) / (n || 1) || 1;
-            const ed = Array.from({ length: n + 1 }, (_, i) => mn + i * st);
-            const lab = Array.from({ length: n }, (_, i) => `${Math.round(ed[i]).toLocaleString()}–${Math.round(ed[i + 1]).toLocaleString()}`);
-            const idx = (v: number) => Math.min(n - 1, Math.max(0, Math.floor((v - mn) / st)));
-            return { ed, lab, idx, n };
-        };
-        const xb = mk(xs, xBins);
-        const yb = mk(ys, yBins);
-        const sum: number[][] = Array.from({ length: yb.n }, () => Array.from({ length: xb.n }, () => 0));
-        const cnt: number[][] = Array.from({ length: yb.n }, () => Array.from({ length: xb.n }, () => 0));
+        // Deciles for trend
+        const edges = this.decileEdges(xs);
+        const centers: number[] = [];
+        const buckets: number[][] = Array.from({length: 10}, () => []);
         for (let i = 0; i < xs.length; i++) {
-            const ix = xb.idx(xs[i]);
-            const iy = yb.idx(ys[i]);
-            sum[iy][ix] += zs[i];
-            cnt[iy][ix]++;
+            buckets[this.binIndex(xs[i], edges)].push(ys[i]);
         }
-        const series = yb.lab.map((name, iy) => ({
-            name,
-            data: cnt[iy].map((n, ix) => ({ x: xb.lab[ix], y: n ? Number((sum[iy][ix] / n).toFixed(2)) : 0 })),
-        }));
-        this.outHeatXAxis = { title: { text: 'Volume 24h buckets ($)' }, categories: xb.lab };
-        this.heatXAxis = { title: { text: 'Volume 24h buckets ($)' }, categories: xb.lab };
-        return series;
+        for (let i = 0; i < edges.length - 1; i++) {
+            centers.push((edges[i] + edges[i + 1]) / 2);
+        }
+
+        const med: XY[] = [];
+        const q1: XY[] = [];
+        const q3: XY[] = [];
+        for (let i = 0; i < buckets.length; i++) {
+            const arr = buckets[i];
+            if (!arr.length) {
+                med.push({x: centers[i], y: 0});
+                q1.push({x: centers[i], y: 0});
+                q3.push({x: centers[i], y: 0});
+                continue;
+            }
+            const s = [...arr].sort((a, b) => a - b);
+            med.push({x: centers[i], y: this.quantile(s, 0.5)});
+            q1.push({x: centers[i], y: this.quantile(s, 0.25)});
+            q3.push({x: centers[i], y: this.quantile(s, 0.75)});
+        }
+
+        // Decimation for the scatter only
+        const points = this.lttb(raw, this.maxScatterPoints());
+
+        // Options
+        const chart: ApexChart = {...p.chart};
+        const xaxis: ApexXAxis = {
+            title: {text: args.xName},
+            labels: {...(args.useLogX ? {formatter: (v) => this.formatLogTick(Number(v))} : {}), style: {fontSize: '11px'}}
+        };
+        const yaxis: ApexYAxis = {title: {text: this.yMode() === 'pct' ? 'PnL (%)' : 'PnL (USD)'}, labels: {style: {fontSize: '11px'}}};
+        const stroke: ApexStroke = p.stroke!;
+        const fill: ApexFill = p.fill!;
+        const grid: ApexGrid = p.grid!;
+        const legend: ApexLegend = p.legend!;
+        const tooltip: ApexTooltip = p.tooltip!;
+        const markers: ApexMarkers = {...(p.markers ?? {}), size: 2};
+        const dataLabels: ApexDataLabels = {...(p.dataLabels ?? {}), enabled: false, style: {fontSize: '11px'}};
+        const annotations: ApexAnnotations = {
+            yaxis: [{y: 0, borderColor: 'rgba(148,163,184,.6)', strokeDashArray: 4, label: {text: '0', style: {fontSize: '10px', color: '#cbd5e1', background: '#1f2437'}}}]
+        };
+
+        const series: ApexAxisChartSeries = [
+            {name: 'trades', type: 'scatter', data: points},
+            ...(this.showTrend() ? [{name: 'median', type: 'line', data: med}] as ApexAxisChartSeries : []),
+            ...(this.showQLines() ? [{name: 'Q1', type: 'line', data: q1}, {name: 'Q3', type: 'line', data: q3}] as ApexAxisChartSeries : [])
+        ];
+
+        return {series, chart, xaxis, yaxis, stroke, fill, grid, legend, tooltip, markers, dataLabels, annotations};
+    }
+
+    // ===== Chart state (lazy-filled)
+    finalSeries: ApexAxisChartSeries = [];
+    finalChart: ApexChart = baseTheme().chart;
+    finalXAxis: ApexXAxis = {};
+    finalYAxis: ApexYAxis = {};
+    finalStroke: ApexStroke = baseTheme().stroke;
+    finalFill: ApexFill = baseTheme().fill;
+    finalGrid: ApexGrid = baseTheme().grid;
+    finalLegend: ApexLegend = baseTheme().legend;
+    finalTooltip: ApexTooltip = baseTheme().tooltip;
+    finalMarkers: ApexMarkers = baseTheme().markers;
+    finalDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    finalAnn: ApexAnnotations = {};
+
+    qualitySeries: ApexAxisChartSeries = [];
+    qualityChart: ApexChart = baseTheme().chart;
+    qualityXAxis: ApexXAxis = {};
+    qualityYAxis: ApexYAxis = {};
+    qualityStroke: ApexStroke = baseTheme().stroke;
+    qualityFill: ApexFill = baseTheme().fill;
+    qualityGrid: ApexGrid = baseTheme().grid;
+    qualityLegend: ApexLegend = baseTheme().legend;
+    qualityTooltip: ApexTooltip = baseTheme().tooltip;
+    qualityMarkers: ApexMarkers = baseTheme().markers;
+    qualityDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    qualityAnn: ApexAnnotations = {};
+
+    statisticsSeries: ApexAxisChartSeries = [];
+    statisticsChart: ApexChart = baseTheme().chart;
+    statisticsXAxis: ApexXAxis = {};
+    statisticsYAxis: ApexYAxis = {};
+    statisticsStroke: ApexStroke = baseTheme().stroke;
+    statisticsFill: ApexFill = baseTheme().fill;
+    statisticsGrid: ApexGrid = baseTheme().grid;
+    statisticsLegend: ApexLegend = baseTheme().legend;
+    statisticsTooltip: ApexTooltip = baseTheme().tooltip;
+    statisticsMarkers: ApexMarkers = baseTheme().markers;
+    statisticsDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    statisticsAnn: ApexAnnotations = {};
+
+    entrySeries: ApexAxisChartSeries = [];
+    entryChart: ApexChart = baseTheme().chart;
+    entryXAxis: ApexXAxis = {};
+    entryYAxis: ApexYAxis = {};
+    entryStroke: ApexStroke = baseTheme().stroke;
+    entryFill: ApexFill = baseTheme().fill;
+    entryGrid: ApexGrid = baseTheme().grid;
+    entryLegend: ApexLegend = baseTheme().legend;
+    entryTooltip: ApexTooltip = baseTheme().tooltip;
+    entryMarkers: ApexMarkers = baseTheme().markers;
+    entryDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    entryAnn: ApexAnnotations = {};
+
+    liqSeries: ApexAxisChartSeries = [];
+    liqChart: ApexChart = baseTheme().chart;
+    liqXAxis: ApexXAxis = {};
+    liqYAxis: ApexYAxis = {};
+    liqStroke: ApexStroke = baseTheme().stroke;
+    liqFill: ApexFill = baseTheme().fill;
+    liqGrid: ApexGrid = baseTheme().grid;
+    liqLegend: ApexLegend = baseTheme().legend;
+    liqTooltip: ApexTooltip = baseTheme().tooltip;
+    liqMarkers: ApexMarkers = baseTheme().markers;
+    liqDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    liqAnn: ApexAnnotations = {};
+
+    volSeries: ApexAxisChartSeries = [];
+    volChart: ApexChart = baseTheme().chart;
+    volXAxis: ApexXAxis = {};
+    volYAxis: ApexYAxis = {};
+    volStroke: ApexStroke = baseTheme().stroke;
+    volFill: ApexFill = baseTheme().fill;
+    volGrid: ApexGrid = baseTheme().grid;
+    volLegend: ApexLegend = baseTheme().legend;
+    volTooltip: ApexTooltip = baseTheme().tooltip;
+    volMarkers: ApexMarkers = baseTheme().markers;
+    volDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    volAnn: ApexAnnotations = {};
+
+    p5mSeries: ApexAxisChartSeries = [];
+    p5mChart: ApexChart = baseTheme().chart;
+    p5mXAxis: ApexXAxis = {};
+    p5mYAxis: ApexYAxis = {};
+    p5mStroke: ApexStroke = baseTheme().stroke;
+    p5mFill: ApexFill = baseTheme().fill;
+    p5mGrid: ApexGrid = baseTheme().grid;
+    p5mLegend: ApexLegend = baseTheme().legend;
+    p5mTooltip: ApexTooltip = baseTheme().tooltip;
+    p5mMarkers: ApexMarkers = baseTheme().markers;
+    p5mDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    p5mAnn: ApexAnnotations = {};
+
+    p1hSeries: ApexAxisChartSeries = [];
+    p1hChart: ApexChart = baseTheme().chart;
+    p1hXAxis: ApexXAxis = {};
+    p1hYAxis: ApexYAxis = {};
+    p1hStroke: ApexStroke = baseTheme().stroke;
+    p1hFill: ApexFill = baseTheme().fill;
+    p1hGrid: ApexGrid = baseTheme().grid;
+    p1hLegend: ApexLegend = baseTheme().legend;
+    p1hTooltip: ApexTooltip = baseTheme().tooltip;
+    p1hMarkers: ApexMarkers = baseTheme().markers;
+    p1hDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    p1hAnn: ApexAnnotations = {};
+
+    p6hSeries: ApexAxisChartSeries = [];
+    p6hChart: ApexChart = baseTheme().chart;
+    p6hXAxis: ApexXAxis = {};
+    p6hYAxis: ApexYAxis = {};
+    p6hStroke: ApexStroke = baseTheme().stroke;
+    p6hFill: ApexFill = baseTheme().fill;
+    p6hGrid: ApexGrid = baseTheme().grid;
+    p6hLegend: ApexLegend = baseTheme().legend;
+    p6hTooltip: ApexTooltip = baseTheme().tooltip;
+    p6hMarkers: ApexMarkers = baseTheme().markers;
+    p6hDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    p6hAnn: ApexAnnotations = {};
+
+    p24hSeries: ApexAxisChartSeries = [];
+    p24hChart: ApexChart = baseTheme().chart;
+    p24hXAxis: ApexXAxis = {};
+    p24hYAxis: ApexYAxis = {};
+    p24hStroke: ApexStroke = baseTheme().stroke;
+    p24hFill: ApexFill = baseTheme().fill;
+    p24hGrid: ApexGrid = baseTheme().grid;
+    p24hLegend: ApexLegend = baseTheme().legend;
+    p24hTooltip: ApexTooltip = baseTheme().tooltip;
+    p24hMarkers: ApexMarkers = baseTheme().markers;
+    p24hDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    p24hAnn: ApexAnnotations = {};
+
+    ageSeries: ApexAxisChartSeries = [];
+    ageChart: ApexChart = baseTheme().chart;
+    ageXAxis: ApexXAxis = {};
+    ageYAxis: ApexYAxis = {};
+    ageStroke: ApexStroke = baseTheme().stroke;
+    ageFill: ApexFill = baseTheme().fill;
+    ageGrid: ApexGrid = baseTheme().grid;
+    ageLegend: ApexLegend = baseTheme().legend;
+    ageTooltip: ApexTooltip = baseTheme().tooltip;
+    ageMarkers: ApexMarkers = baseTheme().markers;
+    ageDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    ageAnn: ApexAnnotations = {};
+
+    txSeries: ApexAxisChartSeries = [];
+    txChart: ApexChart = baseTheme().chart;
+    txXAxis: ApexXAxis = {};
+    txYAxis: ApexYAxis = {};
+    txStroke: ApexStroke = baseTheme().stroke;
+    txFill: ApexFill = baseTheme().fill;
+    txGrid: ApexGrid = baseTheme().grid;
+    txLegend: ApexLegend = baseTheme().legend;
+    txTooltip: ApexTooltip = baseTheme().tooltip;
+    txMarkers: ApexMarkers = baseTheme().markers;
+    txDataLabels: ApexDataLabels = baseTheme().dataLabels;
+    txAnn: ApexAnnotations = {};
+
+    // ===== Helper: rebuild visible charts
+    private rebuildVisible(): void {
+        CHART_KEYS.forEach(k => {
+            if (this.visible[k]) {
+                this.rebuildOne(k);
+            }
+        });
+    }
+
+    /** Rebuild one chart (called on visibility or control change) */
+    public rebuildOne(kind: ChartKey): void {
+        const logX = this.logX();
+
+        const apply = (dst: any, r: any) => {
+            dst.series = r.series;
+            dst.chart = r.chart;
+            dst.xaxis = r.xaxis;
+            dst.yaxis = r.yaxis;
+            dst.stroke = r.stroke;
+            dst.fill = r.fill;
+            dst.grid = r.grid;
+            dst.legend = r.legend;
+            dst.tooltip = r.tooltip;
+            dst.markers = r.markers;
+            dst.dataLabels = r.dataLabels;
+            dst.annotations = r.annotations;
+        };
+
+        const map: Record<ChartKey, () => any> = {
+            final: () => this.buildScatterTrend({xName: 'Final score', x: a => a.scores?.final ?? 0}),
+            quality: () => this.buildScatterTrend({xName: 'Quality score', x: a => a.scores?.quality ?? 0}),
+            statistics: () => this.buildScatterTrend({xName: 'Statistics score', x: a => a.scores?.statistics ?? 0}),
+            entry: () => this.buildScatterTrend({xName: 'Entry score', x: a => a.scores?.entry ?? 0}),
+
+            liq: () => this.buildScatterTrend({xName: 'Liquidity ($)', x: a => a.rawMetrics?.liquidityUsd ?? 0, useLogX: logX}),
+            vol: () => this.buildScatterTrend({xName: 'Volume 24h ($)', x: a => a.rawMetrics?.volume24hUsd ?? 0, useLogX: logX}),
+
+            p5m: () => this.buildScatterTrend({xName: 'Δ5m (%)', x: a => (a as any).rawMetrics?.pct5m ?? 0}),
+            p1h: () => this.buildScatterTrend({xName: 'Δ1h (%)', x: a => (a as any).rawMetrics?.pct1h ?? 0}),
+            p6h: () => this.buildScatterTrend({xName: 'Δ6h (%)', x: a => (a as any).rawMetrics?.pct6h ?? 0}),
+            p24h: () => this.buildScatterTrend({xName: 'Δ24h (%)', x: a => (a as any).rawMetrics?.pct24h ?? 0}),
+
+            age: () => this.buildScatterTrend({xName: 'Token age (h)', x: a => a.rawMetrics?.tokenAgeHours ?? 0, useLogX: logX}),
+            tx: () => this.buildScatterTrend({xName: 'Transactions 24h', x: a => (a as any).raw?.dexscreener?.txns24h ?? (a as any).rawDex?.txns24h ?? 0, useLogX: logX})
+        };
+
+        const r = map[kind]();
+        switch (kind) {
+            case 'final':
+                apply(this, r);
+                this.finalSeries = r.series;
+                this.finalChart = r.chart;
+                this.finalXAxis = r.xaxis;
+                this.finalYAxis = r.yaxis;
+                this.finalStroke = r.stroke;
+                this.finalFill = r.fill;
+                this.finalGrid = r.grid;
+                this.finalLegend = r.legend;
+                this.finalTooltip = r.tooltip;
+                this.finalMarkers = r.markers;
+                this.finalDataLabels = r.dataLabels;
+                this.finalAnn = r.annotations;
+                break;
+            case 'quality':
+                apply(this, r);
+                this.qualitySeries = r.series;
+                this.qualityChart = r.chart;
+                this.qualityXAxis = r.xaxis;
+                this.qualityYAxis = r.yaxis;
+                this.qualityStroke = r.stroke;
+                this.qualityFill = r.fill;
+                this.qualityGrid = r.grid;
+                this.qualityLegend = r.legend;
+                this.qualityTooltip = r.tooltip;
+                this.qualityMarkers = r.markers;
+                this.qualityDataLabels = r.dataLabels;
+                this.qualityAnn = r.annotations;
+                break;
+            case 'statistics':
+                apply(this, r);
+                this.statisticsSeries = r.series;
+                this.statisticsChart = r.chart;
+                this.statisticsXAxis = r.xaxis;
+                this.statisticsYAxis = r.yaxis;
+                this.statisticsStroke = r.stroke;
+                this.statisticsFill = r.fill;
+                this.statisticsGrid = r.grid;
+                this.statisticsLegend = r.legend;
+                this.statisticsTooltip = r.tooltip;
+                this.statisticsMarkers = r.markers;
+                this.statisticsDataLabels = r.dataLabels;
+                this.statisticsAnn = r.annotations;
+                break;
+            case 'entry':
+                apply(this, r);
+                this.entrySeries = r.series;
+                this.entryChart = r.chart;
+                this.entryXAxis = r.xaxis;
+                this.entryYAxis = r.yaxis;
+                this.entryStroke = r.stroke;
+                this.entryFill = r.fill;
+                this.entryGrid = r.grid;
+                this.entryLegend = r.legend;
+                this.entryTooltip = r.tooltip;
+                this.entryMarkers = r.markers;
+                this.entryDataLabels = r.dataLabels;
+                this.entryAnn = r.annotations;
+                break;
+
+            case 'liq':
+                apply(this, r);
+                this.liqSeries = r.series;
+                this.liqChart = r.chart;
+                this.liqXAxis = r.xaxis;
+                this.liqYAxis = r.yaxis;
+                this.liqStroke = r.stroke;
+                this.liqFill = r.fill;
+                this.liqGrid = r.grid;
+                this.liqLegend = r.legend;
+                this.liqTooltip = r.tooltip;
+                this.liqMarkers = r.markers;
+                this.liqDataLabels = r.dataLabels;
+                this.liqAnn = r.annotations;
+                break;
+            case 'vol':
+                apply(this, r);
+                this.volSeries = r.series;
+                this.volChart = r.chart;
+                this.volXAxis = r.xaxis;
+                this.volYAxis = r.yaxis;
+                this.volStroke = r.stroke;
+                this.volFill = r.fill;
+                this.volGrid = r.grid;
+                this.volLegend = r.legend;
+                this.volTooltip = r.tooltip;
+                this.volMarkers = r.markers;
+                this.volDataLabels = r.dataLabels;
+                this.volAnn = r.annotations;
+                break;
+
+            case 'p5m':
+                apply(this, r);
+                this.p5mSeries = r.series;
+                this.p5mChart = r.chart;
+                this.p5mXAxis = r.xaxis;
+                this.p5mYAxis = r.yaxis;
+                this.p5mStroke = r.stroke;
+                this.p5mFill = r.fill;
+                this.p5mGrid = r.grid;
+                this.p5mLegend = r.legend;
+                this.p5mTooltip = r.tooltip;
+                this.p5mMarkers = r.markers;
+                this.p5mDataLabels = r.dataLabels;
+                this.p5mAnn = r.annotations;
+                break;
+            case 'p1h':
+                apply(this, r);
+                this.p1hSeries = r.series;
+                this.p1hChart = r.chart;
+                this.p1hXAxis = r.xaxis;
+                this.p1hYAxis = r.yaxis;
+                this.p1hStroke = r.stroke;
+                this.p1hFill = r.fill;
+                this.p1hGrid = r.grid;
+                this.p1hLegend = r.legend;
+                this.p1hTooltip = r.tooltip;
+                this.p1hMarkers = r.markers;
+                this.p1hDataLabels = r.dataLabels;
+                this.p1hAnn = r.annotations;
+                break;
+            case 'p6h':
+                apply(this, r);
+                this.p6hSeries = r.series;
+                this.p6hChart = r.chart;
+                this.p6hXAxis = r.xaxis;
+                this.p6hYAxis = r.yaxis;
+                this.p6hStroke = r.stroke;
+                this.p6hFill = r.fill;
+                this.p6hGrid = r.grid;
+                this.p6hLegend = r.legend;
+                this.p6hTooltip = r.tooltip;
+                this.p6hMarkers = r.markers;
+                this.p6hDataLabels = r.dataLabels;
+                this.p6hAnn = r.annotations;
+                break;
+            case 'p24h':
+                apply(this, r);
+                this.p24hSeries = r.series;
+                this.p24hChart = r.chart;
+                this.p24hXAxis = r.xaxis;
+                this.p24hYAxis = r.yaxis;
+                this.p24hStroke = r.stroke;
+                this.p24hFill = r.fill;
+                this.p24hGrid = r.grid;
+                this.p24hLegend = r.legend;
+                this.p24hTooltip = r.tooltip;
+                this.p24hMarkers = r.markers;
+                this.p24hDataLabels = r.dataLabels;
+                this.p24hAnn = r.annotations;
+                break;
+
+            case 'age':
+                apply(this, r);
+                this.ageSeries = r.series;
+                this.ageChart = r.chart;
+                this.ageXAxis = r.xaxis;
+                this.ageYAxis = r.yaxis;
+                this.ageStroke = r.stroke;
+                this.ageFill = r.fill;
+                this.ageGrid = r.grid;
+                this.ageLegend = r.legend;
+                this.ageTooltip = r.tooltip;
+                this.ageMarkers = r.markers;
+                this.ageDataLabels = r.dataLabels;
+                this.ageAnn = r.annotations;
+                break;
+            case 'tx':
+                apply(this, r);
+                this.txSeries = r.series;
+                this.txChart = r.chart;
+                this.txXAxis = r.xaxis;
+                this.txYAxis = r.yaxis;
+                this.txStroke = r.stroke;
+                this.txFill = r.fill;
+                this.txGrid = r.grid;
+                this.txLegend = r.legend;
+                this.txTooltip = r.tooltip;
+                this.txMarkers = r.markers;
+                this.txDataLabels = r.dataLabels;
+                this.txAnn = r.annotations;
+                break;
+        }
     }
 }

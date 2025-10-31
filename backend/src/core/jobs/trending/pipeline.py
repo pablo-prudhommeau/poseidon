@@ -26,6 +26,7 @@ class TrendingPipeline:
             log.info("[TREND][RUN] disabled.")
             return
 
+        # 1) Collect and pre-filter candidates
         raw_rows = self.selection_stage.fetch_candidates_raw()
         if not raw_rows:
             return
@@ -43,9 +44,16 @@ class TrendingPipeline:
         if not pruned_candidates:
             return
 
+        # 2) Preload prices once, then run the contradictions gate (pre-trade semantic sanity)
         token_prices = self.gates_stage.preload_best_prices(pruned_candidates)
 
-        statistics_ready, engine = self.gates_stage.apply_statistics_gate(pruned_candidates)
+        # NEW: semantic contradictions gate (FDV/Mcap, Liquidity/Mcap, Volume↔Txns, monotonicity)
+        contradiction_clean: list = self.gates_stage.apply_contradictions_gate(pruned_candidates, token_prices)
+        if not contradiction_clean:
+            return
+
+        # 3) Score + risk/price gates + AI execution
+        statistics_ready, engine = self.gates_stage.apply_statistics_gate(contradiction_clean)
         if not statistics_ready:
             return
 

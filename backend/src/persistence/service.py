@@ -49,6 +49,15 @@ def _evaluate_position_thresholds_and_execute(
     """
     created_trades: List[Trade] = []
 
+    # Defense-in-depth: should never be called for STALED, but keep a hard guard.
+    if position.phase == Phase.STALED:
+        log.info(
+            "[AUTOSELL][SKIP][STALED] token=%s pair=%s",
+            position.tokenAddress,
+            position.pairAddress,
+        )
+        return created_trades
+
     last_price_value = float(last_price or 0.0)
     if last_price_value <= 0.0:
         log.debug(
@@ -59,7 +68,7 @@ def _evaluate_position_thresholds_and_execute(
         )
         return created_trades
 
-    position_quantity = float(position.qty or 0.0)
+    position_quantity = float(position.open_quantity or 0.0)
     if position_quantity <= 0.0:
         log.debug(
             "[AUTOSELL][SKIP] Non-positive position quantity — token=%s pair=%s qty=%s",
@@ -164,10 +173,7 @@ def _evaluate_position_thresholds_and_execute(
             )
             created_trades.append(trade)
 
-            # Keep tp1 unchanged by design; mark lifecycle as PARTIAL.
-            position.phase = Phase.PARTIAL
-
-            remaining_estimated = float((position.qty or 0.0) - partial_quantity)
+            remaining_estimated = float((position.open_quantity or 0.0) - partial_quantity)
             log.info(
                 "[AUTOSELL][TP1] %s token=%s pair=%s sold_qty=%.8f price=%.10f remaining_est=%.8f",
                 position.symbol,

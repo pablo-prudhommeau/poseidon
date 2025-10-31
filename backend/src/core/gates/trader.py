@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import List, Optional
 
-from src.api.websocket.ws_hub import _recompute_positions_and_portfolio_and_analytics_and_broadcast
+from src.api.websocket.ws_hub import _recompute_positions_portfolio_analytics_and_broadcast
 from src.api.websocket.ws_manager import ws_manager
 from src.configuration.config import settings
 from src.core.gates.risk_manager import AdaptiveRiskManager
@@ -85,7 +85,7 @@ class Trader:
             if not loop.is_running() or loop.is_closed():
                 log.debug("[TRADER][PORTFOLIO] Skip schedule (loop closing)")
                 return
-            loop.call_soon_threadsafe(lambda: loop.create_task(_recompute_positions_and_portfolio_and_analytics_and_broadcast()))
+            loop.call_soon_threadsafe(lambda: loop.create_task(_recompute_positions_portfolio_analytics_and_broadcast()))
             log.debug("[TRADER][PORTFOLIO] Scheduled recomputation on running loop")
         except RuntimeError:
             log.debug("[TRADER][PORTFOLIO] Skip schedule (no running loop)")

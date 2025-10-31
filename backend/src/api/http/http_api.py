@@ -37,7 +37,7 @@ async def get_health(db: Session = Depends(get_db)) -> Dict[str, Any]:
     status = "ok" if database_ok else "degraded"
     return {
         "status": status,
-        "timestampUtc": current_timestamp,
+        "timestamp": current_timestamp,
         "components": {"database": {"ok": database_ok}},
     }
 

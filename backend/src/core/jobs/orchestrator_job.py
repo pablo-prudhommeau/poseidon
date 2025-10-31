@@ -3,7 +3,7 @@ import threading
 import time
 from typing import Optional, Dict, Any
 
-from src.api.websocket.ws_hub import _recompute_positions_and_portfolio_and_analytics_and_broadcast
+from src.api.websocket.ws_hub import _recompute_positions_portfolio_analytics_and_broadcast
 from src.configuration.config import settings
 from src.core.jobs.trending_job import TrendingJob
 from src.core.structures.structures import Mode
@@ -60,7 +60,7 @@ async def _orchestrator_loop() -> None:
 
     while True:
         try:
-            await _recompute_positions_and_portfolio_and_analytics_and_broadcast()
+            await _recompute_positions_portfolio_analytics_and_broadcast()
             await asyncio.sleep(fetch_interval)
         except Exception as exception:
             log.exception("Orchestrator loop error: %s", exception)

@@ -245,7 +245,8 @@ def buy(
         chain=token.chain,
         tokenAddress=token.tokenAddress,
         pairAddress=token.pairAddress,
-        qty=qty,
+        open_quantity=qty,
+        current_quantity=qty,
         entry=price,
         tp1=tp1,
         tp2=tp2,
@@ -326,9 +327,11 @@ def sell(
         if open_qty_after <= EPSILON_QTY:
             position.phase = phase  # usually CLOSED on full exit
             position.closed_at = timezone_now()
+            position.current_quantity = 0.0
             closed_now = True
         else:
             position.phase = Phase.PARTIAL
+            position.current_quantity = open_qty_after
 
         log.info(
             "[POSITION][PHASE] update — token=%s pair=%s phase=%s open_qty_after=%.8f",

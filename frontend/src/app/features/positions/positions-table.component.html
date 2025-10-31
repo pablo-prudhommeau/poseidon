@@ -4,9 +4,21 @@
 		[columnDefs]="columnDefinitions"
 		[defaultColDef]="defaultColumnDefinition"
 		[rowData]="positionsRowData()"
-		[theme]="agGridTheme"
->
+		[theme]="agGridTheme">
 </ag-grid-angular>
+
+<ng-template #symbolHeaderTemplate let-displayName>
+	<div class="flex items-center gap-2">
+		<i class="fas fa-coins opacity-70"></i>
+		<span>{{ displayName }}</span>
+	</div>
+</ng-template>
+
+<ng-template #actionsTemplate let-row="row">
+	<div class="flex items-center justify-center">
+		<p-button severity="help" rounded="true" icon="fas fa-up-right-from-square" size="small" (click)="openDetails(row)"/>
+	</div>
+</ng-template>
 
 <p-dialog
 		[visible]="detailsVisible()"
@@ -16,78 +28,244 @@
 		[draggable]="false"
 		[dismissableMask]="true"
 		[breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }"
-		[style]="{ width: '52rem' }"
->
+		[style]="{ width: '64rem' }">
+
 	<ng-template pTemplate="header">
 		<div class="flex items-center gap-3">
-			<span class="font-semibold text-lg">{{ selectedRow()?.symbol }}</span>
-			<span class="opacity-70 text-sm">{{ selectedRow()?.chain }}</span>
+			<span class="font-semibold text-lg">{{ selectedPosition()?.symbol }}</span>
+			<p-tag *ngIf="selectedPosition()?.chain" [value]="selectedPosition()?.chain" severity="info"></p-tag>
+			<p-tag *ngIf="selectedPosition()?.phase" [value]="selectedPosition()?.phase" [severity]="phaseSeverity(selectedPosition()?.phase)"></p-tag>
 		</div>
 	</ng-template>
 
-	<div class="grid grid-cols-12 gap-4 text-sm">
-		<div class="col-span-12 md:col-span-6">
-			<div class="opacity-70">Token</div>
-			<div class="font-mono break-all">{{ selectedRow()?.address || selectedRow()?.tokenAddress }}</div>
-		</div>
-		<div class="col-span-12 md:col-span-6">
-			<div class="opacity-70">Pair</div>
-			<div class="font-mono break-all">{{ selectedRow()?.pairAddress }}</div>
-		</div>
+	<p-tabs [value]="0">
+		<p-tablist>
+			<p-tab [value]="0">Overview</p-tab>
+			<p-tab [value]="1">Analytics</p-tab>
+			<p-tab [value]="2">Raw</p-tab>
+		</p-tablist>
 
-		<div class="col-span-6">
-			<div class="opacity-70">Quantity</div>
-			<div class="font-semibold">{{ selectedRow()?.qty }}</div>
-		</div>
-		<div class="col-span-6">
-			<div class="opacity-70">Entry</div>
-			<div class="font-semibold">{{ selectedRow()?.entry }}</div>
-		</div>
-		<div class="col-span-6">
-			<div class="opacity-70">TP1 / TP2</div>
-			<div class="font-semibold">{{ selectedRow()?.tp1 }} / {{ selectedRow()?.tp2 }}</div>
-		</div>
-		<div class="col-span-6">
-			<div class="opacity-70">Stop</div>
-			<div class="font-semibold">{{ selectedRow()?.stop }}</div>
-		</div>
+		<p-tabpanels>
+			<!-- Overview -->
+			<p-tabpanel [value]="0">
+				<div class="grid grid-cols-12 gap-4 text-sm">
+					<div class="col-span-12 md:col-span-6">
+						<div class="opacity-70">Token</div>
+						<div class="font-mono break-all flex items-center gap-2">
+							{{ selectedPosition()?.tokenAddress }}
+							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy token address"
+							        (click)="copyToClipboard(selectedPosition()?.tokenAddress)"></button>
+						</div>
+					</div>
 
-		<div class="col-span-6">
-			<div class="opacity-70">Opened at</div>
-			<div class="font-semibold">{{ selectedRow()?.opened_at }}</div>
-		</div>
-		<div class="col-span-6">
-			<div class="opacity-70">Last price</div>
-			<div class="font-semibold">{{ selectedRow()?.last_price }}</div>
-		</div>
+					<div class="col-span-12 md:col-span-6">
+						<div class="opacity-70">Pair</div>
+						<div class="font-mono break-all flex items-center gap-2">
+							{{ selectedPosition()?.pairAddress }}
+							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy pair address"
+							        (click)="copyToClipboard(selectedPosition()?.pairAddress)"></button>
+						</div>
+					</div>
 
-		<div class="col-span-12">
-			<div class="opacity-70">Links</div>
-			<div class="flex flex-wrap gap-2 mt-1">
-				<a
-						class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
-						[href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.pairAddress || '')"
-						target="_blank"
-						rel="noreferrer"
-				>Dexscreener (Pair)</a
-				>
-				<a
-						class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
-						[href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.address || selectedRow()?.tokenAddress || '')"
-						target="_blank"
-						rel="noreferrer"
-				>Dexscreener (Token)</a
-				>
-			</div>
-		</div>
+					<div class="col-span-6">
+						<div class="opacity-70">Quantity</div>
+						<div class="font-semibold">{{ formatNumber(selectedPosition()?.qty, 2, 6) }}</div>
+					</div>
+					<div class="col-span-6">
+						<div class="opacity-70">Entry</div>
+						<div class="font-semibold">{{ formatCurrency(selectedPosition()?.entry, 'USD', 4, 8) }}</div>
+					</div>
 
-		<div class="col-span-12">
-			<div class="opacity-70">Raw</div>
-			<pre class="text-xs overflow-auto max-h-80">{{ selectedRow() | json }}</pre>
-		</div>
-	</div>
+					<div class="col-span-6">
+						<div class="opacity-70">TP1 / TP2</div>
+						<div class="font-semibold">
+							{{ formatCurrency(selectedPosition()?.tp1, 'USD', 4, 8) }}
+							({{ formatPercent(((selectedPosition()?.tp1 ?? 0) / (selectedPosition()?.entry ?? 1) - 1) * 100) }})
+							/
+							{{ formatCurrency(selectedPosition()?.tp2, 'USD', 4, 8) }}
+							({{ formatPercent(((selectedPosition()?.tp2 ?? 0) / (selectedPosition()?.entry ?? 1) - 1) * 100) }})
+						</div>
+					</div>
+					<div class="col-span-6">
+						<div class="opacity-70">Stop</div>
+						<div class="font-semibold">
+							{{ formatCurrency(selectedPosition()?.stop, 'USD', 4, 8) }}
+							({{ formatPercent(((selectedPosition()?.stop ?? 0) / (selectedPosition()?.entry ?? 1) - 1) * 100) }})
+						</div>
+					</div>
+
+					<div class="col-span-6">
+						<div class="opacity-70">Opened at</div>
+						<div class="font-semibold">{{ selectedPosition()?.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</div>
+					</div>
+					<div class="col-span-6">
+						<div class="opacity-70">Last price</div>
+						<div class="font-semibold">{{ formatNumber(selectedPosition()?.last_price, 4, 8) }}</div>
+					</div>
+
+					<p-divider class="col-span-12"></p-divider>
+
+					<!-- KPIs -->
+					<div class="col-span-4">
+						<p-card class="h-full">
+							<div class="opacity-70 text-xs">Δ since entry</div>
+							<div [ngClass]="deltaPercent(selectedPosition()) >= 0 ? 'text-green-400' : 'text-red-400'" class="font-semibold text-lg">
+								{{ formatPercent(deltaPercent(selectedPosition())) }}
+							</div>
+						</p-card>
+					</div>
+					<div class="col-span-4">
+						<p-card class="h-full">
+							<div class="opacity-70 text-xs">Order notional (entry)</div>
+							<div class="font-semibold text-lg">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'entry'), 'USD', 2, 2) }}</div>
+						</p-card>
+					</div>
+					<div class="col-span-4">
+						<p-card class="h-full">
+							<div class="opacity-70 text-xs">Order notional (last)</div>
+							<div class="font-semibold text-lg">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'last'), 'USD', 2, 2) }}</div>
+						</p-card>
+					</div>
+
+					<p-divider class="col-span-12"></p-divider>
+
+					<!-- Links -->
+					<div class="col-span-12">
+						<div class="opacity-70">Links</div>
+						<div class="flex flex-wrap gap-2 mt-1">
+							<a pButton label="Dexscreener (Pair)" icon="fas fa-arrow-up-right-from-square"
+							   [href]="dexUrlForPair(selectedPosition())" target="_blank"></a>
+							<a pButton label="Dexscreener (Token)" icon="fas fa-arrow-up-right-from-square"
+							   [href]="dexUrlForToken(selectedPosition())" target="_blank"></a>
+						</div>
+					</div>
+
+					<!-- BUY shortcut -->
+					<div class="col-span-12" *ngIf="buyTradeForSelectedPosition() as buy">
+						<p-divider></p-divider>
+						<p-card>
+							<div class="flex items-center justify-between">
+								<div class="font-semibold">Origin BUY trade</div>
+								<p-tag value="BUY" severity="success"></p-tag>
+							</div>
+							<div class="grid grid-cols-12 gap-3 mt-3 text-sm">
+								<div class="col-span-4">
+									<div class="opacity-70">Date</div>
+									<div class="font-semibold">{{ buy.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</div>
+								</div>
+								<div class="col-span-4">
+									<div class="opacity-70">Quantity</div>
+									<div class="font-semibold">{{ formatNumber(buy.qty, 2, 6) }}</div>
+								</div>
+								<div class="col-span-4">
+									<div class="opacity-70">Price</div>
+									<div class="font-semibold">{{ formatCurrency(buy.price, 'USD', 4, 8) }}</div>
+								</div>
+							</div>
+							<div class="mt-3 flex gap-2">
+								<p-button label="Open in trades list" icon="fas fa-table" (click)="focusTradeInTable(buy)"></p-button>
+								<a pButton label="Dexscreener (Pair)" icon="fas fa-arrow-up-right-from-square"
+								   [href]="dexUrlForPair(buy)" target="_blank"></a>
+							</div>
+						</p-card>
+					</div>
+				</div>
+			</p-tabpanel>
+
+			<!-- Analytics (with ApexCharts) -->
+			<p-tabpanel [value]="1">
+				<div class="grid grid-cols-12 gap-4">
+					<p-card class="col-span-12 md:col-span-6">
+						<div class="opacity-70 text-xs mb-2">Scores</div>
+						<apx-chart
+								*ngIf="scoresSeries.length > 0"
+								[series]="scoresSeries"
+								[chart]="scoresChart"
+								[labels]="scoresLabels"
+								[plotOptions]="scoresPlot"
+								[legend]="scoresLegend"
+								[grid]="grid"
+								[states]="states"
+								[tooltip]="tooltip">
+						</apx-chart>
+						<div *ngIf="scoresSeries.length === 0" class="opacity-60 text-xs">No score available.</div>
+					</p-card>
+
+					<p-card class="col-span-12 md:col-span-6">
+						<div class="opacity-70 text-xs mb-2">AI — Probability TP1 before SL</div>
+						<apx-chart
+								*ngIf="probSeries.length > 0"
+								[series]="probSeries"
+								[chart]="probChart"
+								[plotOptions]="probPlot"
+								[labels]="probLabels"
+								[grid]="grid"
+								[states]="states">
+						</apx-chart>
+						<div *ngIf="probSeries.length === 0" class="opacity-60 text-xs">No AI probability available.</div>
+					</p-card>
+
+					<p-card class="col-span-12 md:col-span-6">
+						<div class="opacity-70 text-xs mb-2">Δ (5m / 1h / 24h)</div>
+						<apx-chart
+								[series]="deltaSeries"
+								[chart]="deltaChart"
+								[xaxis]="deltaXaxis"
+								[plotOptions]="deltaPlot"
+								[colors]="deltaColors"
+								[dataLabels]="deltaDataLabels"
+								[grid]="grid"
+								[states]="states"
+								[tooltip]="tooltip">
+						</apx-chart>
+					</p-card>
+
+					<p-card class="col-span-12 md:col-span-6">
+						<div class="opacity-70 text-xs mb-2">Liquidity vs Volume (24h)</div>
+						<apx-chart
+								[series]="liqVolSeries"
+								[chart]="liqVolChart"
+								[labels]="liqVolLabels"
+								[responsive]="liqVolResponsive"
+								[grid]="grid"
+								[states]="states"
+								[tooltip]="tooltip">
+						</apx-chart>
+					</p-card>
+
+					<p-card class="col-span-12">
+						<div class="opacity-70 text-xs mb-2">Order Notional — Entry vs Last</div>
+						<apx-chart
+								[series]="notionalSeries"
+								[chart]="notionalChart"
+								[plotOptions]="notionalPlot"
+								[xaxis]="notionalXaxis"
+								[dataLabels]="notionalDataLabels"
+								[grid]="grid"
+								[states]="states"
+								[tooltip]="tooltip">
+						</apx-chart>
+					</p-card>
+				</div>
+			</p-tabpanel>
+
+			<!-- Raw -->
+			<p-tabpanel [value]="2">
+				<p-panel header="Show raw JSON (lazy)" [toggleable]="true">
+					<p-scrollPanel [style]="{height: '24rem'}">
+						<pre class="text-xs">{{ selectedPosition() | json }}</pre>
+					</p-scrollPanel>
+				</p-panel>
+			</p-tabpanel>
+		</p-tabpanels>
+	</p-tabs>
 
 	<ng-template pTemplate="footer">
-		<button pButton type="button" label="Close" class="p-button-text" (click)="detailsVisible.set(false)"></button>
+		<div class="flex items-center justify-between w-full">
+			<div class="opacity-60 text-xs">
+				<i class="fas fa-circle-info mr-1"></i>Press <kbd>Esc</kbd> to close
+			</div>
+			<button pButton type="button" label="Close" class="p-button-text" (click)="detailsVisible.set(false)"></button>
+		</div>
 	</ng-template>
 </p-dialog>

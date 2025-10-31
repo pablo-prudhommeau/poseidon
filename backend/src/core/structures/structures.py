@@ -1,4 +1,3 @@
-import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping, List, Optional, Any, Dict
@@ -6,8 +5,9 @@ from typing import Mapping, List, Optional, Any, Dict
 from pydantic import BaseModel
 
 from src.core.utils.format_utils import _tail
+from src.logging.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -22,6 +22,9 @@ class Token:
                 f"chain={self.chain} "
                 f"tokenAddress={_tail(self.tokenAddress)} "
                 f"pairAddress=…{_tail(self.pairAddress)}]")
+
+    def __hash__(self) -> int:
+        return hash((self.chain, self.symbol, self.tokenAddress, self.pairAddress))
 
 
 class TransactionBucket:
@@ -302,9 +305,9 @@ class CashFromTrades:
 
 
 @dataclass(frozen=True)
-class HoldingsAndUnrealizedFromTrades:
+class HoldingsAndUnrealizedPnl:
     """
-    Holdings and unrealized PnL results from processing a set of trades.
+    Holdings and unrealized PnL results.
     """
     holdings: float
     unrealized_pnl: float

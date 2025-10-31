@@ -7,8 +7,10 @@ import {NavigationComponent} from './components/navigation.component';
     selector: 'app-root',
     imports: [RouterOutlet, NavigationComponent],
     template: `
-	    <app-nav></app-nav>
-	    <router-outlet></router-outlet>
+		<app-nav></app-nav>
+		<div class="mx-auto px-6 py-6">
+			<router-outlet></router-outlet>
+		</div>
     `
 })
 export class AppComponent {}

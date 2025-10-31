@@ -142,5 +142,11 @@ class Settings:
     SOLANA_SECRET_KEY_BASE58: str = os.getenv("SOLANA_SECRET_KEY_BASE58", "")
     LIFI_BASE_URL: str = os.getenv("LIFI_BASE_URL", "https://li.quest")
 
+    # --- Consistency guard (Dexscreener) ---
+    DEX_INCONSISTENCY_WINDOW_SIZE: int = int(os.getenv("DEX_INCONSISTENCY_WINDOW_SIZE", "6"))
+    DEX_INCONSISTENCY_ALTERNATION_CYCLES: int = int(os.getenv("DEX_INCONSISTENCY_ALTERNATION_CYCLES", "2"))
+    DEX_INCONSISTENCY_JUMP_FACTOR: float = float(os.getenv("DEX_INCONSISTENCY_MAX_PRICE_JUMP", "5"))
+    DEX_INCONSISTENCY_FIELDS_MISMATCH_MIN: int = int(os.getenv("DEX_INCONSISTENCY_FIELDS_MISMATCH_MIN", "2"))
+
 
 settings: Settings = Settings()

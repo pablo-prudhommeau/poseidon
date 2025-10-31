@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, Optional
 
 from src.core.structures.structures import Token
@@ -257,7 +258,21 @@ class NormalizedRow:
     fdv: Optional[float] = None
     marketCap: Optional[float] = None
 
+
+
 @dataclass
 class TokenPrice:
+    """
+    Minimal live price bundle for a token/pair used by the realtime pipeline.
+    Optional fields may not be populated depending on the client.
+    """
     token: Token
-    priceUsd: float
+    priceUsd: Optional[float]
+    liquidityUsd: Optional[float] = None
+    fdvUsd: Optional[float] = None
+    marketCapUsd: Optional[float] = None
+    buys5m: Optional[int] = None
+    sells5m: Optional[int] = None
+    txns: Optional[TransactionActivity] = None
+    volumeH24Usd: Optional[float] = None
+    asOf: Optional[datetime] = None

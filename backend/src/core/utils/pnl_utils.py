@@ -5,36 +5,19 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from enum import Enum
-from typing import Deque, Dict, Iterable, List, Optional
+from typing import Deque, Dict, Iterable, List, Optional, Protocol
 
 from src.core.structures.structures import (
     RealizedPnl,
     Token,
     CashFromTrades,
-    HoldingsAndUnrealizedFromTrades,
+    HoldingsAndUnrealizedPnl,
 )
 from src.integrations.dexscreener.dexscreener_structures import TokenPrice
 from src.logging.logger import get_logger
-from src.persistence.models import Trade
+from src.persistence.models import Trade, Position
 
 log = get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class TokenIdentity:
-    """
-    Stable identity for a token position, preferring pair address when available.
-    """
-    chain: str
-    token_address: str
-    symbol: str
-    pair_address: Optional[str] = None
-
-    @property
-    def preferred_address(self) -> str:
-        if isinstance(self.pair_address, str) and self.pair_address:
-            return self.pair_address
-        return self.token_address
 
 
 @dataclass
@@ -96,17 +79,15 @@ def _decimal_from_primitive(value: float | int | str | None) -> Decimal:
         return Decimal("0")
 
 
-def _to_token_identity(token: Token) -> TokenIdentity:
-    """
-    Build a TokenIdentity from a Token structure with a pair-first policy.
-    """
-    return TokenIdentity(
-        chain=token.chain or "",
-        token_address=token.tokenAddress or "",
-        pair_address=token.pairAddress or None,
-        symbol=token.symbol or "",
+def _to_token_from_position(position: Position) -> Token:
+    """Build a TokenIdentity from a position-like object."""
+    pair_address: Optional[str] = position.pairAddress if isinstance(position.pairAddress, str) and position.pairAddress else None
+    return Token(
+        chain=position.chain,
+        tokenAddress=position.tokenAddress,
+        symbol=position.symbol,
+        pairAddress=pair_address,
     )
-
 
 def _quantize_2dp(amount: Decimal) -> Decimal:
     """Round to 2 decimal places with HALF_UP."""
@@ -128,36 +109,35 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Rea
     """
     sorted_trades: List[Trade] = sorted(trades, key=_get_created_at_or_now)
 
-    lots_by_identity: Dict[TokenIdentity, Deque[InventoryLot]] = defaultdict(deque)
+    lots_by_token: Dict[Token, Deque[InventoryLot]] = defaultdict(deque)
     realized_total: Decimal = Decimal("0")
     realized_recent: Decimal = Decimal("0")
     cutoff_timestamp = _now_with_timezone() - timedelta(hours=cutoff_hours)
 
     for trade in sorted_trades:
         side = _normalize_side_to_upper(trade.side)
-        token_struct = Token(
+        token = Token(
             symbol=trade.symbol,
             chain=trade.chain,
             tokenAddress=trade.tokenAddress,
             pairAddress=trade.pairAddress,
         )
-        token_identity = _to_token_identity(token_struct)
 
         try:
             quantity = float(trade.qty) if trade.qty is not None else 0.0
             unit_price_usd = float(trade.price) if trade.price is not None else 0.0
             fee_usd = float(trade.fee) if trade.fee is not None else 0.0
         except (TypeError, ValueError):
-            log.debug("[PNL][REALIZED][SKIP] token=%s reason=invalid_numeric_fields", token_identity)
+            log.debug("[PNL][REALIZED][SKIP] token=%s reason=invalid_numeric_fields", token)
             continue
 
         if quantity <= 0.0 or unit_price_usd <= 0.0:
-            log.debug("[PNL][REALIZED][SKIP] token=%s reason=non_positive_qty_or_price", token_identity)
+            log.debug("[PNL][REALIZED][SKIP] token=%s reason=non_positive_qty_or_price", token)
             continue
 
         if side == "BUY":
             buy_fee_per_unit_usd = fee_usd / quantity if quantity > 0.0 else 0.0
-            lots_by_identity[token_identity].append(
+            lots_by_token[token].append(
                 InventoryLot(quantity=quantity, unit_price_usd=unit_price_usd, buy_fee_per_unit_usd=buy_fee_per_unit_usd)
             )
             continue
@@ -167,8 +147,8 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Rea
             remaining_to_match = quantity
             is_recent = _get_created_at_or_now(trade) >= cutoff_timestamp
 
-            while remaining_to_match > 1e-12 and lots_by_identity[token_identity]:
-                lot = lots_by_identity[token_identity][0]
+            while remaining_to_match > 1e-12 and lots_by_token[token]:
+                lot = lots_by_token[token][0]
                 matched_quantity = min(remaining_to_match, lot.quantity)
 
                 pnl_per_unit = unit_price_usd - lot.unit_price_usd - lot.buy_fee_per_unit_usd - sell_fee_per_unit_usd
@@ -181,7 +161,7 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Rea
                 lot.quantity -= matched_quantity
                 remaining_to_match -= matched_quantity
                 if lot.quantity <= 1e-12:
-                    lots_by_identity[token_identity].popleft()
+                    lots_by_token[token].popleft()
 
     realized = RealizedPnl(
         total=float(_quantize_2dp(realized_total)),
@@ -236,94 +216,57 @@ def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFrom
     return result
 
 
-def holdings_and_unrealized_from_trades(
-        trades: Iterable[Trade],
+def holdings_and_unrealized_from_positions(
+        positions: Iterable[Position],
         token_prices: List[TokenPrice]
-) -> HoldingsAndUnrealizedFromTrades:
+) -> HoldingsAndUnrealizedPnl:
+    """Compute holdings value and unrealized PnL from positions.
+
+    This uses the position's entry price and quantity together with live prices.
+    Pricing is pair-aware via :class:`TokenIdentity` (pair address preferred,
+    falling back to token address).
     """
-    Build current holdings (remaining FIFO inventory) and compute unrealized PnL using
-    live prices. Price lookup is **pair-aware**, falling back to token address.
+    position_list: List[Position] = list(positions)
 
-    Logging:
-    - [PNL][UNREAL][START]/[END] at function boundaries.
-    - [PNL][UNREAL][BUY]/[SELL]/[SKIP]/[NOPRICE] for detailed steps (debug).
-    """
-    sorted_trades: List[Trade] = sorted(trades, key=_get_created_at_or_now)
-
-    # FIFO inventory by token identity — defined before any use
-    lots_by_identity: Dict[TokenIdentity, Deque[InventoryLot]] = defaultdict(deque)
-
-    for trade in sorted_trades:
-        side = _normalize_side_to_upper(trade.side)
-
-        token_struct = Token(
-            symbol=trade.symbol,
-            chain=trade.chain,
-            tokenAddress=trade.tokenAddress,
-            pairAddress=trade.pairAddress,
-        )
-        token_identity = _to_token_identity(token_struct)
-
-        try:
-            quantity = float(trade.qty) if trade.qty is not None else 0.0
-            unit_price_usd = float(trade.price) if trade.price is not None else 0.0
-            fee_usd = float(trade.fee) if trade.fee is not None else 0.0
-        except (TypeError, ValueError):
-            log.debug("[PNL][UNREAL][SKIP] token=%s reason=invalid_numeric_fields", token_identity)
-            continue
-
-        if quantity <= 0.0 or unit_price_usd <= 0.0:
-            log.debug("[PNL][UNREAL][SKIP] token=%s reason=non_positive_qty_or_price", token_identity)
-            continue
-
-        if side == "BUY":
-            buy_fee_per_unit_usd = fee_usd / quantity if quantity > 0.0 else 0.0
-            lots_by_identity[token_identity].append(
-                InventoryLot(quantity=quantity, unit_price_usd=unit_price_usd, buy_fee_per_unit_usd=buy_fee_per_unit_usd)
-            )
-        elif side == "SELL":
-            remaining_to_match = quantity
-            while remaining_to_match > 1e-12 and lots_by_identity[token_identity]:
-                lot = lots_by_identity[token_identity][0]
-                matched_quantity = min(remaining_to_match, lot.quantity)
-
-                lot.quantity -= matched_quantity
-                remaining_to_match -= matched_quantity
-                if lot.quantity <= 1e-12:
-                    lots_by_identity[token_identity].popleft()
-
-    price_index: Dict[TokenIdentity, float] = {}
+    price_index: Dict[Token, float] = {}
     for price_row in token_prices:
-        identity = _to_token_identity(price_row.token)
+        token = price_row.token
         if price_row.priceUsd and price_row.priceUsd > 0.0:
-            price_index[identity] = float(price_row.priceUsd)
+            price_index[token] = float(price_row.priceUsd)
 
     holdings_value_dec = Decimal("0")
     unrealized_dec = Decimal("0")
 
-    for identity, queue in lots_by_identity.items():
-        price_usd = price_index.get(identity)
+    for pos in position_list:
+        token = _to_token_from_position(pos)
+        price_usd = price_index.get(token)
         if price_usd is None or price_usd <= 0.0:
-            log.debug("[PNL][UNREAL][NOPRICE] token=%s — skipping unrealized valuation", identity)
+            log.debug("[PNL][UNREAL][NOPRICE] token=%s — skipping unrealized valuation", token)
             continue
 
-        for lot in queue:
-            position_value = _decimal_from_primitive(lot.quantity * price_usd)
-            holdings_value_dec += position_value
+        try:
+            quantity = float(pos.current_quantity)
+            entry_price = float(pos.entry)
+        except (TypeError, ValueError):
+            log.debug("[PNL][UNREAL][SKIP] token=%s reason=invalid_numeric_fields", token)
+            continue
 
-            unit_cost_including_buy_fee = lot.unit_price_usd + lot.buy_fee_per_unit_usd
-            unrealized_for_lot = _decimal_from_primitive((price_usd - unit_cost_including_buy_fee) * lot.quantity)
-            unrealized_dec += unrealized_for_lot
+        if quantity <= 0.0:
+            log.debug("[PNL][UNREAL][SKIP] token=%s reason=non_positive_qty", token)
+            continue
 
-    result = HoldingsAndUnrealizedFromTrades(
+        position_value = _decimal_from_primitive(quantity * price_usd)
+        holdings_value_dec += position_value
+
+        unrealized_for_position = _decimal_from_primitive((price_usd - entry_price) * quantity)
+        unrealized_dec += unrealized_for_position
+
+    result = HoldingsAndUnrealizedPnl(
         holdings=float(_quantize_2dp(holdings_value_dec)),
         unrealized_pnl=float(_quantize_2dp(unrealized_dec)),
     )
-
     return result
 
-
-# --------------------------- Live pricing helper --------------------------- #
 
 async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, float]:
     """
