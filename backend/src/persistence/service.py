@@ -49,6 +49,15 @@ def _evaluate_position_thresholds_and_execute(
     """
     created_trades: List[Trade] = []
 
+    # Defense-in-depth: should never be called for STALED, but keep a hard guard.
+    if position.phase == Phase.STALED:
+        log.info(
+            "[AUTOSELL][SKIP][STALED] token=%s pair=%s",
+            position.tokenAddress,
+            position.pairAddress,
+        )
+        return created_trades
+
     last_price_value = float(last_price or 0.0)
     if last_price_value <= 0.0:
         log.debug(

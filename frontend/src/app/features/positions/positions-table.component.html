@@ -4,9 +4,21 @@
 		[columnDefs]="columnDefinitions"
 		[defaultColDef]="defaultColumnDefinition"
 		[rowData]="positionsRowData()"
-		[theme]="agGridTheme"
->
+		[theme]="agGridTheme">
 </ag-grid-angular>
+
+<ng-template #symbolHeaderTemplate let-displayName>
+	<div class="flex items-center gap-2">
+		<i class="fas fa-coins opacity-70"></i>
+		<span>{{ displayName }}</span>
+	</div>
+</ng-template>
+
+<ng-template #actionsTemplate let-row="row">
+	<div class="flex items-center">
+		<p-button severity="info" icon="fas fa-info" size="small"/>
+	</div>
+</ng-template>
 
 <p-dialog
 		[visible]="detailsVisible()"
@@ -16,8 +28,7 @@
 		[draggable]="false"
 		[dismissableMask]="true"
 		[breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }"
-		[style]="{ width: '52rem' }"
->
+		[style]="{ width: '52rem' }">
 	<ng-template pTemplate="header">
 		<div class="flex items-center gap-3">
 			<span class="font-semibold text-lg">{{ selectedRow()?.symbol }}</span>
@@ -34,7 +45,6 @@
 			<div class="opacity-70">Pair</div>
 			<div class="font-mono break-all">{{ selectedRow()?.pairAddress }}</div>
 		</div>
-
 		<div class="col-span-6">
 			<div class="opacity-70">Quantity</div>
 			<div class="font-semibold">{{ selectedRow()?.qty }}</div>
@@ -51,7 +61,6 @@
 			<div class="opacity-70">Stop</div>
 			<div class="font-semibold">{{ selectedRow()?.stop }}</div>
 		</div>
-
 		<div class="col-span-6">
 			<div class="opacity-70">Opened at</div>
 			<div class="font-semibold">{{ selectedRow()?.opened_at }}</div>
@@ -64,20 +73,12 @@
 		<div class="col-span-12">
 			<div class="opacity-70">Links</div>
 			<div class="flex flex-wrap gap-2 mt-1">
-				<a
-						class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
-						[href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.pairAddress || '')"
-						target="_blank"
-						rel="noreferrer"
-				>Dexscreener (Pair)</a
-				>
-				<a
-						class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
-						[href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.address || selectedRow()?.tokenAddress || '')"
-						target="_blank"
-						rel="noreferrer"
-				>Dexscreener (Token)</a
-				>
+				<a class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
+				   [href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.pairAddress || '')"
+				   target="_blank" rel="noreferrer">Dexscreener (Pair)</a>
+				<a class="px-3 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 transition"
+				   [href]="'https://dexscreener.com/' + (selectedRow()?.chain || '') + '/' + (selectedRow()?.address || selectedRow()?.tokenAddress || '')"
+				   target="_blank" rel="noreferrer">Dexscreener (Token)</a>
 			</div>
 		</div>
 

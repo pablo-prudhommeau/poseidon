@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, Iterable, List
+from datetime import datetime
+from typing import Dict, Iterable, List, Optional
 
 import httpx
 
 from src.core.structures.structures import Token
+from src.core.utils.date_utils import timezone_now
 from src.integrations.dexscreener.dexscreener_constants import (
     LATEST_PAIRS_ENDPOINT,
     TOTAL_ADDRESS_HARD_CAP,
@@ -20,10 +22,19 @@ from src.integrations.dexscreener.dexscreener_helpers import (
     _deduplicate_preserving_order,
     _split_into_chunks,
     _extract_addresses,
-    _normalize_row_from_pair, _fetch_pairs_batch_resilient, _chunk_strings, _fetch_pairs_for_chain, _select_best_pair,
-    _deduplicate_token_addresses_preserving_order, _split_token_addressed_into_chunks,
+    _normalize_row_from_pair,
+    _fetch_pairs_batch_resilient,
+    _chunk_strings,
+    _fetch_pairs_for_chain,
+    _select_best_pair,
+    _deduplicate_token_addresses_preserving_order,
+    _split_token_addressed_into_chunks,
 )
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerPair, NormalizedRow, TokenPrice
+from src.integrations.dexscreener.dexscreener_structures import (
+    DexscreenerPair,
+    NormalizedRow,
+    TokenPrice,
+)
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)
@@ -34,7 +45,7 @@ async def fetch_pairs_by_tokens(tokens: Iterable[Token]) -> Dict[str, List[Dexsc
     Fetch raw pairs for a list of Token objects (best-effort).
 
     Returns:
-        Mapping of base-token **address** (str) -> list[DexscreenerPair].
+        Mapping of base-token address (str) -> list[DexscreenerPair].
     """
     tokens_list = list(tokens or [])
     if not tokens_list:
@@ -65,7 +76,7 @@ async def fetch_pairs_by_tokens(tokens: Iterable[Token]) -> Dict[str, List[Dexsc
 
 async def fetch_prices_by_tokens(tokens: Iterable[Token]) -> List[TokenPrice]:
     """
-    Fetch **USD prices** for the **exact pairAddress** of each Token.
+    Fetch **USD prices** and related slow-moving metrics for the **exact pairAddress** of each Token.
     No fallback, no best pair — strict pair-only.
 
     Returns:
@@ -78,30 +89,35 @@ async def fetch_prices_by_tokens(tokens: Iterable[Token]) -> List[TokenPrice]:
 
     tokens_unique = _deduplicate_preserving_order(tokens_list)
     if len(tokens_unique) > TOTAL_ADDRESS_HARD_CAP:
-        log.info("[DEX][PAIR][PRICE] Capping token list from %d to hard cap %d.", len(tokens_unique),
-                 TOTAL_ADDRESS_HARD_CAP)
+        log.info(
+            "[DEX][PAIR][PRICE] Capping token list from %d to hard cap %d.",
+            len(tokens_unique),
+            TOTAL_ADDRESS_HARD_CAP,
+        )
         tokens_unique = tokens_unique[:TOTAL_ADDRESS_HARD_CAP]
 
+    # Group tokens by chain for pair endpoint queries
     tokens_by_chain: Dict[str, List[Token]] = {}
-    for t in tokens_unique:
-        if not t.chain or not t.pairAddress:
-            log.debug("[DEX][PAIR][PRICE] skipping token without chain/pair — %s", str(t))
+    for token in tokens_unique:
+        if not token.chain or not token.pairAddress:
+            log.debug("[DEX][PAIR][PRICE] skipping token without chain/pair — %s", str(token))
             continue
-        tokens_by_chain.setdefault(t.chain, []).append(t)
+        tokens_by_chain.setdefault(token.chain, []).append(token)
 
-    price_by_pair: Dict[str, float] = {}
+    # We keep the *whole* DexscreenerPair by pairAddress to populate TokenPrice fully
+    pair_model_by_pair: Dict[str, DexscreenerPair] = {}
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
         for chain_id, chain_tokens in tokens_by_chain.items():
             if not chain_tokens:
                 continue
 
-            seen: set[str] = set()
+            seen_pairs: set[str] = set()
             pair_addresses: List[str] = []
-            for t in chain_tokens:
-                if t.pairAddress not in seen:
-                    seen.add(t.pairAddress)
-                    pair_addresses.append(t.pairAddress)
+            for token in chain_tokens:
+                if token.pairAddress not in seen_pairs:
+                    seen_pairs.add(token.pairAddress)
+                    pair_addresses.append(token.pairAddress)
 
             for batch in _chunk_strings(pair_addresses, DEFAULT_MAX_ADDRESSES_PER_CALL):
                 try:
@@ -109,28 +125,56 @@ async def fetch_prices_by_tokens(tokens: Iterable[Token]) -> List[TokenPrice]:
                 except httpx.HTTPStatusError as error:
                     status = error.response.status_code
                     if status in (400, 413, 414) and len(batch) > 1:
-                        log.debug("[DEX][PAIR][PRICE] HTTP %d for batch size %d → splitting and retrying.", status,
-                                  len(batch))
+                        log.debug(
+                            "[DEX][PAIR][PRICE] HTTP %d for batch size %d → splitting and retrying.",
+                            status,
+                            len(batch),
+                        )
                         mid = len(batch) // 2
                         pairs_left = await _fetch_pairs_for_chain(client, chain_id, batch[:mid])
                         pairs_right = await _fetch_pairs_for_chain(client, chain_id, batch[mid:])
                         pairs = pairs_left + pairs_right
                     else:
-                        log.warning("[DEX][PAIR][PRICE] HTTP error %d for URL '%s'.", status,
-                                    f"{LATEST_PAIRS_ENDPOINT}/{chain_id}/…")
+                        log.warning(
+                            "[DEX][PAIR][PRICE] HTTP error %d for URL '%s'.",
+                            status,
+                            f"{LATEST_PAIRS_ENDPOINT}/{chain_id}/…",
+                        )
                         raise
 
                 for pair in pairs:
+                    # Only keep pairs with a positive USD price; use strict pair address
                     if pair.pair_address and pair.price_usd is not None and pair.price_usd > 0.0:
-                        price_by_pair[pair.pair_address] = float(pair.price_usd)
+                        pair_model_by_pair[pair.pair_address] = pair
             await asyncio.sleep(0)
 
+    # Build TokenPrice outputs with enriched slow metrics and a capture timestamp
     out: List[TokenPrice] = []
-    for t in tokens_unique:
-        price = price_by_pair.get(t.pairAddress)
-        if price is not None and price > 0.0:
-            out.append(TokenPrice(token=t, priceUsd=price))
+    for token in tokens_unique:
+        model: Optional[DexscreenerPair] = pair_model_by_pair.get(token.pairAddress)
+        if model is None or model.price_usd is None or model.price_usd <= 0.0:
+            continue
 
+        # Extract optional slow-moving fields safely
+        liquidity_usd: Optional[float] = float(model.liquidity.usd) if model.liquidity and model.liquidity.usd else None
+        fdv_usd: Optional[float] = float(model.fdv) if model.fdv is not None else None
+        market_cap_usd: Optional[float] = float(model.market_cap) if model.market_cap is not None else None
+        buys_5m: Optional[int] = model.txns.m5.buys if (model.txns and model.txns.m5) else None
+        sells_5m: Optional[int] = model.txns.m5.sells if (model.txns and model.txns.m5) else None
+
+        token_price = TokenPrice(
+            token=token,
+            priceUsd=float(model.price_usd),
+            liquidityUsd=liquidity_usd,
+            fdvUsd=fdv_usd,
+            marketCapUsd=market_cap_usd,
+            buys5m=buys_5m,
+            sells5m=sells_5m,
+            asOf=timezone_now(),
+        )
+        out.append(token_price)
+
+    log.info("[DEX][PAIR][PRICE] returning %d prices (requested=%d).", len(out), len(tokens_unique))
     return out
 
 
@@ -193,8 +237,11 @@ async def fetch_pairs_by_token_addresses(token_addresses: Iterable[str]) -> Dict
 
     input_list_unique = _deduplicate_token_addresses_preserving_order(input_list_raw)
     if len(input_list_unique) > TOTAL_ADDRESS_HARD_CAP:
-        log.info("[DEX][FETCH] Capping address list from %d to hard cap %d.", len(input_list_unique),
-                 TOTAL_ADDRESS_HARD_CAP)
+        log.info(
+            "[DEX][FETCH] Capping address list from %d to hard cap %d.",
+            len(input_list_unique),
+            TOTAL_ADDRESS_HARD_CAP,
+        )
         input_list_unique = input_list_unique[:TOTAL_ADDRESS_HARD_CAP]
 
     result: Dict[str, List[DexscreenerPair]] = {addr: [] for addr in input_list_unique}

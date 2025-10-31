@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from datetime import timedelta
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.websocket.ws_manager import ws_manager
@@ -24,6 +26,12 @@ from src.core.utils.pnl_utils import (
 )
 from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_tokens
 from src.integrations.dexscreener.dexscreener_structures import TokenPrice
+from src.integrations.dexscreener.dexscreener_consistency_guard import (
+    DexConsistencyGuard,
+    PairIdentity,
+    Observation,
+    ConsistencyVerdict,
+)
 from src.logging.logger import get_logger
 from src.persistence.dao.analytics import get_recent_analytics
 from src.persistence.dao.portfolio_snapshots import (
@@ -37,12 +45,21 @@ from src.persistence.dao.positions import (
 )
 from src.persistence.dao.trades import get_recent_trades
 from src.persistence.db import get_db, _session
-from src.persistence.models import PortfolioSnapshot, Position, Trade, Analytics
+from src.persistence.models import PortfolioSnapshot, Position, Trade, Analytics, Phase
 from src.persistence.serializers import serialize_trade, serialize_portfolio, serialize_analytics
 from src.persistence.service import check_thresholds_and_autosell
 
 router = APIRouter()
 log = get_logger(__name__)
+
+# Instantiate a single guard for the process.
+_guard = DexConsistencyGuard(
+    window_size=settings.DEX_INCONSISTENCY_WINDOW_SIZE,
+    alternation_min_cycles=settings.DEX_INCONSISTENCY_ALTERNATION_CYCLES,
+    price_jump_factor=settings.DEX_INCONSISTENCY_MAX_PRICE_JUMP,
+    fields_mismatch_min=settings.DEX_INCONSISTENCY_FIELDS_MISMATCH_MIN,
+    staleness_horizon=timedelta(seconds=settings.MARKETDATA_MAX_STALE_SECONDS),
+)
 
 
 async def _compute_trades_payload(trades: List[Trade]) -> List[Dict[str, Any]]:
@@ -175,7 +192,61 @@ async def _recompute_positions_and_portfolio_and_analytics_and_broadcast() -> No
         token_prices: List[TokenPrice] = await fetch_prices_by_tokens(tokens)
 
         autosell_trades: List[Trade] = []
+        staled_keys: set[str] = set()
+
         for price in token_prices:
+            try:
+                pair = PairIdentity(
+                    chain=price.token.chain,
+                    token_address=price.token.tokenAddress,
+                    pair_address=price.token.pairAddress,
+                )
+                obs = Observation(
+                    as_of=price.asOf,
+                    price_usd=price.priceUsd,
+                    liquidity_usd=price.liquidityUsd,
+                    fully_diluted_valuation_usd=price.fdvUsd,
+                    market_cap_usd=price.marketCapUsd,
+                    buys_5m=price.buys5m,
+                    sells_5m=price.sells5m,
+                )
+                verdict = _guard.observe(pair, obs)
+                if verdict == ConsistencyVerdict.REQUIRES_MANUAL_INTERVENTION:
+                    key = pair.key()
+                    staled_keys.add(key)
+
+                    # Atomically mark position as STALED (if still OPEN/PARTIAL)
+                    position = (
+                        db.execute(
+                            select(Position).where(
+                                Position.chain == price.token.chain,
+                                Position.symbol == price.token.symbol,
+                                Position.tokenAddress == price.token.tokenAddress,
+                                Position.pairAddress == price.token.pairAddress,
+                                Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
+                                )
+                        )
+                        .scalars()
+                        .first()
+                    )
+                    if position:
+                        position.phase = Phase.STALED
+                        db.commit()
+                        log.warning(
+                            "[STALED][TRIGGER] symbol=%s token=%s pair=%s reason=DEX_INCONSISTENT_DATA",
+                            position.symbol,
+                            position.tokenAddress,
+                            position.pairAddress,
+                        )
+            except Exception as exc:
+                log.warning("[WS][DEX][CONSISTENCY] Check failed for %s - %s", price.token, exc)
+
+        for price in token_prices:
+            key = f"{price.token.chain}:{price.token.pairAddress or price.token.tokenAddress}".lower()
+            if key in staled_keys:
+                log.info("[AUTOSELL][SKIP][STALED] token=%s pair=%s", price.token.tokenAddress, price.token.pairAddress)
+                continue
+
             try:
                 if price.priceUsd is None or float(price.priceUsd) <= 0.0:
                     continue
@@ -195,8 +266,9 @@ async def _recompute_positions_and_portfolio_and_analytics_and_broadcast() -> No
 
         starting_cash_usd = settings.PAPER_STARTING_CASH
         cash_flow: CashFromTrades = cash_from_trades(starting_cash_usd, trades)
-        holdings_and_unrealized: HoldingsAndUnrealizedFromTrades = holdings_and_unrealized_from_trades(trades,
-                                                                                                       token_prices)
+        holdings_and_unrealized: HoldingsAndUnrealizedFromTrades = holdings_and_unrealized_from_trades(
+            trades, token_prices
+        )
         equity_usd = round(cash_flow.cash + holdings_and_unrealized.holdings, 2)
 
         snapshot = snapshot_portfolio(

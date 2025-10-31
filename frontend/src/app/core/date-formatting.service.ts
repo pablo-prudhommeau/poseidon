@@ -21,10 +21,6 @@ export class DateFormattingService {
         return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
     }
 
-    public toIsoNoTimezoneUtc(value: unknown): string {
-        return this.toIsoNoTimezone(value, 'UTC');
-    }
-
     private coerceToDate(value: unknown): Date | null {
         if (value instanceof Date) {
             return isNaN(value.getTime()) ? null : value;

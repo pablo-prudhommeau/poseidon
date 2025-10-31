@@ -15,6 +15,7 @@ class Phase(Enum):
     OPEN = "OPEN"
     PARTIAL = "PARTIAL"
     CLOSED = "CLOSED"
+    STALED = "STALED"  # Feed inconsistency detected; autosell disabled until manual intervention.
 
 
 class Side(Enum):
