@@ -47,15 +47,7 @@ class WindowActivity:
 
 @dataclass(frozen=True)
 class Observation:
-    """
-    Minimal observation for **consistency** checks ONLY.
-
-    IMPORTANT: This class is intentionally narrow in scope. It focuses on
-    multi-field jump detection and ABAB alternation caused by source pool
-    switching. It does **not** perform semantic contradictions checks
-    (e.g., FDV vs Market Cap) — those belong to gates at selection time.
-    """
-    as_of: Optional[datetime]
+    observation_date: Optional[datetime]
     liquidity_usd: Optional[float]
     fully_diluted_valuation_usd: Optional[float]
     market_cap_usd: Optional[float]
@@ -112,8 +104,6 @@ class DexConsistencyGuard:
         self._fields_mismatch_min = max(1, int(fields_mismatch_min))
         self._staleness_horizon = staleness_horizon
         self._states: Dict[str, _State] = {}
-
-    # ---------- helpers ---------- #
 
     @staticmethod
     def _bucket_float(value: Optional[float], *, granularity: float) -> str:
@@ -208,8 +198,6 @@ class DexConsistencyGuard:
         except Exception:
             return False
 
-    # ---------- public API ---------- #
-
     def observe(self, pair: PairIdentity, obs: Observation) -> ConsistencyVerdict:
         """
         Ingest one observation and decide whether the feed is inconsistent.
@@ -238,7 +226,7 @@ class DexConsistencyGuard:
             self._states[key] = state
 
         # (1) If the event is too old, just record the fingerprint and update state silently.
-        if self._now_is_stale(obs.as_of, self._staleness_horizon):
+        if self._now_is_stale(obs.observation_date, self._staleness_horizon):
             logger.debug("[DEX][CONSISTENCY][STALE] key=%s observation too old, skipping actions", key)
             fp = self._fingerprint(obs)
             state.recent_fingerprints.append(fp)

@@ -5,6 +5,7 @@ from typing import Mapping, List, Optional, Any, Dict
 from pydantic import BaseModel
 
 from src.core.utils.format_utils import _tail
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -18,84 +19,13 @@ class Token:
     pairAddress: str
 
     def __str__(self) -> str:
-        return (f"[{self.symbol} "
+        return (f"[symbol={self.symbol} "
                 f"chain={self.chain} "
                 f"tokenAddress={_tail(self.tokenAddress)} "
                 f"pairAddress=…{_tail(self.pairAddress)}]")
 
     def __hash__(self) -> int:
         return hash((self.chain, self.symbol, self.tokenAddress, self.pairAddress))
-
-
-class TransactionBucket:
-    """
-    Aggregated buy/sell counts (or notional) in a time bucket.
-    """
-    buys: float
-    sells: float
-
-    def to_plain_dict(self) -> Dict[str, float]:
-        return {
-            "buys": float(self.buys),
-            "sells": float(self.sells),
-        }
-
-
-class TransactionSummary:
-    """
-    Summary of recent activity over canonical windows.
-    All fields are optional to gracefully handle partial payloads.
-    """
-    m5: Optional[TransactionBucket]
-    h1: Optional[TransactionBucket]
-    h6: Optional[TransactionBucket]
-    h24: Optional[TransactionBucket]
-
-    def to_plain_dict(self) -> Dict[str, Dict[str, float]]:
-        def conv(bucket: Optional[TransactionBucket]) -> Dict[str, float]:
-            return bucket.to_plain_dict() if bucket is not None else {}
-
-        return {
-            "m5": conv(self.m5),
-            "h1": conv(self.h1),
-            "h6": conv(self.h6),
-            "h24": conv(self.h24),
-        }
-
-
-class CandidateMarketData:
-    """
-    Minimal structural contract for the market data we require during risk checks.
-    Extra keys are allowed by design.
-    """
-    symbol: str
-    liqUsd: float
-    pct5m: float
-    pct1h: float
-    sparkline5m: List[float]
-    sparkline30m: List[float]
-    prices: List[float]
-    sparkline: List[float]
-    txns: TransactionSummary
-
-
-class CandidateScoringInput:
-    """
-    Minimal structural contract for scoring/quality checks.
-    Extra keys are allowed. Some keys may be missing depending on sources.
-    """
-    symbol: str
-    address: str
-    liqUsd: float
-    vol24h: float
-    pairCreatedAt: int
-    pct5m: float
-    pct1h: float
-    pct24h: float
-    txns: TransactionSummary
-    m1: object
-    m5: object
-    qualityScore: float
 
 
 @dataclass
@@ -131,27 +61,7 @@ class ScoreComponents:
 
 @dataclass
 class Candidate:
-    """
-    Strongly-typed view over a trending candidate.
-
-    This class provides readable attribute names while preserving back-compat with
-    the rest of the codebase that still expects Dexscreener-style keys. Use
-    :meth:`to_source_dict` when calling legacy helpers, and keep the rest of the
-    pipeline using attribute access exclusively.
-    """
-    symbol: str
-    chain_name: str
-    token_address: str
-    pair_address: str
-    price_usd: float
-    price_native: float
-    volume_24h_usd: float
-    liquidity_usd: float
-    percent_5m: float
-    percent_1h: float
-    percent_24h: float
-    pair_created_at_epoch_seconds: int
-    token_age_hours: float
+    token: Token
     quality_score: float
     statistics_score: float
     entry_score: float
@@ -159,44 +69,7 @@ class Candidate:
     score_components: ScoreComponents
     ai_quality_delta: float
     ai_buy_probability: float
-    txns: TransactionSummary
-
-    def to_source_dict(self) -> Dict[str, Any]:
-        """
-        Convert this Candidate back into the Dexscreener-style dict that legacy
-        helpers expect. All nested objects are converted to JSON-serializable
-        primitives (dict/float/str/bool).
-        """
-        score_components_dict: Dict[str, float] = (
-            self.score_components.to_plain_dict() if self.score_components is not None else {}
-        )
-        txns_dict: Dict[str, Dict[str, float]] = (
-            self.txns.to_plain_dict() if self.txns is not None else {}
-        )
-
-        return {
-            "symbol": self.symbol,
-            "chain": self.chain_name,
-            "tokenAddress": self.token_address,
-            "pairAddress": self.pair_address,
-            "priceUsd": float(self.price_usd),
-            "priceNative": float(self.price_native),
-            "volume24hUsd": float(self.volume_24h_usd),
-            "liquidityUsd": float(self.liquidity_usd),
-            "pct5m": float(self.percent_5m),
-            "pct1h": float(self.percent_1h),
-            "pct24h": float(self.percent_24h),
-            "pairCreatedAt": int(self.pair_created_at_epoch_seconds),
-            "token_age_hours": float(self.token_age_hours),
-            "qualityScore": float(self.quality_score),
-            "statScore": float(self.statistics_score),
-            "entryScore": float(self.entry_score),
-            "scoreFinal": float(self.score_final),
-            "scoreComponents": score_components_dict,
-            "aiDelta": float(self.ai_quality_delta),
-            "aiBuyProb": float(self.ai_buy_probability),
-            "txns": txns_dict,
-        }
+    dexscreener_token_information: DexscreenerTokenInformation
 
 
 class LifiEvmTransactionRequest:
@@ -273,6 +146,8 @@ class RiskDiagnostics:
     liquidity_usd: float
     percent_5m: float
     percent_1h: float
+    percent_6h: float
+    percent_24h: float
     buy_ratio: float
 
     def as_plain_dict(self) -> dict:
@@ -280,6 +155,8 @@ class RiskDiagnostics:
             "liq": float(self.liquidity_usd),
             "pct5m": float(self.percent_5m),
             "pct1h": float(self.percent_1h),
+            "pct6h": float(self.percent_6h),
+            "pct24h": float(self.percent_24h),
             "buy_ratio": float(self.buy_ratio)
         }
 

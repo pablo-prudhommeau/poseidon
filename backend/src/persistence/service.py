@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
 from src.core.structures.structures import Token
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 from src.persistence.dao import trades
 from src.persistence.dao.trades import compute_open_quantity_for_position
@@ -187,7 +188,7 @@ def _evaluate_position_thresholds_and_execute(
     return created_trades
 
 
-def check_thresholds_and_autosell(database_session: Session, token: Token, last_price: float) -> List[Trade]:
+def check_thresholds_and_autosell(database_session: Session, dexscreener_token_information: DexscreenerTokenInformation) -> List[Trade]:
     """
     Autosell positions for a token based on tp1/tp2/stop thresholds and last price.
 
@@ -195,14 +196,14 @@ def check_thresholds_and_autosell(database_session: Session, token: Token, last_
     Executes at most one action per position per invocation (SL > TP2 > TP1).
     """
     created_trades: List[Trade] = []
-    last_price_value = float(last_price or 0.0)
+    last_price_value = float(dexscreener_token_information.price_usd or 0.0)
     if last_price_value <= 0.0:
         return created_trades
 
     positions = (
         database_session.execute(
             select(Position).where(
-                Position.symbol == token.symbol,
+                Position.symbol == dexscreener_token_information.base_token.symbol,
                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
                 )
         )

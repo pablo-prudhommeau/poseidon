@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from src.api.websocket.telemetry import TelemetryService
-from src.configuration.config import settings
+from src.configuration.config import settings, _to_dict
 from src.core.ai.chart_signal_provider import ChartAiSignalProvider
 from src.core.gates.risk_manager import AdaptiveRiskManager
 from src.core.gates.trader import Trader
@@ -12,7 +12,6 @@ from src.core.onchain.evm_signer import build_default_evm_signer
 from src.core.onchain.solana_signer import build_default_solana_signer
 from src.core.structures.structures import Candidate, OrderPayload, LifiRoute, Token
 from src.core.utils.date_utils import timezone_now
-from src.core.utils.format_utils import _age_hours
 from src.integrations.lifi.lifi_client import build_native_to_token_route, resolve_lifi_chain_id
 from src.logging.logger import get_logger
 from src.persistence.dao.portfolio_snapshots import get_portfolio_snapshot
@@ -46,13 +45,15 @@ class AnalyticsRecorder:
 
         final_score = candidate.entry_score if candidate.score_final <= 0 else candidate.score_final
 
+        token_information = candidate.dexscreener_token_information
+        base_token = token_information.base_token
         payload = Analytics(
-            symbol=candidate.symbol.upper(),
-            chain=str(candidate.chain_name or "unknown"),
-            tokenAddress=str(candidate.token_address),
-            pairAddress=str(candidate.pair_address),
-            priceUsd=float(candidate.price_usd),
-            priceNative=float(candidate.price_native),
+            symbol=base_token.symbol.upper(),
+            chain=str(token_information.chain_id),
+            tokenAddress=str(base_token.address),
+            pairAddress=str(token_information.pair_address),
+            priceUsd=float(token_information.price_usd),
+            priceNative=float(token_information.price_native),
             rank=int(rank),
             quality_score=float(candidate.quality_score),
             statistics_score=float(candidate.statistics_score),
@@ -60,42 +61,29 @@ class AnalyticsRecorder:
             final_score=float(final_score),
             ai_probability_tp1_before_sl=float(candidate.ai_buy_probability),
             ai_quality_score_delta=float(candidate.ai_quality_delta),
-            token_age_hours=float(candidate.token_age_hours),
-            volume24h_usd=float(candidate.volume_24h_usd),
-            liquidity_usd=float(candidate.liquidity_usd),
-            pct_5m=float(candidate.percent_5m),
-            pct_1h=float(candidate.percent_1h),
-            pct_24h=float(candidate.percent_24h),
+            token_age_hours=float(token_information.age_hours),
+            volume5m_usd=float(token_information.volume.m5),
+            volume1h_usd=float(token_information.volume.h1),
+            volume6h_usd=float(token_information.volume.h6),
+            volume24h_usd=float(token_information.volume.h24),
+            liquidity_usd=float(token_information.liquidity.usd),
+            pct_5m=float(token_information.price_change.m5),
+            pct_1h=float(token_information.price_change.h1),
+            pct_6h=float(token_information.price_change.h6),
+            pct_24h=float(token_information.price_change.h24),
+            tx_5m=int(token_information.txns.m5.total),
+            tx_1h=int(token_information.txns.h1.total),
+            tx_6h=int(token_information.txns.h6.total),
+            tx_24h=int(token_information.txns.h24.total),
             evaluated_at=timezone_now(),
-            decision=(decision or "UNKNOWN").upper(),
-            decision_reason=reason or "",
+            decision=decision.upper(),
+            decision_reason=reason,
             sizing_multiplier=float(sizing_multiplier or 0.0),
             order_notional_usd=float(order_notional_usd or 0.0),
             free_cash_before_usd=float(free_cash_before_usd or 0.0),
             free_cash_after_usd=float(free_cash_after_usd or 0.0),
-            raw_dexscreener=candidate.to_source_dict(),
-            raw_ai={
-                "qualityDelta": float(candidate.ai_quality_delta),
-                "probabilityTp1BeforeSl": float(candidate.ai_buy_probability),
-            },
-            raw_risk={"skipReason": reason} if reason else {},
-            raw_settings={
-                "SCORE_MIN_STATISTICS": float(settings.SCORE_MIN_STATISTICS),
-                "SCORE_MIN_ENTRY": float(settings.SCORE_MIN_ENTRY),
-                "REBUY_COOLDOWN_MIN": int(settings.DEXSCREENER_REBUY_COOLDOWN_MIN),
-                "MAX_PRICE_DEV": float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER),
-                "PER_BUY_FRACTION": float(settings.TREND_PER_BUY_FRACTION),
-                "MIN_FREE_CASH_USD": float(settings.TREND_MIN_FREE_CASH_USD),
-                "MAX_BUYS_PER_RUN": int(settings.TREND_MAX_BUYS_PER_RUN),
-            },
-            raw_order_result={
-                "decision": (decision or "UNKNOWN").upper(),
-                "reason": reason or "",
-                "sizingMultiplier": float(sizing_multiplier or 0.0),
-                "orderNotionalUsd": float(order_notional_usd or 0.0),
-                "freeCashBeforeUsd": float(free_cash_before_usd or 0.0),
-                "freeCashAfterUsd": float(free_cash_after_usd or 0.0),
-            },
+            raw_dexscreener=token_information.to_dict(),
+            raw_settings=_to_dict(settings)
         )
         TelemetryService.record_analytics_event(payload)
 
@@ -160,9 +148,10 @@ class AiExecutionStage:
 
         Assumes 18 decimals for the EVM native asset (ETH, MATIC, BNB, AVAX C-chain, ...).
         """
+        token_information = candidate.dexscreener_token_information
         try:
-            price_usd = float(candidate.price_usd)
-            price_native = float(candidate.price_native)
+            price_usd = float(token_information.price_usd)
+            price_native = float(token_information.price_native)
             if price_usd <= 0.0 or price_native <= 0.0:
                 return None
 
@@ -185,8 +174,9 @@ class AiExecutionStage:
         Assumes 9 decimals for SOL.
         """
         try:
-            price_usd = float(candidate.price_usd)
-            price_native = float(candidate.price_native)
+            token_information = candidate.dexscreener_token_information
+            price_usd = float(token_information.price_usd)
+            price_native = float(token_information.price_native)
             if price_usd <= 0.0 or price_native <= 0.0:
                 return None
 
@@ -212,20 +202,22 @@ class AiExecutionStage:
         if settings.PAPER_MODE:
             return None
 
-        chain_key = (candidate.chain_name or "").strip().lower()
+        token_information = candidate.dexscreener_token_information
+        chain_key = (token_information.chain_id or "").strip().lower()
 
         # --- Solana path ----------------------------------------------------
         if chain_key == "solana":
-            token_mint = (candidate.token_address or "").strip()
+            token_mint = (token_information.base_token.address or "").strip()
             if not token_mint:
-                log.debug("[TREND][LIVE][ROUTE] Missing SPL token mint for %s on Solana.", candidate.symbol)
+                log.debug("[TREND][LIVE][ROUTE] Missing SPL token mint for %s on Solana.",
+                          token_information.base_token.symbol)
                 return None
 
             from_amount_lamports = self._compute_from_amount_lamports(order_notional_usd, candidate)
             if from_amount_lamports is None:
                 log.debug(
                     "[TREND][LIVE][ROUTE] Cannot compute fromAmount (need price_usd & price_native) for %s on Solana.",
-                    candidate.symbol,
+                    token_information.base_token.symbol,
                 )
                 return None
 
@@ -248,7 +240,7 @@ class AiExecutionStage:
             except Exception as exc:
                 log.warning(
                     "[TREND][LIVE][ROUTE] LI.FI route build failed for %s on solana: %s",
-                    candidate.symbol,
+                    token_information.base_token.symbol,
                     exc,
                 )
                 return None
@@ -259,16 +251,16 @@ class AiExecutionStage:
             log.debug("[TREND][LIVE][ROUTE] Unsupported Dexscreener chain '%s'.", chain_key or "?")
             return None
 
-        to_token_address = (candidate.token_address or "").strip()
+        to_token_address = (token_information.base_token.address or "").strip()
         if not to_token_address:
-            log.debug("[TREND][LIVE][ROUTE] Missing ERC-20 token address for %s.", candidate.symbol)
+            log.debug("[TREND][LIVE][ROUTE] Missing ERC-20 token address for %s.", token_information.base_token.symbol)
             return None
 
         from_amount_wei = self._compute_from_amount_wei(order_notional_usd, candidate)
         if from_amount_wei is None:
             log.debug(
                 "[TREND][LIVE][ROUTE] Cannot compute fromAmount (need price_usd & price_native) for %s.",
-                candidate.symbol,
+                token_information.base_token.symbol,
             )
             return None
 
@@ -291,7 +283,7 @@ class AiExecutionStage:
         except Exception as exc:
             log.warning(
                 "[TREND][LIVE][ROUTE] LI.FI route build failed for %s on %s: %s",
-                candidate.symbol,
+                token_information.base_token.symbol,
                 chain_key,
                 exc,
             )
@@ -316,8 +308,6 @@ class AiExecutionStage:
                 log.debug("[TREND][BUY] Max buys per run reached (%d).", maximum_buys_per_run)
                 break
 
-            candidate.token_age_hours = float(_age_hours(int(candidate.pair_created_at_epoch_seconds)))
-
             entry_score = float(candidate.statistics_score)
             ai_probability = 0.0
             ai_delta = 0.0
@@ -325,15 +315,15 @@ class AiExecutionStage:
             if ai_budget_remaining > 0:
                 try:
                     signal = self.chart_ai.predict(
-                        symbol=candidate.symbol,
-                        chain_name=candidate.chain_name or None,
-                        pair_address=candidate.token_address or None,
+                        symbol=candidate.token.symbol,
+                        chain_name=candidate.token.chain or None,
+                        pair_address=candidate.token.pairAddress or None,
                         timeframe_minutes=self.chart_ai_timeframe_minutes,
                         lookback_minutes=self.chart_ai_lookback_minutes,
-                        token_age_hours=float(candidate.token_age_hours),
+                        token_age_hours=float(candidate.dexscreener_token_information.age_hours),
                     )
                 except Exception:
-                    log.exception("[TREND][AI] ChartAI failed for %s", candidate.symbol or candidate.token_address)
+                    log.exception("[TREND][AI] ChartAI failed for %s", candidate.token.symbol)
                     signal = None
                 ai_budget_remaining -= 1
 
@@ -355,7 +345,7 @@ class AiExecutionStage:
                 )
                 log.debug(
                     "[TREND][AI][DROP] %s — entry=%.2f < %.2f (stat=%.2f aiΔ=%.2f prob=%.3f)",
-                    candidate.symbol,
+                    candidate.token.symbol,
                     entry_score,
                     self.minimum_entry_score,
                     candidate.statistics_score,
@@ -380,7 +370,7 @@ class AiExecutionStage:
                 )
                 log.debug(
                     "[TREND][BUY][CASH_SKIP] %s need=%.2f have=%.2f min_free=%.2f",
-                    candidate.symbol,
+                    candidate.token.symbol,
                     order_notional,
                     simulated_cash,
                     minimum_free_cash_usd,
@@ -400,24 +390,25 @@ class AiExecutionStage:
 
             lifi_route = self._maybe_attach_lifi_route_for_live(candidate, order_notional_usd=order_notional)
             if lifi_route is not None:
-                log.info("[TREND][LIVE][ROUTE] Attached LI.FI route for %s on %s", candidate.symbol, candidate.chain_name)
+                log.info("[TREND][LIVE][ROUTE] Attached LI.FI route for %s on %s", candidate.token.symbol,
+                         candidate.token.chain)
             else:
                 if not settings.PAPER_MODE:
                     log.info(
                         "[TREND][LIVE][ROUTE] Could not attach LI.FI route for %s on %s; Trader may skip LIVE buy.",
-                        candidate.symbol,
-                        candidate.chain_name,
+                        candidate.token.symbol,
+                        candidate.token.chain,
                     )
 
             token = Token(
-                symbol=candidate.symbol,
-                chain=candidate.chain_name,
-                tokenAddress=candidate.token_address,
-                pairAddress=candidate.pair_address
+                symbol=candidate.token.symbol,
+                chain=candidate.token.chain,
+                tokenAddress=candidate.token.tokenAddress,
+                pairAddress=candidate.token.pairAddress
             )
             order_payload = OrderPayload(
                 token=token,
-                price=candidate.price_usd,
+                price=candidate.dexscreener_token_information.price_usd,
                 order_notional=order_notional,
                 original_candidate=candidate,
                 lifi_route=lifi_route,
@@ -430,7 +421,7 @@ class AiExecutionStage:
 
             log.info(
                 "[TREND][BUY] %s quality=%.1f stat=%.1f entry=%.1f aiΔ=%.2f prob=%.3f size×=%.2f notional=%.2f",
-                candidate.symbol,
+                candidate.token.symbol,
                 candidate.quality_score,
                 candidate.statistics_score,
                 entry_score,

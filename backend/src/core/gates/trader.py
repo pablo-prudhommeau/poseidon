@@ -10,9 +10,9 @@ from src.core.gates.risk_manager import AdaptiveRiskManager
 from src.core.onchain.live_executor import LiveExecutionService
 from src.core.structures.structures import OrderPayload, LifiRoute, Token
 from src.integrations.dexscreener.dexscreener_client import (
-    fetch_price_by_tokens_sync,
+    fetch_dexscreener_token_information_list_sync,
 )
-from src.integrations.dexscreener.dexscreener_structures import TokenPrice
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 from src.persistence.dao import trades
 from src.persistence.db import _session
@@ -56,18 +56,19 @@ class Trader:
             except RuntimeError:
                 pass  # no loop in this thread → safe to run sync client
 
-            prices: List[TokenPrice] = fetch_price_by_tokens_sync([token])
-            if not prices:
+            token_information_list: List[DexscreenerTokenInformation] = fetch_dexscreener_token_information_list_sync(
+                [token])
+            if not token_information_list:
                 log.debug("[TRADER][PRICE][DEX] No price returned for %s", token)
                 return None
 
-            for item in prices:
+            for toke_information in token_information_list:
                 if (
-                        item.token.pairAddress == token.pairAddress
-                        and item.priceUsd > 0.0
+                        toke_information.pair_address == token.pairAddress
+                        and toke_information.price_usd > 0.0
                 ):
-                    log.debug("[TRADER][PRICE][DEX] Price fetched for %s = %.12f", token, item.priceUsd)
-                    return float(item.priceUsd)
+                    log.debug("[TRADER][PRICE][DEX] Price fetched for %s = %.12f", token, toke_information.price_usd)
+                    return float(toke_information.price_usd)
 
             log.debug("[TRADER][PRICE][DEX] No valid price for exact pair — %s", token)
             return None
@@ -85,7 +86,8 @@ class Trader:
             if not loop.is_running() or loop.is_closed():
                 log.debug("[TRADER][PORTFOLIO] Skip schedule (loop closing)")
                 return
-            loop.call_soon_threadsafe(lambda: loop.create_task(_recompute_positions_portfolio_analytics_and_broadcast()))
+            loop.call_soon_threadsafe(
+                lambda: loop.create_task(_recompute_positions_portfolio_analytics_and_broadcast()))
             log.debug("[TRADER][PORTFOLIO] Scheduled recomputation on running loop")
         except RuntimeError:
             log.debug("[TRADER][PORTFOLIO] Skip schedule (no running loop)")
@@ -246,8 +248,7 @@ class Trader:
 
                 auto_trades = check_thresholds_and_autosell(
                     database_session,
-                    token=payload.token,
-                    last_price=price_usd,
+                    dexscreener_token_information=payload.original_candidate.dexscreener_token_information,
                 )
                 for auto_trade in auto_trades:
                     ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(auto_trade)})

@@ -25,8 +25,7 @@ from src.core.utils.pnl_utils import (
     holdings_and_unrealized_from_positions,
     cash_from_trades,
 )
-from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_tokens
-from src.integrations.dexscreener.dexscreener_structures import TokenPrice
+from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
 from src.integrations.dexscreener.dexscreener_consistency_guard import (
     DexConsistencyGuard,
     PairIdentity,
@@ -34,6 +33,7 @@ from src.integrations.dexscreener.dexscreener_consistency_guard import (
     WindowActivity,
     ConsistencyVerdict,
 )
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 from src.persistence.dao.analytics import get_recent_analytics
 from src.persistence.dao.portfolio_snapshots import (
@@ -43,7 +43,7 @@ from src.persistence.dao.portfolio_snapshots import (
 )
 from src.persistence.dao.positions import (
     get_open_positions,
-    serialize_positions_with_token_prices,
+    serialize_positions_with_token_information,
 )
 from src.persistence.dao.trades import get_recent_trades
 from src.persistence.db import get_db, _session
@@ -73,15 +73,15 @@ async def _compute_analytics_payload(analytics: List[Analytics]) -> List[Dict[st
 
 
 async def _compute_positions_payload(
-        token_prices: List[TokenPrice],
+        token_information_list: List[DexscreenerTokenInformation],
         positions: List[Position],
 ) -> List[Dict[str, object]]:
     """Merge open positions with latest token prices and serialize for the frontend."""
-    return serialize_positions_with_token_prices(positions, token_prices)
+    return serialize_positions_with_token_information(positions, token_information_list)
 
 
 async def _compute_portfolio_payload(
-        token_prices: List[TokenPrice],
+        token_information_list: List[DexscreenerTokenInformation],
         portfolio_snapshot: PortfolioSnapshot,
         positions: List[Position],
         trades: List[Trade],
@@ -89,7 +89,7 @@ async def _compute_portfolio_payload(
 ) -> Dict[str, object]:
     """Compute and serialize the portfolio summary, including realized/unrealized PnL."""
     realized: RealizedPnl = fifo_realized_pnl(trades, cutoff_hours=24)
-    holdings_and_unrealized: HoldingsAndUnrealizedPnl = holdings_and_unrealized_from_positions(positions, token_prices)
+    holdings_and_unrealized: HoldingsAndUnrealizedPnl = holdings_and_unrealized_from_positions(positions, token_information_list)
 
     return serialize_portfolio(
         portfolio_snapshot,
@@ -115,12 +115,12 @@ async def _send_init(ws: WebSocket, db: Session) -> None:
         for position in positions
     ]
 
-    token_prices: List[TokenPrice] = await fetch_prices_by_tokens(tokens)
+    token_information_list: List[DexscreenerTokenInformation] = await fetch_dexscreener_token_information_list(tokens)
     trades = get_recent_trades(db, limit=10000)
     analytics_rows = get_recent_analytics(db, limit=10000)
 
-    portfolio_payload = await _compute_portfolio_payload(token_prices, snapshot, positions, trades, equity_curve(db))
-    positions_payload = await _compute_positions_payload(token_prices, positions)
+    portfolio_payload = await _compute_portfolio_payload(token_information_list, snapshot, positions, trades, equity_curve(db))
+    positions_payload = await _compute_positions_payload(token_information_list, positions)
     trades_payload = await _compute_trades_payload(trades)
     analytics_payload = await _compute_analytics_payload(analytics_rows)
 
@@ -175,54 +175,51 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
             )
             for position in positions
         ]
-        token_prices: List[TokenPrice] = await fetch_prices_by_tokens(tokens)
+        token_information_list: List[DexscreenerTokenInformation] = await fetch_dexscreener_token_information_list(tokens)
 
         autosell_trades: List[Trade] = []
         staled_keys: set[str] = set()
 
-        # Runtime consistency guard: ONLY multi-field jumps + ABAB
-        for price in token_prices:
+        for token_information in token_information_list:
             try:
                 pair = PairIdentity(
-                    chain=price.token.chain,
-                    token_address=price.token.tokenAddress,
-                    pair_address=price.token.pairAddress,
+                    chain=token_information.chain_id,
+                    token_address=token_information.base_token.address,
+                    pair_address=token_information.pair_address,
                 )
                 observation = Observation(
-                    as_of=price.asOf,
-                    liquidity_usd=price.liquidityUsd,
-                    fully_diluted_valuation_usd=price.fdvUsd,
-                    market_cap_usd=price.marketCapUsd,
+                    observation_date=token_information.retrieval_date,
+                    liquidity_usd=token_information.liquidity.usd,
+                    fully_diluted_valuation_usd=token_information.fully_diluted_valuation,
+                    market_cap_usd=token_information.market_cap,
                     window_5m=WindowActivity(
-                        buys=price.buys5m,
-                        sells=price.sells5m,
+                        buys=(token_information.txns.m5.buys if (token_information.txns and token_information.txns.m5) else None),
+                        sells=(token_information.txns.m5.sells if (token_information.txns and token_information.txns.m5) else None),
                     ),
                     window_1h=WindowActivity(
-                        buys=(price.txns.h1.buys if (price.txns and price.txns.h1) else None),
-                        sells=(price.txns.h1.sells if (price.txns and price.txns.h1) else None),
+                        buys=(token_information.txns.h1.buys if (token_information.txns and token_information.txns.h1) else None),
+                        sells=(token_information.txns.h1.sells if (token_information.txns and token_information.txns.h1) else None),
                     ),
                     window_6h=WindowActivity(
-                        buys=(price.txns.h6.buys if (price.txns and price.txns.h6) else None),
-                        sells=(price.txns.h6.sells if (price.txns and price.txns.h6) else None),
+                        buys=(token_information.txns.h6.buys if (token_information.txns and token_information.txns.h6) else None),
+                        sells=(token_information.txns.h6.sells if (token_information.txns and token_information.txns.h6) else None),
                     ),
                     window_24h=WindowActivity(
-                        buys=(price.txns.h24.buys if (price.txns and price.txns.h24) else None),
-                        sells=(price.txns.h24.sells if (price.txns and price.txns.h24) else None),
+                        buys=(token_information.txns.h24.buys if (token_information.txns and token_information.txns.h24) else None),
+                        sells=(token_information.txns.h24.sells if (token_information.txns and token_information.txns.h24) else None),
                     ),
                 )
                 verdict = _guard.observe(pair, observation)
                 if verdict == ConsistencyVerdict.REQUIRES_MANUAL_INTERVENTION:
                     key = pair.key()
                     staled_keys.add(key)
-
-                    # Mark position as STALED if still OPEN/PARTIAL
                     position = (
                         db.execute(
                             select(Position).where(
-                                Position.chain == price.token.chain,
-                                Position.symbol == price.token.symbol,
-                                Position.tokenAddress == price.token.tokenAddress,
-                                Position.pairAddress == price.token.pairAddress,
+                                Position.chain == token_information.chain_id,
+                                Position.symbol == token_information.base_token.symbol,
+                                Position.tokenAddress == token_information.base_token.address,
+                                Position.pairAddress == token_information.pair_address,
                                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
                                 )
                         )
@@ -239,23 +236,21 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
                             position.pairAddress,
                         )
             except Exception as exc:
-                log.warning("[WS][DEX][CONSISTENCY] Check failed for %s - %s", price.token, exc)
+                log.warning("[WS][DEX][CONSISTENCY] Check failed for %s - %s", token_information.base_token, exc)
 
-        # Autosell evaluation (skip STALED keys)
-        for price in token_prices:
-            staled_key = f"{price.token.chain}:{price.token.pairAddress or price.token.tokenAddress}".lower()
+        for token_information in token_information_list:
+            staled_key = f"{token_information.chain_id}:{token_information.pair_address or token_information.base_token.address}".lower()
             if staled_key in staled_keys:
-                log.info("[WS][AUTOSELL][SKIP][STALED] token=%s pair=%s", price.token.tokenAddress, price.token.pairAddress)
+                log.info("[WS][AUTOSELL][SKIP][STALED] token=%s pair=%s", token_information.base_token.address, token_information.pair_address)
                 continue
-
             try:
-                if price.priceUsd is None or price.priceUsd <= 0.0:
+                if token_information.price_usd is None or token_information.price_usd <= 0.0:
                     continue
-                created = check_thresholds_and_autosell(db, token=price.token, last_price=float(price.priceUsd))
+                created = check_thresholds_and_autosell(db, token_information)
                 if created:
                     autosell_trades.extend(created)
             except Exception as exc:
-                log.warning("[WS][AUTOSELL] Threshold evaluation failed for %s - %s", price.token, exc)
+                log.warning("[WS][AUTOSELL] Threshold evaluation failed for %s - %s", token_information.base_token, exc)
 
         for created in autosell_trades:
             ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(created)})
@@ -268,7 +263,7 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
 
         starting_cash_usd: float = settings.PAPER_STARTING_CASH
         cash_flow: CashFromTrades = cash_from_trades(starting_cash_usd, trades)
-        holdings_and_unrealized: HoldingsAndUnrealizedPnl = holdings_and_unrealized_from_positions(positions, token_prices)
+        holdings_and_unrealized: HoldingsAndUnrealizedPnl = holdings_and_unrealized_from_positions(positions, token_information_list)
         equity_usd: float = round(cash_flow.cash + holdings_and_unrealized.holdings, 2)
 
         snapshot = snapshot_portfolio(
@@ -278,9 +273,9 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
             holdings=holdings_and_unrealized.holdings,
         )
 
-        positions_payload = await _compute_positions_payload(token_prices, positions)
+        positions_payload = await _compute_positions_payload(token_information_list, positions)
         trades_payload = await _compute_trades_payload(trades)
-        portfolio_payload = await _compute_portfolio_payload(token_prices, snapshot, positions, trades, equity_curve(db))
+        portfolio_payload = await _compute_portfolio_payload(token_information_list, snapshot, positions, trades, equity_curve(db))
         analytics_payload = await _compute_analytics_payload(analytics_rows)
 
         ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": positions_payload})

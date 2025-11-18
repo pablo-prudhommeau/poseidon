@@ -71,14 +71,22 @@ export interface Analytics {
         probabilityTp1BeforeSl: number;
         qualityScoreDelta: number;
     };
-    rawMetrics: {
-        tokenAgeHours: number;
+    fundamentals: {
+        tokenAgeHours: number
+        volume5mUsd: number;
+        volume1hUsd: number;
+        volume6hUsd: number;
         volume24hUsd: number;
         liquidityUsd: number;
         pct5m: number;
         pct1h: number;
+        pct6h: number;
         pct24h: number;
-    };
+        tx5m: number;
+        tx1h: number;
+        tx6h: number;
+        tx24h: number;
+    },
     decision: {
         action: string;
         reason: string;
@@ -97,13 +105,8 @@ export interface Analytics {
         wasProfit: boolean;
         exitReason: string;
     };
-    raw: {
-        dexscreener: any;
-        ai: any;
-        risk: any;
-        settings: any;
-        order: any;
-    };
+    rawScreener: any;
+    rawSettings: any;
 }
 
 

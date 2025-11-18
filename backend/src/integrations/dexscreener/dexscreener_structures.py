@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
-from src.core.structures.structures import Token
+from src.core.utils.date_utils import timezone_now, epoch_to_local_datetime
 from src.integrations.dexscreener.dexscreener_constants import JSON
 
-
-# ------------------------------ Converters ------------------------------ #
 
 def _to_optional_float(value: JSON) -> Optional[float]:
     """Convert a JSON scalar into an optional float, returning None on failure."""
@@ -26,7 +24,7 @@ def _to_optional_float(value: JSON) -> Optional[float]:
 
 def _to_int_or_zero(value: JSON) -> int:
     """Convert a JSON scalar into an int, returning 0 on failure."""
-    if isinstance(value, bool):  # avoid True/False being treated as 1/0
+    if isinstance(value, bool):
         return 0
     if isinstance(value, int):
         return value
@@ -40,69 +38,75 @@ def _to_int_or_zero(value: JSON) -> int:
     return 0
 
 
-# ------------------------------ Core Structures ------------------------------ #
-
 @dataclass(frozen=True)
-class BaseToken:
-    """Base token metadata coming from Dexscreener."""
-    name: Optional[str]
-    symbol: Optional[str]
+class DexscreenerToken:
     address: str
+    name: str
+    symbol: str
 
     @staticmethod
-    def from_json(payload: Dict[str, JSON]) -> "BaseToken":
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerToken":
+        address = payload.get("address")
         name = payload.get("name")
         symbol = payload.get("symbol")
-        address = payload.get("address")
-        return BaseToken(
-            name=str(name) if isinstance(name, str) else None,
-            symbol=str(symbol) if isinstance(symbol, str) else None,
-            address=str(address) if isinstance(address, str) else "",
+        return DexscreenerToken(
+            address=str(address) if address is not None else "",
+            name=str(name) if name is not None else "",
+            symbol=str(symbol).upper() if symbol is not None else ""
         )
 
 
 @dataclass(frozen=True)
-class LiquidityStats:
-    """Liquidity information in USD."""
-    usd: float
+class DexscreenerLiquidityStats:
+    base: Optional[float]
+    quote: Optional[float]
+    usd: Optional[float]
 
     @staticmethod
-    def from_json(payload: Dict[str, JSON]) -> "LiquidityStats":
-        usd = _to_optional_float(payload.get("usd"))
-        return LiquidityStats(usd=usd if usd is not None else 0.0)
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerLiquidityStats":
+        return DexscreenerLiquidityStats(
+            base=_to_optional_float(payload.get("base")),
+            quote=_to_optional_float(payload.get("quote")),
+            usd=_to_optional_float(payload.get("usd"))
+        )
 
 
 @dataclass(frozen=True)
-class VolumeStats:
-    """Volume statistics (we currently use the 24h field)."""
-    h24: float
-
-    @staticmethod
-    def from_json(payload: Dict[str, JSON]) -> "VolumeStats":
-        h24 = _to_optional_float(payload.get("h24"))
-        return VolumeStats(h24=h24 if h24 is not None else 0.0)
-
-
-@dataclass(frozen=True)
-class PriceChangeStats:
-    """Price change percentages over common horizons."""
+class DexscreenerVolumeStats:
     m5: Optional[float]
     h1: Optional[float]
+    h6: Optional[float]
     h24: Optional[float]
 
     @staticmethod
-    def from_json(payload: Dict[str, JSON]) -> "PriceChangeStats":
-        return PriceChangeStats(
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerVolumeStats":
+        return DexscreenerVolumeStats(
             m5=_to_optional_float(payload.get("m5")),
             h1=_to_optional_float(payload.get("h1")),
-            h24=_to_optional_float(payload.get("h24")),
+            h6=_to_optional_float(payload.get("h6")),
+            h24=_to_optional_float(payload.get("h24"))
         )
 
 
-# ------------------------------ Txns Structures ------------------------------ #
+@dataclass(frozen=True)
+class DexscreenerPriceChangeStats:
+    m5: Optional[float]
+    h1: Optional[float]
+    h6: Optional[float]
+    h24: Optional[float]
+
+    @staticmethod
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerPriceChangeStats":
+        return DexscreenerPriceChangeStats(
+            m5=_to_optional_float(payload.get("m5")),
+            h1=_to_optional_float(payload.get("h1")),
+            h6=_to_optional_float(payload.get("h6")),
+            h24=_to_optional_float(payload.get("h24"))
+        )
+
 
 @dataclass(frozen=True)
-class TransactionCount:
+class DexscreenerTransactionCount:
     """
     Buy/Sell counts for a given time window.
     """
@@ -115,10 +119,10 @@ class TransactionCount:
         return self.buys + self.sells
 
     @staticmethod
-    def from_json(payload: Dict[str, JSON]) -> "TransactionCount":
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerTransactionCount":
         buys = _to_int_or_zero(payload.get("buys"))
         sells = _to_int_or_zero(payload.get("sells"))
-        return TransactionCount(buys=buys, sells=sells)
+        return DexscreenerTransactionCount(buys=buys, sells=sells)
 
     def to_dict(self) -> Dict[str, int]:
         """Serialize to a plain JSON-friendly dict."""
@@ -126,24 +130,24 @@ class TransactionCount:
 
 
 @dataclass(frozen=True)
-class TransactionActivity:
+class DexscreenerTransactionActivity:
     """
     Aggregated transaction activity across multiple windows.
 
     All windows are Optional to handle partial payloads gracefully.
     """
-    m5: Optional[TransactionCount]
-    h1: Optional[TransactionCount]
-    h6: Optional[TransactionCount]
-    h24: Optional[TransactionCount]
+    m5: Optional[DexscreenerTransactionCount]
+    h1: Optional[DexscreenerTransactionCount]
+    h6: Optional[DexscreenerTransactionCount]
+    h24: Optional[DexscreenerTransactionCount]
 
     @staticmethod
-    def from_json(payload: Dict[str, JSON]) -> "TransactionActivity":
-        def _maybe_count(key: str) -> Optional[TransactionCount]:
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerTransactionActivity":
+        def _maybe_count(key: str) -> Optional[DexscreenerTransactionCount]:
             sub = payload.get(key)
-            return TransactionCount.from_json(sub) if isinstance(sub, dict) else None
+            return DexscreenerTransactionCount.from_json(sub) if isinstance(sub, dict) else None
 
-        return TransactionActivity(
+        return DexscreenerTransactionActivity(
             m5=_maybe_count("m5"),
             h1=_maybe_count("h1"),
             h6=_maybe_count("h6"),
@@ -166,63 +170,145 @@ class TransactionActivity:
         return out
 
 
-# --------------------------------- Pair Model -------------------------------- #
+@dataclass(frozen=True)
+class DexscreenerInfo:
+    imageUrl: str
+    header: str
+    openGraph: str
+    websites: List[DexscreenerWebsite]
+    socials: List[DexscreenerSocial]
+    boosts: List[float]
+
+    @staticmethod
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerInfo":
+        image_url = payload.get("imageUrl") or ""
+        header = payload.get("header") or ""
+        open_graph = payload.get("openGraph") or ""
+
+        websites_raw = payload.get("websites") or []
+        websites: List[DexscreenerWebsite] = []
+        if isinstance(websites_raw, list):
+            for item in websites_raw:
+                if isinstance(item, dict):
+                    label = item.get("label") or ""
+                    url = item.get("url") or ""
+                    websites.append(DexscreenerWebsite(label=str(label), url=str(url)))
+
+        socials_raw = payload.get("socials") or []
+        socials: List[DexscreenerSocial] = []
+        if isinstance(socials_raw, list):
+            for item in socials_raw:
+                if isinstance(item, dict):
+                    type_ = item.get("type") or ""
+                    url = item.get("url") or ""
+                    socials.append(DexscreenerSocial(type=str(type_), url=str(url)))
+
+        boosts_raw = payload.get("boosts") or []
+        boosts: List[float] = []
+        if isinstance(boosts_raw, list):
+            for item in boosts_raw:
+                boost_value = _to_optional_float(item)
+                if boost_value is not None:
+                    boosts.append(boost_value)
+
+        return DexscreenerInfo(
+            imageUrl=str(image_url),
+            header=str(header),
+            openGraph=str(open_graph),
+            websites=websites,
+            socials=socials,
+            boosts=boosts
+        )
+
 
 @dataclass(frozen=True)
-class DexscreenerPair:
+class DexscreenerWebsite:
+    label: str
+    url: str
+
+
+@dataclass(frozen=True)
+class DexscreenerSocial:
+    type: str
+    url: str
+
+
+@dataclass(frozen=True)
+class DexscreenerTokenInformation:
     """
     Strongly-typed representation of a Dexscreener 'pair' document.
 
     Field names are pythonic; they intentionally differ from the raw JSON keys.
     """
-    base_token: BaseToken
+    base_token: DexscreenerToken
+    quote_token: DexscreenerToken
     pair_address: str
     chain_id: str
+    dex_id: str
     price_usd: Optional[float]
     price_native: Optional[float]
-    price_change: PriceChangeStats
-    volume: VolumeStats
-    liquidity: LiquidityStats
+    price_change: DexscreenerPriceChangeStats
+    volume: DexscreenerVolumeStats
+    liquidity: DexscreenerLiquidityStats
     pair_created_at: int
-    txns: Optional[TransactionActivity]
-    fdv: Optional[float]
+    txns: Optional[DexscreenerTransactionActivity]
+    fully_diluted_valuation: Optional[float]
     market_cap: Optional[float]
+    retrieval_date: datetime
+    age_hours: Optional[float]
+    info: DexscreenerInfo
+    url: str
+    boost: float
+
+    def to_dict(self) -> Dict[str, JSON]:
+        payload = asdict(self)
+        payload["retrieval_date"] = self.retrieval_date.isoformat()
+        return payload
 
     @staticmethod
-    def from_json(payload: Dict[str, JSON]) -> "DexscreenerPair":
+    def from_json(payload: Dict[str, JSON]) -> "DexscreenerTokenInformation":
         base = payload.get("baseToken")
-        base_token = BaseToken.from_json(base) if isinstance(base, dict) else BaseToken(None, None, "")
-
+        base_token = DexscreenerToken.from_json(base) \
+            if isinstance(base, dict) else DexscreenerToken(None, None, "")
+        quote = payload.get("quoteToken")
+        quote_token = DexscreenerToken.from_json(quote) \
+            if isinstance(quote, dict) else DexscreenerToken(None, None, "")
         pair_address = payload.get("pairAddress")
-
         chain_raw = payload.get("chainId")
         chain_id = str(chain_raw).lower() if isinstance(chain_raw, (str, int)) else ""
-
+        dex_raw = payload.get("dexId")
+        dex_id = str(dex_raw).lower() if isinstance(dex_raw, (str, int)) else ""
         price_usd = _to_optional_float(payload.get("priceUsd"))
         price_native = _to_optional_float(payload.get("priceNative"))
-
         change_raw = payload.get("priceChange")
-        price_change = PriceChangeStats.from_json(change_raw) if isinstance(change_raw, dict) else PriceChangeStats(
-            None, None, None)
-
+        price_change = DexscreenerPriceChangeStats.from_json(change_raw) \
+            if isinstance(change_raw, dict) else DexscreenerPriceChangeStats(None, None, None)
         volume_raw = payload.get("volume")
-        volume = VolumeStats.from_json(volume_raw) if isinstance(volume_raw, dict) else VolumeStats(0.0)
-
+        volume = DexscreenerVolumeStats.from_json(volume_raw) \
+            if isinstance(volume_raw, dict) else DexscreenerVolumeStats(0.0, 0.0, 0.0, 0.0)
         liquidity_raw = payload.get("liquidity")
-        liquidity = LiquidityStats.from_json(liquidity_raw) if isinstance(liquidity_raw, dict) else LiquidityStats(0.0)
-
+        liquidity = DexscreenerLiquidityStats.from_json(liquidity_raw) \
+            if isinstance(liquidity_raw, dict) else DexscreenerLiquidityStats(0.0, 0.0, 0.0)
         pair_created_at = _to_int_or_zero(payload.get("pairCreatedAt"))
-
         txns_raw = payload.get("txns")
-        txns = TransactionActivity.from_json(txns_raw) if isinstance(txns_raw, dict) else None
-
+        txns = DexscreenerTransactionActivity.from_json(txns_raw) if isinstance(txns_raw, dict) else None
         fdv = _to_optional_float(payload.get("fdv"))
         market_cap = _to_optional_float(payload.get("marketCap"))
-
-        return DexscreenerPair(
+        retrieval_date = timezone_now()
+        age_hours = 0
+        if pair_created_at > 0:
+            created_at_dt = epoch_to_local_datetime(pair_created_at)
+            age_delta = retrieval_date - created_at_dt
+            age_hours = age_delta.total_seconds() / 3600.0
+        info = DexscreenerInfo.from_json(payload.get("info") or {})
+        url = payload.get("url")
+        boost = payload.get("boosts").get("active") if isinstance(payload.get("boosts"), dict) else None
+        return DexscreenerTokenInformation(
             base_token=base_token,
+            quote_token=quote_token,
             pair_address=pair_address,
             chain_id=chain_id,
+            dex_id=dex_id,
             price_usd=price_usd,
             price_native=price_native,
             price_change=price_change,
@@ -230,49 +316,11 @@ class DexscreenerPair:
             liquidity=liquidity,
             pair_created_at=pair_created_at,
             txns=txns,
-            fdv=fdv,
+            fully_diluted_valuation=fdv,
             market_cap=market_cap,
+            retrieval_date=retrieval_date,
+            age_hours=age_hours,
+            info=info,
+            url=url,
+            boost=boost
         )
-
-
-@dataclass(frozen=True, slots=True)
-class NormalizedRow:
-    """
-    Strongly-typed row used across the pipeline.
-    Keep historical/camelCase field names to avoid touching downstream code.
-    """
-    name: str
-    symbol: str
-    tokenAddress: str
-    pairAddress: str
-    chain: str
-    priceUsd: float
-    priceNative: float
-    pct5m: Optional[float]
-    pct1h: Optional[float]
-    pct24h: Optional[float]
-    vol24h: float
-    liqUsd: float
-    pairCreatedAt: int
-    txns: Optional[TransactionActivity] = None
-    fdv: Optional[float] = None
-    marketCap: Optional[float] = None
-
-
-
-@dataclass
-class TokenPrice:
-    """
-    Minimal live price bundle for a token/pair used by the realtime pipeline.
-    Optional fields may not be populated depending on the client.
-    """
-    token: Token
-    priceUsd: Optional[float]
-    liquidityUsd: Optional[float] = None
-    fdvUsd: Optional[float] = None
-    marketCapUsd: Optional[float] = None
-    buys5m: Optional[int] = None
-    sells5m: Optional[int] = None
-    txns: Optional[TransactionActivity] = None
-    volumeH24Usd: Optional[float] = None
-    asOf: Optional[datetime] = None

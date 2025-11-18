@@ -55,14 +55,21 @@ class AdaptiveRiskManager:
           - Prefer sparkline arrays when present
           - Fallback to dispersion of percent_5m / percent_1h if needed
         """
-        pct_5m = candidate.percent_5m
-        pct_1h = candidate.percent_1h
+        token_information = candidate.dexscreener_token_information
+        pct_5m = token_information.price_change.m5
+        pct_1h = token_information.price_change.h1
+        pct_6h = token_information.price_change.h6
+        pct_24h = token_information.price_change.h24
 
         window: List[float] = []
         if isinstance(pct_5m, (int, float)):
             window.append(abs(float(pct_5m)) / 100.0)
         if isinstance(pct_1h, (int, float)):
             window.append(abs(float(pct_1h)) / 100.0)
+        if isinstance(pct_6h, (int, float)):
+            window.append(abs(float(pct_6h)) / 100.0)
+        if isinstance(pct_24h, (int, float)):
+            window.append(abs(float(pct_24h)) / 100.0)
 
         if not window:
             return None
@@ -78,15 +85,21 @@ class AdaptiveRiskManager:
           - Prevent chasing when short-term (%5m) and hourly (%1h) are already extended.
           - Discourage entries with weak buy flow when price is already spiking.
         """
-        symbol = candidate.symbol or "?"
-        liquidity_usd = float(candidate.liquidity_usd)
+        token_information = candidate.dexscreener_token_information
+        symbol = token_information.base_token.symbol
+        liquidity_usd = float(token_information.liquidity.usd)
 
-        pct_5m_raw = candidate.percent_5m
-        pct_1h_raw = candidate.percent_1h
+        pct_5m_raw = token_information.price_change.m5
+        pct_1h_raw = token_information.price_change.h1
+        pct_6h_raw = token_information.price_change.h6
+        pct_24h_raw = token_information.price_change.h24
+
         pct_5m = float(pct_5m_raw) if isinstance(pct_5m_raw, (int, float)) else None
         pct_1h = float(pct_1h_raw) if isinstance(pct_1h_raw, (int, float)) else None
+        pct_6h = float(pct_6h_raw) if isinstance(pct_6h_raw, (int, float)) else None
+        pct_24h = float(pct_24h_raw) if isinstance(pct_24h_raw, (int, float)) else None
 
-        txns = candidate.txns
+        txns = token_information.txns
         bucket = txns.h1 or txns.h24
         buys = bucket.buys
         sells = bucket.sells
@@ -97,7 +110,9 @@ class AdaptiveRiskManager:
             log.debug("[RISK][PRE-ENTRY][DROP:LOW_LIQ] %s liq=%.0f < %.0f",
                       symbol, liquidity_usd, self.min_liquidity_usd)
             diag = RiskDiagnostics(
-                liquidity_usd=liquidity_usd, percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0),
+                liquidity_usd=liquidity_usd,
+                percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
+                percent_24h=float(pct_24h or 0.0),
                 buy_ratio=buy_ratio)
             return PreEntryDecision(should_buy=False, reason="low_liquidity", diagnostics=diag.as_plain_dict())
 
@@ -105,7 +120,9 @@ class AdaptiveRiskManager:
                 pct_1h or 0.0) > self.max_abs_percent_1h * 0.7:
             log.debug("[RISK][PRE-ENTRY][DROP:SPIKE] %s pct5m=%.1f pct1h=%.1f", symbol, pct_5m or -1.0, pct_1h or -1.0)
             diag = RiskDiagnostics(
-                liquidity_usd=liquidity_usd, percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0),
+                liquidity_usd=liquidity_usd,
+                percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
+                percent_24h=float(pct_24h or 0.0),
                 buy_ratio=buy_ratio
             )
             return PreEntryDecision(should_buy=False, reason="overextended_spike", diagnostics=diag.as_plain_dict())
@@ -113,13 +130,17 @@ class AdaptiveRiskManager:
         if buy_ratio < 0.48 and (pct_5m or 0.0) > 6.0:
             log.debug("[RISK][PRE-ENTRY][DROP:WEAK_FLOW] %s buy_ratio=%.2f", symbol, buy_ratio)
             diag = RiskDiagnostics(
-                liquidity_usd=liquidity_usd, percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0),
+                liquidity_usd=liquidity_usd,
+                percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
+                percent_24h=float(pct_24h or 0.0),
                 buy_ratio=buy_ratio
             )
             return PreEntryDecision(should_buy=False, reason="weak_buy_flow", diagnostics=diag.as_plain_dict())
 
         diag = RiskDiagnostics(
-            liquidity_usd=liquidity_usd, percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0),
+            liquidity_usd=liquidity_usd,
+            percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
+            percent_24h=float(pct_24h or 0.0),
             buy_ratio=buy_ratio
         )
         return PreEntryDecision(should_buy=True, reason="ok", diagnostics=diag.as_plain_dict())

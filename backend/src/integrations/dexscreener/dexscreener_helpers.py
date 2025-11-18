@@ -8,8 +8,7 @@ from src.core.structures.structures import Token
 from src.integrations.dexscreener.dexscreener_client import HTTP_TIMEOUT_SECONDS
 from src.integrations.dexscreener.dexscreener_constants import JSON, LATEST_TOKENS_ENDPOINT, LATEST_PAIRS_ENDPOINT
 from src.integrations.dexscreener.dexscreener_structures import (
-    DexscreenerPair,
-    NormalizedRow,
+    DexscreenerTokenInformation,
 )
 from src.logging.logger import get_logger
 
@@ -33,6 +32,7 @@ def _split_into_chunks(tokens: List[Token], chunk_size: int) -> List[List[str]]:
         chunks.append(chunk)
     return chunks
 
+
 def _split_token_addressed_into_chunks(items: List[str], chunk_size: int) -> List[List[str]]:
     """
     Split a list into equally sized chunks (last chunk may be smaller).
@@ -46,20 +46,6 @@ def _split_token_addressed_into_chunks(items: List[str], chunk_size: int) -> Lis
     """
     effective_size = max(1, int(chunk_size or 1))
     return [items[i: i + effective_size] for i in range(0, len(items), effective_size)]
-
-
-def _merge_pair_maps(
-        left: Dict[str, List[DexscreenerPair]],
-        right: Dict[str, List[DexscreenerPair]],
-) -> Dict[str, List[DexscreenerPair]]:
-    """
-    Merge two address->pairs mappings by concatenating lists.
-    """
-    merged: Dict[str, List[DexscreenerPair]] = {}
-    for part in (left, right):
-        for key, value in part.items():
-            merged.setdefault(key, []).extend(value)
-    return merged
 
 
 def _deduplicate_preserving_order(values: Iterable[Token]) -> List[Token]:
@@ -149,30 +135,6 @@ def _extract_addresses(payload: Union[Dict[str, JSON], List[JSON], None]) -> Lis
     return addresses
 
 
-def _normalize_row_from_pair(pair: DexscreenerPair) -> NormalizedRow:
-    """Flatten a DexscreenerPair into a strongly-typed NormalizedRow."""
-    base = pair.base_token
-    change = pair.price_change
-
-    return NormalizedRow(
-        name=(base.name or "").strip(),
-        symbol=(base.symbol or "").strip().upper(),
-        tokenAddress=pair.base_token.address,
-        pairAddress=pair.pair_address,
-        chain=pair.chain_id,
-        priceUsd=pair.price_usd,
-        priceNative=pair.price_native,
-        pct5m=change.m5,
-        pct1h=change.h1,
-        pct24h=change.h24,
-        vol24h=pair.volume.h24,
-        liqUsd=pair.liquidity.usd,
-        pairCreatedAt=pair.pair_created_at,
-        txns=pair.txns,
-        fdv=pair.fdv,
-        marketCap=pair.market_cap,
-    )
-
 
 def _chunk_strings(items: List[str], size: int) -> List[List[str]]:
     """Split a list of strings into chunks of at most 'size' elements."""
@@ -180,11 +142,11 @@ def _chunk_strings(items: List[str], size: int) -> List[List[str]]:
     return [items[i: i + limit] for i in range(0, len(items), limit)]
 
 
-async def _fetch_pairs_for_chain(
+async def _fetch_token_information_for_chain(
         client: httpx.AsyncClient,
         chain_id: str,
         pair_addresses: List[str],
-) -> List[DexscreenerPair]:
+) -> List[DexscreenerTokenInformation]:
     """
     Fetch Dexscreener pairs for a given chain and **pair address** list.
     """
@@ -194,23 +156,23 @@ async def _fetch_pairs_for_chain(
     url = f"{LATEST_PAIRS_ENDPOINT}/{chain_id}/{','.join(pair_addresses)}"
     payload = await _http_get_json(client, url)
 
-    pairs: List[DexscreenerPair] = []
+    pairs: List[DexscreenerTokenInformation] = []
     if isinstance(payload, dict):
         raw_list = payload.get("pairs")
         if isinstance(raw_list, list):
             for item in raw_list:
                 if isinstance(item, dict):
                     try:
-                        pairs.append(DexscreenerPair.from_json(item))
+                        pairs.append(DexscreenerTokenInformation.from_json(item))
                     except Exception:
                         continue
     return pairs
 
 
-async def _fetch_pairs_batch_resilient(
+async def _fetch_token_information_list(
         client: httpx.AsyncClient,
         batch_addresses: List[str],
-) -> Dict[str, List[DexscreenerPair]]:
+) -> List[DexscreenerTokenInformation]:
     """
     Fetch Dexscreener pairs for a batch of **base token addresses** with resilience.
 
@@ -218,7 +180,7 @@ async def _fetch_pairs_batch_resilient(
     For mixed batches, we split and retry to salvage partial results.
     """
     if not batch_addresses:
-        return {}
+        return []
 
     url = f"{LATEST_TOKENS_ENDPOINT}/{','.join(batch_addresses)}"
     try:
@@ -228,9 +190,9 @@ async def _fetch_pairs_batch_resilient(
         if status in (400, 413, 414) and len(batch_addresses) > 1:
             log.debug("[DEX][FETCH] HTTP %d for batch size %d → splitting and retrying.", status, len(batch_addresses))
             mid = len(batch_addresses) // 2
-            left = await _fetch_pairs_batch_resilient(client, batch_addresses[:mid])
-            right = await _fetch_pairs_batch_resilient(client, batch_addresses[mid:])
-            return _merge_pair_maps(left, right)
+            left = await _fetch_token_information_list(client, batch_addresses[:mid])
+            right = await _fetch_token_information_list(client, batch_addresses[mid:])
+            return left + right
         log.warning("[DEX][FETCH] HTTP error %d for URL '%s'.", status, url)
         raise
 
@@ -242,25 +204,25 @@ async def _fetch_pairs_batch_resilient(
                 log.debug("[DEX][FETCH] 'pairs' is null for batch size %d → splitting and retrying.",
                           len(batch_addresses))
                 mid = len(batch_addresses) // 2
-                left = await _fetch_pairs_batch_resilient(client, batch_addresses[:mid])
-                right = await _fetch_pairs_batch_resilient(client, batch_addresses[mid:])
-                return _merge_pair_maps(left, right)
+                left = await _fetch_token_information_list(client, batch_addresses[:mid])
+                right = await _fetch_token_information_list(client, batch_addresses[mid:])
+                return left + right
             log.debug("[DEX][FETCH] 'pairs' is null for address '%s' (no result).", batch_addresses[0])
-            return {}
+            return []
         if isinstance(pairs_value, list):
             pairs_list = [p for p in pairs_value if isinstance(p, dict)]
 
-    by_address: Dict[str, List[DexscreenerPair]] = {}
+    token_information_list: List[DexscreenerTokenInformation] = []
     for pair_payload in pairs_list:
-        model = DexscreenerPair.from_json(pair_payload)
-        address = model.base_token.address
+        dexscreener_token_information = DexscreenerTokenInformation.from_json(pair_payload)
+        address = dexscreener_token_information.base_token.address
         if not address:
             continue
-        by_address.setdefault(address, []).append(model)
-    return by_address
+        token_information_list.append(dexscreener_token_information)
+    return token_information_list
 
 
-def _select_best_pair(pairs: List[DexscreenerPair]) -> Optional[DexscreenerPair]:
+def _select_best_pair(pairs: List[DexscreenerTokenInformation]) -> Optional[DexscreenerTokenInformation]:
     """
     Select the 'best' pair using (liquidity.usd, volume.h24) as a score.
     Used **only** by fetch_trending_candidates (per product policy).
@@ -268,7 +230,7 @@ def _select_best_pair(pairs: List[DexscreenerPair]) -> Optional[DexscreenerPair]
     if not pairs:
         return None
 
-    def score(item: DexscreenerPair) -> Tuple[float, float]:
+    def score(item: DexscreenerTokenInformation) -> Tuple[float, float]:
         return item.liquidity.usd, item.volume.h24
 
     return sorted(pairs, key=score, reverse=True)[0]

@@ -21,6 +21,15 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _to_dict(settings: object) -> dict:
+    """Return all UPPERCASE non-callable class attributes as a flat dict."""
+    return {
+        name: value
+        for name, value in vars(settings.__class__).items()
+        if name.isupper() and not callable(value)
+    }
+
+
 class Settings:
     # --- API ---
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
@@ -57,8 +66,12 @@ class Settings:
     TREND_MAX_RESULTS: int = int(os.getenv("TREND_MAX_RESULTS", "100"))
     TREND_MIN_PCT_5M: float = float(os.getenv("TREND_MIN_PCT_5M", "2"))
     TREND_MIN_PCT_1H: float = float(os.getenv("TREND_MIN_PCT_1H", "5"))
+    TREND_MIN_PCT_6H: float = float(os.getenv("TREND_MIN_PCT_6H", "8"))
     TREND_MIN_PCT_24H: float = float(os.getenv("TREND_MIN_PCT_24H", "10"))
-    TREND_MIN_VOL_USD: float = float(os.getenv("TREND_MIN_VOL_USD", "75000"))
+    TREND_MIN_VOL5M_USD: float = float(os.getenv("TREND_MIN_VOL5M_USD", "5000"))
+    TREND_MIN_VOL1H_USD: float = float(os.getenv("TREND_MIN_VOL1H_USD", "10000"))
+    TREND_MIN_VOL6H_USD: float = float(os.getenv("TREND_MIN_VOL6H_USD", "25000"))
+    TREND_MIN_VOL24H_USD: float = float(os.getenv("TREND_MIN_VOL24H_USD", "75000"))
     TREND_MIN_LIQ_USD: float = float(os.getenv("TREND_MIN_LIQ_USD", "20000"))
     TREND_INTERVAL_SEC: int = int(os.getenv("TREND_INTERVAL_SEC", "60"))
     TREND_SOFT_FILL_MIN: int = int(os.getenv("TREND_SOFT_FILL_MIN", "6"))
@@ -85,6 +98,7 @@ class Settings:
     DEXSCREENER_MAX_AGE_HOURS: float = float(os.getenv("DEXSCREENER_MAX_AGE_HOURS", "720"))
     DEXSCREENER_MAX_ABS_M5_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_M5_PCT", "25"))
     DEXSCREENER_MAX_ABS_H1_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_H1_PCT", "60"))
+    DEXSCREENER_MAX_ABS_H6_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_H6_PCT", "120"))
     DEXSCREENER_MAX_ABS_H24_PCT: float = float(os.getenv("DEXSCREENER_MAX_ABS_H24_PCT", "200"))
     DEXSCREENER_REBUY_COOLDOWN_MIN: int = int(os.getenv("DEXSCREENER_REBUY_COOLDOWN_MIN", "45"))
 

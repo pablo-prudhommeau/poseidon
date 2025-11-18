@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import List, Dict
+from typing import List, cast
 
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from src.core.structures.structures import Token
-from src.integrations.dexscreener.dexscreener_structures import TokenPrice
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.persistence.models import Position, Phase
 from src.persistence.serializers import serialize_position
 
@@ -28,7 +28,7 @@ def get_open_tokens(database_session: Session) -> List[Token]:
                 Position.phase == Phase.OPEN,
                 Position.phase == Phase.PARTIAL,
                 Position.phase == Phase.STALED,
-                )
+            )
         )
         .order_by(Position.opened_at.desc())
     )
@@ -57,16 +57,16 @@ def get_open_positions(database_session: Session) -> List[Position]:
                 Position.phase == Phase.OPEN,
                 Position.phase == Phase.PARTIAL,
                 Position.phase == Phase.STALED,
-                )
+            )
         )
         .order_by(Position.opened_at.desc())
     )
     return list(database_session.execute(statement).scalars().all())
 
 
-def serialize_positions_with_token_prices(
+def serialize_positions_with_token_information(
         positions: List[Position],
-        token_prices: List[TokenPrice],
+        token_information_list: List[DexscreenerTokenInformation],
 ) -> List[dict]:
     """
     Serialize ACTIVE positions and attach a live last_price by token when available.
@@ -74,15 +74,15 @@ def serialize_positions_with_token_prices(
     payload: List[dict] = []
     for position in positions:
         serialized = serialize_position(position)
-        for token_price in token_prices:
+        for token_information in token_information_list:
             if (
-                    token_price.token.chain == position.chain
-                    and token_price.token.symbol == position.symbol
-                    and token_price.token.tokenAddress == position.tokenAddress
-                    and token_price.token.pairAddress == position.pairAddress
+                    token_information.chain_id == position.chain
+                    and token_information.base_token.symbol == position.symbol
+                    and token_information.base_token.address == position.tokenAddress
+                    and token_information.pair_address == position.pairAddress
             ):
-                if token_price.priceUsd is not None:
-                    serialized["last_price"] = float(token_price.priceUsd)
-                payload.append(serialized)
+                if token_information.price_usd is not None:
+                    serialized["last_price"] = float(token_information.price_usd)
+                payload.append(cast(dict, serialized))
                 break
     return payload

@@ -203,7 +203,7 @@ class ScoringEngine:
         score = 100.0 * (weighted_sum / total_weight)
         score = _clamp(score, 0.0, 100.0)
 
-        symbol_display = candidate.symbol or "<unknown>"
+        symbol_display = candidate.dexscreener_token_information.base_token.symbol
         log.debug(
             "[TREND][SCORING][STAT] symbol=%s score=%.2f "
             "f={liq:%.0f,vol:%.0f,age:%.1f,mom:%.3f,flow:%.3f} "
@@ -249,20 +249,22 @@ class ScoringEngine:
         Extract and compute raw features used by the statistics scorer.
         Strictly uses the structured `Candidate` to avoid dict-based access.
         """
-        liquidity_usd = float(candidate.liquidity_usd)
-        volume_24h_usd = float(candidate.volume_24h_usd)
+        token_information = candidate.dexscreener_token_information
+        liquidity_usd = float(token_information.liquidity.usd)
+        volume_24h_usd = float(token_information.volume.h24)
 
         age_hours = (
-            float(candidate.token_age_hours)
-            if candidate.token_age_hours > 0.0
-            else float(_age_hours(int(candidate.pair_created_at_epoch_seconds)))
+            float(token_information.age_hours)
+            if token_information.age_hours > 0.0
+            else float(_age_hours(int(token_information.pair_created_at)))
         )
 
-        percent_5m = float(_num(candidate.percent_5m) or 0.0)
-        percent_1h = float(_num(candidate.percent_1h) or 0.0)
-        percent_24h = float(_num(candidate.percent_24h) or 0.0)
-        momentum_score = self._blend_momentum(percent_5m, percent_1h, percent_24h)
-        flow_score = _buy_sell_score(candidate.txns)
+        percent_5m = float(_num(token_information.price_change.m5) or 0.0)
+        percent_1h = float(_num(token_information.price_change.h1) or 0.0)
+        percent_6h = float(_num(token_information.price_change.h6) or 0.0)
+        percent_24h = float(_num(token_information.price_change.h24) or 0.0)
+        momentum_score = self._blend_momentum(percent_5m, percent_1h, percent_6h, percent_24h)
+        flow_score = _buy_sell_score(token_information.txns)
 
         return FeatureValues(
             liquidity_usd=liquidity_usd,
@@ -273,7 +275,7 @@ class ScoringEngine:
         )
 
     @staticmethod
-    def _blend_momentum(percent_5m: float, percent_1h: float, percent_24h: float) -> float:
+    def _blend_momentum(percent_5m: float, percent_1h: float, percent_6h, percent_24h: float) -> float:
         """
         Blend short/medium/long momentum with a logistic squash per horizon.
 
@@ -282,18 +284,23 @@ class ScoringEngine:
         """
         s5 = _squash_pct(percent_5m)
         s1 = _squash_pct(percent_1h)
+        s6 = _squash_pct(percent_6h)
         s24 = _squash_pct(percent_24h)
-        return 0.6 * s5 + 0.3 * s1 + 0.1 * s24
+        return 0.6 * s5 + 0.4 * s1 + 0.25 * s6 + 0.1 * s24
 
 
 @dataclass(frozen=True)
 class QualityContext:
     """Context breakdown for the quality score decision."""
     liq: float
-    vol: float
+    vol5m: float
+    vol1h: float
+    vol6h: float
+    vol24h: float
     age_h: float
     p5: float
     p1: float
+    p6: float
     p24: float
     momentum: float
     liq_score: float
@@ -316,49 +323,67 @@ def _compute_quality_score(candidate: Candidate) -> QualityGateResult:
 
     Operates on a structured `Candidate` and avoids dict reads entirely.
     """
-    liquidity_usd = float(candidate.liquidity_usd)
-    volume_24h_usd = float(candidate.volume_24h_usd)
+    token_information = candidate.dexscreener_token_information
+    base_token = token_information.base_token
 
-    pct_5m = _num(candidate.percent_5m)
-    pct_1h = _num(candidate.percent_1h)
-    pct_24h = _num(candidate.percent_24h)
+    liquidity_usd = float(token_information.liquidity.usd)
+
+    volume_5m_usd = float(token_information.volume.m5)
+    volume_1h_usd = float(token_information.volume.h1)
+    volume_6h_usd = float(token_information.volume.h6)
+    volume_24h_usd = float(token_information.volume.h24)
+
+    pct_5m = _num(token_information.price_change.m5)
+    pct_1h = _num(token_information.price_change.h1)
+    pct_6h = _num(token_information.price_change.h6)
+    pct_24h = _num(token_information.price_change.h24)
 
     age_hours = (
-        float(candidate.token_age_hours)
-        if candidate.token_age_hours > 0.0
-        else float(_age_hours(int(candidate.pair_created_at_epoch_seconds)))
+        float(token_information.age_hours)
+        if token_information.age_hours > 0.0
+        else float(_age_hours(int(token_information.pair_created_at)))
     )
 
-    order_flow_score = _buy_sell_score(candidate.txns)
+    order_flow_score = _buy_sell_score(token_information.txns)
 
     min_liquidity_usd = float(settings.TREND_MIN_LIQ_USD)
-    min_volume_24h_usd = float(settings.TREND_MIN_VOL_USD)
+
+    min_volume_5m_usd = float(settings.TREND_MIN_VOL5M_USD)
+    min_volume_1h_usd = float(settings.TREND_MIN_VOL1H_USD)
+    min_volume_6h_usd = float(settings.TREND_MIN_VOL6H_USD)
+    min_volume_24h_usd = float(settings.TREND_MIN_VOL24H_USD)
+
     min_age_hours = float(settings.DEXSCREENER_MIN_AGE_HOURS)
     max_age_hours = float(settings.DEXSCREENER_MAX_AGE_HOURS)
 
     if liquidity_usd < min_liquidity_usd:
-        log.debug("[TREND][QUALITY][DROP:LOW_LIQ] %s — %.0f < %.0f", candidate.symbol, liquidity_usd, min_liquidity_usd)
+        log.debug("[TREND][QUALITY][DROP:LOW_LIQ] %s — %.0f < %.0f", base_token.symbol, liquidity_usd,
+                  min_liquidity_usd)
         return QualityGateResult(
             admissible=False,
             score=0.0,
             reason="low_liquidity",
             context=QualityContext(
-                liq=liquidity_usd, vol=volume_24h_usd, age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p24=float(pct_24h or 0.0),
+                liq=liquidity_usd,
+                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
+                age_h=age_hours,
+                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
                 momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
             ),
         )
 
     if volume_24h_usd < min_volume_24h_usd:
-        log.debug("[TREND][QUALITY][DROP:LOW_VOL] %s — %.0f < %.0f", candidate.symbol, volume_24h_usd,
+        log.debug("[TREND][QUALITY][DROP:LOW_VOL] %s — %.0f < %.0f", base_token.symbol, volume_24h_usd,
                   min_volume_24h_usd)
         return QualityGateResult(
             admissible=False,
             score=0.0,
             reason="low_volume",
             context=QualityContext(
-                liq=liquidity_usd, vol=volume_24h_usd, age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p24=float(pct_24h or 0.0),
+                liq=liquidity_usd,
+                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
+                age_h=age_hours,
+                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
                 momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
             ),
         )
@@ -366,42 +391,58 @@ def _compute_quality_score(candidate: Candidate) -> QualityGateResult:
     if age_hours < min_age_hours or age_hours > max_age_hours:
         log.debug(
             "[TREND][QUALITY][DROP:AGE] %s — %.1fh not in [%.1f .. %.1f]",
-            candidate.symbol, age_hours, min_age_hours, max_age_hours,
+            base_token.symbol, age_hours, min_age_hours, max_age_hours,
         )
         return QualityGateResult(
             admissible=False,
             score=0.0,
             reason="age_out_of_bounds",
             context=QualityContext(
-                liq=liquidity_usd, vol=volume_24h_usd, age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p24=float(pct_24h or 0.0),
+                liq=liquidity_usd,
+                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
+                age_h=age_hours,
+                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
                 momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
             ),
         )
 
-    if not _momentum_ok(pct_5m, pct_1h, pct_24h):
+    if not _momentum_ok(pct_5m, pct_1h, pct_6h, pct_24h):
         log.debug(
-            "[TREND][QUALITY][DROP:MOMENTUM] %s — m5=%s m1=%s m24=%s",
-            candidate.symbol, _format(pct_5m), _format(pct_1h), _format(pct_24h),
+            "[TREND][QUALITY][DROP:MOMENTUM] %s — m5=%s m1=%s m6=%s m24=%s",
+            base_token.symbol, _format(pct_5m), _format(pct_1h), _format(pct_6h), _format(pct_24h)
         )
         return QualityGateResult(
             admissible=False,
             score=0.0,
             reason="choppy_or_spiky",
             context=QualityContext(
-                liq=liquidity_usd, vol=volume_24h_usd, age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p24=float(pct_24h or 0.0),
+                liq=liquidity_usd,
+                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
+                age_h=age_hours,
+                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
                 momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
             ),
         )
 
     s5 = _squash_pct(float(pct_5m or 0.0))
     s1 = _squash_pct(float(pct_1h or 0.0))
+    s6 = _squash_pct(float(pct_6h or 0.0))
     s24 = _squash_pct(float(pct_24h or 0.0))
-    momentum_score = 0.6 * s5 + 0.3 * s1 + 0.1 * s24
+
+    momentum_score = 0.6 * s5 + 0.4 * s1 + 0.25 * s6 + 0.1 * s24
 
     liquidity_component = min(1.0, liquidity_usd / (min_liquidity_usd * 4.0))
-    volume_component = min(1.0, volume_24h_usd / (min_volume_24h_usd * 4.0))
+
+    volume_5m_component = min(1.0, volume_5m_usd / (min_volume_5m_usd * 4.0))
+    volume_1h_component = min(1.0, volume_1h_usd / (min_volume_1h_usd * 4.0))
+    volume_6h_component = min(1.0, volume_6h_usd / (min_volume_6h_usd * 4.0))
+    volume_24h_component = min(1.0, volume_24h_usd / (min_volume_24h_usd * 4.0))
+    volume_component = (
+            0.4 * volume_5m_component
+            + 0.3 * volume_1h_component
+            + 0.2 * volume_6h_component
+            + 0.1 * volume_24h_component
+    )
 
     quality_score = 100.0 * (
             0.45 * momentum_score
@@ -411,10 +452,14 @@ def _compute_quality_score(candidate: Candidate) -> QualityGateResult:
 
     context = QualityContext(
         liq=liquidity_usd,
-        vol=volume_24h_usd,
+        vol5m=volume_5m_usd,
+        vol1h=volume_1h_usd,
+        vol6h=volume_6h_usd,
+        vol24h=volume_24h_usd,
         age_h=age_hours,
         p5=float(pct_5m or 0.0),
         p1=float(pct_1h or 0.0),
+        p6=float(pct_6h or 0.0),
         p24=float(pct_24h or 0.0),
         momentum=momentum_score,
         liq_score=liquidity_component,
@@ -463,12 +508,13 @@ def apply_quality_filter(rows: Sequence[Candidate]) -> List[Candidate]:
         result = _compute_quality_score(candidate)
         _attach_quality_score(candidate, result.score)
 
-        symbol_for_logs = (candidate.symbol or "").upper() or "<UNKNOWN>"
-        short_address = _tail(candidate.token_address)
+        base_token = candidate.dexscreener_token_information.base_token
+        symbol_for_logs = base_token.symbol
+        short_address = _tail(base_token.address)
 
         if result.admissible and result.score >= minimum_quality_score:
             if not _has_valid_intraday_bars(candidate):
-                log.debug("[TREND][QUALITY][DROP:BARS] %s — intraday bars missing (m1/m5=NA)", candidate.symbol)
+                log.debug("[TREND][QUALITY][DROP:BARS] %s — intraday bars missing (m1/m5=NA)", base_token.symbol)
                 continue
 
             kept.append(candidate)

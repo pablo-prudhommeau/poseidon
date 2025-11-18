@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from enum import Enum
-from typing import Deque, Dict, Iterable, List, Optional, Protocol
+from typing import Deque, Dict, Iterable, List, Optional
 
 from src.core.structures.structures import (
     RealizedPnl,
@@ -13,7 +13,7 @@ from src.core.structures.structures import (
     CashFromTrades,
     HoldingsAndUnrealizedPnl,
 )
-from src.integrations.dexscreener.dexscreener_structures import TokenPrice
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 from src.persistence.models import Trade, Position
 
@@ -81,13 +81,15 @@ def _decimal_from_primitive(value: float | int | str | None) -> Decimal:
 
 def _to_token_from_position(position: Position) -> Token:
     """Build a TokenIdentity from a position-like object."""
-    pair_address: Optional[str] = position.pairAddress if isinstance(position.pairAddress, str) and position.pairAddress else None
+    pair_address: Optional[str] = position.pairAddress if isinstance(position.pairAddress,
+                                                                     str) and position.pairAddress else None
     return Token(
         chain=position.chain,
         tokenAddress=position.tokenAddress,
         symbol=position.symbol,
         pairAddress=pair_address,
     )
+
 
 def _quantize_2dp(amount: Decimal) -> Decimal:
     """Round to 2 decimal places with HALF_UP."""
@@ -138,7 +140,8 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Rea
         if side == "BUY":
             buy_fee_per_unit_usd = fee_usd / quantity if quantity > 0.0 else 0.0
             lots_by_token[token].append(
-                InventoryLot(quantity=quantity, unit_price_usd=unit_price_usd, buy_fee_per_unit_usd=buy_fee_per_unit_usd)
+                InventoryLot(quantity=quantity, unit_price_usd=unit_price_usd,
+                             buy_fee_per_unit_usd=buy_fee_per_unit_usd)
             )
             continue
 
@@ -218,35 +221,23 @@ def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFrom
 
 def holdings_and_unrealized_from_positions(
         positions: Iterable[Position],
-        token_prices: List[TokenPrice]
+        token_information_list: List[DexscreenerTokenInformation]
 ) -> HoldingsAndUnrealizedPnl:
-    """Compute holdings value and unrealized PnL from positions.
-
-    This uses the position's entry price and quantity together with live prices.
-    Pricing is pair-aware via :class:`TokenIdentity` (pair address preferred,
-    falling back to token address).
-    """
     position_list: List[Position] = list(positions)
-
-    price_index: Dict[Token, float] = {}
-    for price_row in token_prices:
-        token = price_row.token
-        if price_row.priceUsd and price_row.priceUsd > 0.0:
-            price_index[token] = float(price_row.priceUsd)
-
     holdings_value_dec = Decimal("0")
     unrealized_dec = Decimal("0")
 
-    for pos in position_list:
-        token = _to_token_from_position(pos)
-        price_usd = price_index.get(token)
+    for position in position_list:
+        token = _to_token_from_position(position)
+        price_usd = next((token_information for token_information in token_information_list if
+                          token_information.pair_address == position.pairAddress)).price_usd
         if price_usd is None or price_usd <= 0.0:
             log.debug("[PNL][UNREAL][NOPRICE] token=%s — skipping unrealized valuation", token)
             continue
 
         try:
-            quantity = float(pos.current_quantity)
-            entry_price = float(pos.entry)
+            quantity = float(position.current_quantity)
+            entry_price = float(position.entry)
         except (TypeError, ValueError):
             log.debug("[PNL][UNREAL][SKIP] token=%s reason=invalid_numeric_fields", token)
             continue
@@ -278,8 +269,9 @@ async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, 
     - Positions without a pair are ignored here (pair-only policy).
     """
     from src.core.structures.structures import Token as CoreToken
-    from src.integrations.dexscreener.dexscreener_client import fetch_prices_by_tokens
-    from src.integrations.dexscreener.dexscreener_structures import TokenPrice as CoreTokenPrice  # noqa: F401
+    from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
+    from src.integrations.dexscreener.dexscreener_structures import \
+        DexscreenerTokenPrice as CoreTokenPrice  # noqa: F401
 
     tokens: List[CoreToken] = []
     for position in positions:
@@ -300,10 +292,10 @@ async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, 
         log.info("[PRICES][LATEST][END] positions=0 returned=0 reason=no_queryable_pairs")
         return result
 
-    prices: List[TokenPrice] = await fetch_prices_by_tokens(tokens)
-    for item in prices:
-        has_pair = isinstance(item.token.pairAddress, str) and item.token.pairAddress
-        if has_pair and item.priceUsd and item.priceUsd > 0.0:
-            result[item.token.pairAddress] = float(item.priceUsd)
+    token_information_list: List[DexscreenerTokenInformation] = await fetch_dexscreener_token_information_list(tokens)
+    for token_information in token_information_list:
+        has_pair = isinstance(token_information.pair_address, str) and token_information.pair_address
+        if has_pair and token_information.price_usd and token_information.price_usd > 0.0:
+            result[token_information.pair_address] = float(token_information.price_usd)
 
     return result

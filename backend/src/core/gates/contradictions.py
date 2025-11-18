@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from src.core.structures.structures import Candidate
-from src.integrations.dexscreener.dexscreener_structures import TokenPrice
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)
@@ -41,21 +41,21 @@ class DexscreenerContradictionsGate:
         return int(buys + sells)
 
     @staticmethod
-    def _txns_from_price(price: TokenPrice, window: str) -> Optional[int]:
+    def _txns_from_token_information(token_information: DexscreenerTokenInformation, window: str) -> Optional[int]:
         """
         Extract total transactions for a given window from TokenPrice.txns.
         Expected windows: 'm5', 'h1', 'h6', 'h24'.
         """
-        if price.txns is None:
+        if token_information.txns is None:
             return None
-        if window == "m5" and price.txns.m5:
-            return DexscreenerContradictionsGate._total_transactions(price.txns.m5.buys, price.txns.m5.sells)
-        if window == "h1" and price.txns.h1:
-            return DexscreenerContradictionsGate._total_transactions(price.txns.h1.buys, price.txns.h1.sells)
-        if window == "h6" and price.txns.h6:
-            return DexscreenerContradictionsGate._total_transactions(price.txns.h6.buys, price.txns.h6.sells)
-        if window == "h24" and price.txns.h24:
-            return DexscreenerContradictionsGate._total_transactions(price.txns.h24.buys, price.txns.h24.sells)
+        if window == "m5" and token_information.txns.m5:
+            return DexscreenerContradictionsGate._total_transactions(token_information.txns.m5.buys, token_information.txns.m5.sells)
+        if window == "h1" and token_information.txns.h1:
+            return DexscreenerContradictionsGate._total_transactions(token_information.txns.h1.buys, token_information.txns.h1.sells)
+        if window == "h6" and token_information.txns.h6:
+            return DexscreenerContradictionsGate._total_transactions(token_information.txns.h6.buys, token_information.txns.h6.sells)
+        if window == "h24" and token_information.txns.h24:
+            return DexscreenerContradictionsGate._total_transactions(token_information.txns.h24.buys, token_information.txns.h24.sells)
         return None
 
     @staticmethod
@@ -72,35 +72,35 @@ class DexscreenerContradictionsGate:
             last = value
         return True
 
-    def evaluate(self, candidate: Candidate, token_price: Optional[TokenPrice]) -> GateVerdict:
+    def evaluate(self, candidate: Candidate, token_information: Optional[DexscreenerTokenInformation]) -> GateVerdict:
         """
         Run contradictions checks against candidate+price snapshot.
         """
         reasons: List[str] = []
 
-        if token_price is not None:
+        if token_information is not None:
             # FDV must be >= Market Cap (allow a tiny tolerance, 5%)
-            if token_price.fdvUsd is not None and token_price.marketCapUsd is not None:
-                if token_price.marketCapUsd > token_price.fdvUsd * 1.05:
+            if token_information.fully_diluted_valuation is not None and token_information.market_cap is not None:
+                if token_information.market_cap > token_information.fully_diluted_valuation * 1.05:
                     reasons.append("FDV_LT_MARKETCAP")
 
             # Liquidity should not exceed Market Cap (highly unusual)
-            if token_price.liquidityUsd is not None and token_price.marketCapUsd is not None:
-                if token_price.liquidityUsd > token_price.marketCapUsd:
+            if token_information.liquidity is not None and token_information.market_cap is not None:
+                if token_information.liquidity.usd > token_information.market_cap:
                     reasons.append("LIQUIDITY_GT_MARKETCAP")
 
             # 24h Volume ↔ 24h Transactions conflict
-            vol24_usd: Optional[float] = token_price.volumeH24Usd
-            tx24: Optional[int] = self._txns_from_price(token_price, "h24")
+            vol24_usd: Optional[float] = token_information.volume.h24
+            tx24: Optional[int] = self._txns_from_token_information(token_information, "h24")
             if vol24_usd is not None and tx24 is not None:
                 if (vol24_usd > 0.0 and tx24 == 0) or (vol24_usd == 0.0 and tx24 > 0):
                     reasons.append("VOLUME_TXNS_CONFLICT")
 
             # Transactions monotonicity: 5m ≤ 1h ≤ 6h ≤ 24h (when present)
-            tx5 = self._txns_from_price(token_price, "m5")
-            tx1 = self._txns_from_price(token_price, "h1")
-            tx6 = self._txns_from_price(token_price, "h6")
-            tx24 = self._txns_from_price(token_price, "h24")
+            tx5 = self._txns_from_token_information(token_information, "m5")
+            tx1 = self._txns_from_token_information(token_information, "h1")
+            tx6 = self._txns_from_token_information(token_information, "h6")
+            tx24 = self._txns_from_token_information(token_information, "h24")
             if not self._non_decreasing([tx5, tx1, tx6, tx24]):
                 reasons.append("TXNS_NON_MONOTONIC")
 

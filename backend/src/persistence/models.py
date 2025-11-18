@@ -127,11 +127,19 @@ class Analytics(Base):
 
     # Fundamentals
     token_age_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume5m_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume1h_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume6h_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     volume24h_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     liquidity_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     pct_5m: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     pct_1h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    pct_6h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     pct_24h: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    tx_5m: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tx_1h: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tx_6h: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tx_24h: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Decision + sizing/budget
     decision: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
@@ -140,13 +148,6 @@ class Analytics(Base):
     order_notional_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     free_cash_before_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     free_cash_after_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-
-    # RAW payloads
-    raw_dexscreener: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    raw_ai: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    raw_risk: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    raw_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    raw_order_result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     # Outcome (filled at close)
     has_outcome: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -157,3 +158,7 @@ class Analytics(Base):
     outcome_pnl_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     outcome_was_profit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     outcome_exit_reason: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
+    # RAW payloads
+    raw_dexscreener: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    raw_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

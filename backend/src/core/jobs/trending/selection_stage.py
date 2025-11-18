@@ -32,10 +32,15 @@ class CandidateSelectionStage:
         self.page_size: int = settings.TREND_PAGE_SIZE
         self.max_results: int = settings.TREND_MAX_RESULTS
 
-        self.minimum_volume_usd: float = settings.TREND_MIN_VOL_USD
+        self.minimum_volume_5m_usd: float = settings.TREND_MIN_VOL5M_USD
+        self.minimum_volume_1h_usd: float = settings.TREND_MIN_VOL1H_USD
+        self.minimum_volume_6h_usd: float = settings.TREND_MIN_VOL6H_USD
+        self.minimum_volume_24h_usd: float = settings.TREND_MIN_VOL24H_USD
+
         self.minimum_liquidity_usd: float = settings.TREND_MIN_LIQ_USD
         self.minimum_percent_5m: float = settings.TREND_MIN_PCT_5M
         self.minimum_percent_1h: float = settings.TREND_MIN_PCT_1H
+        self.minimum_percent_6h: float = settings.TREND_MIN_PCT_6H
         self.minimum_percent_24h: float = settings.TREND_MIN_PCT_24H
 
         self.soft_fill_minimum: int = settings.TREND_SOFT_FILL_MIN
@@ -43,11 +48,11 @@ class CandidateSelectionStage:
 
     def fetch_candidates_raw(self) -> List[Candidate]:
         """Fetch raw candidates from Dexscreener (untyped)."""
-        try:
-            rows = _fetch_trending_candidates_sync()
-        except Exception as exc:
-            log.warning("[TREND][FETCH] Dexscreener trending fetch failed: %s", exc)
-            rows = []
+        # try:
+        rows = _fetch_trending_candidates_sync()
+        # except Exception as exc:
+        #    log.warning("[TREND][FETCH] Dexscreener trending fetch failed: %s", exc)
+        #    rows = []
         if not rows:
             log.info("[TREND][FETCH] 0 candidates.")
         return rows
@@ -57,11 +62,15 @@ class CandidateSelectionStage:
         kept, rejected_counts = filter_strict(
             raw_rows,
             interval=self.interval,
-            min_vol_usd=self.minimum_volume_usd,
+            volth5=self.minimum_volume_5m_usd,
+            volth1=self.minimum_volume_1h_usd,
+            volth6=self.minimum_volume_6h_usd,
+            volth24=self.minimum_volume_24h_usd,
             min_liq_usd=self.minimum_liquidity_usd,
-            th5=self.minimum_percent_5m,
-            th1=self.minimum_percent_1h,
-            th24=self.minimum_percent_24h,
+            pctth5=self.minimum_percent_5m,
+            pctth1=self.minimum_percent_1h,
+            pctth6=self.minimum_percent_6h,
+            pctth24=self.minimum_percent_24h,
             max_results=self.max_results,
         )
         log.info("[TREND][FILTER][STRICT] kept=%d rejected=%s", len(kept), rejected_counts)
@@ -74,7 +83,6 @@ class CandidateSelectionStage:
             raw_rows,
             kept_rows,
             need_min=need_minimum,
-            min_vol_usd=self.minimum_volume_usd,
             min_liq_usd=self.minimum_liquidity_usd,
             sort_key=self.soft_fill_sort_key,
         )
@@ -92,9 +100,9 @@ class CandidateSelectionStage:
         """Cohort ordering and truncation."""
         sort_key = self.soft_fill_sort_key if self.soft_fill_sort_key in {"vol24h", "liqUsd"} else "vol24h"
         if sort_key == "liqUsd":
-            candidates.sort(key=lambda c: float(c.liquidity_usd), reverse=True)
+            candidates.sort(key=lambda c: float(c.dexscreener_token_information.liquidity.usd), reverse=True)
         else:
-            candidates.sort(key=lambda c: float(c.volume_24h_usd), reverse=True)
+            candidates.sort(key=lambda c: float(c.dexscreener_token_information.volume.h24), reverse=True)
         return candidates[: self.max_results]
 
     def _open_positions_sets(self) -> Tuple[Set[str], Set[str]]:
@@ -110,9 +118,12 @@ class CandidateSelectionStage:
         open_symbols, open_addresses = self._open_positions_sets()
         pruned: List[Candidate] = []
         for candidate in candidates:
-            symbol_upper = candidate.symbol.upper()
-            if symbol_upper in open_symbols or _is_address_in_open_positions(candidate.token_address, open_addresses):
-                log.debug("[TREND][DEDUP] Skip already open %s (%s).", candidate.symbol, candidate.token_address)
+            symbol_upper = candidate.dexscreener_token_information.base_token.symbol.upper()
+            if symbol_upper in open_symbols or _is_address_in_open_positions(
+                    candidate.dexscreener_token_information.base_token.address, open_addresses):
+                log.debug("[TREND][DEDUP] Skip already open %s (%s).",
+                          candidate.dexscreener_token_information.base_token.symbol,
+                          candidate.dexscreener_token_information.base_token.address)
                 continue
             pruned.append(candidate)
         if not pruned:

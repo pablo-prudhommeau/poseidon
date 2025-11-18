@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Tuple, TypedDict, Mapping
+from typing import List, Optional, Tuple, TypedDict
 
 from src.core.structures.structures import EquityCurve
 from src.logging.logger import get_logger
-from src.persistence.models import Trade, Position, PortfolioSnapshot, Analytics, Phase, Status, Side
+from src.persistence.models import Trade, Position, PortfolioSnapshot, Analytics, Phase
 
 log = get_logger(__name__)
 
@@ -84,15 +84,6 @@ class AnalyticsAiPayload(TypedDict):
     qualityScoreDelta: float
 
 
-class AnalyticsRawMetricsPayload(TypedDict):
-    tokenAgeHours: float
-    volume24hUsd: float
-    liquidityUsd: float
-    pct5m: float
-    pct1h: float
-    pct24h: float
-
-
 class AnalyticsDecisionPayload(TypedDict):
     action: str
     reason: str
@@ -113,12 +104,21 @@ class AnalyticsOutcomePayload(TypedDict):
     exitReason: str
 
 
-class AnalyticsRawPayload(TypedDict, total=False):
-    dexscreener: Mapping[str, object]
-    ai: Mapping[str, object]
-    risk: Mapping[str, object]
-    settings: Mapping[str, object]
-    order: Mapping[str, object]
+class AnalyticsFundamentalsPayload(TypedDict):
+    tokenAgeHours: float
+    volume5mUsd: float
+    volume1hUsd: float
+    volume6hUsd: float
+    volume24hUsd: float
+    liquidityUsd: float
+    pct5m: float
+    pct1h: float
+    pct6h: float
+    pct24h: float
+    tx5m: float
+    tx1h: float
+    tx6h: float
+    tx24h: float
 
 
 class AnalyticsPayload(TypedDict, total=False):
@@ -131,10 +131,11 @@ class AnalyticsPayload(TypedDict, total=False):
     rank: int
     scores: AnalyticsScoresPayload
     ai: AnalyticsAiPayload
-    rawMetrics: AnalyticsRawMetricsPayload
+    fundamentals: AnalyticsFundamentalsPayload
     decision: AnalyticsDecisionPayload
     outcome: AnalyticsOutcomePayload
-    raw: AnalyticsRawPayload
+    rawScreener: object
+    rawSettings: object
 
 
 def _map_position_phase_to_frontend(phase: Phase, position: Position, last_price: Optional[float]) -> str:
@@ -278,13 +279,21 @@ def serialize_analytics(row: Analytics) -> AnalyticsPayload:
             "probabilityTp1BeforeSl": row.ai_probability_tp1_before_sl,
             "qualityScoreDelta": row.ai_quality_score_delta,
         },
-        "rawMetrics": {
+        "fundamentals": {
             "tokenAgeHours": row.token_age_hours,
+            "volume5mUsd": row.volume5m_usd,
+            "volume1hUsd": row.volume1h_usd,
+            "volume6hUsd": row.volume6h_usd,
             "volume24hUsd": row.volume24h_usd,
             "liquidityUsd": row.liquidity_usd,
             "pct5m": row.pct_5m,
             "pct1h": row.pct_1h,
+            "pct6h": row.pct_6h,
             "pct24h": row.pct_24h,
+            "tx5m": row.tx_5m,
+            "tx1h": row.tx_1h,
+            "tx6h": row.tx_6h,
+            "tx24h": row.tx_24h
         },
         "decision": {
             "action": row.decision,
@@ -304,13 +313,8 @@ def serialize_analytics(row: Analytics) -> AnalyticsPayload:
             "wasProfit": row.outcome_was_profit,
             "exitReason": row.outcome_exit_reason,
         },
-        "raw": {
-            "dexscreener": row.raw_dexscreener or {},
-            "ai": row.raw_ai or {},
-            "risk": row.raw_risk or {},
-            "settings": row.raw_settings or {},
-            "order": row.raw_order_result or {},
-        },
+        "rawScreener": row.raw_dexscreener or {},
+        "rawSettings": row.raw_settings or {},
     }
 
     return payload

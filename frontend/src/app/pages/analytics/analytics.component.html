@@ -1,11 +1,10 @@
 <!-- frontend/src/app/pages/analytics/analytics.component.html -->
 <div class="space-y-5">
-	<!-- Controls -->
 	<div class="flex flex-wrap items-center gap-3">
 		<div class="ml-auto flex items-center gap-4 text-sm">
 			<div class="flex items-center gap-2">
 				<label for="pnl-axis">PnL axis</label>
-				<select id="pnl-axis" class="p-inputtext" [ngModel]="yMode()" (ngModelChange)="onAxisModeChange($event)">
+				<select id="pnl-axis" class="p-inputtext" [ngModel]="pnlAxisMode()" (ngModelChange)="onAxisModeChange($event)">
 					<option value="pct">PnL %</option>
 					<option value="usd">PnL USD</option>
 				</select>
@@ -17,19 +16,66 @@
 			</div>
 
 			<div class="flex items-center gap-2">
-				<p-checkbox binary="true" [ngModel]="showQLines()" (ngModelChange)="onToggleQLines($event)"></p-checkbox>
-				<span>Q1 & Q3</span>
+				<p-checkbox binary="true" [ngModel]="showIqrBand()" (ngModelChange)="onToggleIqr($event)"></p-checkbox>
+				<span>IQR band</span>
 			</div>
 
 			<div class="flex items-center gap-2">
-				<p-checkbox binary="true" [ngModel]="logX()" (ngModelChange)="onToggleLogX($event)"></p-checkbox>
+				<p-checkbox binary="true" [ngModel]="useLogX()" (ngModelChange)="onToggleLogX($event)"></p-checkbox>
 				<span>Log X</span>
 			</div>
 		</div>
 	</div>
 
+	<h1 class="m-0 text-2xl font-bold">Synthesis</h1>
+	<hr class="h-px my-4 bg-gray-500 border-0" />
+
+	<div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+		<p-card>
+			<ng-template pTemplate="title">PnL drivers — optimal ranges (closed trades)</ng-template>
+			<apx-chart
+					[series]="driversSeries"
+					[chart]="driversChart"
+					[xaxis]="driversXAxis"
+					[yaxis]="driversYAxis"
+					[grid]="driversGrid"
+					[legend]="driversLegend"
+					[tooltip]="driversTooltip"
+					[dataLabels]="driversDataLabels"
+					[plotOptions]="driversPlotOptions"
+					[stroke]="driversStroke"
+					[colors]="driversColors"
+			></apx-chart>
+			<div class="text-xs text-gray-400 mt-2">
+				Cells show median PnL per decile of each metric (closed trades only). Highlighted cells mark the optimal value(s)/range(s).
+			</div>
+		</p-card>
+		<p-card>
+			<ng-template pTemplate="title">Staled risk — ranges to avoid</ng-template>
+			<apx-chart
+					[series]="staledSeries"
+					[chart]="staledChart"
+					[xaxis]="staledXAxis"
+					[yaxis]="staledYAxis"
+					[grid]="staledGrid"
+					[legend]="staledLegend"
+					[tooltip]="staledTooltip"
+					[dataLabels]="staledDataLabels"
+					[plotOptions]="staledPlotOptions"
+					[stroke]="staledStroke"
+					[colors]="staledColors"
+			></apx-chart>
+			<div class="text-xs text-gray-400 mt-2">
+				Cells show the percentage of trades that ended <b>STALED</b> per decile. Highlighted cells indicate the worst value(s)/range(s) to avoid.
+			</div>
+		</p-card>
+	</div>
+
+	<hr class="w-48 h-1 mx-auto my-4 bg-gray-500 border-0 rounded-sm md:my-10" />
+
 	<h1 class="m-0 text-2xl font-bold">Scores</h1>
-	<hr class="h-px my-4 bg-gray-500 border-0">
+	<hr class="h-px my-4 bg-gray-500 border-0" />
+
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 		<div inViewport (inViewportChange)="onViewport('final', $event)">
 			<p-card>
@@ -38,11 +84,10 @@
 						[series]="finalSeries" [chart]="finalChart" [xaxis]="finalXAxis" [yaxis]="finalYAxis"
 						[stroke]="finalStroke" [fill]="finalFill" [grid]="finalGrid" [legend]="finalLegend"
 						[tooltip]="finalTooltip" [markers]="finalMarkers" [dataLabels]="finalDataLabels"
-						[annotations]="finalAnn"
+						[annotations]="finalAnn" [colors]="finalColors"
 				></apx-chart>
 			</p-card>
 		</div>
-
 		<div inViewport (inViewportChange)="onViewport('quality', $event)">
 			<p-card>
 				<ng-template pTemplate="title">Quality score ↔ PnL</ng-template>
@@ -50,7 +95,7 @@
 						[series]="qualitySeries" [chart]="qualityChart" [xaxis]="qualityXAxis" [yaxis]="qualityYAxis"
 						[stroke]="qualityStroke" [fill]="qualityFill" [grid]="qualityGrid" [legend]="qualityLegend"
 						[tooltip]="qualityTooltip" [markers]="qualityMarkers" [dataLabels]="qualityDataLabels"
-						[annotations]="qualityAnn"
+						[annotations]="qualityAnn" [colors]="qualityColors"
 				></apx-chart>
 			</p-card>
 		</div>
@@ -64,11 +109,10 @@
 						[series]="statisticsSeries" [chart]="statisticsChart" [xaxis]="statisticsXAxis" [yaxis]="statisticsYAxis"
 						[stroke]="statisticsStroke" [fill]="statisticsFill" [grid]="statisticsGrid" [legend]="statisticsLegend"
 						[tooltip]="statisticsTooltip" [markers]="statisticsMarkers" [dataLabels]="statisticsDataLabels"
-						[annotations]="statisticsAnn"
+						[annotations]="statisticsAnn" [colors]="statisticsColors"
 				></apx-chart>
 			</p-card>
 		</div>
-
 		<div inViewport (inViewportChange)="onViewport('entry', $event)">
 			<p-card>
 				<ng-template pTemplate="title">Entry score ↔ PnL</ng-template>
@@ -76,16 +120,17 @@
 						[series]="entrySeries" [chart]="entryChart" [xaxis]="entryXAxis" [yaxis]="entryYAxis"
 						[stroke]="entryStroke" [fill]="entryFill" [grid]="entryGrid" [legend]="entryLegend"
 						[tooltip]="entryTooltip" [markers]="entryMarkers" [dataLabels]="entryDataLabels"
-						[annotations]="entryAnn"
+						[annotations]="entryAnn" [colors]="entryColors"
 				></apx-chart>
 			</p-card>
 		</div>
 	</div>
 
-	<hr class="w-48 h-1 mx-auto my-4 bg-gray-500 border-0 rounded-sm md:my-10">
+	<hr class="w-48 h-1 mx-auto my-4 bg-gray-500 border-0 rounded-sm md:my-10" />
 
 	<h1 class="m-0 text-2xl font-bold">Market</h1>
-	<hr class="h-px my-4 bg-gray-500 border-0">
+	<hr class="h-px my-4 bg-gray-500 border-0" />
+
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 		<div inViewport (inViewportChange)="onViewport('liq', $event)">
 			<p-card>
@@ -94,28 +139,67 @@
 						[series]="liqSeries" [chart]="liqChart" [xaxis]="liqXAxis" [yaxis]="liqYAxis"
 						[stroke]="liqStroke" [fill]="liqFill" [grid]="liqGrid" [legend]="liqLegend"
 						[tooltip]="liqTooltip" [markers]="liqMarkers" [dataLabels]="liqDataLabels"
-						[annotations]="liqAnn"
+						[annotations]="liqAnn" [colors]="liqColors"
 				></apx-chart>
 			</p-card>
 		</div>
-
-		<div inViewport (inViewportChange)="onViewport('vol', $event)">
+		<div inViewport (inViewportChange)="onViewport('vol5m', $event)">
 			<p-card>
-				<ng-template pTemplate="title">Volume 24h ($, log X) ↔ PnL</ng-template>
+				<ng-template pTemplate="title">Volume 5m ($, log X) ↔ PnL</ng-template>
 				<apx-chart
-						[series]="volSeries" [chart]="volChart" [xaxis]="volXAxis" [yaxis]="volYAxis"
-						[stroke]="volStroke" [fill]="volFill" [grid]="volGrid" [legend]="volLegend"
-						[tooltip]="volTooltip" [markers]="volMarkers" [dataLabels]="volDataLabels"
-						[annotations]="volAnn"
+						[series]="vol5mSeries" [chart]="vol5mChart" [xaxis]="vol5mXAxis" [yaxis]="vol5mYAxis"
+						[stroke]="vol5mStroke" [fill]="vol5mFill" [grid]="vol5mGrid" [legend]="vol5mLegend"
+						[tooltip]="vol5mTooltip" [markers]="vol5mMarkers" [dataLabels]="vol5mDataLabels"
+						[annotations]="vol5mAnn" [colors]="vol5mColors"
 				></apx-chart>
 			</p-card>
 		</div>
 	</div>
 
-	<hr class="w-48 h-1 mx-auto my-4 bg-gray-500 border-0 rounded-sm md:my-10">
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		<div inViewport (inViewportChange)="onViewport('vol1h', $event)">
+			<p-card>
+				<ng-template pTemplate="title">Volume 1h ($, log X) ↔ PnL</ng-template>
+				<apx-chart
+						[series]="vol1hSeries" [chart]="vol1hChart" [xaxis]="vol1hXAxis" [yaxis]="vol1hYAxis"
+						[stroke]="vol1hStroke" [fill]="vol1hFill" [grid]="vol1hGrid" [legend]="vol1hLegend"
+						[tooltip]="vol1hTooltip" [markers]="vol1hMarkers" [dataLabels]="vol1hDataLabels"
+						[annotations]="vol1hAnn" [colors]="vol1hColors"
+				></apx-chart>
+			</p-card>
+		</div>
+		<div inViewport (inViewportChange)="onViewport('vol6h', $event)">
+			<p-card>
+				<ng-template pTemplate="title">Volume 6h ($, log X) ↔ PnL</ng-template>
+				<apx-chart
+						[series]="vol6hSeries" [chart]="vol6hChart" [xaxis]="vol6hXAxis" [yaxis]="vol6hYAxis"
+						[stroke]="vol6hStroke" [fill]="vol6hFill" [grid]="vol6hGrid" [legend]="vol6hLegend"
+						[tooltip]="vol6hTooltip" [markers]="vol6hMarkers" [dataLabels]="vol6hDataLabels"
+						[annotations]="vol6hAnn" [colors]="vol6hColors"
+				></apx-chart>
+			</p-card>
+		</div>
+	</div>
+
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		<div inViewport (inViewportChange)="onViewport('vol24h', $event)">
+			<p-card>
+				<ng-template pTemplate="title">Volume 24h ($, log X) ↔ PnL</ng-template>
+				<apx-chart
+						[series]="vol24hSeries" [chart]="vol24hChart" [xaxis]="vol24hXAxis" [yaxis]="vol24hYAxis"
+						[stroke]="vol24hStroke" [fill]="vol24hFill" [grid]="vol24hGrid" [legend]="vol24hLegend"
+						[tooltip]="vol24hTooltip" [markers]="vol24hMarkers" [dataLabels]="vol24hDataLabels"
+						[annotations]="vol24hAnn" [colors]="vol24hColors"
+				></apx-chart>
+			</p-card>
+		</div>
+	</div>
+
+	<hr class="w-48 h-1 mx-auto my-4 bg-gray-500 border-0 rounded-sm md:my-10" />
 
 	<h1 class="m-0 text-2xl font-bold">Momentum</h1>
-	<hr class="h-px my-4 bg-gray-500 border-0">
+	<hr class="h-px my-4 bg-gray-500 border-0" />
+
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 		<div inViewport (inViewportChange)="onViewport('p5m', $event)">
 			<p-card>
@@ -124,11 +208,10 @@
 						[series]="p5mSeries" [chart]="p5mChart" [xaxis]="p5mXAxis" [yaxis]="p5mYAxis"
 						[stroke]="p5mStroke" [fill]="p5mFill" [grid]="p5mGrid" [legend]="p5mLegend"
 						[tooltip]="p5mTooltip" [markers]="p5mMarkers" [dataLabels]="p5mDataLabels"
-						[annotations]="p5mAnn"
+						[annotations]="p5mAnn" [colors]="p5mColors"
 				></apx-chart>
 			</p-card>
 		</div>
-
 		<div inViewport (inViewportChange)="onViewport('p1h', $event)">
 			<p-card>
 				<ng-template pTemplate="title">Δ1h ↔ PnL</ng-template>
@@ -136,11 +219,12 @@
 						[series]="p1hSeries" [chart]="p1hChart" [xaxis]="p1hXAxis" [yaxis]="p1hYAxis"
 						[stroke]="p1hStroke" [fill]="p1hFill" [grid]="p1hGrid" [legend]="p1hLegend"
 						[tooltip]="p1hTooltip" [markers]="p1hMarkers" [dataLabels]="p1hDataLabels"
-						[annotations]="p1hAnn"
+						[annotations]="p1hAnn" [colors]="p1hColors"
 				></apx-chart>
 			</p-card>
 		</div>
 	</div>
+
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 		<div inViewport (inViewportChange)="onViewport('p6h', $event)">
 			<p-card>
@@ -149,11 +233,10 @@
 						[series]="p6hSeries" [chart]="p6hChart" [xaxis]="p6hXAxis" [yaxis]="p6hYAxis"
 						[stroke]="p6hStroke" [fill]="p6hFill" [grid]="p6hGrid" [legend]="p6hLegend"
 						[tooltip]="p6hTooltip" [markers]="p6hMarkers" [dataLabels]="p6hDataLabels"
-						[annotations]="p6hAnn"
+						[annotations]="p6hAnn" [colors]="p6hColors"
 				></apx-chart>
 			</p-card>
 		</div>
-
 		<div inViewport (inViewportChange)="onViewport('p24h', $event)">
 			<p-card>
 				<ng-template pTemplate="title">Δ24h ↔ PnL</ng-template>
@@ -161,16 +244,17 @@
 						[series]="p24hSeries" [chart]="p24hChart" [xaxis]="p24hXAxis" [yaxis]="p24hYAxis"
 						[stroke]="p24hStroke" [fill]="p24hFill" [grid]="p24hGrid" [legend]="p24hLegend"
 						[tooltip]="p24hTooltip" [markers]="p24hMarkers" [dataLabels]="p24hDataLabels"
-						[annotations]="p24hAnn"
+						[annotations]="p24hAnn" [colors]="p24hColors"
 				></apx-chart>
 			</p-card>
 		</div>
 	</div>
 
-	<hr class="w-48 h-1 mx-auto my-4 bg-gray-500 border-0 rounded-sm md:my-10">
+	<hr class="w-48 h-1 mx-auto my-4 bg-gray-500 border-0 rounded-sm md:my-10" />
 
 	<h1 class="m-0 text-2xl font-bold">Age and transactions</h1>
-	<hr class="h-px my-4 bg-gray-500 border-0">
+	<hr class="h-px my-4 bg-gray-500 border-0" />
+
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 		<div inViewport (inViewportChange)="onViewport('age', $event)">
 			<p-card>
@@ -179,19 +263,57 @@
 						[series]="ageSeries" [chart]="ageChart" [xaxis]="ageXAxis" [yaxis]="ageYAxis"
 						[stroke]="ageStroke" [fill]="ageFill" [grid]="ageGrid" [legend]="ageLegend"
 						[tooltip]="ageTooltip" [markers]="ageMarkers" [dataLabels]="ageDataLabels"
-						[annotations]="ageAnn"
+						[annotations]="ageAnn" [colors]="ageColors"
 				></apx-chart>
 			</p-card>
 		</div>
+		<div inViewport (inViewportChange)="onViewport('tx5m', $event)">
+			<p-card>
+				<ng-template pTemplate="title">Transactions 5m (log X) ↔ PnL</ng-template>
+				<apx-chart
+						[series]="tx5mSeries" [chart]="tx5mChart" [xaxis]="tx5mXAxis" [yaxis]="tx5mYAxis"
+						[stroke]="tx5mStroke" [fill]="tx5mFill" [grid]="tx5mGrid" [legend]="tx5mLegend"
+						[tooltip]="tx5mTooltip" [markers]="tx5mMarkers" [dataLabels]="tx5mDataLabels"
+						[annotations]="tx5mAnn" [colors]="tx5mColors"
+				></apx-chart>
+			</p-card>
+		</div>
+	</div>
 
-		<div inViewport (inViewportChange)="onViewport('tx', $event)">
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		<div inViewport (inViewportChange)="onViewport('tx1h', $event)">
+			<p-card>
+				<ng-template pTemplate="title">Transactions 1h (log X) ↔ PnL</ng-template>
+				<apx-chart
+						[series]="tx1hSeries" [chart]="tx1hChart" [xaxis]="tx1hXAxis" [yaxis]="tx1hYAxis"
+						[stroke]="tx1hStroke" [fill]="tx1hFill" [grid]="tx1hGrid" [legend]="tx1hLegend"
+						[tooltip]="tx1hTooltip" [markers]="tx1hMarkers" [dataLabels]="tx1hDataLabels"
+						[annotations]="tx1hAnn" [colors]="tx1hColors"
+				></apx-chart>
+			</p-card>
+		</div>
+		<div inViewport (inViewportChange)="onViewport('tx6h', $event)">
+			<p-card>
+				<ng-template pTemplate="title">Transactions 6h (log X) ↔ PnL</ng-template>
+				<apx-chart
+						[series]="tx6hSeries" [chart]="tx6hChart" [xaxis]="tx6hXAxis" [yaxis]="tx6hYAxis"
+						[stroke]="tx6hStroke" [fill]="tx6hFill" [grid]="tx6hGrid" [legend]="tx6hLegend"
+						[tooltip]="tx6hTooltip" [markers]="tx6hMarkers" [dataLabels]="tx6hDataLabels"
+						[annotations]="tx6hAnn" [colors]="tx6hColors"
+				></apx-chart>
+			</p-card>
+		</div>
+	</div>
+
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		<div inViewport (inViewportChange)="onViewport('tx24h', $event)">
 			<p-card>
 				<ng-template pTemplate="title">Transactions 24h (log X) ↔ PnL</ng-template>
 				<apx-chart
-						[series]="txSeries" [chart]="txChart" [xaxis]="txXAxis" [yaxis]="txYAxis"
-						[stroke]="txStroke" [fill]="txFill" [grid]="txGrid" [legend]="txLegend"
-						[tooltip]="txTooltip" [markers]="txMarkers" [dataLabels]="txDataLabels"
-						[annotations]="txAnn"
+						[series]="tx24hSeries" [chart]="tx24hChart" [xaxis]="tx24hXAxis" [yaxis]="tx24hYAxis"
+						[stroke]="tx24hStroke" [fill]="tx24hFill" [grid]="tx24hGrid" [legend]="tx24hLegend"
+						[tooltip]="tx24hTooltip" [markers]="tx24hMarkers" [dataLabels]="tx24hDataLabels"
+						[annotations]="tx24hAnn" [colors]="tx24hColors"
 				></apx-chart>
 			</p-card>
 		</div>

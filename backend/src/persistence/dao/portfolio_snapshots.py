@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
