@@ -1,10 +1,47 @@
 import time
-from cmath import isnan
-from typing import Optional
+from math import isnan
+from typing import Optional, Union
+from datetime import datetime
+
+def format_currency(value: Optional[Union[float, int]], currency: str = "USD") -> str:
+    """
+    Format a float as a currency string.
+    Example: 1234.56 -> "$1,234.56" or "1,234.56 €"
+    """
+    if value is None or (isinstance(value, float) and isnan(value)):
+        return "N/A"
+
+    try:
+        float_val = float(value)
+        formatted = f"{float_val:,.2f}"
+
+        if currency == "USD":
+            return f"${formatted}"
+        elif currency == "EUR":
+            return f"{formatted} €"
+        else:
+            return f"{formatted} {currency}"
+
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def format_percent(value: Optional[float], decimals: int = 2) -> str:
+    """
+    Format a float as a percentage string.
+    Example: 0.054 -> "5.40%"
+    """
+    if value is None or isnan(value):
+        return "N/A"
+
+    try:
+        return f"{value * 100:.{decimals}f}%"
+    except (ValueError, TypeError):
+        return "N/A"
 
 
 def _format(value: Optional[float]) -> str:
-    """Format a float for logs, or 'NA' if missing."""
+    """Legacy helper: Format a float for logs, or 'NA' if missing."""
     return "NA" if value is None else f"{value:.2f}"
 
 
@@ -19,9 +56,9 @@ def _num(value: object) -> Optional[float]:
     Safely parse a number. Returns None for invalid or NaN inputs.
     """
     try:
-        parsed = float(value)
+        parsed = float(value) # type: ignore
         return None if isnan(parsed) else parsed
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 

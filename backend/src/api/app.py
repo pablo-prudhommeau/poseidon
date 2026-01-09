@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Dict, List
 
@@ -12,6 +13,7 @@ from src.api.websocket.ws_manager import ws_manager
 from src.core.jobs.orchestrator_job import ensure_started, get_status
 from src.logging.logger import get_logger
 from src.persistence.db import init_db
+from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
 
 log = get_logger(__name__)
 
@@ -45,12 +47,21 @@ def create_app() -> FastAPI:
     )
 
     @app.on_event("startup")
-    def on_startup() -> None:
+    async def on_startup() -> None:
         """Initialize DB, bind the WebSocket manager to the current loop, and start the orchestrator."""
         init_db()
         ws_manager.attach_current_loop()
         ensure_started()
-        log.info("Poseidon startup: orchestrator started")
+
+        # Start Aave Sentinel background task
+        asyncio.create_task(aave_sentinel.start())
+
+        log.info("Poseidon startup: Orchestrator & Aave Sentinel started.")
+
+    @app.on_event("shutdown")
+    async def on_shutdown() -> None:
+        """Clean shutdown of services."""
+        await aave_sentinel.stop()
 
     @app.get("/api/status")
     def api_status() -> Dict[str, Any]:

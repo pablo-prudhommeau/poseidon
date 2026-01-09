@@ -1,15 +1,5 @@
 from __future__ import annotations
 
-"""
-Centralized settings for Poseidon.
-
-- All values are read from environment variables with safe defaults for local/dev.
-- Boolean parser accepts: 1, true, yes, y, on.
-- This file includes live trading switches and chain-specific settings for Option B:
-  * EVM: HD derivation via eth-account (no bip-utils)
-  * Solana: base58-encoded secret key (no mnemonic ingestion in code)
-"""
-
 import os
 from pathlib import Path
 
@@ -37,6 +27,7 @@ class Settings:
 
     # --- Core / modes ---
     PAPER_MODE: bool = _as_bool(os.getenv("PAPER_MODE"), True)
+    TRADING_BOT_ENABLED: bool = _as_bool(os.getenv("TRADING_BOT_ENABLED"), True)
     PAPER_STARTING_CASH: float = float(os.getenv("PAPER_STARTING_CASH", "10000"))
     BASE_CURRENCY: str = os.getenv("BASE_CURRENCY", "EUR")
 
@@ -136,8 +127,8 @@ class Settings:
     CHART_AI_TIMEFRAME: int = int(os.getenv("CHART_AI_TIMEFRAME", "5"))
     CHART_AI_LOOKBACK_MINUTES: int = int(os.getenv("CHART_AI_LOOKBACK_MINUTES", "120"))
     CHART_CAPTURE_TIMEOUT_SEC: int = int(os.getenv("CHART_CAPTURE_TIMEOUT_SEC", "15"))
-    CHART_CAPTURE_VIEWPORT_WIDTH: int = int(os.getenv("CHART_CAPTURE_VIEWPORT_WIDTH", "1920"))
-    CHART_CAPTURE_VIEWPORT_HEIGHT: int = int(os.getenv("CHART_CAPTURE_VIEWPORT_HEIGHT", "1080"))
+    CHART_CAPTURE_VIEWPORT_WIDTH: int = int(os.getenv("CHART_CAPTURE_VIEWPORT_WIDTH", "1280"))
+    CHART_CAPTURE_VIEWPORT_HEIGHT: int = int(os.getenv("CHART_CAPTURE_VIEWPORT_HEIGHT", "720"))
     CHART_CAPTURE_HEADLESS: bool = _as_bool(os.getenv("CHART_CAPTURE_HEADLESS"), True)
     CHART_CAPTURE_BROWSER: str = os.getenv("CHART_CAPTURE_BROWSER", "chromium")
     CHART_CAPTURE_WAIT_CANVAS_MS: int = int(os.getenv("CHART_CAPTURE_WAIT_CANVAS_MS", "30000"))
@@ -161,6 +152,28 @@ class Settings:
     DEX_INCONSISTENCY_ALTERNATION_CYCLES: int = int(os.getenv("DEX_INCONSISTENCY_ALTERNATION_CYCLES", "2"))
     DEX_INCONSISTENCY_JUMP_FACTOR: float = float(os.getenv("DEX_INCONSISTENCY_MAX_PRICE_JUMP", "5"))
     DEX_INCONSISTENCY_FIELDS_MISMATCH_MIN: int = int(os.getenv("DEX_INCONSISTENCY_FIELDS_MISMATCH_MIN", "2"))
+
+    # --- Aave / Lending ---
+    AVALANCHE_RPC_URL: str = os.getenv("AVALANCHE_RPC_URL", "https://api.avax.network/ext/bc/C/rpc")
+    AAVE_POOL_V3_ADDRESS: str = os.getenv("AAVE_POOL_V3_ADDRESS", "0x794a61358D6845594F94dc1DB02A252b5b4814aD")
+    AAVE_USDC_ADDRESS: str = os.getenv("AAVE_USDC_ADDRESS", "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E")
+    AAVE_MNEMONIC: str = os.getenv("AAVE_MNEMONIC", "")
+    AAVE_DERIVATION_INDEX: int = int(os.getenv("AAVE_DERIVATION_INDEX", "0"))
+    AAVE_INITIAL_DEPOSIT_USD: float = float(os.getenv("AAVE_INITIAL_DEPOSIT_USD", "0.0"))
+    AAVE_REPORTING_INTERVAL_SECONDS: int = int(os.getenv("AAVE_REPORTING_INTERVAL_SECONDS", "60"))
+
+    # --- Aave Sentinel Logic ---
+    AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD", "1.40"))
+    AAVE_HEALTH_FACTOR_WARNING_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_WARNING_THRESHOLD", "1.25"))
+    AAVE_HEALTH_FACTOR_DANGER_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_DANGER_THRESHOLD", "1.15"))
+    AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD", "1.03"))
+    AAVE_ALERT_COOLDOWN_SECONDS: int = int(os.getenv("AAVE_ALERT_COOLDOWN_SECONDS", "3600"))
+    AAVE_SIGNIFICANT_DEVIATION_HF: float = float(os.getenv("AAVE_SIGNIFICANT_DEVIATION_HF", "0.05"))
+    AAVE_SIGNIFICANT_DEVIATION_EQUITY_PCT: float = float(os.getenv("AAVE_SIGNIFICANT_DEVIATION_EQUITY_PCT", "0.10"))
+    AAVE_RESCUE_TARGET_HF_IMPROVEMENT: float = float(os.getenv("AAVE_RESCUE_TARGET_HF_IMPROVEMENT", "0.05"))
+    AAVE_RESCUE_USDC_LIQUIDATION_THRESHOLD: float = float(os.getenv("AAVE_RESCUE_USDC_LIQUIDATION_THRESHOLD", "0.80"))
+    AAVE_RESCUE_MIN_AMOUNT_USDC: float = float(os.getenv("AAVE_RESCUE_MIN_AMOUNT_USDC", "10.0"))
+    AAVE_RESCUE_MAX_CAP_USDC: float = float(os.getenv("AAVE_RESCUE_MAX_CAP_USDC", "1000.0"))
 
 
 settings: Settings = Settings()

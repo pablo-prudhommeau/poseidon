@@ -23,7 +23,10 @@ def _loop() -> None:
     log.info("Background trending loop starting (interval=%ss)", interval)
     while True:
         try:
-            _trending_job.run_once()
+            if settings.TRADING_BOT_ENABLED:
+                _trending_job.run_once()
+            else:
+                log.debug("Trading bot is disabled in settings. Skipping cycle.")
         except Exception as exc:
             log.exception("Trending loop error: %s", exc)
         time.sleep(interval)
@@ -49,6 +52,7 @@ def get_status() -> Dict[str, Any]:
     """Return a lightweight orchestrator status for the API/UI."""
     return {
         "mode": Mode.PAPER if settings.PAPER_MODE else Mode.LIVE,
+        "trading_enabled": settings.TRADING_BOT_ENABLED,
         "interval": int(settings.TREND_INTERVAL_SEC),
         "prices_interval": int(settings.DEXSCREENER_FETCH_INTERVAL_SECONDS),
     }

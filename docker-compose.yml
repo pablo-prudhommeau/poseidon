@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   backend:
     build:
@@ -20,6 +19,11 @@ services:
       interval: 20s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
   frontend:
     build:
       context: .
