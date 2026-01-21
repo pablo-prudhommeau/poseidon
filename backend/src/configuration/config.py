@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+Centralized settings for Poseidon.
+
+- All values are read from environment variables with safe defaults for local/dev.
+- Boolean parser accepts: 1, true, yes, y, on.
+"""
+
 import os
 from pathlib import Path
 
@@ -49,6 +56,7 @@ class Settings:
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    TELEGRAM_POLL_INTERVAL_SECONDS: float = float(os.getenv("TELEGRAM_POLL_INTERVAL_SECONDS", "2.0"))
 
     # --- Trending ---
     TREND_ENABLE: bool = _as_bool(os.getenv("TREND_ENABLE"), True)
@@ -161,12 +169,14 @@ class Settings:
     AAVE_DERIVATION_INDEX: int = int(os.getenv("AAVE_DERIVATION_INDEX", "0"))
     AAVE_INITIAL_DEPOSIT_USD: float = float(os.getenv("AAVE_INITIAL_DEPOSIT_USD", "0.0"))
     AAVE_REPORTING_INTERVAL_SECONDS: int = int(os.getenv("AAVE_REPORTING_INTERVAL_SECONDS", "60"))
+    AAVE_MAX_CONCURRENT_ASSET_SCANS: int = int(os.getenv("AAVE_MAX_CONCURRENT_ASSET_SCANS", "5"))
 
     # --- Aave Sentinel Logic ---
-    AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD", "1.40"))
+    AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD", "1.45"))
+    AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD", "1.35"))
     AAVE_HEALTH_FACTOR_WARNING_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_WARNING_THRESHOLD", "1.25"))
     AAVE_HEALTH_FACTOR_DANGER_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_DANGER_THRESHOLD", "1.15"))
-    AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD", "1.03"))
+    AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD", "1.05"))
     AAVE_ALERT_COOLDOWN_SECONDS: int = int(os.getenv("AAVE_ALERT_COOLDOWN_SECONDS", "3600"))
     AAVE_SIGNIFICANT_DEVIATION_HF: float = float(os.getenv("AAVE_SIGNIFICANT_DEVIATION_HF", "0.05"))
     AAVE_SIGNIFICANT_DEVIATION_EQUITY_PCT: float = float(os.getenv("AAVE_SIGNIFICANT_DEVIATION_EQUITY_PCT", "0.10"))

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List, Tuple
 
 import httpx
 from eth_account import Account
@@ -29,13 +29,14 @@ logger = get_logger(__name__)
 
 Account.enable_unaudited_hdwallet_features()
 
-MAX_CONCURRENT_ASSET_SCANS: int = 5
+STABLECOIN_SYMBOLS = {"USDC", "USDC.e", "USDT", "USDt", "DAI", "FRAX", "MIM", "BUSD"}
 
 
 class AaveSentinelService:
     """
     Autonomous service monitoring Aave V3 health factor and position metrics.
     Ensures liquidity safety, reports financial performance, and prevents notification fatigue.
+    It also listens for Telegram commands (e.g., /snapshot) to provide on-demand reports.
     """
 
     def __init__(self) -> None:
@@ -45,10 +46,11 @@ class AaveSentinelService:
         self._usdc_contract: Optional[AsyncContract] = None
         self._oracle_contract: Optional[AsyncContract] = None
         self._http_client: Optional[httpx.AsyncClient] = None
-        self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_ASSET_SCANS)
+        self._semaphore = asyncio.Semaphore(settings.AAVE_MAX_CONCURRENT_ASSET_SCANS)
         self._wallet_address: str = ""
         self._private_key: str = ""
         self._state: SentinelState = SentinelState()
+        self._last_telegram_update_id: int = 0
         self._initial_basis_usd: Optional[float] = settings.AAVE_INITIAL_DEPOSIT_USD
 
     def _derive_credentials(self) -> None:
@@ -126,6 +128,82 @@ class AaveSentinelService:
                 await self._http_client.post(api_url, json=payload)
         except Exception as error:
             logger.error(f"[AAVE][SENTINEL] Telegram alert failed: {error}")
+
+    async def _register_bot_commands(self) -> None:
+        """
+        Registers the list of available commands with the Telegram Bot API.
+        This enables the autocomplete menu in the Telegram UI.
+        """
+        if not settings.TELEGRAM_BOT_TOKEN:
+            return
+
+        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setMyCommands"
+
+        commands = [
+            {"command": "snapshot", "description": "📸 Afficher le statut du portefeuille"},
+        ]
+
+        try:
+            if not self._http_client:
+                self._http_client = httpx.AsyncClient(timeout=10.0)
+
+            response = await self._http_client.post(url, json={"commands": commands})
+
+            if response.status_code == 200 and response.json().get("ok"):
+                logger.info("[AAVE][SENTINEL] Telegram commands registered successfully.")
+            else:
+                logger.warning(f"[AAVE][SENTINEL] Failed to register Telegram commands: {response.text}")
+
+        except Exception as error:
+            logger.warning(f"[AAVE][SENTINEL] Error registering Telegram commands: {error}")
+
+    async def _process_telegram_commands(self) -> None:
+        """Polls Telegram for new commands (specifically /snapshot)."""
+        if not settings.TELEGRAM_BOT_TOKEN:
+            return
+
+        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getUpdates"
+
+        payload: Dict[str, Any] = {
+            "offset": self._last_telegram_update_id + 1,
+            "allowed_updates": ["message"],
+            "timeout": 0
+        }
+
+        try:
+            if not self._http_client:
+                self._http_client = httpx.AsyncClient(timeout=10.0)
+
+            response = await self._http_client.post(url, json=payload)
+
+            if response.status_code != 200:
+                return
+
+            data = response.json()
+            if not data.get("ok"):
+                return
+
+            results = data.get("result", [])
+            for update in results:
+                update_id = update.get("update_id")
+                self._last_telegram_update_id = update_id
+
+                message = update.get("message", {})
+                text = message.get("text", "").strip()
+
+                if text == "/snapshot":
+                    logger.info("[AAVE][SENTINEL] Manual snapshot requested via Telegram.")
+                    await self._send_telegram_alert("Snapshot Demandé", "📸 Calcul du snapshot en cours...", "INFO")
+
+                    snapshot = await self._fetch_position_snapshot()
+                    if snapshot:
+                        formatted_message = await self._format_notification_message(snapshot)
+                        await self._send_telegram_alert("Snapshot Manuel", formatted_message, "INFO")
+                    else:
+                        await self._send_telegram_alert("Erreur", "Impossible de récupérer les données Aave.", "WARNING")
+
+        except Exception as error:
+            logger.debug(f"[AAVE][SENTINEL] Telegram polling error: {error}")
 
     async def _fetch_usd_eur_rate(self) -> float:
         """Fetches the real-time USD to EUR exchange rate."""
@@ -238,6 +316,54 @@ class AaveSentinelService:
                 logger.warning(f"[AAVE][SCAN] Skipped asset {asset_address}: {str(error)}")
                 return None
 
+    def _determine_strategy_and_liquidation(
+            self,
+            assets: List[AaveAssetDetails],
+            health_factor: float
+    ) -> Tuple[str, Optional[str], Optional[float], Optional[float]]:
+        """
+        Analyzes the portfolio to determine:
+        1. Strategy: LONG or SHORT or NEUTRAL
+        2. Main Risk Asset
+        3. Liquidation Price for that asset
+        """
+        total_supply_usd = sum(a.supply_value_usd for a in assets)
+        total_debt_usd = sum(a.debt_value_usd for a in assets)
+
+        if total_supply_usd == 0 or total_debt_usd == 0:
+            return "NEUTRAL", None, None, None
+
+        stable_debt_usd = sum(a.debt_value_usd for a in assets if a.symbol in STABLECOIN_SYMBOLS)
+        volatile_debt_usd = total_debt_usd - stable_debt_usd
+
+        is_long = stable_debt_usd > volatile_debt_usd
+        strategy = "LONG" if is_long else "SHORT"
+
+        target_assets = []
+        if is_long:
+            target_assets = [a for a in assets if a.symbol not in STABLECOIN_SYMBOLS and a.supply_value_usd > 0]
+            if not target_assets:
+                return "NEUTRAL", None, None, None
+            main_asset = max(target_assets, key=lambda x: x.supply_value_usd)
+        else:
+            target_assets = [a for a in assets if a.symbol not in STABLECOIN_SYMBOLS and a.debt_value_usd > 0]
+            if not target_assets:
+                return "NEUTRAL", None, None, None
+            main_asset = max(target_assets, key=lambda x: x.debt_value_usd)
+
+        if is_long:
+            if main_asset.supply_amount == 0:
+                return strategy, main_asset.symbol, 0.0, 0.0
+            current_price = main_asset.supply_value_usd / main_asset.supply_amount
+            liq_price = current_price / health_factor if health_factor > 0 else 0.0
+        else:
+            if main_asset.debt_amount == 0:
+                return strategy, main_asset.symbol, 0.0, 0.0
+            current_price = main_asset.debt_value_usd / main_asset.debt_amount
+            liq_price = current_price * health_factor
+
+        return strategy, main_asset.symbol, current_price, liq_price
+
     async def _fetch_position_snapshot(self) -> Optional[AavePositionSnapshot]:
         """Queries Aave Pool for Health Factor and Auto-Discovers all positions."""
         try:
@@ -266,10 +392,16 @@ class AaveSentinelService:
             valid_assets = [result for result in results if result is not None]
             valid_assets.sort(key=lambda x: (x.supply_value_usd + x.wallet_value_usd), reverse=True)
 
+            strategy, main_sym, main_price, liq_price = self._determine_strategy_and_liquidation(valid_assets, health_factor)
+
             return AavePositionSnapshot(
                 health_factor=health_factor,
                 total_collateral_usd=total_collateral_usd,
                 total_debt_usd=total_debt_usd,
+                strategy=strategy,
+                main_asset_symbol=main_sym,
+                main_asset_price=main_price,
+                liquidation_price_usd=liq_price,
                 assets=valid_assets
             )
 
@@ -287,8 +419,8 @@ class AaveSentinelService:
 
         pnl_text = "N/A"
         if self._initial_basis_usd is not None:
-            current_net_value_usd = snapshot.net_equity_usd
-            diff_usd = current_net_value_usd - self._initial_basis_usd
+            current_total_equity = snapshot.total_strategy_equity_usd
+            diff_usd = current_total_equity - self._initial_basis_usd
             percentage = 0.0
             if self._initial_basis_usd != 0:
                 percentage = diff_usd / abs(self._initial_basis_usd)
@@ -322,6 +454,8 @@ class AaveSentinelService:
         hf = snapshot.health_factor
         if hf >= settings.AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD:
             hf_emoji = "🟢"
+        elif hf >= settings.AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD:
+            hf_emoji = "⚪"
         elif hf >= settings.AAVE_HEALTH_FACTOR_WARNING_THRESHOLD:
             hf_emoji = "🟡"
         elif hf >= settings.AAVE_HEALTH_FACTOR_DANGER_THRESHOLD:
@@ -329,13 +463,35 @@ class AaveSentinelService:
         else:
             hf_emoji = "🔴"
 
+        strategy_block = ""
+        if snapshot.strategy != "NEUTRAL" and snapshot.main_asset_symbol and snapshot.liquidation_price_usd:
+            current_p = snapshot.main_asset_price or 0.0
+            liq_p = snapshot.liquidation_price_usd
+
+            dist_pct = 0.0
+            if current_p > 0:
+                dist_pct = abs(current_p - liq_p) / current_p
+
+            direction_arrow = "📉" if snapshot.strategy == "LONG" else "📈"
+
+            strategy_block = (
+                f"\n**Stratégie**\n"
+                f"**----------**\n"
+                f"🎯 Type : **{snapshot.strategy}** sur {snapshot.main_asset_symbol}\n"
+                f"💲 Prix actuel : `{format_currency(current_p)}`\n"
+                f"💀 Liquidation : `{format_currency(liq_p)}`\n"
+                f"📏 Distance : **{format_percent(dist_pct)}** {direction_arrow}\n"
+            )
+
         return (
             f"**Statut du compte**\n"
             f"**----------**\n"
             f"🏥 Santé : `{hf:.2f}` {hf_emoji}\n"
-            f"💎 Valeur nette : `{format_money(snapshot.net_equity_usd)}`\n"
-            f"💵 PnL latent : {pnl_text}\n\n"
-
+            f"⚡ Levier : `x{snapshot.current_leverage:.2f}`\n"
+            f"💎 Net Aave : `{format_money(snapshot.aave_net_worth_usd)}`\n"
+            f"💰 Net Total : `{format_money(snapshot.total_strategy_equity_usd)}`\n"
+            f"💵 PnL Latent : {pnl_text}\n"
+            f"{strategy_block}\n"
             f"**Positions Aave**\n"
             f"**----------**\n"
             f"📈 Supply Total : `{format_money(snapshot.total_collateral_usd)}`\n"
@@ -362,7 +518,7 @@ class AaveSentinelService:
         """
         current_time = datetime.now()
         hf = snapshot.health_factor
-        equity = snapshot.net_equity_usd
+        equity = snapshot.total_strategy_equity_usd
 
         current_status = "SAFE"
         if hf < settings.AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
@@ -392,9 +548,9 @@ class AaveSentinelService:
                 alert_level = current_status
                 alert_title = f"Chute rapide du HF (-{deviation:.2f})"
 
-        elif self._state.last_net_equity_usd:
-            equity_diff = self._state.last_net_equity_usd - equity
-            equity_pct_drop = equity_diff / self._state.last_net_equity_usd if self._state.last_net_equity_usd > 0 else 0
+        elif self._state.last_total_equity_usd:
+            equity_diff = self._state.last_total_equity_usd - equity
+            equity_pct_drop = equity_diff / self._state.last_total_equity_usd if self._state.last_total_equity_usd > 0 else 0
 
             if equity_pct_drop > settings.AAVE_SIGNIFICANT_DEVIATION_EQUITY_PCT:
                 should_alert = True
@@ -416,7 +572,7 @@ class AaveSentinelService:
             self._state.last_status_level = current_status
 
         self._state.last_health_factor = hf
-        self._state.last_net_equity_usd = equity
+        self._state.last_total_equity_usd = equity
 
         if current_status == "SAFE":
             self._state.last_status_level = "SAFE"
@@ -511,21 +667,26 @@ class AaveSentinelService:
             await self._send_telegram_alert("Echec critique", f"Erreur : {str(error)}", "CRITICAL")
 
     async def start(self) -> None:
-        """Starts the monitoring loop with an immediate initial status report."""
+        """
+        Starts the monitoring loop.
+        Processes Telegram commands continuously (fast loop) and updates metrics periodically (slow loop).
+        """
         self.is_running = True
         await self._initialize_resources()
 
         mode_label = "PAPER MODE" if settings.PAPER_MODE else "LIVE TRADING"
         logger.info(f"[AAVE][SENTINEL] Service started [{mode_label}]. Watching: {self._wallet_address}")
 
+        await self._register_bot_commands()
+
         initial_snapshot = await self._fetch_position_snapshot()
 
         if initial_snapshot:
             details = await self._format_notification_message(initial_snapshot)
-            await self._send_telegram_alert("Sentinel Démarré", f"Mode : {mode_label}\n{details}", "INFO")
+            await self._send_telegram_alert("Sentinel Démarré", f"Mode : {mode_label}\n\n{details}", "INFO")
 
             self._state.last_health_factor = initial_snapshot.health_factor
-            self._state.last_net_equity_usd = initial_snapshot.net_equity_usd
+            self._state.last_total_equity_usd = initial_snapshot.total_strategy_equity_usd
 
             hf = initial_snapshot.health_factor
             if hf < settings.AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
@@ -537,25 +698,34 @@ class AaveSentinelService:
             else:
                 self._state.last_status_level = "SAFE"
         else:
-            await self._send_telegram_alert("Sentinel Démarré", f"Mode : {mode_label}\n⚠️ Impossible de récupérer le snapshot initial.", "WARNING")
+            await self._send_telegram_alert("Sentinel Démarré", f"Mode : {mode_label}\n\n⚠️ Impossible de récupérer le snapshot initial.", "WARNING")
+
+        last_metric_update_time = datetime.min
 
         while self.is_running:
             try:
-                snapshot = await self._fetch_position_snapshot()
+                await self._process_telegram_commands()
 
-                if snapshot:
-                    logger.debug(f"[AAVE][SENTINEL] Tick HF: {snapshot.health_factor:.4f}")
+                now = datetime.now()
+                time_since_update = (now - last_metric_update_time).total_seconds()
 
-                    await self._evaluate_risk_and_notify(snapshot)
+                if time_since_update > settings.AAVE_REPORTING_INTERVAL_SECONDS:
+                    snapshot = await self._fetch_position_snapshot()
+                    last_metric_update_time = now
 
-                    if snapshot.health_factor < settings.AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
-                        await self._execute_emergency_rescue()
-                        await asyncio.sleep(600)
+                    if snapshot:
+                        logger.debug(f"[AAVE][SENTINEL] Tick HF: {snapshot.health_factor:.4f}")
+
+                        await self._evaluate_risk_and_notify(snapshot)
+
+                        if snapshot.health_factor < settings.AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
+                            await self._execute_emergency_rescue()
+                            await asyncio.sleep(600)
 
             except Exception as loop_error:
                 logger.error(f"[AAVE][SENTINEL] Loop error: {loop_error}")
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(settings.TELEGRAM_POLL_INTERVAL_SECONDS)
 
     async def stop(self) -> None:
         """Stops the monitoring loop and cleans up resources."""
