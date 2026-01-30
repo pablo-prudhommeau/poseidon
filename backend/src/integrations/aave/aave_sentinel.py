@@ -130,10 +130,7 @@ class AaveSentinelService:
             logger.error(f"[AAVE][SENTINEL] Telegram alert failed: {error}")
 
     async def _register_bot_commands(self) -> None:
-        """
-        Registers the list of available commands with the Telegram Bot API.
-        This enables the autocomplete menu in the Telegram UI.
-        """
+        """Registers the list of available commands with the Telegram Bot API."""
         if not settings.TELEGRAM_BOT_TOKEN:
             return
 
@@ -317,9 +314,9 @@ class AaveSentinelService:
                 return None
 
     def _determine_strategy_and_liquidation(
-            self,
-            assets: List[AaveAssetDetails],
-            health_factor: float
+        self,
+        assets: List[AaveAssetDetails],
+        health_factor: float
     ) -> Tuple[str, Optional[str], Optional[float], Optional[float]]:
         """
         Analyzes the portfolio to determine:
@@ -520,13 +517,17 @@ class AaveSentinelService:
         hf = snapshot.health_factor
         equity = snapshot.total_strategy_equity_usd
 
-        current_status = "SAFE"
-        if hf < settings.AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
+        current_status = "OPTIMAL"
+        if hf < settings.AAVE_HEALTH_FACTOR_DANGER_THRESHOLD:
             current_status = "CRITICAL"
-        elif hf < settings.AAVE_HEALTH_FACTOR_DANGER_THRESHOLD:
-            current_status = "DANGER"
         elif hf < settings.AAVE_HEALTH_FACTOR_WARNING_THRESHOLD:
+            current_status = "DANGER"
+        elif hf < settings.AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD:
             current_status = "WARNING"
+        elif hf < settings.AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD:
+            current_status = "NEUTRAL"
+        else:
+            current_status = "OPTIMAL"
 
         should_alert = False
         alert_level = "INFO"
@@ -534,19 +535,26 @@ class AaveSentinelService:
 
         if current_status != self._state.last_status_level:
             should_alert = True
-            if current_status in ("WARNING", "DANGER", "CRITICAL"):
-                alert_level = current_status
-                alert_title = f"{current_status} : Santé dégradée"
-            elif current_status == "SAFE" and self._state.last_status_level != "SAFE":
+            if current_status == "OPTIMAL":
                 alert_level = "SUCCESS"
-                alert_title = "Retour à la normale"
+                alert_title = "🎯 Target Atteinte (Zone Verte)"
+            elif current_status == "NEUTRAL":
+                if self._state.last_status_level == "OPTIMAL":
+                     alert_level = "INFO"
+                     alert_title = "📉 Sortie de zone verte"
+                else:
+                     alert_level = "SUCCESS"
+                     alert_title = "✅ Retour au calme (Zone Neutre)"
+            elif current_status in ("WARNING", "DANGER", "CRITICAL"):
+                alert_level = current_status
+                alert_title = f"⚠️ Statut : {current_status}"
 
         elif current_status in ("WARNING", "DANGER", "CRITICAL") and self._state.last_health_factor:
             deviation = self._state.last_health_factor - hf
             if deviation > settings.AAVE_SIGNIFICANT_DEVIATION_HF:
                 should_alert = True
                 alert_level = current_status
-                alert_title = f"Chute rapide du HF (-{deviation:.2f})"
+                alert_title = f"📉 Chute rapide du HF (-{deviation:.2f})"
 
         elif self._state.last_total_equity_usd:
             equity_diff = self._state.last_total_equity_usd - equity
@@ -555,14 +563,14 @@ class AaveSentinelService:
             if equity_pct_drop > settings.AAVE_SIGNIFICANT_DEVIATION_EQUITY_PCT:
                 should_alert = True
                 alert_level = "WARNING"
-                alert_title = f"Chute brutale de la valeur (-{format_percent(equity_pct_drop)})"
+                alert_title = f"💸 Chute brutale de la valeur (-{format_percent(equity_pct_drop)})"
 
         elif self._state.last_notification_time:
             elapsed = (current_time - self._state.last_notification_time).total_seconds()
-            if elapsed > settings.AAVE_ALERT_COOLDOWN_SECONDS and current_status != "SAFE":
+            if elapsed > settings.AAVE_ALERT_COOLDOWN_SECONDS and current_status != "OPTIMAL":
                 should_alert = True
-                alert_level = current_status
-                alert_title = f"Rappel : Statut {current_status}"
+                alert_level = "INFO" if current_status == "NEUTRAL" else current_status
+                alert_title = f"⏰ Rappel : Statut {current_status}"
 
         if should_alert:
             message = await self._format_notification_message(snapshot)
@@ -574,8 +582,8 @@ class AaveSentinelService:
         self._state.last_health_factor = hf
         self._state.last_total_equity_usd = equity
 
-        if current_status == "SAFE":
-            self._state.last_status_level = "SAFE"
+        if not should_alert:
+             self._state.last_status_level = current_status
 
     async def _execute_emergency_rescue(self) -> None:
         """Executes the rescue protocol: Approves and Supplies USDC to the Aave Pool."""
@@ -689,14 +697,16 @@ class AaveSentinelService:
             self._state.last_total_equity_usd = initial_snapshot.total_strategy_equity_usd
 
             hf = initial_snapshot.health_factor
-            if hf < settings.AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
+            if hf < settings.AAVE_HEALTH_FACTOR_DANGER_THRESHOLD:
                 self._state.last_status_level = "CRITICAL"
-            elif hf < settings.AAVE_HEALTH_FACTOR_DANGER_THRESHOLD:
-                self._state.last_status_level = "DANGER"
             elif hf < settings.AAVE_HEALTH_FACTOR_WARNING_THRESHOLD:
+                self._state.last_status_level = "DANGER"
+            elif hf < settings.AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD:
                 self._state.last_status_level = "WARNING"
+            elif hf < settings.AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD:
+                self._state.last_status_level = "NEUTRAL"
             else:
-                self._state.last_status_level = "SAFE"
+                self._state.last_status_level = "OPTIMAL"
         else:
             await self._send_telegram_alert("Sentinel Démarré", f"Mode : {mode_label}\n\n⚠️ Impossible de récupérer le snapshot initial.", "WARNING")
 
