@@ -7,9 +7,9 @@ import base58
 from solana.rpc.api import Client
 from solana.rpc.types import TxOpts
 from solders.keypair import Keypair
+from solders.presigner import Presigner
 from solders.signature import Signature
 from solders.transaction import VersionedTransaction
-from solders.presigner import Presigner
 
 # Optionnel: types de réponses solders (présents avec solana-py récent)
 try:

@@ -3,8 +3,8 @@
      [attr.viewBox]="'0 0 ' + width() + ' ' + height()"
      preserveAspectRatio="none"
      class="block">
-	<path [attr.d]="pathData()"
+	<path [attr.d]="svgPathDefinition()"
 	      fill="none"
-	      class="stroke-current"
-	      stroke-width="1.5"/>
+	      stroke-width="1.5"
+	      class="stroke-current"/>
 </svg>

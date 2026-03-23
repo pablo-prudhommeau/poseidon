@@ -1,0 +1,57 @@
+<p-card>
+	<ng-template pTemplate="title">Execution History</ng-template>
+	<div class="overflow-x-auto mt-4">
+		<table class="w-full text-left text-sm text-slate-300">
+			<thead class="border-b border-slate-700 text-xs uppercase text-slate-400 bg-slate-800/50">
+			<tr>
+				<th scope="col" class="px-4 py-3">Planned Date</th>
+				<th scope="col" class="px-4 py-3">Amount</th>
+				<th scope="col" class="px-4 py-3">Status</th>
+				<th scope="col" class="px-4 py-3">Execution Price</th>
+				<th scope="col" class="px-4 py-3 text-right">Tx</th>
+			</tr>
+			</thead>
+			<tbody>
+				@for (order of strategy().orders; track order.transaction_hash || $index) {
+					<tr class="border-b border-slate-800/50 hover:bg-slate-800/30">
+						<td class="px-4 py-3">{{ order.planned_date | date:'short' }}</td>
+						<td class="px-4 py-3 font-medium">$ {{ order.planned_amount | number:'1.2-2' }}</td>
+						<td class="px-4 py-3">
+                    <span class="px-2 py-1 rounded text-xs font-medium"
+                          [ngClass]="{
+                              'bg-emerald-500/10 text-emerald-400': order.status === 'EXECUTED',
+                              'bg-sky-500/10 text-sky-400': order.status === 'PENDING',
+                              'bg-rose-500/10 text-rose-400': order.status === 'FAILED',
+                              'bg-amber-500/10 text-amber-400': order.status === 'WAITING_USER_APPROVAL'
+                          }">
+                        {{ order.status }}
+                    </span>
+						</td>
+						<td class="px-4 py-3">
+							@if (order.execution_price) {
+								$ {{ order.execution_price | number:'1.2-2' }}
+							} @else {
+								-
+							}
+						</td>
+						<td class="px-4 py-3 text-right">
+							@if (order.transaction_hash) {
+								<a [href]="'https://snowtrace.io/tx/' + order.transaction_hash"
+								   target="_blank"
+								   class="text-sky-400 hover:text-sky-300 transition-colors">
+									{{ order.transaction_hash | slice:0:8 }}...
+								</a>
+							} @else {
+								<span class="text-slate-500">-</span>
+							}
+						</td>
+					</tr>
+				} @empty {
+					<tr>
+						<td colspan="5" class="px-4 py-8 text-center text-slate-500">No orders generated yet.</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+</p-card>

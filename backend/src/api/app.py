@@ -10,10 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.http.http_api import router as http_router
 from src.api.websocket.ws_hub import router as ws_router
 from src.api.websocket.ws_manager import ws_manager
+from src.core.jobs.dca_job import dca_job as aave_dca
 from src.core.jobs.orchestrator_job import ensure_started, get_status
+from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
 from src.logging.logger import get_logger
 from src.persistence.db import init_db
-from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
 
 log = get_logger(__name__)
 
@@ -53,10 +54,11 @@ def create_app() -> FastAPI:
         ws_manager.attach_current_loop()
         ensure_started()
 
-        # Start Aave Sentinel background task
         asyncio.create_task(aave_sentinel.start())
+        log.info("Aave Sentinel task scheduled.")
 
-        log.info("Poseidon startup: Orchestrator & Aave Sentinel started.")
+        asyncio.create_task(aave_dca.start())
+        log.info("DCA background task successfully scheduled.")
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:

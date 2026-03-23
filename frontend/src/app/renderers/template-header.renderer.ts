@@ -1,26 +1,19 @@
-import { CommonModule } from '@angular/common';
-import { Component, TemplateRef } from '@angular/core';
-import { IHeaderAngularComp } from 'ag-grid-angular';
-import { IHeaderParams } from 'ag-grid-community';
+import {CommonModule} from '@angular/common';
+import {Component, TemplateRef} from '@angular/core';
+import {IHeaderAngularComp} from 'ag-grid-angular';
+import {IHeaderParams} from 'ag-grid-community';
 
-/**
- * Angular header renderer that renders a provided TemplateRef with a header context.
- * Context:
- *  - $implicit: displayName
- *  - displayName, enableMenu, showColumnMenu, column
- *  - params: full IHeaderParams
- */
 @Component({
     standalone: true,
     selector: 'app-template-header-renderer',
     imports: [CommonModule],
     template: `
-    <ng-container
-      *ngIf="template"
-      [ngTemplateOutlet]="template"
-      [ngTemplateOutletContext]="context">
-    </ng-container>
-  `,
+		<ng-container
+				*ngIf="template"
+				[ngTemplateOutlet]="template"
+				[ngTemplateOutletContext]="context">
+		</ng-container>
+    `,
 })
 export class TemplateHeaderRendererComponent implements IHeaderAngularComp {
     public template?: TemplateRef<unknown>;

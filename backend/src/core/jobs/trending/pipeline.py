@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from src.configuration.config import settings
 from src.core.jobs.trending.execution_stage import AiExecutionStage
 from src.core.jobs.trending.gates_stage import CandidateGatesStage
 from src.core.jobs.trending.selection_stage import CandidateSelectionStage
-
-from src.configuration.config import settings
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)

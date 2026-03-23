@@ -1,0 +1,32 @@
+<p-card>
+	<ng-template pTemplate="title">
+		<div class="flex justify-between items-center">
+			<span>Strategy Path Projection</span>
+			<div class="flex items-center gap-3">
+                <span class="relative flex h-2.5 w-2.5">
+	                @if (engineStatus() === 'ACTIVE') {
+		                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+	                }
+	                <span class="relative inline-flex rounded-full h-2.5 w-2.5" [ngClass]="engineStatus() === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'"></span>
+                </span>
+				<span class="text-sm font-normal text-slate-300">{{ engineStatus() }}</span>
+			</div>
+		</div>
+	</ng-template>
+
+	<div class="text-xs text-slate-400 mb-4">Historical Bear Market behavior time-mapped and scaled to current strategy boundaries.</div>
+
+	<apx-chart
+			[series]="mainSeries()"
+			[chart]="mainChartConfig.chart"
+			[colors]="mainChartConfig.colors"
+			[stroke]="mainChartConfig.stroke"
+			[fill]="mainChartConfig.fill"
+			[dataLabels]="mainChartConfig.dataLabels"
+			[xaxis]="mainChartConfig.xaxis"
+			[yaxis]="mainChartConfig.yaxis"
+			[grid]="mainChartConfig.grid"
+			[theme]="mainChartConfig.theme"
+			[legend]="mainChartConfig.legend">
+	</apx-chart>
+</p-card>

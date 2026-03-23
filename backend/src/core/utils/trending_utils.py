@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from src.configuration.config import settings
 from src.core.structures.structures import Candidate, ScoreComponents, Token
-from src.core.utils.date_utils import timezone_now
+from src.core.utils.date_utils import get_current_local_datetime
 from src.core.utils.format_utils import _tail, _format
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation, \
@@ -87,6 +87,7 @@ def _passes_volume_thresholds(
     if interval == "6h":
         return (vol_6h is not None and vol_6h >= th6) or (vol_24h is not None and vol_24h >= th24)
     return vol_24h is not None and vol_24h >= th24
+
 
 def _has_valid_intraday_bars(candidate: Candidate) -> bool:
     return (
@@ -345,7 +346,7 @@ def recently_traded(address: str, minutes: int = 45) -> bool:
         if not trade:
             return False
 
-        now = timezone_now()
+        now = get_current_local_datetime()
         created = trade.created_at.astimezone()
         return (now - created) < timedelta(minutes=minutes)
 

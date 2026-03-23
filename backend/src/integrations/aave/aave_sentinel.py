@@ -314,9 +314,9 @@ class AaveSentinelService:
                 return None
 
     def _determine_strategy_and_liquidation(
-        self,
-        assets: List[AaveAssetDetails],
-        health_factor: float
+            self,
+            assets: List[AaveAssetDetails],
+            health_factor: float
     ) -> Tuple[str, Optional[str], Optional[float], Optional[float]]:
         """
         Analyzes the portfolio to determine:
@@ -376,7 +376,7 @@ class AaveSentinelService:
             raw_health_factor = account_data[5]
 
             health_factor = 999.0
-            MAX_UINT256 = 2**255 - 1
+            MAX_UINT256 = 2 ** 255 - 1
             if raw_health_factor < MAX_UINT256:
                 health_factor = raw_health_factor / 1e18
 
@@ -540,11 +540,11 @@ class AaveSentinelService:
                 alert_title = "🎯 Target Atteinte (Zone Verte)"
             elif current_status == "NEUTRAL":
                 if self._state.last_status_level == "OPTIMAL":
-                     alert_level = "INFO"
-                     alert_title = "📉 Sortie de zone verte"
+                    alert_level = "INFO"
+                    alert_title = "📉 Sortie de zone verte"
                 else:
-                     alert_level = "SUCCESS"
-                     alert_title = "✅ Retour au calme (Zone Neutre)"
+                    alert_level = "SUCCESS"
+                    alert_title = "✅ Retour au calme (Zone Neutre)"
             elif current_status in ("WARNING", "DANGER", "CRITICAL"):
                 alert_level = current_status
                 alert_title = f"⚠️ Statut : {current_status}"
@@ -583,7 +583,7 @@ class AaveSentinelService:
         self._state.last_total_equity_usd = equity
 
         if not should_alert:
-             self._state.last_status_level = current_status
+            self._state.last_status_level = current_status
 
     async def _execute_emergency_rescue(self) -> None:
         """Executes the rescue protocol: Approves and Supplies USDC to the Aave Pool."""

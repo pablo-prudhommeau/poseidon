@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.api.websocket.telemetry import TelemetryService
 from src.core.structures.structures import Token
-from src.core.utils.date_utils import timezone_now
+from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_logger
 from src.persistence.models import Phase, Position, Side, Status, Trade
 
@@ -32,7 +32,7 @@ def _get_active_position_by_address(db: Session, address: str) -> Optional[Posit
             .where(
                 Position.tokenAddress == address,
                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
-                )
+            )
             .order_by(desc(Position.opened_at), desc(Position.id))
             .limit(1)
         )
@@ -50,7 +50,7 @@ def _get_last_closed_position_for_cooldown(db: Session, address: str) -> Optiona
                 Position.tokenAddress == address,
                 Position.phase == Phase.CLOSED,
                 Position.closed_at.isnot(None),
-                )
+            )
             .order_by(desc(Position.closed_at), desc(Position.id))
             .limit(1)
         )
@@ -326,7 +326,7 @@ def sell(
         open_qty_after = max(0.0, open_qty_before - sell_qty)
         if open_qty_after <= EPSILON_QTY:
             position.phase = phase  # usually CLOSED on full exit
-            position.closed_at = timezone_now()
+            position.closed_at = get_current_local_datetime()
             position.current_quantity = 0.0
             closed_now = True
         else:
@@ -374,7 +374,7 @@ def sell(
                 holding_minutes = max(
                     0.0,
                     (position.closed_at - position.opened_at).total_seconds() / 60.0,
-                    )
+                )
 
             # Determine final exit reason w.r.t. configured thresholds
             reason = "MANUAL"
@@ -408,7 +408,7 @@ def sell(
                 holding_minutes_chunk = max(
                     0.0,
                     (trade_row.created_at - position.opened_at).total_seconds() / 60.0,
-                    )
+                )
 
             TelemetryService.link_trade_outcome(
                 token_address=token.tokenAddress,

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Deque, Dict, Optional
 
-from src.core.utils.date_utils import timezone_now
+from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -194,7 +194,7 @@ class DexConsistencyGuard:
         if as_of is None:
             return False
         try:
-            return (timezone_now() - as_of) > horizon
+            return (get_current_local_datetime() - as_of) > horizon
         except Exception:
             return False
 
@@ -248,7 +248,7 @@ class DexConsistencyGuard:
             if self._jumped(current, previous, self._jump_factor):
                 jump_fields += 1
                 if current is not None and previous is not None and previous > 0.0 and current > 0.0:
-                    ratios_log.append(f"{name}={current/previous:.4f}")
+                    ratios_log.append(f"{name}={current / previous:.4f}")
                 else:
                     ratios_log.append(f"{name}=EDGE")
 
@@ -259,7 +259,7 @@ class DexConsistencyGuard:
             if self._jumped(curf, prevf, self._jump_factor):
                 jump_fields += 1
                 if curf is not None and prevf is not None and prevf > 0.0 and curf > 0.0:
-                    ratios_log.append(f"{name}={curf/prevf:.4f}")
+                    ratios_log.append(f"{name}={curf / prevf:.4f}")
                 else:
                     ratios_log.append(f"{name}=EDGE")
 

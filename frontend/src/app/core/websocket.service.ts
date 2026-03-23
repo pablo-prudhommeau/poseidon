@@ -1,5 +1,5 @@
-import { Injectable, signal } from '@angular/core';
-import { Analytics, Portfolio, Position, Trade } from './models';
+import {Injectable, signal} from '@angular/core';
+import {Analytics, DcaStrategy, Portfolio, Position, Trade} from './models';
 
 type InitMsg = { type: 'init'; payload: any };
 type PortfolioMsg = { type: 'portfolio'; payload: any };
@@ -7,6 +7,7 @@ type PositionsMsg = { type: 'positions'; payload: any[] };
 type TradeListMsg = { type: 'trades'; payload: any[] };
 type TradeMsg = { type: 'trade'; payload: any };
 type AnalyticsMsg = { type: 'analytics'; payload: any };
+type DcaStrategiesMsg = { type: 'dca_strategies'; payload: any[] };
 type PongMsg = { type: 'pong' };
 type ErrorMsg = { type: 'error'; payload?: any };
 
@@ -17,13 +18,14 @@ type WsMsg =
     | TradeListMsg
     | TradeMsg
     | AnalyticsMsg
+    | DcaStrategiesMsg
     | PongMsg
     | ErrorMsg
     | { type: string; payload?: any };
 
 export type Status = 'connecting' | 'open' | 'closed';
 
-@Injectable({ providedIn: 'root' })
+@Injectable({providedIn: 'root'})
 export class WebSocketService {
     private socket?: WebSocket;
 
@@ -32,6 +34,7 @@ export class WebSocketService {
     public readonly positions = signal<Position[]>([]);
     public readonly trades = signal<Trade[]>([]);
     public readonly analytics = signal<Analytics[]>([]);
+    public readonly dcaStrategies = signal<DcaStrategy[]>([]);
 
     private defaultWsUrl(): string {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -81,6 +84,7 @@ export class WebSocketService {
                 this.portfolio.set(payload?.portfolio ?? null);
                 this.positions.set(payload?.positions ?? []);
                 this.trades.set(payload?.trades ?? []);
+                this.dcaStrategies.set(payload?.dca_strategies ?? []);
                 const rows: Analytics[] = Array.isArray(payload?.analytics) ? payload.analytics : [];
                 const sorted = [...rows].sort((a, b) => (b.evaluatedAt || '').localeCompare(a.evaluatedAt || ''));
                 this.analytics.set(sorted.slice(0, 5000));
@@ -88,6 +92,7 @@ export class WebSocketService {
                     trades: this.trades().length,
                     positions: this.positions().length,
                     analytics: this.analytics().length,
+                    dcaStrategies: this.dcaStrategies().length
                 });
                 break;
             }
@@ -127,6 +132,10 @@ export class WebSocketService {
                         return [row, ...previous].slice(0, 5000);
                     });
                 }
+                break;
+            }
+            case 'dca_strategies': {
+                this.dcaStrategies.set((message as DcaStrategiesMsg).payload ?? []);
                 break;
             }
             case 'pong':

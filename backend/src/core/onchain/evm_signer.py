@@ -122,4 +122,3 @@ def build_default_evm_signer() -> EvmSigner:
         derivation_index=settings.EVM_DERIVATION_INDEX,
     )
     return EvmSigner(cfg)
-

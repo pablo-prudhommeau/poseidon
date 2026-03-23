@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Optional
 
 import base58
 
 from src.configuration.config import settings
+from src.core.onchain.evm_signer import build_default_evm_signer, EvmSigner
+from src.core.onchain.solana_signer import build_default_solana_signer, SolanaSigner
 from src.core.structures.structures import LifiRoute
 from src.core.utils.dict_utils import _read_path
-from src.core.onchain.solana_signer import build_default_solana_signer, SolanaSigner
-from src.core.onchain.evm_signer import build_default_evm_signer, EvmSigner
 from src.logging.logger import get_logger
 
 log = get_logger(__name__)

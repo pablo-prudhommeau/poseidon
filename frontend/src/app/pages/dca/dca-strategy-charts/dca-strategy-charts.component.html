@@ -1,0 +1,34 @@
+<p-card>
+	<ng-template pTemplate="title"><span class="text-sm">Drawdown Heatmap</span></ng-template>
+	<div class="text-xs text-slate-400 mb-2">Distance between Current Price and PRU.</div>
+	@if (drawdownSeries().length) {
+		<apx-chart
+				[series]="drawdownSeries()" [chart]="drawdownConfig.chart" [colors]="drawdownConfig.colors"
+				[stroke]="drawdownConfig.stroke" [fill]="drawdownConfig.fill" [dataLabels]="drawdownConfig.dataLabels"
+				[xaxis]="drawdownConfig.xaxis" [yaxis]="drawdownConfig.yaxis" [grid]="drawdownConfig.grid" [theme]="drawdownConfig.theme">
+		</apx-chart>
+	}
+</p-card>
+
+<p-card>
+	<ng-template pTemplate="title"><span class="text-sm">Dry Powder Pace</span></ng-template>
+	<apx-chart
+			[series]="dryPowderSeries()" [chart]="dryPowderConfig.chart" [plotOptions]="dryPowderConfig.plotOptions"
+			[labels]="dryPowderConfig.labels" [colors]="dryPowderConfig.colors" [stroke]="dryPowderConfig.stroke" [theme]="dryPowderConfig.theme">
+	</apx-chart>
+</p-card>
+
+<p-card>
+	<ng-template pTemplate="title"><span class="text-sm">Jitter Session Snipes</span></ng-template>
+	<div class="text-xs text-slate-400 mb-2">Executed order clusters (Local Time).</div>
+	@if (jitterSeries().length) {
+		<apx-chart
+				[series]="jitterSeries()" [chart]="jitterConfig.chart" [xaxis]="jitterConfig.xaxis"
+				[yaxis]="jitterConfig.yaxis" [colors]="jitterConfig.colors" [grid]="jitterConfig.grid" [theme]="jitterConfig.theme">
+		</apx-chart>
+	} @else {
+		<div class="text-center text-slate-500 py-10 text-sm">
+			Waiting for executed orders...
+		</div>
+	}
+</p-card>

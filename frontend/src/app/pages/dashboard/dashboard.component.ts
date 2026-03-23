@@ -1,22 +1,21 @@
-import {DecimalPipe, NgIf} from '@angular/common';
-import {Component, computed, OnInit} from '@angular/core';
+import {DecimalPipe} from '@angular/common';
+import {Component, computed} from '@angular/core';
 import {CardModule} from 'primeng/card';
-import {ApiService} from '../../api.service';
 import {EquityCurvePoint} from '../../core/models';
 import {WebSocketService} from '../../core/websocket.service';
 import {PositionsTableComponent} from '../../features/positions/positions-table.component';
 import {TradesTableComponent} from '../../features/trades/trades-table.component';
-import {PnlBadgeComponent} from '../../widgets/pnl-badge.component';
-import {SparklineComponent} from '../../widgets/sparkline.component';
+import {PnlBadgeComponent} from '../../widgets/pnl-badge/pnl-badge.component';
+import {SparklineComponent} from '../../widgets/sparkline/sparkline.component';
 
 @Component({
     standalone: true,
     selector: 'app-dashboard',
-    imports: [DecimalPipe, CardModule, PositionsTableComponent, TradesTableComponent, PnlBadgeComponent, SparklineComponent, NgIf],
+    imports: [DecimalPipe, CardModule, PositionsTableComponent, TradesTableComponent, PnlBadgeComponent, SparklineComponent],
     templateUrl: './dashboard.component.html'
 })
 export class DashboardComponent {
-    constructor(public webSocketService: WebSocketService, private api: ApiService) {}
+    constructor(public webSocketService: WebSocketService) {}
 
     equity = computed(() => this.webSocketService.portfolio()?.equity ?? 0);
     cash = computed(() => this.webSocketService.portfolio()?.cash ?? 0);

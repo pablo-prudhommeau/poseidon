@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
+from src.api.http.api_schemas import AnalyticsPayload
+from src.api.serializers import serialize_analytics
 from src.api.websocket.ws_manager import ws_manager
 from src.logging.logger import get_logger
 from src.persistence.dao.analytics import insert_analytics, attach_outcome_for_trade
 from src.persistence.db import _session
 from src.persistence.models import Analytics
-from src.persistence.serializers import serialize_analytics
 
 log = get_logger(__name__)
 
@@ -44,7 +45,7 @@ class TelemetryService:
             holding_minutes: float,
             was_profit: bool,
             exit_reason: str = "",
-    ) -> Optional[Dict[str, Any]]:
+    ) -> AnalyticsPayload:
         """
         Rattache un outcome réalisé à la dernière ligne analytics du token
         et rediffuse un événement 'analytics' (alignement).

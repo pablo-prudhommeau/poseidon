@@ -1,0 +1,19 @@
+<div class="space-y-8">
+	@if (dcaStrategies().length > 0) {
+		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-4">
+			<app-dca-synthesis class="contents" [strategy]="activeStrategy()!"></app-dca-synthesis>
+		</div>
+		<app-dca-strategy-path-projection class="block mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-path-projection>
+		<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+			<app-dca-strategy-charts class="contents" [strategy]="activeStrategy()!"></app-dca-strategy-charts>
+		</div>
+		<app-dca-strategy-execution-timeline class="block mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-execution-timeline>
+	} @else {
+		<p-card>
+			<div class="flex flex-col items-center justify-center py-20 text-slate-400">
+				<i class="fa fa-robot text-5xl mb-4 opacity-50"></i>
+				<h3 class="text-lg font-medium text-slate-300">No active DCA strategy</h3>
+			</div>
+		</p-card>
+	}
+</div>

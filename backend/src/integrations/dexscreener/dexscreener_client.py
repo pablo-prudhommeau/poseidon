@@ -9,7 +9,6 @@ from src.core.structures.structures import Token
 from src.integrations.dexscreener.dexscreener_constants import (
     LATEST_PAIRS_ENDPOINT,
     TOTAL_ADDRESS_HARD_CAP,
-    HTTP_TIMEOUT_SECONDS,
     DEFAULT_MAX_ADDRESSES_PER_CALL,
     TOKEN_BOOSTS_LATEST_ENDPOINT,
     TOKEN_BOOSTS_TOP_ENDPOINT,
@@ -34,21 +33,34 @@ from src.logging.logger import get_logger
 log = get_logger(__name__)
 
 _shared_async_client: Optional[httpx.AsyncClient] = None
+_shared_async_client_loop_id: Optional[int] = None  # tracks which loop owns the client
 
 
 def _get_shared_client() -> httpx.AsyncClient:
     """
-    Returns a shared httpx.AsyncClient instance.
-    Lazy initialization ensures the client is created within the running event loop.
+    Return (or lazily create) the shared AsyncClient, bound to the currently
+    running event loop.  If the loop has changed since the client was created,
+    the old client is discarded and a new one is instantiated.
     """
-    global _shared_async_client
-    if _shared_async_client is None or _shared_async_client.is_closed:
-        log.debug("[DEX][CLIENT] Initializing shared HTTP client.")
-        _shared_async_client = httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS)
+    global _shared_async_client, _shared_async_client_loop_id
+
+    try:
+        current_loop = asyncio.get_running_loop()
+        current_loop_id = id(current_loop)
+    except RuntimeError:
+        current_loop_id = None
+
+    if _shared_async_client is None or _shared_async_client_loop_id != current_loop_id:
+        _shared_async_client = httpx.AsyncClient()
+        _shared_async_client_loop_id = current_loop_id
+
     return _shared_async_client
 
 
-async def fetch_dexscreener_token_information_list(tokens: Iterable[Token]) -> List[DexscreenerTokenInformation]:
+async def fetch_dexscreener_token_information_list(
+        tokens: Iterable[Token],
+        client: Optional[httpx.AsyncClient] = None,
+) -> List[DexscreenerTokenInformation]:
     tokens_list: List[Token] = list(tokens or [])
     if not tokens_list:
         log.debug("[DEX][PAIR][PRICE] Called with an empty token list.")
@@ -70,8 +82,9 @@ async def fetch_dexscreener_token_information_list(tokens: Iterable[Token]) -> L
             continue
         tokens_by_chain.setdefault(token.chain, []).append(token)
 
+    _client = client if client is not None else _get_shared_client()
+
     token_information_list: List[DexscreenerTokenInformation] = []
-    client = _get_shared_client()
     for chain_id, chain_tokens in tokens_by_chain.items():
         if not chain_tokens:
             continue
@@ -86,7 +99,7 @@ async def fetch_dexscreener_token_information_list(tokens: Iterable[Token]) -> L
         for batch in _chunk_strings(pair_addresses, DEFAULT_MAX_ADDRESSES_PER_CALL):
             try:
                 token_information_list_fetched: List[DexscreenerTokenInformation] = \
-                    await _fetch_token_information_for_chain(client, chain_id, batch)
+                    await _fetch_token_information_for_chain(_client, chain_id, batch)
             except httpx.HTTPStatusError as error:
                 status_code = error.response.status_code
                 if status_code in (400, 413, 414) and len(batch) > 1:
@@ -96,8 +109,8 @@ async def fetch_dexscreener_token_information_list(tokens: Iterable[Token]) -> L
                         len(batch),
                     )
                     midpoint = len(batch) // 2
-                    left = await _fetch_token_information_for_chain(client, chain_id, batch[:midpoint])
-                    right = await _fetch_token_information_for_chain(client, chain_id, batch[midpoint:])
+                    left = await _fetch_token_information_for_chain(_client, chain_id, batch[:midpoint])
+                    right = await _fetch_token_information_for_chain(_client, chain_id, batch[midpoint:])
                     token_information_list_fetched = left + right
                 else:
                     log.warning(
@@ -122,8 +135,8 @@ async def fetch_dexscreener_token_information_list(tokens: Iterable[Token]) -> L
 def fetch_dexscreener_token_information_list_sync(tokens: List[Token]) -> List[DexscreenerTokenInformation]:
     """
     Synchronous wrapper for fetch_dexscreener_token_information_list.
-    NOTE: This creates a separate event loop/thread, so it CANNOT use the shared client
-    bound to the main loop. It uses a one-off client internally via asyncio.run context.
+    Uses a fully isolated local client in the new-loop path to avoid
+    'Event loop is closed' errors from the shared async client's transport teardown.
     """
     if not tokens:
         log.debug("[DEX][TOKEN][INFORMATION] Called with an empty token list.")
@@ -147,16 +160,16 @@ def fetch_dexscreener_token_information_list_sync(tokens: List[Token]) -> List[D
 
     log.debug("[DEX][TOKEN][INFORMATION] Executing synchronous fetch in a new event loop.")
     event_loop = asyncio.new_event_loop()
+
+    async def _run_with_local_client() -> List[DexscreenerTokenInformation]:
+        async with httpx.AsyncClient() as local_client:
+            return await fetch_dexscreener_token_information_list(tokens, client=local_client)
+
     try:
         asyncio.set_event_loop(event_loop)
         result: List[DexscreenerTokenInformation] = event_loop.run_until_complete(
-            fetch_dexscreener_token_information_list(tokens))
-
-        global _shared_async_client
-        if _shared_async_client and not _shared_async_client.is_closed:
-            event_loop.run_until_complete(_shared_async_client.aclose())
-            _shared_async_client = None
-
+            _run_with_local_client()
+        )
         try:
             event_loop.run_until_complete(event_loop.shutdown_asyncgens())
         except Exception:
@@ -217,22 +230,22 @@ async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTok
         TOKEN_PROFILES_ENDPOINT,
     ]
 
-    client = _get_shared_client()
-    for url in endpoints:
-        try:
-            payload = await _http_get_json(client, url)
-            extracted = _extract_addresses(payload if isinstance(payload, (dict, list)) else None)
-            collected_addresses.extend(extracted)
+    async with httpx.AsyncClient() as client:
+        for url in endpoints:
+            try:
+                payload = await _http_get_json(client, url)
+                extracted = _extract_addresses(payload if isinstance(payload, (dict, list)) else None)
+                collected_addresses.extend(extracted)
 
-            payload_size = len(payload) if isinstance(payload, list) else len(payload or {})
-            log.debug(
-                "[DEX][TREND] Fetched %s → payload_items=%s, extracted_addresses=%s.",
-                "/".join(url.rsplit("/", 2)[-2:]),
-                payload_size,
-                len(extracted),
-            )
-        except httpx.HTTPError as error:
-            log.warning("[DEX][TREND] Read failed for '%s' (%s).", url, error)
+                payload_size = len(payload) if isinstance(payload, list) else len(payload or {})
+                log.debug(
+                    "[DEX][TREND] Fetched %s → payload_items=%s, extracted_addresses=%s.",
+                    "/".join(url.rsplit("/", 2)[-2:]),
+                    payload_size,
+                    len(extracted),
+                )
+            except httpx.HTTPError as error:
+                log.warning("[DEX][TREND] Read failed for '%s' (%s).", url, error)
 
     if not collected_addresses:
         log.info("[DEX][TREND] No addresses collected from trending sources.")

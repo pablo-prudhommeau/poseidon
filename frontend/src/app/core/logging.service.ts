@@ -1,10 +1,6 @@
-import { Injectable } from '@angular/core';
+import {Injectable} from '@angular/core';
 
-/**
- * Centralized logging with explicit [TAGS] prefixes.
- * Keep messages short; prefer structured objects for details.
- */
-@Injectable({ providedIn: 'root' })
+@Injectable({providedIn: 'root'})
 export class LoggingService {
     private buildPrefix(tags: string[]): string {
         return tags.map((t) => `[${t}]`).join('');

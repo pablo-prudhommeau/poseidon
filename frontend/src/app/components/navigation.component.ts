@@ -2,8 +2,8 @@ import {CommonModule} from '@angular/common';
 import {Component, inject, OnInit} from '@angular/core';
 import {RouterModule} from '@angular/router';
 import {WebSocketService} from '../core/websocket.service';
-import {ConnectionOverlayPillComponent} from '../widgets/connection-overlay-pill.component';
-import {PaperModeControlComponent} from '../widgets/paper-mode-control.component';
+import {ConnectionOverlayPillComponent} from '../widgets/connection-overlay-pill/connection-overlay-pill.component';
+import {PaperModeControlComponent} from '../widgets/paper-mode-control/paper-mode-control.component';
 
 interface NavigationItem {
     label: string;
@@ -24,18 +24,15 @@ export class NavigationComponent implements OnInit {
 
     public readonly items: ReadonlyArray<NavigationItem> = [
         {label: 'Home', route: '/', icon: 'home', exact: true},
-        {label: 'Analytics', route: '/analytics', icon: 'chart-area', exact: false}
+        {label: 'Analytics', route: '/analytics', icon: 'chart-area', exact: false},
+        {label: 'Smart DCA', route: '/dca', icon: 'robot', exact: false}
     ];
 
     ngOnInit(): void {
         this.webSocketService.connect();
     }
 
-    public trackByRoute(_: number, item: NavigationItem): string {
-        return item.route;
-    }
-
     public getAriaLabel(item: NavigationItem): string {
-        return `Navigate to ${item.label}`;
+        return `Maps to ${item.label}`;
     }
 }

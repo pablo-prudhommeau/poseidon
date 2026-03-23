@@ -11,7 +11,7 @@ from src.core.gates.trending_scoring import ScoringEngine
 from src.core.onchain.evm_signer import build_default_evm_signer
 from src.core.onchain.solana_signer import build_default_solana_signer
 from src.core.structures.structures import Candidate, OrderPayload, LifiRoute, Token
-from src.core.utils.date_utils import timezone_now
+from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.lifi.lifi_client import build_native_to_token_route, resolve_lifi_chain_id
 from src.logging.logger import get_logger
 from src.persistence.dao.portfolio_snapshots import get_portfolio_snapshot
@@ -75,7 +75,7 @@ class AnalyticsRecorder:
             tx_1h=int(token_information.txns.h1.total),
             tx_6h=int(token_information.txns.h6.total),
             tx_24h=int(token_information.txns.h24.total),
-            evaluated_at=timezone_now(),
+            evaluated_at=get_current_local_datetime(),
             decision=decision.upper(),
             decision_reason=reason,
             sizing_multiplier=float(sizing_multiplier or 0.0),

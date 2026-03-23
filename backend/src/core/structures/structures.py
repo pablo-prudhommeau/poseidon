@@ -30,7 +30,6 @@ class Token:
 
 @dataclass
 class Thresholds:
-    """Per-position thresholds computed ex-ante."""
     take_profit_tp1: float
     take_profit_tp2: float
     stop_loss: float
@@ -38,7 +37,6 @@ class Thresholds:
 
 @dataclass
 class PreEntryDecision:
-    """Decision and diagnostics for whether a buy should occur now."""
     should_buy: bool
     reason: str
     diagnostics: Mapping[str, float]
@@ -46,7 +44,6 @@ class PreEntryDecision:
 
 @dataclass(frozen=True)
 class ScoreComponents:
-    """Normalized scoring components attached to a candidate."""
     quality_score: float
     statistics_score: float
     entry_score: float
@@ -73,7 +70,6 @@ class Candidate:
 
 
 class LifiEvmTransactionRequest:
-    """Minimal LI.FI EVM request shape (kept deliberately loose but typed)."""
     to: str
     data: str
     value: str
@@ -81,16 +77,11 @@ class LifiEvmTransactionRequest:
 
 
 class LifiSolanaSerializedTx:
-    """Container for a base64-encoded Solana transaction."""
     serializedTransaction: str
 
 
 @dataclass
 class LifiRoute:
-    """
-    Unified LI.FI route envelope supporting both EVM and Solana flavors.
-    Only the keys used to infer the network or execute the route are modeled.
-    """
     transactionRequest: LifiEvmTransactionRequest
     transaction: Optional[LifiSolanaSerializedTx] = None
     transactions: Optional[List[LifiSolanaSerializedTx]] = None
@@ -98,10 +89,6 @@ class LifiRoute:
 
 @dataclass
 class OrderPayload:
-    """
-    Typed input contract expected by Trader.buy().
-    Upstream (e.g. TrendingJob) typically provides these fields.
-    """
     token: Token
     price: float
     order_notional: float
@@ -111,7 +98,6 @@ class OrderPayload:
 
 @dataclass(frozen=True)
 class EvmTransactionRequest:
-    """Canonical EVM transaction payload extracted from a LI.FI route."""
     to: str
     data: str
     value_wei: int
@@ -120,29 +106,21 @@ class EvmTransactionRequest:
 
 @dataclass(frozen=True)
 class SolanaSerializedTransaction:
-    """Canonical Solana transaction extracted from a LI.FI route."""
     payload: bytes
 
 
 class RouteNetwork(Enum):
-    """Supported network families for LI.FI execution."""
     EVM = "EVM"
     SOLANA = "SOLANA"
 
 
 class Mode(Enum):
-    """Trading modes."""
     PAPER = "PAPER"
     LIVE = "LIVE"
 
 
 @dataclass(frozen=True)
 class RiskDiagnostics:
-    """
-    Diagnostics payload for risk decisions.
-    Kept strongly-typed; converted to a plain dict only when constructing
-    PreEntryDecision (for compatibility with existing code paths).
-    """
     liquidity_usd: float
     percent_5m: float
     percent_1h: float
@@ -163,18 +141,12 @@ class RiskDiagnostics:
 
 @dataclass(frozen=True)
 class RealizedPnl:
-    """
-    Realized PnL results from processing a set of trades.
-    """
     total: float
     recent: float
 
 
 @dataclass(frozen=True)
 class CashFromTrades:
-    """
-    Cash flow results from processing a set of trades.
-    """
     cash: float
     total_buys: float
     total_sells: float
@@ -183,33 +155,69 @@ class CashFromTrades:
 
 @dataclass(frozen=True)
 class HoldingsAndUnrealizedPnl:
-    """
-    Holdings and unrealized PnL results.
-    """
     holdings: float
     unrealized_pnl: float
 
 
 @dataclass(frozen=True)
 class EquityCurvePoint:
-    """
-    Equity curve point as (timestamp, equity) tuple.
-    """
     timestamp: int
     equity: float
 
 
 @dataclass(frozen=True)
 class EquityCurve:
-    """
-    Equity curve as a list of (timestamp, equity) points.
-    """
     points: List[EquityCurvePoint]
 
 
 class WebsocketInboundMessage(BaseModel):
-    """
-    Strictly typed websocket inbound message structure.
-    """
     type: str
     payload: Optional[Dict[str, Any]] = None
+
+
+class DcaStrategyStatus(Enum):
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class DcaOrderStatus(Enum):
+    """Lifecycle states of an individual DCA execution with idempotent pipeline tracking."""
+    PENDING = "PENDING"
+    WAITING_USER_APPROVAL = "WAITING_USER_APPROVAL"
+    APPROVED = "APPROVED"
+    WITHDRAWN_FROM_AAVE = "WITHDRAWN_FROM_AAVE"
+    SWAPPED = "SWAPPED"
+    EXECUTED = "EXECUTED"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+
+
+class DcaBacktestSeriesPoint(BaseModel):
+    timestamp_iso: str
+    execution_price: float
+    average_purchase_price: float
+    cumulative_spent: float
+    dry_powder_remaining: float
+
+
+class DcaBacktestMetadata(BaseModel):
+    symbol: str
+    total_budget: float
+    executions: int
+    final_dumb_average_unit_price: float
+    final_smart_average_unit_price: float
+    total_overheat_retentions: int
+
+
+class DcaBacktestPayload(BaseModel):
+    metadata: DcaBacktestMetadata
+    dumb_dca_series: List[DcaBacktestSeriesPoint]
+    smart_dca_series: List[DcaBacktestSeriesPoint]
+
+
+class AllocationResult(BaseModel):
+    spend_amount: float
+    dry_powder_delta: float
+    action_description: str

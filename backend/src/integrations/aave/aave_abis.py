@@ -8,7 +8,6 @@ RAY_UNITS: Final[Decimal] = Decimal("10") ** 27
 SECONDS_PER_YEAR: Final[int] = 31536000
 AAVE_V3_AVALANCHE_DEPLOYMENT_BLOCK: Final[int] = 11_900_000
 AAVE_POOL_ABI: Final[List[Any]] = [
-    # --- View Functions ---
     {
         "inputs": [{"internalType": "address", "name": "user", "type": "address"}],
         "name": "getUserAccountData",
@@ -67,7 +66,6 @@ AAVE_POOL_ABI: Final[List[Any]] = [
         "stateMutability": "view",
         "type": "function",
     },
-    # --- Write Functions ---
     {
         "inputs": [
             {"internalType": "address", "name": "asset", "type": "address"},
@@ -80,7 +78,6 @@ AAVE_POOL_ABI: Final[List[Any]] = [
         "stateMutability": "nonpayable",
         "type": "function",
     },
-    # --- Events ---
     {
         "anonymous": False,
         "inputs": [
@@ -106,7 +103,6 @@ AAVE_POOL_ABI: Final[List[Any]] = [
     },
 ]
 
-# Address Provider ABI
 ADDRESS_PROVIDER_ABI: Final[List[Any]] = [
     {
         "inputs": [],
@@ -117,7 +113,6 @@ ADDRESS_PROVIDER_ABI: Final[List[Any]] = [
     }
 ]
 
-# Aave Oracle ABI
 AAVE_ORACLE_ABI: Final[List[Any]] = [
     {
         "inputs": [{"internalType": "address", "name": "asset", "type": "address"}],
@@ -128,7 +123,6 @@ AAVE_ORACLE_ABI: Final[List[Any]] = [
     }
 ]
 
-# ERC20 Token ABI (partial)
 ERC20_ABI: Final[List[Any]] = [
     {
         "constant": False,

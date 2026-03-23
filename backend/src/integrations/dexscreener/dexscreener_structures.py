@@ -4,7 +4,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Dict, Optional, List
 
-from src.core.utils.date_utils import timezone_now, epoch_to_local_datetime
+from src.core.utils.date_utils import get_current_local_datetime, convert_epoch_to_local_datetime
 from src.integrations.dexscreener.dexscreener_constants import JSON
 
 
@@ -294,10 +294,10 @@ class DexscreenerTokenInformation:
         txns = DexscreenerTransactionActivity.from_json(txns_raw) if isinstance(txns_raw, dict) else None
         fdv = _to_optional_float(payload.get("fdv"))
         market_cap = _to_optional_float(payload.get("marketCap"))
-        retrieval_date = timezone_now()
+        retrieval_date = get_current_local_datetime()
         age_hours = 0
         if pair_created_at > 0:
-            created_at_dt = epoch_to_local_datetime(pair_created_at)
+            created_at_dt = convert_epoch_to_local_datetime(pair_created_at)
             age_delta = retrieval_date - created_at_dt
             age_hours = age_delta.total_seconds() / 3600.0
         info = DexscreenerInfo.from_json(payload.get("info") or {})

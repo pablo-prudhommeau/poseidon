@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import List, Optional
 
+from src.api.serializers import serialize_trade
 from src.api.websocket.ws_hub import _recompute_positions_portfolio_analytics_and_broadcast
 from src.api.websocket.ws_manager import ws_manager
 from src.configuration.config import settings
@@ -17,7 +18,6 @@ from src.logging.logger import get_logger
 from src.persistence.dao import trades
 from src.persistence.db import _session
 from src.persistence.models import Status
-from src.persistence.serializers import serialize_trade
 from src.persistence.service import check_thresholds_and_autosell
 
 log = get_logger(__name__)

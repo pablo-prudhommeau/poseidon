@@ -20,7 +20,9 @@
 		<p-card>
 			<ng-template pTemplate="title">Equity</ng-template>
 			<div class="text-2xl font-semibold text-white">$ {{ equity() | number:'1.2-2' }}</div>
-			<sparkline *ngIf="(spark()?.length ?? 0) > 1" [points]="spark()"></sparkline>
+			@if (spark().length > 1) {
+				<sparkline [points]="spark()"></sparkline>
+			}
 		</p-card>
 
 		<p-card>

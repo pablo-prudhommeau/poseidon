@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
-from typing import Dict, List, Optional
+from typing import List
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from fastapi.encoders import jsonable_encoder
@@ -10,6 +10,22 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.api.http.api_schemas import (
+    WsInitPayload,
+    WsStatusPayload,
+    TradePayload,
+    PositionPayload,
+    PortfolioPayload,
+    AnalyticsPayload,
+    DcaStrategyPayload,
+)
+from src.api.serializers import (
+    serialize_trade,
+    serialize_portfolio,
+    serialize_analytics,
+    serialize_dca_strategy,
+    serialize_position,
+)
 from src.api.websocket.ws_manager import ws_manager
 from src.configuration.config import settings
 from src.core.structures.structures import (
@@ -25,6 +41,7 @@ from src.core.utils.pnl_utils import (
     holdings_and_unrealized_from_positions,
     cash_from_trades,
 )
+from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
 from src.integrations.dexscreener.dexscreener_consistency_guard import (
     DexConsistencyGuard,
@@ -36,19 +53,16 @@ from src.integrations.dexscreener.dexscreener_consistency_guard import (
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 from src.persistence.dao.analytics import get_recent_analytics
+from src.persistence.dao.dca_dao import DcaDao
 from src.persistence.dao.portfolio_snapshots import (
     get_portfolio_snapshot,
     equity_curve,
     snapshot_portfolio,
 )
-from src.persistence.dao.positions import (
-    get_open_positions,
-    serialize_positions_with_token_information,
-)
+from src.persistence.dao.positions import get_open_positions
 from src.persistence.dao.trades import get_recent_trades
 from src.persistence.db import get_db, _session
 from src.persistence.models import PortfolioSnapshot, Position, Trade, Analytics, Phase
-from src.persistence.serializers import serialize_trade, serialize_portfolio, serialize_analytics
 
 router = APIRouter()
 log = get_logger(__name__)
@@ -61,23 +75,32 @@ _guard = DexConsistencyGuard(
     staleness_horizon=timedelta(seconds=settings.MARKETDATA_MAX_STALE_SECONDS),
 )
 
+aave_executor = AaveExecutor()
 
-async def _compute_trades_payload(trades: List[Trade]) -> List[Dict[str, object]]:
-    """Serialize trades for frontend consumption."""
+
+async def _compute_trades_payload(trades: List[Trade]) -> List[TradePayload]:
     return [serialize_trade(t) for t in trades]
 
 
-async def _compute_analytics_payload(analytics: List[Analytics]) -> List[Dict[str, object]]:
-    """Serialize analytics rows for frontend consumption."""
+async def _compute_analytics_payload(analytics: List[Analytics]) -> List[AnalyticsPayload]:
     return [serialize_analytics(a) for a in analytics]
 
 
 async def _compute_positions_payload(
         token_information_list: List[DexscreenerTokenInformation],
         positions: List[Position],
-) -> List[Dict[str, object]]:
-    """Merge open positions with latest token prices and serialize for the frontend."""
-    return serialize_positions_with_token_information(positions, token_information_list)
+) -> List[PositionPayload]:
+    result = []
+    for position in positions:
+        price = next(
+            (t.price_usd for t in token_information_list
+             if t.chain_id == position.chain
+             and t.base_token.address == position.tokenAddress
+             and t.pair_address == position.pairAddress),
+            None,
+        )
+        result.append(serialize_position(position, last_price=price))
+    return result
 
 
 async def _compute_portfolio_payload(
@@ -86,11 +109,11 @@ async def _compute_portfolio_payload(
         positions: List[Position],
         trades: List[Trade],
         equity_curve_data: EquityCurve,
-) -> Dict[str, object]:
-    """Compute and serialize the portfolio summary, including realized/unrealized PnL."""
+) -> PortfolioPayload:
     realized: RealizedPnl = fifo_realized_pnl(trades, cutoff_hours=24)
-    holdings_and_unrealized: HoldingsAndUnrealizedPnl = holdings_and_unrealized_from_positions(positions, token_information_list)
-
+    holdings_and_unrealized: HoldingsAndUnrealizedPnl = holdings_and_unrealized_from_positions(
+        positions, token_information_list
+    )
     return serialize_portfolio(
         portfolio_snapshot,
         equity_curve=equity_curve_data,
@@ -100,47 +123,46 @@ async def _compute_portfolio_payload(
     )
 
 
+async def _compute_dca_strategies_payload(db: Session) -> List[DcaStrategyPayload]:
+    strategies = DcaDao(db).get_all_strategies()
+    dca_payloads: List[DcaStrategyPayload] = []
+    for strategy in strategies:
+        live_metrics = await aave_executor.get_live_metrics(
+            chain=strategy.chain,
+            asset_in_address=strategy.asset_in_address,
+            asset_out_address=strategy.asset_out_address,
+        )
+        dca_payloads.append(serialize_dca_strategy(strategy, live_metrics))
+
+    return dca_payloads
+
+
 async def _send_init(ws: WebSocket, db: Session) -> None:
-    """Send the initial snapshot to a single websocket client."""
     snapshot = get_portfolio_snapshot(db)
     positions = get_open_positions(db)
 
     tokens: List[Token] = [
-        Token(
-            symbol=position.symbol,
-            chain=position.chain,
-            tokenAddress=position.tokenAddress,
-            pairAddress=position.pairAddress,
-        )
-        for position in positions
+        Token(symbol=p.symbol, chain=p.chain, tokenAddress=p.tokenAddress, pairAddress=p.pairAddress)
+        for p in positions
     ]
-
     token_information_list: List[DexscreenerTokenInformation] = await fetch_dexscreener_token_information_list(tokens)
     trades = get_recent_trades(db, limit=10000)
     analytics_rows = get_recent_analytics(db, limit=10000)
 
-    portfolio_payload = await _compute_portfolio_payload(token_information_list, snapshot, positions, trades, equity_curve(db))
-    positions_payload = await _compute_positions_payload(token_information_list, positions)
-    trades_payload = await _compute_trades_payload(trades)
-    analytics_payload = await _compute_analytics_payload(analytics_rows)
+    payload = WsInitPayload(
+        status=WsStatusPayload(paperMode=settings.PAPER_MODE, interval=settings.TREND_INTERVAL_SEC),
+        portfolio=await _compute_portfolio_payload(token_information_list, snapshot, positions, trades, equity_curve(db)),
+        positions=await _compute_positions_payload(token_information_list, positions),
+        trades=await _compute_trades_payload(trades),
+        analytics=await _compute_analytics_payload(analytics_rows),
+        dca_strategies=await _compute_dca_strategies_payload(db),
+    )
 
-    payload: Dict[str, object] = {
-        "status": {"paperMode": settings.PAPER_MODE, "interval": settings.TREND_INTERVAL_SEC},
-        "portfolio": portfolio_payload,
-        "positions": positions_payload,
-        "trades": trades_payload,
-        "analytics": analytics_payload,
-    }
     await ws.send_json({"type": "init", "payload": jsonable_encoder(payload)})
     log.info("[WS][INIT] Initial snapshot sent.")
 
 
 def schedule_full_recompute_broadcast() -> None:
-    """
-    Schedule a full recomputation and broadcast on the running event loop.
-
-    Call from non-async contexts; the coroutine is scheduled on the server loop.
-    """
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -155,25 +177,13 @@ def schedule_full_recompute_broadcast() -> None:
 
 
 async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
-    """
-    Recompute positions, portfolio, analytics and broadcast to all websocket clients.
-
-    Also evaluates autosell thresholds using the latest token prices. Any newly
-    created trades are broadcast immediately to keep the UI consistent.
-    """
-    from src.core.jobs.trending.execution_stage import AnalyticsRecorder
     from src.persistence.service import check_thresholds_and_autosell
 
     with _session() as db:
         positions = get_open_positions(db)
         tokens: List[Token] = [
-            Token(
-                symbol=position.symbol,
-                chain=position.chain,
-                tokenAddress=position.tokenAddress,
-                pairAddress=position.pairAddress,
-            )
-            for position in positions
+            Token(symbol=p.symbol, chain=p.chain, tokenAddress=p.tokenAddress, pairAddress=p.pairAddress)
+            for p in positions
         ]
         token_information_list: List[DexscreenerTokenInformation] = await fetch_dexscreener_token_information_list(tokens)
 
@@ -211,8 +221,7 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
                 )
                 verdict = _guard.observe(pair, observation)
                 if verdict == ConsistencyVerdict.REQUIRES_MANUAL_INTERVENTION:
-                    key = pair.key()
-                    staled_keys.add(key)
+                    staled_keys.add(pair.key())
                     position = (
                         db.execute(
                             select(Position).where(
@@ -221,19 +230,15 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
                                 Position.tokenAddress == token_information.base_token.address,
                                 Position.pairAddress == token_information.pair_address,
                                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
-                                )
-                        )
-                        .scalars()
-                        .first()
+                            )
+                        ).scalars().first()
                     )
                     if position:
                         position.phase = Phase.STALED
                         db.commit()
                         log.warning(
                             "[WS][STALED][TRIGGER] symbol=%s token=%s pair=%s reason=DEX_INCONSISTENT_DATA",
-                            position.symbol,
-                            position.tokenAddress,
-                            position.pairAddress,
+                            position.symbol, position.tokenAddress, position.pairAddress,
                         )
             except Exception as exc:
                 log.warning("[WS][DEX][CONSISTENCY] Check failed for %s - %s", token_information.base_token, exc)
@@ -252,12 +257,11 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
             except Exception as exc:
                 log.warning("[WS][AUTOSELL] Threshold evaluation failed for %s - %s", token_information.base_token, exc)
 
-        for created in autosell_trades:
-            ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(created)})
+        for trade in autosell_trades:
+            ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": jsonable_encoder(serialize_trade(trade))})
         if autosell_trades:
             log.info("[WS][AUTOSELL] Broadcasted %d autosell trade(s).", len(autosell_trades))
 
-        # Recompute aggregates and broadcast
         trades = get_recent_trades(db, limit=10000)
         analytics_rows = get_recent_analytics(db, limit=10000)
 
@@ -266,30 +270,25 @@ async def _recompute_positions_portfolio_analytics_and_broadcast() -> None:
         holdings_and_unrealized: HoldingsAndUnrealizedPnl = holdings_and_unrealized_from_positions(positions, token_information_list)
         equity_usd: float = round(cash_flow.cash + holdings_and_unrealized.holdings, 2)
 
-        snapshot = snapshot_portfolio(
-            db,
-            equity=equity_usd,
-            cash=cash_flow.cash,
-            holdings=holdings_and_unrealized.holdings,
-        )
+        snapshot = snapshot_portfolio(db, equity=equity_usd, cash=cash_flow.cash, holdings=holdings_and_unrealized.holdings)
 
         positions_payload = await _compute_positions_payload(token_information_list, positions)
         trades_payload = await _compute_trades_payload(trades)
         portfolio_payload = await _compute_portfolio_payload(token_information_list, snapshot, positions, trades, equity_curve(db))
         analytics_payload = await _compute_analytics_payload(analytics_rows)
+        dca_strategies_payload = await _compute_dca_strategies_payload(db)
 
-        ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": positions_payload})
-        ws_manager.broadcast_json_threadsafe({"type": "portfolio", "payload": portfolio_payload})
-        ws_manager.broadcast_json_threadsafe({"type": "trades", "payload": trades_payload})
-        ws_manager.broadcast_json_threadsafe({"type": "analytics", "payload": analytics_payload})
-        log.info("[WS][BROADCAST] positions/portfolio/trades/analytics refreshed.")
+        ws_manager.broadcast_json_threadsafe({"type": "positions", "payload": jsonable_encoder(positions_payload)})
+        ws_manager.broadcast_json_threadsafe({"type": "portfolio", "payload": jsonable_encoder(portfolio_payload)})
+        ws_manager.broadcast_json_threadsafe({"type": "trades", "payload": jsonable_encoder(trades_payload)})
+        ws_manager.broadcast_json_threadsafe({"type": "analytics", "payload": jsonable_encoder(analytics_payload)})
+        ws_manager.broadcast_json_threadsafe({"type": "dca_strategies", "payload": jsonable_encoder(dca_strategies_payload)})
+
+        log.info("[WS][BROADCAST] All metrics & DCA state refreshed.")
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket, db: Session = Depends(get_db)) -> None:
-    """
-    WebSocket endpoint: streams portfolio/positions/trades/analytics and handles simple commands.
-    """
     await ws.accept()
     ws_manager.connect(ws)
     log.info("[WS][CONNECT] Client connected.")
@@ -305,16 +304,14 @@ async def websocket_endpoint(ws: WebSocket, db: Session = Depends(get_db)) -> No
                 await ws.send_json({"type": "error", "payload": "Invalid message schema"})
                 continue
 
-            message_type = inbound.type
-
-            if message_type == "ping":
+            if inbound.type == "ping":
                 await ws.send_json({"type": "pong"})
                 log.debug("[WS][RECV] Ping → Pong.")
-            elif message_type == "refresh":
+            elif inbound.type == "refresh":
                 await _send_init(ws, db)
                 log.info("[WS][REFRESH] Full init payload sent on client request.")
             else:
-                log.debug("[WS][RECV] Unknown message type: %s", message_type)
+                log.debug("[WS][RECV] Unknown message type: %s", inbound.type)
 
     except WebSocketDisconnect:
         log.info("[WS][DISCONNECT] Client disconnected.")

@@ -1,6 +1,6 @@
 import {CommonModule} from '@angular/common';
 import {Component, computed, OnInit} from '@angular/core';
-import {WebSocketService} from '../core/websocket.service';
+import {WebSocketService} from '../../core/websocket.service';
 
 @Component({
     standalone: true,

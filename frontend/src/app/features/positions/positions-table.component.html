@@ -33,8 +33,12 @@
 	<ng-template pTemplate="header">
 		<div class="flex items-center gap-3">
 			<span class="font-semibold text-lg">{{ selectedPosition()?.symbol }}</span>
-			<p-tag *ngIf="selectedPosition()?.chain" [value]="selectedPosition()?.chain" severity="info"></p-tag>
-			<p-tag *ngIf="selectedPosition()?.phase" [value]="selectedPosition()?.phase" [severity]="phaseSeverity(selectedPosition()?.phase)"></p-tag>
+			@if (selectedPosition()?.chain) {
+				<p-tag [value]="selectedPosition()?.chain" severity="info"></p-tag>
+			}
+			@if (selectedPosition()?.phase) {
+				<p-tag [value]="selectedPosition()?.phase" [severity]="phaseSeverity(selectedPosition()?.phase)"></p-tag>
+			}
 		</div>
 	</ng-template>
 
@@ -46,7 +50,6 @@
 		</p-tablist>
 
 		<p-tabpanels>
-			<!-- Overview -->
 			<p-tabpanel [value]="0">
 				<div class="grid grid-cols-12 gap-4 text-sm">
 					<div class="col-span-12 md:col-span-6">
@@ -105,7 +108,6 @@
 
 					<p-divider class="col-span-12"></p-divider>
 
-					<!-- KPIs -->
 					<div class="col-span-4">
 						<p-card class="h-full">
 							<div class="opacity-70 text-xs">Δ since entry</div>
@@ -129,7 +131,6 @@
 
 					<p-divider class="col-span-12"></p-divider>
 
-					<!-- Links -->
 					<div class="col-span-12">
 						<div class="opacity-70">Links</div>
 						<div class="flex flex-wrap gap-2 mt-1">
@@ -140,69 +141,73 @@
 						</div>
 					</div>
 
-					<!-- BUY shortcut -->
-					<div class="col-span-12" *ngIf="buyTradeForSelectedPosition() as buy">
-						<p-divider></p-divider>
-						<p-card>
-							<div class="flex items-center justify-between">
-								<div class="font-semibold">Origin BUY trade</div>
-								<p-tag value="BUY" severity="success"></p-tag>
-							</div>
-							<div class="grid grid-cols-12 gap-3 mt-3 text-sm">
-								<div class="col-span-4">
-									<div class="opacity-70">Date</div>
-									<div class="font-semibold">{{ buy.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</div>
+					@if (buyTradeForSelectedPosition(); as buy) {
+						<div class="col-span-12">
+							<p-divider></p-divider>
+							<p-card>
+								<div class="flex items-center justify-between">
+									<div class="font-semibold">Origin BUY trade</div>
+									<p-tag value="BUY" severity="success"></p-tag>
 								</div>
-								<div class="col-span-4">
-									<div class="opacity-70">Quantity</div>
-									<div class="font-semibold">{{ formatNumber(buy.qty, 2, 6) }}</div>
+								<div class="grid grid-cols-12 gap-3 mt-3 text-sm">
+									<div class="col-span-4">
+										<div class="opacity-70">Date</div>
+										<div class="font-semibold">{{ buy.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</div>
+									</div>
+									<div class="col-span-4">
+										<div class="opacity-70">Quantity</div>
+										<div class="font-semibold">{{ formatNumber(buy.qty, 2, 6) }}</div>
+									</div>
+									<div class="col-span-4">
+										<div class="opacity-70">Price</div>
+										<div class="font-semibold">{{ formatCurrency(buy.price, 'USD', 4, 8) }}</div>
+									</div>
 								</div>
-								<div class="col-span-4">
-									<div class="opacity-70">Price</div>
-									<div class="font-semibold">{{ formatCurrency(buy.price, 'USD', 4, 8) }}</div>
+								<div class="mt-3 flex gap-2">
+									<p-button label="Open in trades list" icon="fas fa-table" (click)="focusTradeInTable(buy)"></p-button>
+									<a pButton label="Dexscreener (Pair)" icon="fas fa-arrow-up-right-from-square"
+									   [href]="dexUrlForPair(buy)" target="_blank"></a>
 								</div>
-							</div>
-							<div class="mt-3 flex gap-2">
-								<p-button label="Open in trades list" icon="fas fa-table" (click)="focusTradeInTable(buy)"></p-button>
-								<a pButton label="Dexscreener (Pair)" icon="fas fa-arrow-up-right-from-square"
-								   [href]="dexUrlForPair(buy)" target="_blank"></a>
-							</div>
-						</p-card>
-					</div>
+							</p-card>
+						</div>
+					}
 				</div>
 			</p-tabpanel>
 
-			<!-- Analytics (with ApexCharts) -->
 			<p-tabpanel [value]="1">
 				<div class="grid grid-cols-12 gap-4">
 					<p-card class="col-span-12 md:col-span-6">
 						<div class="opacity-70 text-xs mb-2">Scores</div>
-						<apx-chart
-								*ngIf="scoresSeries.length > 0"
-								[series]="scoresSeries"
-								[chart]="scoresChart"
-								[labels]="scoresLabels"
-								[plotOptions]="scoresPlot"
-								[legend]="scoresLegend"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-						<div *ngIf="scoresSeries.length === 0" class="opacity-60 text-xs">No score available.</div>
+						@if (scoresSeries.length > 0) {
+							<apx-chart
+									[series]="scoresSeries"
+									[chart]="scoresChart"
+									[labels]="scoresLabels"
+									[plotOptions]="scoresPlot"
+									[legend]="scoresLegend"
+									[grid]="grid"
+									[states]="states"
+									[tooltip]="tooltip">
+							</apx-chart>
+						} @else {
+							<div class="opacity-60 text-xs">No score available.</div>
+						}
 					</p-card>
 
 					<p-card class="col-span-12 md:col-span-6">
 						<div class="opacity-70 text-xs mb-2">AI — Probability TP1 before SL</div>
-						<apx-chart
-								*ngIf="probSeries.length > 0"
-								[series]="probSeries"
-								[chart]="probChart"
-								[plotOptions]="probPlot"
-								[labels]="probLabels"
-								[grid]="grid"
-								[states]="states">
-						</apx-chart>
-						<div *ngIf="probSeries.length === 0" class="opacity-60 text-xs">No AI probability available.</div>
+						@if (probSeries.length > 0) {
+							<apx-chart
+									[series]="probSeries"
+									[chart]="probChart"
+									[plotOptions]="probPlot"
+									[labels]="probLabels"
+									[grid]="grid"
+									[states]="states">
+							</apx-chart>
+						} @else {
+							<div class="opacity-60 text-xs">No AI probability available.</div>
+						}
 					</p-card>
 
 					<p-card class="col-span-12 md:col-span-6">
@@ -249,7 +254,6 @@
 				</div>
 			</p-tabpanel>
 
-			<!-- Raw -->
 			<p-tabpanel [value]="2">
 				<p-panel header="Show raw JSON (lazy)" [toggleable]="true">
 					<p-scrollPanel [style]="{height: '24rem'}">

@@ -1,7 +1,7 @@
 import time
 from math import isnan
 from typing import Optional, Union
-from datetime import datetime
+
 
 def format_currency(value: Optional[Union[float, int]], currency: str = "USD") -> str:
     """
@@ -56,7 +56,7 @@ def _num(value: object) -> Optional[float]:
     Safely parse a number. Returns None for invalid or NaN inputs.
     """
     try:
-        parsed = float(value) # type: ignore
+        parsed = float(value)  # type: ignore
         return None if isnan(parsed) else parsed
     except (ValueError, TypeError):
         return None

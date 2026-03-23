@@ -60,4 +60,3 @@ def _normalize_value_wei(raw: Optional[int]) -> int:
     if raw is None:
         return 0
     return raw if raw > 0 else 0
-

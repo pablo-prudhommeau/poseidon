@@ -205,7 +205,7 @@ def check_thresholds_and_autosell(database_session: Session, dexscreener_token_i
             select(Position).where(
                 Position.symbol == dexscreener_token_information.base_token.symbol,
                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
-                )
+            )
         )
         .scalars()
         .all()
@@ -242,7 +242,7 @@ def check_thresholds_and_autosell_for_token_address(
                 Position.tokenAddress == token.tokenAddress,
                 Position.pairAddress == token.pairAddress,
                 Position.phase.in_([Phase.OPEN, Phase.PARTIAL]),
-                )
+            )
         )
         .scalars()
         .first()

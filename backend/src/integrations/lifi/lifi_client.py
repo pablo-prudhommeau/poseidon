@@ -117,7 +117,8 @@ def build_native_to_token_quote(
     data = _http_get_json(url, query_params)
     typed_data = cast(LifiQuoteJson, data)
 
-    log.info("[LI.FI][QUOTE][RECEIVE][EVM] chain_key=%s chain_id=%s to_token=%s", chain_key, lifi_chain_id, to_token_address)
+    log.info("[LI.FI][QUOTE][RECEIVE][EVM] chain_key=%s chain_id=%s to_token=%s", chain_key, lifi_chain_id,
+             to_token_address)
     log.debug("[LI.FI][QUOTE][PAYLOAD][EVM] Raw payload received (truncated in logs).")
 
     return typed_data
@@ -265,3 +266,48 @@ def build_native_to_token_route(
     network_tag = "SOL" if normalized_chain == "solana" else "EVM"
     log.debug("[LI.FI][ROUTE][READY][%s] Normalized LI.FI quote to route.", network_tag)
     return route
+
+
+def build_token_to_token_quote(
+        *,
+        chain_key: str,
+        from_address: str,
+        from_token_address: str,
+        to_token_address: str,
+        from_amount_wei: int,
+        slippage: float = 0.03,
+) -> LifiQuoteJson:
+    """
+    Build a LI.FI single-step quote to swap ERC-20 -> ERC-20 on the same EVM chain.
+    Uses the internal _EVM_CHAIN_REGISTRY to strictly resolve the chain ID.
+    """
+    if not from_address.strip() or not from_token_address.strip() or not to_token_address.strip():
+        raise ValueError("All addresses must be explicitly provided.")
+    if from_amount_wei <= 0:
+        raise ValueError("from_amount_wei must be greater than zero.")
+
+    lifi_chain_id = resolve_lifi_chain_id(chain_key)
+    if lifi_chain_id is None:
+        raise ValueError(f"Unsupported EVM chain for LI.FI: '{chain_key}'")
+
+    base_url = str(settings.LIFI_BASE_URL).rstrip("/")
+
+    url = f"{base_url}/v1/quote"
+    query_params: Dict[str, object] = {
+        "fromChain": lifi_chain_id,
+        "toChain": lifi_chain_id,
+        "fromToken": from_token_address,
+        "toToken": to_token_address,
+        "fromAmount": str(from_amount_wei),
+        "fromAddress": from_address,
+        "slippage": slippage,
+        "allowSwitchChain": "false",
+    }
+
+    log.debug(
+        "[LI.FI][QUOTE][REQUEST][EVM] chain=%s chain_id=%s from_token=%s to_token=%s amount=%s",
+        chain_key, lifi_chain_id, from_token_address, to_token_address, from_amount_wei
+    )
+
+    data = _http_get_json(url, query_params)
+    return cast(LifiQuoteJson, data)

@@ -16,7 +16,7 @@
 
 <ng-template #actionsTemplate let-row="row">
 	<div class="flex items-center justify-center">
-		<p-button severity="help" rounded="true" icon="fas fa-up-right-from-square" size="small" (click)="openDetails(row)" />
+		<p-button severity="help" rounded="true" icon="fas fa-up-right-from-square" size="small" (click)="openDetails(row)"/>
 	</div>
 </ng-template>
 
@@ -33,8 +33,12 @@
 	<ng-template pTemplate="header">
 		<div class="flex items-center gap-3">
 			<span class="font-semibold text-lg">{{ selectedTrade()?.symbol }}</span>
-			<p-tag [value]="selectedTrade()?.chain" severity="info"></p-tag>
-			<p-tag [value]="selectedTrade()?.side" [severity]="selectedTrade()?.side === 'BUY' ? 'success' : 'warn'"></p-tag>
+			@if (selectedTrade()?.chain) {
+				<p-tag [value]="selectedTrade()?.chain" severity="info"></p-tag>
+			}
+			@if (selectedTrade()?.side) {
+				<p-tag [value]="selectedTrade()?.side" [severity]="selectedTrade()?.side === 'BUY' ? 'success' : 'warn'"></p-tag>
+			}
 		</div>
 	</ng-template>
 
@@ -46,7 +50,6 @@
 		</p-tablist>
 
 		<p-tabpanels>
-			<!-- Overview -->
 			<p-tabpanel [value]="0">
 				<div class="grid grid-cols-12 gap-4 text-sm">
 					<div class="col-span-12 md:col-span-6">
@@ -103,23 +106,24 @@
 				</div>
 			</p-tabpanel>
 
-			<!-- Analytics with ApexCharts -->
 			<p-tabpanel [value]="1">
 				<div class="grid grid-cols-12 gap-4">
 					<p-card class="col-span-12 md:col-span-6">
 						<div class="opacity-70 text-xs mb-2">Scores</div>
-						<apx-chart
-								*ngIf="scoresSeries.length > 0"
-								[series]="scoresSeries"
-								[chart]="scoresChart"
-								[labels]="scoresLabels"
-								[plotOptions]="scoresPlot"
-								[legend]="scoresLegend"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-						<div *ngIf="scoresSeries.length === 0" class="opacity-60 text-xs">No score available.</div>
+						@if (scoresSeries.length > 0) {
+							<apx-chart
+									[series]="scoresSeries"
+									[chart]="scoresChart"
+									[labels]="scoresLabels"
+									[plotOptions]="scoresPlot"
+									[legend]="scoresLegend"
+									[grid]="grid"
+									[states]="states"
+									[tooltip]="tooltip">
+							</apx-chart>
+						} @else {
+							<div class="opacity-60 text-xs">No score available.</div>
+						}
 					</p-card>
 
 					<p-card class="col-span-12 md:col-span-6">
@@ -165,7 +169,6 @@
 				</div>
 			</p-tabpanel>
 
-			<!-- Raw -->
 			<p-tabpanel [value]="2">
 				<p-panel header="Show raw JSON (lazy)" [toggleable]="true">
 					<p-scrollPanel [style]="{height: '24rem'}">

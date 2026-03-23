@@ -5,8 +5,7 @@ from typing import List, Dict, Iterable, Union, Optional, Tuple
 import httpx
 
 from src.core.structures.structures import Token
-from src.integrations.dexscreener.dexscreener_client import HTTP_TIMEOUT_SECONDS
-from src.integrations.dexscreener.dexscreener_constants import JSON, LATEST_TOKENS_ENDPOINT, LATEST_PAIRS_ENDPOINT
+from src.integrations.dexscreener.dexscreener_constants import JSON, LATEST_TOKENS_ENDPOINT, LATEST_PAIRS_ENDPOINT, HTTP_TIMEOUT_SECONDS
 from src.integrations.dexscreener.dexscreener_structures import (
     DexscreenerTokenInformation,
 )
@@ -133,7 +132,6 @@ def _extract_addresses(payload: Union[Dict[str, JSON], List[JSON], None]) -> Lis
         return addresses
 
     return addresses
-
 
 
 def _chunk_strings(items: List[str], size: int) -> List[List[str]]:
