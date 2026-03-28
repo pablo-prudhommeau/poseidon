@@ -6,93 +6,70 @@ from datetime import timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Set
+from typing import Optional
 
 from fastapi.encoders import jsonable_encoder
 from starlette.websockets import WebSocket
 
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class WsManager:
-    """Tracks active WebSocket clients and provides broadcast utilities.
-
-    Notes:
-        - `attach_current_loop()` must be called from the running event loop
-          (e.g., at app startup) to enable thread-safe broadcasts.
-        - All payloads are serialized to JSON-compatible primitives before sending.
-    """
-
     def __init__(self) -> None:
-        self._clients: Set[WebSocket] = set()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._connected_clients: set[WebSocket] = set()
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
 
-    def attach_current_loop(self) -> None:
-        """Attach the currently running event loop for thread-safe scheduling."""
-        self._loop = asyncio.get_running_loop()
-        log.debug("WebSocket manager attached to loop %s", self._loop)
+    def attach_current_event_loop(self) -> None:
+        self._event_loop = asyncio.get_running_loop()
+        logger.debug("[WEBSOCKET][MANAGER][LOOP] Event loop successfully attached to websocket manager")
 
-    def connect(self, ws: WebSocket) -> None:
-        """Register a newly accepted WebSocket connection."""
-        self._clients.add(ws)
-        log.debug("WebSocket connected (total=%d)", len(self._clients))
+    def register_client_connection(self, websocket_client: WebSocket) -> None:
+        self._connected_clients.add(websocket_client)
+        logger.info("[WEBSOCKET][MANAGER][CONNECT] Client connection registered. Total active connections: %s", len(self._connected_clients))
 
-    def disconnect(self, ws: WebSocket) -> None:
-        """Unregister a WebSocket connection."""
-        self._clients.discard(ws)
-        log.debug("WebSocket disconnected (total=%d)", len(self._clients))
+    def unregister_client_connection(self, websocket_client: WebSocket) -> None:
+        self._connected_clients.discard(websocket_client)
+        logger.info("[WEBSOCKET][MANAGER][DISCONNECT] Client connection unregistered. Total active connections: %s", len(self._connected_clients))
 
     @staticmethod
-    def _to_json_compatible(data: Any) -> Any:
-        """Convert any payload to JSON-compatible primitives.
-
-        Uses FastAPI's jsonable_encoder and custom encoders for a few extra types.
-        - Enum -> .value
-        - bytes -> base64 string
-        - pathlib.Path -> str
-        - Decimal -> float
-        - timedelta -> total seconds (float)
-        """
+    def _convert_to_json_compatible_payload(raw_payload: dict) -> dict:
         return jsonable_encoder(
-            data,
+            raw_payload,
             custom_encoder={
-                Enum: lambda e: e.value,
-                bytes: lambda b: base64.b64encode(b).decode("ascii"),
+                Enum: lambda enum_element: enum_element.value,
+                bytes: lambda byte_data: base64.b64encode(byte_data).decode("ascii"),
                 Path: str,
                 Decimal: float,
-                timedelta: lambda td: td.total_seconds(),
+                timedelta: lambda time_delta: time_delta.total_seconds(),
             },
         )
 
-    async def broadcast_json(self, data: Any) -> None:
-        """Broadcast a JSON-serializable payload to all connected clients."""
-        payload = self._to_json_compatible(data)
-        stale: list[WebSocket] = []
-        for ws in list(self._clients):
+    async def broadcast_json_payload(self, raw_payload: dict) -> None:
+        formatted_payload = self._convert_to_json_compatible_payload(raw_payload)
+        stale_websocket_clients: list[WebSocket] = []
+
+        for websocket_client in list(self._connected_clients):
             try:
-                await ws.send_json(payload)
-            except Exception as exc:
-                stale.append(ws)
-                log.debug("Broadcast to a client failed; scheduling removal: %r", exc)
-        for dead in stale:
-            self.disconnect(dead)
+                await websocket_client.send_json(formatted_payload)
+            except Exception as exception:
+                stale_websocket_clients.append(websocket_client)
+                logger.debug("[WEBSOCKET][MANAGER][BROADCAST] Payload transmission to client failed, scheduling for removal", exc_info=exception)
 
-    def broadcast_json_threadsafe(self, data: Any) -> None:
-        """Schedule `broadcast_json` from a non-async context.
+        for dead_websocket_client in stale_websocket_clients:
+            self.unregister_client_connection(dead_websocket_client)
 
-        Requires that `attach_current_loop()` has been called earlier from the target loop.
-        If no loop is attached, this is a no-op by design.
-        """
-        if not self._loop:
-            log.debug("broadcast_json_threadsafe skipped: no loop attached")
+    def broadcast_json_payload_threadsafe(self, raw_payload: dict) -> None:
+        if not self._event_loop:
+            logger.debug("[WEBSOCKET][MANAGER][THREADSAFE] Threadsafe broadcast aborted: no event loop currently attached")
             return
+
         try:
-            payload = self._to_json_compatible(data)
-            asyncio.run_coroutine_threadsafe(self.broadcast_json(payload), self._loop)
-        except Exception as exc:
-            log.debug("broadcast_json_threadsafe failed: %r", exc)
+            formatted_payload = self._convert_to_json_compatible_payload(raw_payload)
+            asyncio.run_coroutine_threadsafe(self.broadcast_json_payload(formatted_payload), self._event_loop)
+        except Exception as exception:
+            logger.exception("[WEBSOCKET][MANAGER][THREADSAFE] Threadsafe broadcast encountered a critical failure", exc_info=exception)
 
 
 ws_manager = WsManager()

@@ -4,16 +4,7 @@ import asyncio
 import math
 import threading
 from datetime import timedelta
-from typing import (
-    Awaitable,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Final,
-    TypeVar,
-)
+from typing import Awaitable, Optional, Final, TypeVar
 
 from sqlalchemy import select
 
@@ -22,23 +13,21 @@ from src.core.structures.structures import Candidate, ScoreComponents, Token
 from src.core.utils.date_utils import get_current_local_datetime
 from src.core.utils.format_utils import _tail, _format
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation, \
-    DexscreenerTransactionActivity
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation, DexscreenerTransactionActivity
 from src.logging.logger import get_logger
 from src.persistence.db import _session
 from src.persistence.models import Trade
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
-RejectionCounts = Dict[str, int]
+RejectionCounts = dict[str, int]
 
-_SOFT_SORT_KEYS: Final[Set[str]] = {"vol5m", "vol1h", "vol6h", "vol24h", "liqUsd"}
+_SOFT_SORT_KEYS: Final[set[str]] = {"volume_5m", "volume_1h", "volume_6h", "volume_24h", "liquidity_usd"}
 
 U = TypeVar("U")
 
 
 def _is_number(value: object) -> bool:
-    """Return True if value can be interpreted as a finite float."""
     try:
         return math.isfinite(float(value))
     except Exception:
@@ -48,45 +37,45 @@ def _is_number(value: object) -> bool:
 def _passes_percent_thresholds(
         candidate: Candidate,
         interval: str,
-        th5: float,
-        th1: float,
-        th6: float,
-        th24: float,
+        threshold_5m: float,
+        threshold_1h: float,
+        threshold_6h: float,
+        threshold_24h: float,
 ) -> bool:
-    pct_5m = candidate.dexscreener_token_information.price_change.m5
-    pct_1h = candidate.dexscreener_token_information.price_change.h1
-    pct_6h = candidate.dexscreener_token_information.price_change.h6
-    pct_24h = candidate.dexscreener_token_information.price_change.h1
+    percent_5m = candidate.dexscreener_token_information.price_change.m5
+    percent_1h = candidate.dexscreener_token_information.price_change.h1
+    percent_6h = candidate.dexscreener_token_information.price_change.h6
+    percent_24h = candidate.dexscreener_token_information.price_change.h24
 
     if interval == "5m":
-        return (pct_5m is not None and pct_5m >= th5) or (pct_24h is not None and pct_24h >= th24)
+        return (percent_5m is not None and percent_5m >= threshold_5m) or (percent_24h is not None and percent_24h >= threshold_24h)
     if interval == "1h":
-        return (pct_1h is not None and pct_1h >= th1) or (pct_24h is not None and pct_24h >= th24)
+        return (percent_1h is not None and percent_1h >= threshold_1h) or (percent_24h is not None and percent_24h >= threshold_24h)
     if interval == "6h":
-        return (pct_6h is not None and pct_6h >= th6) or (pct_24h is not None and pct_24h >= th24)
-    return pct_24h is not None and pct_24h >= th24
+        return (percent_6h is not None and percent_6h >= threshold_6h) or (percent_24h is not None and percent_24h >= threshold_24h)
+    return percent_24h is not None and percent_24h >= threshold_24h
 
 
 def _passes_volume_thresholds(
         candidate: Candidate,
         interval: str,
-        th5: float,
-        th1: float,
-        th6: float,
-        th24: float,
+        threshold_5m: float,
+        threshold_1h: float,
+        threshold_6h: float,
+        threshold_24h: float,
 ) -> bool:
-    vol_5m = candidate.dexscreener_token_information.volume.m5
-    vol_1h = candidate.dexscreener_token_information.volume.h1
-    vol_6h = candidate.dexscreener_token_information.volume.h6
-    vol_24h = candidate.dexscreener_token_information.volume.h24
+    volume_5m = candidate.dexscreener_token_information.volume.m5
+    volume_1h = candidate.dexscreener_token_information.volume.h1
+    volume_6h = candidate.dexscreener_token_information.volume.h6
+    volume_24h = candidate.dexscreener_token_information.volume.h24
 
     if interval == "5m":
-        return (vol_5m is not None and vol_5m >= th5) or (vol_24h is not None and vol_24h >= th24)
+        return (volume_5m is not None and volume_5m >= threshold_5m) or (volume_24h is not None and volume_24h >= threshold_24h)
     if interval == "1h":
-        return (vol_1h is not None and vol_1h >= th1) or (vol_24h is not None and vol_24h >= th24)
+        return (volume_1h is not None and volume_1h >= threshold_1h) or (volume_24h is not None and volume_24h >= threshold_24h)
     if interval == "6h":
-        return (vol_6h is not None and vol_6h >= th6) or (vol_24h is not None and vol_24h >= th24)
-    return vol_24h is not None and vol_24h >= th24
+        return (volume_6h is not None and volume_6h >= threshold_6h) or (volume_24h is not None and volume_24h >= threshold_24h)
+    return volume_24h is not None and volume_24h >= threshold_24h
 
 
 def _has_valid_intraday_bars(candidate: Candidate) -> bool:
@@ -98,27 +87,29 @@ def _has_valid_intraday_bars(candidate: Candidate) -> bool:
     )
 
 
-def _momentum_ok(p5: Optional[float], p1: Optional[float], p6: Optional[float], p24: Optional[float]) -> bool:
-    """
-    Conservative sanity checks against spiky/choppy momentum using caps on 5m and 1h.
-    """
-    cap_m5 = float(settings.DEXSCREENER_MAX_ABS_M5_PCT)
-    cap_h1 = float(settings.DEXSCREENER_MAX_ABS_H1_PCT)
-    cap_h6 = float(settings.DEXSCREENER_MAX_ABS_H6_PCT)
-    cap_h24 = float(settings.DEXSCREENER_MAX_ABS_H24_PCT)
-    if p5 is not None and abs(p5) > cap_m5:
+def _momentum_ok(
+        percent_5m: Optional[float],
+        percent_1h: Optional[float],
+        percent_6h: Optional[float],
+        percent_24h: Optional[float]
+) -> bool:
+    maximum_absolute_percent_5m = float(settings.DEXSCREENER_MAX_ABS_M5_PCT)
+    maximum_absolute_percent_1h = float(settings.DEXSCREENER_MAX_ABS_H1_PCT)
+    maximum_absolute_percent_6h = float(settings.DEXSCREENER_MAX_ABS_H6_PCT)
+    maximum_absolute_percent_24h = float(settings.DEXSCREENER_MAX_ABS_H24_PCT)
+
+    if percent_5m is not None and abs(percent_5m) > maximum_absolute_percent_5m:
         return False
-    if p1 is not None and abs(p1) > cap_h1:
+    if percent_1h is not None and abs(percent_1h) > maximum_absolute_percent_1h:
         return False
-    if p6 is not None and abs(p6) > cap_h6:
+    if percent_6h is not None and abs(percent_6h) > maximum_absolute_percent_6h:
         return False
-    if p24 is not None and abs(p24) > cap_h24:
+    if percent_24h is not None and abs(percent_24h) > maximum_absolute_percent_24h:
         return False
     return True
 
 
-def _candidate_from_dexscreener_token_information(
-        dexscreenerTokenInformation: DexscreenerTokenInformation) -> Candidate:
+def _candidate_from_dexscreener_token_information(token_information: DexscreenerTokenInformation) -> Candidate:
     return Candidate(
         quality_score=0.0,
         statistics_score=0.0,
@@ -131,83 +122,94 @@ def _candidate_from_dexscreener_token_information(
         ),
         ai_quality_delta=0.0,
         ai_buy_probability=0.0,
-        dexscreener_token_information=dexscreenerTokenInformation,
+        dexscreener_token_information=token_information,
         token=Token(
-            symbol=dexscreenerTokenInformation.base_token.symbol,
-            chain=dexscreenerTokenInformation.chain_id,
-            tokenAddress=dexscreenerTokenInformation.base_token.address,
-            pairAddress=dexscreenerTokenInformation.pair_address
+            symbol=token_information.base_token.symbol,
+            chain=token_information.chain_id,
+            token_address=token_information.base_token.address,
+            pair_address=token_information.pair_address
         ),
     )
 
 
-def _get_candidate_sort_value(candidate: Candidate, key: str) -> float:
-    """
-    Map legacy sort keys ('vol24h' / 'liqUsd') to strongly-typed Candidate attributes.
-
-    We avoid getattr() on purpose to keep attribute access explicit and auditable.
-    """
-    if key == "liqUsd":
+def _get_candidate_sort_value(candidate: Candidate, sort_key: str) -> float:
+    if sort_key == "liquidity_usd":
         return candidate.dexscreener_token_information.liquidity.usd
     return candidate.dexscreener_token_information.volume.h24
 
 
-def _buy_sell_score(txns: DexscreenerTransactionActivity) -> float:
-    """Return the fraction of buys over total transactions in [0.0..1.0]."""
-    bucket = txns.h1 or txns.h24
-    buys = bucket.buys
-    sells = bucket.sells
-    total = buys + sells
-    return 0.5 if total <= 0 else buys / total
+def _buy_sell_score(transaction_activity: DexscreenerTransactionActivity) -> float:
+    activity_bucket = transaction_activity.h1 or transaction_activity.h24
+    buys = activity_bucket.buys
+    sells = activity_bucket.sells
+    total_transactions = buys + sells
+
+    if total_transactions <= 0:
+        return 0.5
+    return buys / total_transactions
 
 
 def filter_strict(
-        candidates: List[Candidate],
-        *,
+        candidates: list[Candidate],
         interval: str,
-        volth5: float,
-        volth1: float,
-        volth6: float,
-        volth24: float,
-        min_liq_usd: float,
-        pctth5: float,
-        pctth1: float,
-        pctth6: float,
-        pctth24: float,
-        max_results: int,
-) -> Tuple[List[Candidate], RejectionCounts]:
-    """
-    Hard filters for trending candidates; returns (kept, rejection_counts).
-    Applies minimal volume/liquidity floors and interval-specific momentum gates.
-    """
-    kept: List[Candidate] = []
-    rejected: RejectionCounts = {"excl": 0, "lowvol": 0, "lowliq": 0, "lowpct": 0}
+        volume_threshold_5m: float,
+        volume_threshold_1h: float,
+        volume_threshold_6h: float,
+        volume_threshold_24h: float,
+        minimum_liquidity_usd: float,
+        percent_threshold_5m: float,
+        percent_threshold_1h: float,
+        percent_threshold_6h: float,
+        percent_threshold_24h: float,
+        maximum_results: int,
+) -> tuple[list[Candidate], RejectionCounts]:
+    retained_candidates: list[Candidate] = []
+    rejection_statistics: RejectionCounts = {
+        "excluded": 0,
+        "low_volume": 0,
+        "low_liquidity": 0,
+        "low_percent": 0
+    }
 
     for candidate in candidates:
         symbol = candidate.dexscreener_token_information.base_token.symbol
         liquidity_usd = candidate.dexscreener_token_information.liquidity.usd
 
-        if not _passes_volume_thresholds(candidate, interval, volth5, volth1, volth6, volth24):
-            log.debug("[TREND][FILTER][STRICT][REJECT] %s — fails vol thresholds for %s", symbol, interval)
-            rejected["lowvol"] += 1
+        if not _passes_volume_thresholds(
+                candidate=candidate,
+                interval=interval,
+                threshold_5m=volume_threshold_5m,
+                threshold_1h=volume_threshold_1h,
+                threshold_6h=volume_threshold_6h,
+                threshold_24h=volume_threshold_24h
+        ):
+            logger.debug("[TRENDING][FILTER][STRICT][REJECT] Token %s fails volume thresholds for interval %s", symbol, interval)
+            rejection_statistics["low_volume"] += 1
             continue
 
-        if liquidity_usd < min_liq_usd:
-            log.debug("[TREND][FILTER][STRICT][REJECT] %s — liq=%.0f<%.0f", symbol, liquidity_usd, min_liq_usd)
-            rejected["lowliq"] += 1
+        if liquidity_usd < minimum_liquidity_usd:
+            logger.debug("[TRENDING][FILTER][STRICT][REJECT] Token %s fails liquidity thresholds with %f USD against minimum %f USD", symbol, liquidity_usd, minimum_liquidity_usd)
+            rejection_statistics["low_liquidity"] += 1
             continue
 
-        if not _passes_percent_thresholds(candidate, interval, pctth5, pctth1, pctth6, pctth24):
-            log.debug("[TREND][FILTER][STRICT][REJECT] %s — fails pct thresholds for %s", symbol, interval)
-            rejected["lowpct"] += 1
+        if not _passes_percent_thresholds(
+                candidate=candidate,
+                interval=interval,
+                threshold_5m=percent_threshold_5m,
+                threshold_1h=percent_threshold_1h,
+                threshold_6h=percent_threshold_6h,
+                threshold_24h=percent_threshold_24h
+        ):
+            logger.debug("[TRENDING][FILTER][STRICT][REJECT] Token %s fails percent thresholds for interval %s", symbol, interval)
+            rejection_statistics["low_percent"] += 1
             continue
 
-        kept.append(candidate)
-        if len(kept) >= max_results:
-            log.debug("[TREND][FILTER][STRICT] Reached max results %d", max_results)
+        retained_candidates.append(candidate)
+        if len(retained_candidates) >= maximum_results:
+            logger.info("[TRENDING][FILTER][STRICT][LIMIT] Reached maximum allowed results of %d candidates", maximum_results)
             break
 
-    for candidate in kept:
+    for candidate in retained_candidates:
         symbol = candidate.dexscreener_token_information.base_token.symbol
         short_address = _tail(candidate.dexscreener_token_information.base_token.address)
 
@@ -218,176 +220,171 @@ def filter_strict(
 
         liquidity_usd = candidate.dexscreener_token_information.liquidity.usd
 
-        p5 = candidate.dexscreener_token_information.price_change.m5
-        p1 = candidate.dexscreener_token_information.price_change.h1
-        p6 = candidate.dexscreener_token_information.price_change.h6
-        p24 = candidate.dexscreener_token_information.price_change.h24
+        percent_5m = candidate.dexscreener_token_information.price_change.m5
+        percent_1h = candidate.dexscreener_token_information.price_change.h1
+        percent_6h = candidate.dexscreener_token_information.price_change.h6
+        percent_24h = candidate.dexscreener_token_information.price_change.h24
 
-        via = "24h"
-        if interval == "5m" and p5 is not None and p5 >= pctth5:
-            via = "5m"
-        elif interval == "1h" and p1 is not None and p1 >= pctth1:
-            via = "1h"
-        elif interval == "6h" and p6 is not None and p6 >= pctth6:
-            via = "6h"
-        elif p24 is not None and p24 >= pctth24:
-            via = "24h"
+        matching_interval = "24h"
+        if interval == "5m" and percent_5m is not None and percent_5m >= percent_threshold_5m:
+            matching_interval = "5m"
+        elif interval == "1h" and percent_1h is not None and percent_1h >= percent_threshold_1h:
+            matching_interval = "1h"
+        elif interval == "6h" and percent_6h is not None and percent_6h >= percent_threshold_6h:
+            matching_interval = "6h"
+        elif percent_24h is not None and percent_24h >= percent_threshold_24h:
+            matching_interval = "24h"
 
-        log.debug(
-            "[TREND][FILTER][STRICT][KEEP] %s (%s) — vol5m=%.0f≥%.0f vol1h=%.0f≥%.0f vol6h=%.0f≥%.0f vol24h=%.0f≥%.0f liq=%.0f≥%.0f p5=%s(th=%.2f) p1=%s(th=%.2f) p6=%s(th=%.2f) p24=%s(th=%.2f) via=%s",
+        logger.debug(
+            "[TRENDING][FILTER][STRICT][RETAIN] Token %s (%s) matches interval %s. Volume: 5m=%f, 1h=%f, 6h=%f, 24h=%f. Liquidity: %f USD. Percent: 5m=%s, 1h=%s, 6h=%s, 24h=%s.",
             symbol,
             short_address,
+            matching_interval,
             volume_5m_usd,
-            volth5,
             volume_1h_usd,
-            volth1,
             volume_6h_usd,
-            volth6,
             volume_24h_usd,
-            volth24,
             liquidity_usd,
-            min_liq_usd,
-            _format(p5),
-            pctth5,
-            _format(p1),
-            pctth1,
-            _format(p6),
-            pctth6,
-            _format(p24),
-            pctth24,
-            via,
+            _format(percent_5m),
+            _format(percent_1h),
+            _format(percent_6h),
+            _format(percent_24h),
         )
 
-    return kept, rejected
+    return retained_candidates, rejection_statistics
 
 
 def soft_fill(
-        universe: List[Candidate],
-        kept: List[Candidate],
-        *,
-        need_min: int,
-        min_liq_usd: float,
+        candidate_universe: list[Candidate],
+        retained_candidates: list[Candidate],
+        minimum_required_candidates: int,
+        minimum_liquidity_usd: float,
         sort_key: str,
-) -> List[Candidate]:
-    if need_min <= 0 or len(kept) >= need_min:
-        return kept
+) -> list[Candidate]:
+    if minimum_required_candidates <= 0 or len(retained_candidates) >= minimum_required_candidates:
+        return retained_candidates
 
-    kept_addresses: Set[str] = {row.dexscreener_token_information.base_token.address for row in kept if
-                                row.dexscreener_token_information.base_token.address}
-    pool: List[Candidate] = []
-    for row in universe:
-        address = row.dexscreener_token_information.base_token.address
-        if address and address in kept_addresses:
+    retained_candidate_addresses: set[str] = {
+        candidate.dexscreener_token_information.base_token.address
+        for candidate in retained_candidates
+        if candidate.dexscreener_token_information.base_token.address
+    }
+    candidate_pool: list[Candidate] = []
+
+    for candidate in candidate_universe:
+        address = candidate.dexscreener_token_information.base_token.address
+        if address and address in retained_candidate_addresses:
             continue
 
-        vol5 = row.dexscreener_token_information.volume.m5
-        vol1 = row.dexscreener_token_information.volume.h1
-        vol6 = row.dexscreener_token_information.volume.h6
-        vol24 = row.dexscreener_token_information.volume.h24
-        if (vol5 is None
-                or vol1 is None
-                or vol6 is None
-                or vol24 is None
-                or (vol5 < 0.0 and vol1 < 0.0 and vol6 < 0.0 and vol24 < 0.0)
+        volume_5m = candidate.dexscreener_token_information.volume.m5
+        volume_1h = candidate.dexscreener_token_information.volume.h1
+        volume_6h = candidate.dexscreener_token_information.volume.h6
+        volume_24h = candidate.dexscreener_token_information.volume.h24
+
+        if (
+                volume_5m is None
+                or volume_1h is None
+                or volume_6h is None
+                or volume_24h is None
+                or (volume_5m < 0.0 and volume_1h < 0.0 and volume_6h < 0.0 and volume_24h < 0.0)
         ):
             continue
 
-        p5 = row.dexscreener_token_information.price_change.m5
-        p1 = row.dexscreener_token_information.price_change.h1
-        p6 = row.dexscreener_token_information.price_change.h6
-        p24 = row.dexscreener_token_information.price_change.h24
-        if (p1 is not None
-                and p5 is not None
-                and p6 is not None
-                and p24 is not None
-                and (p1 < 0.0 and p24 < 0.0 and p5 < 0.0 and p6 < 0.0)
+        percent_5m = candidate.dexscreener_token_information.price_change.m5
+        percent_1h = candidate.dexscreener_token_information.price_change.h1
+        percent_6h = candidate.dexscreener_token_information.price_change.h6
+        percent_24h = candidate.dexscreener_token_information.price_change.h24
+
+        if (
+                percent_1h is not None
+                and percent_5m is not None
+                and percent_6h is not None
+                and percent_24h is not None
+                and (percent_1h < 0.0 and percent_24h < 0.0 and percent_5m < 0.0 and percent_6h < 0.0)
         ):
             continue
 
-        pool.append(row)
+        candidate_pool.append(candidate)
 
-    key = sort_key if sort_key in _SOFT_SORT_KEYS else "vol24h"
-    pool.sort(key=lambda c: _get_candidate_sort_value(c, key), reverse=True)
+    resolved_sort_key = sort_key if sort_key in _SOFT_SORT_KEYS else "volume_24h"
+    candidate_pool.sort(key=lambda candidate_item: _get_candidate_sort_value(candidate=candidate_item, sort_key=resolved_sort_key), reverse=True)
 
-    for row in pool:
-        if len(kept) >= need_min:
+    for candidate in candidate_pool:
+        if len(retained_candidates) >= minimum_required_candidates:
             break
-        log.debug(
-            "[TREND][FILTER][SOFT_FILL][KEEP] %s — vol=%.0f liq=%.0f p5=%s p1=%s p6=%s p24=%s",
-            row.dexscreener_token_information.base_token.symbol,
-            row.dexscreener_token_information.volume.h24,
-            row.dexscreener_token_information.liquidity.usd,
-            row.dexscreener_token_information.price_change.m5,
-            row.dexscreener_token_information.price_change.h1,
-            row.dexscreener_token_information.price_change.h6,
-            row.dexscreener_token_information.price_change.h24,
+
+        logger.debug(
+            "[TRENDING][FILTER][SOFT_FILL][RETAIN] Token %s retained to meet minimum threshold. Volume 24h: %f, Liquidity: %f, Percent 5m: %s, 1h: %s, 6h: %s, 24h: %s",
+            candidate.dexscreener_token_information.base_token.symbol,
+            candidate.dexscreener_token_information.volume.h24,
+            candidate.dexscreener_token_information.liquidity.usd,
+            candidate.dexscreener_token_information.price_change.m5,
+            candidate.dexscreener_token_information.price_change.h1,
+            candidate.dexscreener_token_information.price_change.h6,
+            candidate.dexscreener_token_information.price_change.h24,
         )
-        kept.append(row)
-        if row.dexscreener_token_information.base_token.address:
-            kept_addresses.add(row.dexscreener_token_information.base_token.address)
+        retained_candidates.append(candidate)
+        if candidate.dexscreener_token_information.base_token.address:
+            retained_candidate_addresses.add(candidate.dexscreener_token_information.base_token.address)
 
-    return kept
+    return retained_candidates
 
 
-def recently_traded(address: str, minutes: int = 45) -> bool:
-    """
-    Return True if a trade for this address exists more recently than `minutes`.
-    """
+def recently_traded(address: str, time_window_minutes: int = 45) -> bool:
     if not address:
         return False
 
-    with _session() as db:
-        query = (
+    with _session() as database_session:
+        database_query = (
             select(Trade)
-            .where(Trade.tokenAddress == address)
+            .where(Trade.token_address == address)
             .order_by(Trade.created_at.desc())
         )
-        trade = db.execute(query).scalars().first()
-        if not trade:
+        trade_record = database_session.execute(database_query).scalars().first()
+        if not trade_record:
             return False
 
-        now = get_current_local_datetime()
-        created = trade.created_at.astimezone()
-        return (now - created) < timedelta(minutes=minutes)
+        current_time = get_current_local_datetime()
+        trade_creation_time = trade_record.created_at.astimezone()
+        return (current_time - trade_creation_time) < timedelta(minutes=time_window_minutes)
 
 
-def preload_best_prices(candidates: List[Candidate]) -> List[DexscreenerTokenInformation]:
-    """
-    Deduplicate and fetch best prices for a list of addresses (address → price).
-    Keeps input order of first occurrence.
-    """
+def preload_best_prices(candidates: list[Candidate]) -> list[DexscreenerTokenInformation]:
     if not candidates:
         return []
-    deduped_tokens_in_order: List[Token] = []
-    seen_keys: Set[Tuple[str, str, str, str]] = set()
+
+    unique_tokens: list[Token] = []
+    processed_token_identifiers: set[tuple[str, str, str, str]] = set()
+
     for candidate in candidates:
-        key = (
+        token_identifier = (
             candidate.dexscreener_token_information.base_token.symbol or "",
             candidate.dexscreener_token_information.chain_id or "",
             candidate.dexscreener_token_information.base_token.address or "",
             candidate.dexscreener_token_information.pair_address or "",
         )
-        if key in seen_keys:
+
+        if token_identifier in processed_token_identifiers:
             continue
-        seen_keys.add(key)
-        deduped_tokens_in_order.append(
+
+        processed_token_identifiers.add(token_identifier)
+        unique_tokens.append(
             Token(
                 symbol=candidate.dexscreener_token_information.base_token.symbol,
                 chain=candidate.dexscreener_token_information.chain_id,
-                tokenAddress=candidate.dexscreener_token_information.base_token.address,
-                pairAddress=candidate.dexscreener_token_information.pair_address
+                token_address=candidate.dexscreener_token_information.base_token.address,
+                pair_address=candidate.dexscreener_token_information.pair_address
             )
         )
-    if not deduped_tokens_in_order:
+
+    if not unique_tokens:
         return []
-    return fetch_dexscreener_token_information_list_sync(deduped_tokens_in_order)
+
+    return fetch_dexscreener_token_information_list_sync(unique_tokens)
 
 
-def _price_from(dexscreener_token_information_list: List[DexscreenerTokenInformation], candidate: Candidate) -> Optional[float]:
-    """
-    Fetch a price from a list of TokenPrice objects matching the candidate's chain, symbol, token address and pair address.
-    """
-    for token_information in dexscreener_token_information_list:
+def get_price_from_token_information_list(token_information_list: list[DexscreenerTokenInformation], candidate: Candidate) -> Optional[float]:
+    for token_information in token_information_list:
         if (
                 token_information.base_token.symbol == candidate.dexscreener_token_information.base_token.symbol
                 and token_information.chain_id == candidate.dexscreener_token_information.chain_id
@@ -398,74 +395,58 @@ def _price_from(dexscreener_token_information_list: List[DexscreenerTokenInforma
     return None
 
 
-def _run_awaitable_in_fresh_loop(task: Awaitable[U], *, debug_label: str = "") -> U:
-    """
-    Run an awaitable safely in a dedicated event loop.
-
-    Behavior:
-      - If there's no running loop: use asyncio.run().
-      - If the loop is closed OR already running (e.g. notebooks, frameworks):
-        spin up a brand-new loop in a separate thread and run the task there.
-
-    This avoids 'Event loop is closed' and
-    'asyncio.run() cannot be called from a running event loop'.
-    """
+def _run_awaitable_in_fresh_loop(asynchronous_task: Awaitable[U], debug_label: str = "") -> U:
     try:
-        return asyncio.run(task)
-    except RuntimeError as exc:
-        message = str(exc)
-        if ("Event loop is closed" not in message) and ("cannot be called from a running event loop" not in message):
+        return asyncio.run(asynchronous_task)
+    except RuntimeError as runtime_exception:
+        exception_message = str(runtime_exception)
+        if ("Event loop is closed" not in exception_message) and ("cannot be called from a running event loop" not in exception_message):
             raise
 
-        label = debug_label or "task"
-        log.debug("[TREND][ASYNC] loop issue detected (%s: %s); running in a fresh thread+loop.", label, message)
+        resolved_label = debug_label or "asynchronous_task"
+        logger.debug("[TRENDING][ASYNC][EXECUTION] Event loop constraint detected for task %s with message: %s. Re-running in an isolated thread and event loop.", resolved_label, exception_message)
 
-        result_holder: Dict[str, U] = {}
-        error_holder: Dict[str, BaseException] = {}
+        task_result_container: dict[str, U] = {}
+        task_error_container: dict[str, BaseException] = {}
 
-        def _runner() -> None:
-            loop = asyncio.new_event_loop()
+        def isolated_runner() -> None:
+            isolated_event_loop = asyncio.new_event_loop()
             try:
-                asyncio.set_event_loop(loop)
-                result_holder["result"] = loop.run_until_complete(task)
+                asyncio.set_event_loop(isolated_event_loop)
+                task_result_container["result"] = isolated_event_loop.run_until_complete(asynchronous_task)
                 try:
-                    loop.run_until_complete(loop.shutdown_asyncgens())
+                    isolated_event_loop.run_until_complete(isolated_event_loop.shutdown_asyncgens())
                 except Exception:
-                    pass  # best-effort cleanup
-            except BaseException as error:
-                error_holder["error"] = error
+                    pass
+            except BaseException as execution_error:
+                task_error_container["error"] = execution_error
             finally:
                 try:
                     asyncio.set_event_loop(None)
                 except Exception:
                     pass
-                loop.close()
+                isolated_event_loop.close()
 
-        thread = threading.Thread(target=_runner, name=f"fresh-loop-{label}", daemon=True)
-        thread.start()
-        thread.join()
+        isolated_thread = threading.Thread(target=isolated_runner, name=f"isolated-loop-{resolved_label}", daemon=True)
+        isolated_thread.start()
+        isolated_thread.join()
 
-        if "error" in error_holder:
-            raise error_holder["error"]
-        return result_holder["result"]
+        if "error" in task_error_container:
+            raise task_error_container["error"]
+        return task_result_container["result"]
 
 
-def _fetch_trending_candidates_sync() -> List[Candidate]:
-    """
-    Synchronously fetch trending candidates from Dexscreener by running the async
-    client in a safe, dedicated loop, then convert to :class:`Candidate`.
-    """
+def fetch_trending_candidates_sync() -> list[Candidate]:
     from src.integrations.dexscreener.dexscreener_client import fetch_trending_candidates
 
-    rows: List[DexscreenerTokenInformation] = _run_awaitable_in_fresh_loop(
-        fetch_trending_candidates(),
+    token_information_list: list[DexscreenerTokenInformation] = _run_awaitable_in_fresh_loop(
+        asynchronous_task=fetch_trending_candidates(),
         debug_label="fetch_trending_candidates",
     )
-    candidates: List[Candidate] = [_candidate_from_dexscreener_token_information(r) for r in rows]
-    log.info("[TREND][FETCH] converted %d normalized rows into Candidate objects.", len(candidates))
-    return candidates
+    candidates_list: list[Candidate] = [_candidate_from_dexscreener_token_information(token_information) for token_information in token_information_list]
+    logger.info("[TRENDING][FETCH][SUCCESS] Successfully converted %d normalized rows into candidate entities.", len(candidates_list))
+    return candidates_list
 
 
-def _is_address_in_open_positions(candidate_address: str, open_addresses: Set[str]) -> bool:
-    """Return True if the candidate address is a currently open position."""
-    return bool(candidate_address) and candidate_address in open_addresses
+def is_address_in_open_positions(candidate_address: str, open_position_addresses: set[str]) -> bool:
+    return bool(candidate_address) and candidate_address in open_position_addresses

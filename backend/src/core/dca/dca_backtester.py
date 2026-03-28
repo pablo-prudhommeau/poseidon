@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Dict
 
 from src.core.dca.dca_allocation_engine import DcaAllocationEngine
-from src.core.structures.structures import DcaBacktestSeriesPoint, DcaBacktestMetadata, DcaBacktestPayload
+from src.core.structures.structures import (
+    DcaBacktestSeriesPoint,
+    DcaBacktestMetadata,
+    DcaBacktestPayload
+)
 from src.core.utils.date_utils import convert_epoch_to_local_datetime
 from src.integrations.binance.binance_client import fetch_bulk_historical_candlesticks
 from src.integrations.binance.binance_structures import CandlestickData
@@ -21,179 +24,176 @@ class DcaBacktester:
             start_date: datetime,
             end_date: datetime,
             total_budget: float,
-            executions_count: int,
-            pru_elasticity_factor: float
+            total_execution_cycles: int,
+            price_elasticity_aggressiveness: float
     ) -> DcaBacktestPayload:
-
         logger.info(
-            "[DCA][BACKTESTER] Initiating dynamic sizing simulation for symbol %s with %d executions.",
+            "[DCA][BACKTESTER][START] Initiating comparative simulation for %s with %d cycles",
             symbol,
-            executions_count
+            total_execution_cycles
         )
 
-        if executions_count <= 0 or total_budget <= 0.0:
-            logger.error("[DCA][BACKTESTER] Invalid parameters: budget or executions must be strictly positive.")
-            raise ValueError("Total budget and executions count must be strictly positive.")
+        if total_execution_cycles <= 0 or total_budget <= 0.0:
+            logger.error("[DCA][BACKTESTER][VALIDATION] Total budget and execution cycles must be strictly positive")
+            raise ValueError("Simulation parameters must be strictly positive")
 
-        historical_candlesticks: List[CandlestickData] = await fetch_bulk_historical_candlesticks(
+        historical_candlesticks: list[CandlestickData] = await fetch_bulk_historical_candlesticks(
             symbol=symbol,
             start_time=start_date,
             end_time=end_date
         )
 
         if not historical_candlesticks:
-            logger.error("[DCA][BACKTESTER] Failed to fetch historical market data from Binance for %s.", symbol)
-            raise RuntimeError(f"Cannot perform backtest: No historical data available for {symbol}.")
+            logger.error("[DCA][BACKTESTER][DATA] Failed to retrieve historical market data for %s", symbol)
+            raise RuntimeError(f"Backtest aborted: No market data available for {symbol}")
 
-        exponential_moving_average_map: Dict[int, float] = {}
-        price_map: Dict[int, float] = {}
+        ema_calculations_map: dict[int, float] = {}
+        market_price_map: dict[int, float] = {}
 
         current_exponential_moving_average = historical_candlesticks[0].closing_price
-        exponential_moving_average_span_hours = 50 * 24
-        smoothing_factor = 2.0 / (exponential_moving_average_span_hours + 1.0)
+        ema_window_hours = 1200
+        smoothing_factor = 2.0 / (ema_window_hours + 1.0)
 
         for candlestick in historical_candlesticks:
             current_exponential_moving_average = (
                     (candlestick.closing_price - current_exponential_moving_average) * smoothing_factor
                     + current_exponential_moving_average
             )
-            exponential_moving_average_map[candlestick.closing_timestamp_milliseconds] = current_exponential_moving_average
-            price_map[candlestick.closing_timestamp_milliseconds] = candlestick.closing_price
+            ema_calculations_map[candlestick.closing_timestamp_milliseconds] = current_exponential_moving_average
+            market_price_map[candlestick.closing_timestamp_milliseconds] = candlestick.closing_price
 
-        target_start_timestamp_milliseconds = int(start_date.timestamp() * 1000)
-
-        valid_timestamps = [
+        start_timestamp_milliseconds = int(start_date.timestamp() * 1000)
+        valid_market_timestamps = [
             candlestick.closing_timestamp_milliseconds
             for candlestick in historical_candlesticks
-            if candlestick.closing_timestamp_milliseconds >= target_start_timestamp_milliseconds
+            if candlestick.closing_timestamp_milliseconds >= start_timestamp_milliseconds
         ]
 
-        if not valid_timestamps:
-            logger.error("[DCA][BACKTESTER] No valid timestamps found within the requested execution window.")
-            raise RuntimeError("Simulation window does not contain any valid market data timestamps.")
+        if not valid_market_timestamps:
+            logger.error("[DCA][BACKTESTER][DATA] Simulation window contains no valid market timestamps")
+            raise RuntimeError("Simulation window is outside of available market data range")
 
         end_timestamp_milliseconds = int(end_date.timestamp() * 1000)
-        interval_milliseconds = (end_timestamp_milliseconds - target_start_timestamp_milliseconds) / executions_count
-        theoretical_execution_dates = [
-            target_start_timestamp_milliseconds + int(iteration * interval_milliseconds)
-            for iteration in range(executions_count)
+        cycle_interval_milliseconds = (end_timestamp_milliseconds - start_timestamp_milliseconds) / total_execution_cycles
+        scheduled_execution_timestamps = [
+            start_timestamp_milliseconds + int(index * cycle_interval_milliseconds)
+            for index in range(total_execution_cycles)
         ]
 
-        budget_per_execution = total_budget / executions_count
+        budget_per_execution_cycle = total_budget / total_execution_cycles
 
-        dumb_dca_results: List[DcaBacktestSeriesPoint] = []
-        smart_dca_results: List[DcaBacktestSeriesPoint] = []
+        standard_dca_series: list[DcaBacktestSeriesPoint] = []
+        dynamic_dca_series: list[DcaBacktestSeriesPoint] = []
 
-        dumb_cumulative_spent = 0.0
-        dumb_crypto_accumulated = 0.0
+        standard_cumulative_spent = 0.0
+        standard_accumulated_asset_units = 0.0
 
-        smart_cumulative_spent = 0.0
-        smart_crypto_accumulated = 0.0
-        smart_dry_powder_reserves = 0.0
-        smart_average_unit_price = 0.0
-        total_overheat_retentions = 0
+        dynamic_cumulative_spent = 0.0
+        dynamic_accumulated_asset_units = 0.0
+        dynamic_dry_powder_reserve = 0.0
+        dynamic_average_purchase_price = 0.0
+        total_market_overheat_preventions = 0
 
-        for iteration, expected_timestamp in enumerate(theoretical_execution_dates):
-            execution_timestamp = DcaBacktester._find_closest_timestamp(valid_timestamps, expected_timestamp)
+        for cycle_index, target_timestamp in enumerate(scheduled_execution_timestamps):
+            actual_execution_timestamp = DcaBacktester._resolve_closest_market_timestamp(
+                valid_market_timestamps,
+                target_timestamp
+            )
 
-            execution_local_iso_date = convert_epoch_to_local_datetime(execution_timestamp).isoformat()
+            execution_date_iso = convert_epoch_to_local_datetime(actual_execution_timestamp).isoformat()
+            current_market_price = market_price_map[actual_execution_timestamp]
+            current_macro_ema = ema_calculations_map[actual_execution_timestamp]
 
-            current_market_price = price_map[execution_timestamp]
-            current_macro_exponential_moving_average = exponential_moving_average_map[execution_timestamp]
-
-            dumb_cumulative_spent += budget_per_execution
+            standard_cumulative_spent += budget_per_execution_cycle
             if current_market_price > 0.0:
-                dumb_crypto_accumulated += budget_per_execution / current_market_price
+                standard_accumulated_asset_units += budget_per_execution_cycle / current_market_price
 
-            dumb_average_unit_price = (
-                dumb_cumulative_spent / dumb_crypto_accumulated
-                if dumb_crypto_accumulated > 0.0
+            standard_average_purchase_price = (
+                standard_cumulative_spent / standard_accumulated_asset_units
+                if standard_accumulated_asset_units > 0.0
                 else 0.0
             )
 
-            dumb_dca_results.append(
+            standard_dca_series.append(
                 DcaBacktestSeriesPoint(
-                    timestamp_iso=execution_local_iso_date,
+                    timestamp_iso=execution_date_iso,
                     execution_price=current_market_price,
-                    average_purchase_price=dumb_average_unit_price,
-                    cumulative_spent=dumb_cumulative_spent,
+                    average_purchase_price=standard_average_purchase_price,
+                    cumulative_spent=standard_cumulative_spent,
                     dry_powder_remaining=0.0
                 )
             )
 
-            is_last_execution = (iteration == executions_count - 1)
+            is_final_cycle = (cycle_index == total_execution_cycles - 1)
 
-            allocation_decision = DcaAllocationEngine.calculate_allocation(
-                nominal_tranche=budget_per_execution,
-                current_dry_powder=smart_dry_powder_reserves,
-                current_price=current_market_price,
-                current_macro_ema=current_macro_exponential_moving_average,
-                current_pru=smart_average_unit_price,
-                is_last_execution=is_last_execution,
-                pru_elasticity_factor=pru_elasticity_factor
+            allocation_verdict = DcaAllocationEngine.calculate_dynamic_allocation(
+                nominal_investment_amount=budget_per_execution_cycle,
+                current_dry_powder_reserve=dynamic_dry_powder_reserve,
+                current_market_price=current_market_price,
+                current_macro_ema=current_macro_ema,
+                current_average_purchase_price=dynamic_average_purchase_price,
+                is_last_execution_cycle=is_final_cycle,
+                price_elasticity_aggressiveness=price_elasticity_aggressiveness
             )
 
-            smart_spend_amount = allocation_decision.spend_amount
-            smart_dry_powder_reserves += allocation_decision.dry_powder_delta
+            cycle_spend_amount = allocation_verdict.spend_amount
+            dynamic_dry_powder_reserve += allocation_verdict.dry_powder_delta
 
-            if "RETENTION" in allocation_decision.action_description:
-                total_overheat_retentions += 1
+            if "RETENTION" in allocation_verdict.action_description:
+                total_market_overheat_preventions += 1
 
-            smart_cumulative_spent += smart_spend_amount
+            dynamic_cumulative_spent += cycle_spend_amount
             if current_market_price > 0.0:
-                smart_crypto_accumulated += smart_spend_amount / current_market_price
+                dynamic_accumulated_asset_units += cycle_spend_amount / current_market_price
 
-            smart_average_unit_price = (
-                smart_cumulative_spent / smart_crypto_accumulated
-                if smart_crypto_accumulated > 0.0
+            dynamic_average_purchase_price = (
+                dynamic_cumulative_spent / dynamic_accumulated_asset_units
+                if dynamic_accumulated_asset_units > 0.0
                 else 0.0
             )
 
             logger.debug(
-                "[DCA][BACKTESTER] [%s] Price: $%.2f | EMA: $%.2f | PRU: $%.2f | Action: %s | Deployed: $%.2f | Vault: $%.2f",
-                execution_local_iso_date,
+                "[DCA][BACKTESTER][STEP] [%s] Price: %s | Action: %s | Spent: %s | PRU: %s",
+                execution_date_iso,
                 current_market_price,
-                current_macro_exponential_moving_average,
-                smart_average_unit_price,
-                allocation_decision.action_description,
-                smart_spend_amount,
-                smart_dry_powder_reserves
+                allocation_verdict.action_description,
+                cycle_spend_amount,
+                dynamic_average_purchase_price
             )
 
-            smart_dca_results.append(
+            dynamic_dca_series.append(
                 DcaBacktestSeriesPoint(
-                    timestamp_iso=execution_local_iso_date,
+                    timestamp_iso=execution_date_iso,
                     execution_price=current_market_price,
-                    average_purchase_price=smart_average_unit_price,
-                    cumulative_spent=smart_cumulative_spent,
-                    dry_powder_remaining=smart_dry_powder_reserves
+                    average_purchase_price=dynamic_average_purchase_price,
+                    cumulative_spent=dynamic_cumulative_spent,
+                    dry_powder_remaining=dynamic_dry_powder_reserve
                 )
             )
 
-        final_dumb_average_unit_price = dumb_dca_results[-1].average_purchase_price if dumb_dca_results else 0.0
-        final_smart_average_unit_price = smart_dca_results[-1].average_purchase_price if smart_dca_results else 0.0
+        final_standard_pru = standard_dca_series[-1].average_purchase_price if standard_dca_series else 0.0
+        final_dynamic_pru = dynamic_dca_series[-1].average_purchase_price if dynamic_dca_series else 0.0
 
         logger.info(
-            "[DCA][BACKTESTER] Simulation completed for %s. Dumb PRU: $%.2f | Smart PRU: $%.2f | Retentions: %d",
+            "[DCA][BACKTESTER][FINISH] Completed for %s. Standard PRU: %s | Dynamic PRU: %s",
             symbol,
-            final_dumb_average_unit_price,
-            final_smart_average_unit_price,
-            total_overheat_retentions
+            final_standard_pru,
+            final_dynamic_pru
         )
 
         return DcaBacktestPayload(
             metadata=DcaBacktestMetadata(
-                symbol=symbol,
-                total_budget=total_budget,
-                executions=executions_count,
-                final_dumb_average_unit_price=final_dumb_average_unit_price,
-                final_smart_average_unit_price=final_smart_average_unit_price,
-                total_overheat_retentions=total_overheat_retentions
+                source_asset_symbol=symbol,
+                total_allocated_budget=total_budget,
+                total_planned_executions=total_execution_cycles,
+                final_dumb_average_unit_price=final_standard_pru,
+                final_smart_average_unit_price=final_dynamic_pru,
+                total_overheat_retentions=total_market_overheat_preventions
             ),
-            dumb_dca_series=dumb_dca_results,
-            smart_dca_series=smart_dca_results
+            dumb_dca_series=standard_dca_series,
+            smart_dca_series=dynamic_dca_series
         )
 
     @staticmethod
-    def _find_closest_timestamp(timestamps: List[int], target_timestamp: int) -> int:
-        return min(timestamps, key=lambda current_timestamp: abs(current_timestamp - target_timestamp))
+    def _resolve_closest_market_timestamp(market_timestamps: list[int], target_timestamp: int) -> int:
+        return min(market_timestamps, key=lambda current_timestamp: abs(current_timestamp - target_timestamp))

@@ -1,23 +1,21 @@
-# backend/src/core/gates/trending_scoring.py
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Optional
+
+from pydantic import BaseModel
 
 from src.configuration.config import settings
 from src.core.structures.structures import Candidate
-from src.core.utils.format_utils import _age_hours, _format, _num, _tail
+from src.core.utils.format_utils import _tail
 from src.core.utils.math_utils import _clamp, _squash_pct
 from src.core.utils.trending_utils import _momentum_ok, _has_valid_intraday_bars, _buy_sell_score
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
-class FeatureValues:
-    """Raw features used by the statistics scorer."""
+class FeatureValues(BaseModel):
     liquidity_usd: float
     volume_24h_usd: float
     age_hours: float
@@ -25,39 +23,77 @@ class FeatureValues:
     order_flow_score: float
 
 
-@dataclass
+class RobustMinMax:
+    def __init__(self, lower_percentile: float = 5.0, upper_percentile: float = 95.0) -> None:
+        if not (0.0 <= lower_percentile < upper_percentile <= 100.0):
+            raise ValueError("Percentile bounds must satisfy strict inequality and remain within the 0 to 100 range")
+
+        self.lower_percentile = lower_percentile
+        self.upper_percentile = upper_percentile
+        self.lower_bound: Optional[float] = None
+        self.upper_bound: Optional[float] = None
+
+    @staticmethod
+    def calculate_percentile(sorted_values: list[float], target_percentile: float) -> float:
+        if not sorted_values:
+            return 0.0
+
+        index_position = (len(sorted_values) - 1) * (target_percentile / 100.0)
+        floor_index = math.floor(index_position)
+        ceiling_index = math.ceil(index_position)
+
+        if floor_index == ceiling_index:
+            return sorted_values[int(index_position)]
+
+        lower_fraction = sorted_values[int(floor_index)] * (ceiling_index - index_position)
+        upper_fraction = sorted_values[int(ceiling_index)] * (index_position - floor_index)
+
+        return lower_fraction + upper_fraction
+
+    def fit_distribution(self, values: list[float]) -> RobustMinMax:
+        cleaned_values = [value for value in values if not math.isnan(value)]
+        cleaned_values.sort()
+
+        if not cleaned_values:
+            self.lower_bound = 0.0
+            self.upper_bound = 1.0
+            return self
+
+        calculated_lower_bound = self.calculate_percentile(sorted_values=cleaned_values, target_percentile=self.lower_percentile)
+        calculated_upper_bound = self.calculate_percentile(sorted_values=cleaned_values, target_percentile=self.upper_percentile)
+
+        if calculated_upper_bound <= calculated_lower_bound:
+            calculated_upper_bound = calculated_lower_bound + 1.0
+
+        self.lower_bound = calculated_lower_bound
+        self.upper_bound = calculated_upper_bound
+        return self
+
+    def transform_value(self, value: float) -> float:
+        resolved_lower_bound = 0.0 if self.lower_bound is None else self.lower_bound
+        resolved_upper_bound = 1.0 if self.upper_bound is None else self.upper_bound
+
+        normalized_value = (value - resolved_lower_bound) / (resolved_upper_bound - resolved_lower_bound)
+        return _clamp(normalized_value, 0.0, 1.0)
+
+
 class FeatureScalers:
-    """
-    Scalers for each feature.
-    Provides a cohesive place to fit/transform consistently.
-    """
-    liquidity_usd: RobustMinMax
-    volume_24h_usd: RobustMinMax
-    age_hours: RobustMinMax
-    momentum_score: RobustMinMax
-    order_flow_score: RobustMinMax
+    def __init__(self) -> None:
+        self.liquidity_usd = RobustMinMax()
+        self.volume_24h_usd = RobustMinMax()
+        self.age_hours = RobustMinMax()
+        self.momentum_score = RobustMinMax()
+        self.order_flow_score = RobustMinMax()
 
-    @classmethod
-    def new_unfitted(cls) -> "FeatureScalers":
-        return cls(
-            liquidity_usd=RobustMinMax(),
-            volume_24h_usd=RobustMinMax(),
-            age_hours=RobustMinMax(),
-            momentum_score=RobustMinMax(),
-            order_flow_score=RobustMinMax(),
-        )
-
-    def fit_from_features(self, features: Sequence[FeatureValues]) -> None:
-        """Fit each scaler from a cohort of feature rows."""
-        self.liquidity_usd.fit([f.liquidity_usd for f in features])
-        self.volume_24h_usd.fit([f.volume_24h_usd for f in features])
-        self.age_hours.fit([f.age_hours for f in features])
-        self.momentum_score.fit([f.momentum_score for f in features])
+    def fit_from_feature_collection(self, features: list[FeatureValues]) -> None:
+        self.liquidity_usd.fit_distribution(values=[feature.liquidity_usd for feature in features])
+        self.volume_24h_usd.fit_distribution(values=[feature.volume_24h_usd for feature in features])
+        self.age_hours.fit_distribution(values=[feature.age_hours for feature in features])
+        self.momentum_score.fit_distribution(values=[feature.momentum_score for feature in features])
+        self.order_flow_score.fit_distribution(values=[feature.order_flow_score for feature in features])
 
 
-@dataclass(frozen=True)
-class ScoringWeights:
-    """Per-feature weights for the statistics score."""
+class ScoringWeights(BaseModel):
     liquidity_weight: float
     volume_weight: float
     age_weight: float
@@ -65,7 +101,7 @@ class ScoringWeights:
     order_flow_weight: float
 
     @classmethod
-    def from_settings(cls) -> "ScoringWeights":
+    def load_from_configuration(cls) -> ScoringWeights:
         return cls(
             liquidity_weight=float(settings.SCORE_WEIGHT_LIQUIDITY),
             volume_weight=float(settings.SCORE_WEIGHT_VOLUME),
@@ -75,7 +111,7 @@ class ScoringWeights:
         )
 
     @property
-    def total(self) -> float:
+    def total_weight(self) -> float:
         return (
                 self.liquidity_weight
                 + self.volume_weight
@@ -85,452 +121,246 @@ class ScoringWeights:
         )
 
 
-class RobustMinMax:
-    """
-    Robust linear scaler based on percentiles to mitigate outliers.
-
-    After `fit`, `transform(x)` returns values within [0.0, 1.0].
-
-    Notes:
-        - NaN values in `fit` input are ignored.
-        - If the percentile span collapses (b <= a), a minimal margin is added
-          to avoid division by zero.
-    """
-
-    def __init__(self, lower_percentile: float = 5.0, upper_percentile: float = 95.0) -> None:
-        if not (0.0 <= lower_percentile < upper_percentile <= 100.0):
-            raise ValueError("Percentile bounds must satisfy 0.0 <= lower < upper <= 100.0")
-        self._lower_percentile = lower_percentile
-        self._upper_percentile = upper_percentile
-        self._a: Optional[float] = None
-        self._b: Optional[float] = None
-
-    @staticmethod
-    def _percentile(sorted_values: Sequence[float], p: float) -> float:
-        """Compute the p-th percentile (0..100) from a sorted array using linear interpolation."""
-        if not sorted_values:
-            return 0.0
-        k = (len(sorted_values) - 1) * (p / 100.0)
-        floor_index = math.floor(k)
-        ceil_index = math.ceil(k)
-        if floor_index == ceil_index:
-            return float(sorted_values[int(k)])
-        d0 = float(sorted_values[int(floor_index)]) * (ceil_index - k)
-        d1 = float(sorted_values[int(ceil_index)]) * (k - floor_index)
-        return d0 + d1
-
-    def fit(self, values: Sequence[float]) -> RobustMinMax:
-        """Fit the scaler from a sequence of numeric values (NaNs ignored)."""
-        cleaned_values = [float(v) for v in values if not math.isnan(float(v))]
-        cleaned_values.sort()
-        if not cleaned_values:
-            self._a = 0.0
-            self._b = 1.0
-            return self
-
-        a = self._percentile(cleaned_values, self._lower_percentile)
-        b = self._percentile(cleaned_values, self._upper_percentile)
-        if b <= a:
-            b = a + 1.0
-
-        self._a, self._b = float(a), float(b)
-        return self
-
-    def transform(self, value: float) -> float:
-        """Normalize a value to [0.0, 1.0] using fitted percentiles."""
-        a = 0.0 if self._a is None else self._a
-        b = 1.0 if self._b is None else self._b
-        normalized = (float(value) - a) / (b - a)
-        return _clamp(normalized, 0.0, 1.0)
-
-
 class ScoringEngine:
-    """
-    Statistics scoring engine.
-
-    Terminology:
-        - statistics_score ∈ [0..100]  (previously `statScore`)
-        - entry_score       ∈ [0..100]  (statistics_score + AI delta)
-
-    Workflow:
-        Candidate -> FeatureValues -> Robust normalization -> Weighted sum
-    """
-
     def __init__(self) -> None:
-        self._scalers: FeatureScalers = FeatureScalers.new_unfitted()
-        self._weights: ScoringWeights = ScoringWeights.from_settings()
+        self.feature_scalers = FeatureScalers()
+        self.scoring_weights = ScoringWeights.load_from_configuration()
 
-    def fit(self, cohort: Sequence[Candidate]) -> ScoringEngine:
-        """
-        Fit internal scalers on a cohort of candidates.
-
-        Args:
-            cohort: Structured candidates.
-        """
-        feature_rows = [self._compute_raw_features(c) for c in cohort]
-        self._scalers.fit_from_features(feature_rows)
-        log.debug("[TREND][SCORING][FIT] fitted_scalers=5 candidates=%d", len(feature_rows))
+    def fit_scalers_to_cohort(self, candidate_cohort: list[Candidate]) -> ScoringEngine:
+        extracted_feature_rows = [self.extract_raw_features_from_candidate(candidate=candidate) for candidate in candidate_cohort]
+        self.feature_scalers.fit_from_feature_collection(features=extracted_feature_rows)
+        logger.debug("[TRENDING][SCORING][ENGINE] Successfully fitted feature scalers across %d candidates", len(extracted_feature_rows))
         return self
 
-    def stat_score(self, candidate: Candidate) -> float:
-        """
-        Compute the statistics score (pre-AI) in [0.0, 100.0].
+    def compute_statistics_score(self, candidate: Candidate) -> float:
+        raw_features = self.extract_raw_features_from_candidate(candidate=candidate)
 
-        Args:
-            candidate: Structured candidate.
+        normalized_liquidity = self.feature_scalers.liquidity_usd.transform_value(value=raw_features.liquidity_usd)
+        normalized_volume = self.feature_scalers.volume_24h_usd.transform_value(value=raw_features.volume_24h_usd)
+        normalized_age = 1.0 - self.feature_scalers.age_hours.transform_value(value=raw_features.age_hours)
+        normalized_momentum = self.feature_scalers.momentum_score.transform_value(value=raw_features.momentum_score)
+        normalized_order_flow = self.feature_scalers.order_flow_score.transform_value(value=raw_features.order_flow_score)
 
-        Returns:
-            Statistics score in [0.0, 100.0].
-        """
-        f = self._compute_raw_features(candidate)
-
-        n_liq = self._scalers.liquidity_usd.transform(f.liquidity_usd)
-        n_vol = self._scalers.volume_24h_usd.transform(f.volume_24h_usd)
-        n_age = 1.0 - self._scalers.age_hours.transform(f.age_hours)
-        n_mom = self._scalers.momentum_score.transform(f.momentum_score)
-        n_flow = self._scalers.order_flow_score.transform(f.order_flow_score)
-
-        w = self._weights
         weighted_sum = (
-                w.liquidity_weight * n_liq
-                + w.volume_weight * n_vol
-                + w.age_weight * n_age
-                + w.momentum_weight * n_mom
-                + w.order_flow_weight * n_flow
+                self.scoring_weights.liquidity_weight * normalized_liquidity
+                + self.scoring_weights.volume_weight * normalized_volume
+                + self.scoring_weights.age_weight * normalized_age
+                + self.scoring_weights.momentum_weight * normalized_momentum
+                + self.scoring_weights.order_flow_weight * normalized_order_flow
         )
-        total_weight = w.total if w.total > 0.0 else 1e-9
 
-        score = 100.0 * (weighted_sum / total_weight)
-        score = _clamp(score, 0.0, 100.0)
+        resolved_total_weight = self.scoring_weights.total_weight if self.scoring_weights.total_weight > 0.0 else 1e-9
 
-        symbol_display = candidate.dexscreener_token_information.base_token.symbol
-        log.debug(
-            "[TREND][SCORING][STAT] symbol=%s score=%.2f "
-            "f={liq:%.0f,vol:%.0f,age:%.1f,mom:%.3f,flow:%.3f} "
-            "n={liq:%.3f,vol:%.3f,age:%.3f,mom:%.3f,flow:%.3f}",
-            symbol_display,
-            score,
-            f.liquidity_usd, f.volume_24h_usd, f.age_hours, f.momentum_score, f.order_flow_score,
-            n_liq, n_vol, n_age, n_mom, n_flow
+        final_score = 100.0 * (weighted_sum / resolved_total_weight)
+        bounded_score = _clamp(final_score, 0.0, 100.0)
+
+        token_symbol = candidate.dexscreener_token_information.base_token.symbol
+        logger.debug(
+            "[TRENDING][SCORING][STATISTICS] Token %s achieved score %f with normalized features: liquidity=%f, volume=%f, age=%f, momentum=%f, order_flow=%f",
+            token_symbol,
+            bounded_score,
+            normalized_liquidity,
+            normalized_volume,
+            normalized_age,
+            normalized_momentum,
+            normalized_order_flow
         )
-        return score
+        return bounded_score
 
-    def base_score(self, candidate: Candidate) -> float:
-        """Backward-compatible alias for `stat_score`."""
-        return self.stat_score(candidate)
+    def apply_artificial_intelligence_adjustment(self, statistics_score: float, artificial_intelligence_delta: float) -> float:
+        delta_multiplier = float(settings.SCORE_AI_DELTA_MULTIPLIER)
+        maximum_absolute_points = float(settings.SCORE_AI_MAX_ABS_DELTA_POINTS)
 
-    def apply_ai_adjustment(self, statistics_score: float, ai_delta_model_output: float) -> float:
-        """
-        Apply AI delta on top of the statistics score with clamping.
+        scaled_delta = artificial_intelligence_delta * delta_multiplier
+        bounded_delta = _clamp(scaled_delta, -maximum_absolute_points, +maximum_absolute_points)
+        adjusted_entry_score = _clamp(statistics_score + bounded_delta, 0.0, 100.0)
 
-        entry_score = clamp(
-            statistics_score + clamp(ai_delta_model_output * SCORE_AI_DELTA_MULTIPLIER,
-                                     ±SCORE_AI_MAX_ABS_DELTA_POINTS),
-            0, 100
-        )
-        """
-        multiplier = float(settings.SCORE_AI_DELTA_MULTIPLIER)
-        max_abs_points = float(settings.SCORE_AI_MAX_ABS_DELTA_POINTS)
-
-        scaled_delta = ai_delta_model_output * multiplier
-        bounded_delta = _clamp(scaled_delta, -max_abs_points, +max_abs_points)
-        entry_score = _clamp(statistics_score + bounded_delta, 0.0, 100.0)
-
-        log.debug(
-            "[TREND][SCORING][AI] stat=%.2f ai_delta=%.2f -> entry=%.2f",
+        logger.debug(
+            "[TRENDING][SCORING][ADJUSTMENT] Adjusted base score %f with AI delta %f resulting in final entry score %f",
             statistics_score,
             bounded_delta,
-            entry_score,
+            adjusted_entry_score,
         )
-        return entry_score
+        return adjusted_entry_score
 
-    def _compute_raw_features(self, candidate: Candidate) -> FeatureValues:
-        """
-        Extract and compute raw features used by the statistics scorer.
-        Strictly uses the structured `Candidate` to avoid dict-based access.
-        """
+    def extract_raw_features_from_candidate(self, candidate: Candidate) -> FeatureValues:
         token_information = candidate.dexscreener_token_information
-        liquidity_usd = float(token_information.liquidity.usd)
-        volume_24h_usd = float(token_information.volume.h24)
 
-        age_hours = (
-            float(token_information.age_hours)
-            if token_information.age_hours > 0.0
-            else float(_age_hours(int(token_information.pair_created_at)))
-        )
+        liquidity_usd = token_information.liquidity.usd if token_information.liquidity and token_information.liquidity.usd is not None else 0.0
+        volume_24h_usd = token_information.volume.h24 if token_information.volume and token_information.volume.h24 is not None else 0.0
 
-        percent_5m = float(_num(token_information.price_change.m5) or 0.0)
-        percent_1h = float(_num(token_information.price_change.h1) or 0.0)
-        percent_6h = float(_num(token_information.price_change.h6) or 0.0)
-        percent_24h = float(_num(token_information.price_change.h24) or 0.0)
-        momentum_score = self._blend_momentum(percent_5m, percent_1h, percent_6h, percent_24h)
-        flow_score = _buy_sell_score(token_information.txns)
+        percent_m5 = token_information.price_change.m5 if token_information.price_change and token_information.price_change.m5 is not None else 0.0
+        percent_h1 = token_information.price_change.h1 if token_information.price_change and token_information.price_change.h1 is not None else 0.0
+        percent_h6 = token_information.price_change.h6 if token_information.price_change and token_information.price_change.h6 is not None else 0.0
+        percent_h24 = token_information.price_change.h24 if token_information.price_change and token_information.price_change.h24 is not None else 0.0
+
+        momentum_score = self.blend_momentum_percentages(percent_m5=percent_m5, percent_h1=percent_h1, percent_h6=percent_h6, percent_h24=percent_h24)
+        order_flow_score = _buy_sell_score(token_information.transactions)
 
         return FeatureValues(
             liquidity_usd=liquidity_usd,
             volume_24h_usd=volume_24h_usd,
-            age_hours=age_hours,
+            age_hours=token_information.age_hours,
             momentum_score=momentum_score,
-            order_flow_score=flow_score
+            order_flow_score=order_flow_score
         )
 
     @staticmethod
-    def _blend_momentum(percent_5m: float, percent_1h: float, percent_6h, percent_24h: float) -> float:
-        """
-        Blend short/medium/long momentum with a logistic squash per horizon.
+    def blend_momentum_percentages(percent_m5: float, percent_h1: float, percent_h6: float, percent_h24: float) -> float:
+        squashed_percent_m5 = _squash_pct(percent_m5)
+        squashed_percent_h1 = _squash_pct(percent_h1)
+        squashed_percent_h6 = _squash_pct(percent_h6)
+        squashed_percent_h24 = _squash_pct(percent_h24)
 
-        Returns:
-            Blended momentum score within [0.0, 1.0].
-        """
-        s5 = _squash_pct(percent_5m)
-        s1 = _squash_pct(percent_1h)
-        s6 = _squash_pct(percent_6h)
-        s24 = _squash_pct(percent_24h)
-        return 0.6 * s5 + 0.4 * s1 + 0.25 * s6 + 0.1 * s24
+        return 0.6 * squashed_percent_m5 + 0.4 * squashed_percent_h1 + 0.25 * squashed_percent_h6 + 0.1 * squashed_percent_h24
 
 
-@dataclass(frozen=True)
-class QualityContext:
-    """Context breakdown for the quality score decision."""
-    liq: float
-    vol5m: float
-    vol1h: float
-    vol6h: float
-    vol24h: float
-    age_h: float
-    p5: float
-    p1: float
-    p6: float
-    p24: float
-    momentum: float
-    liq_score: float
-    vol_score: float
+class QualityContext(BaseModel):
+    liquidity_usd: float
+    volume_m5_usd: float
+    volume_h1_usd: float
+    volume_h6_usd: float
+    volume_h24_usd: float
+    age_hours: float
+    percent_m5: float
+    percent_h1: float
+    percent_h6: float
+    percent_h24: float
+    momentum_score: float
+    liquidity_score: float
+    volume_score: float
     order_flow_score: float
 
 
-@dataclass(frozen=True)
-class QualityGateResult:
-    """Result of the quality gate decision."""
-    admissible: bool
+class QualityGateResult(BaseModel):
+    is_admissible: bool
     score: float
-    reason: str
+    rejection_reason: str
     context: QualityContext
 
 
-def _compute_quality_score(candidate: Candidate) -> QualityGateResult:
-    """
-    Gate #1 — quality score & admissibility before any ranking.
-
-    Operates on a structured `Candidate` and avoids dict reads entirely.
-    """
+def evaluate_quality_gate(candidate: Candidate) -> QualityGateResult:
     token_information = candidate.dexscreener_token_information
     base_token = token_information.base_token
 
-    liquidity_usd = float(token_information.liquidity.usd)
+    liquidity_usd = token_information.liquidity.usd if token_information.liquidity and token_information.liquidity.usd is not None else 0.0
 
-    volume_5m_usd = float(token_information.volume.m5)
-    volume_1h_usd = float(token_information.volume.h1)
-    volume_6h_usd = float(token_information.volume.h6)
-    volume_24h_usd = float(token_information.volume.h24)
+    volume_m5_usd = token_information.volume.m5 if token_information.volume and token_information.volume.m5 is not None else 0.0
+    volume_h1_usd = token_information.volume.h1 if token_information.volume and token_information.volume.h1 is not None else 0.0
+    volume_h6_usd = token_information.volume.h6 if token_information.volume and token_information.volume.h6 is not None else 0.0
+    volume_h24_usd = token_information.volume.h24 if token_information.volume and token_information.volume.h24 is not None else 0.0
 
-    pct_5m = _num(token_information.price_change.m5)
-    pct_1h = _num(token_information.price_change.h1)
-    pct_6h = _num(token_information.price_change.h6)
-    pct_24h = _num(token_information.price_change.h24)
+    percent_m5 = token_information.price_change.m5 if token_information.price_change and token_information.price_change.m5 is not None else 0.0
+    percent_h1 = token_information.price_change.h1 if token_information.price_change and token_information.price_change.h1 is not None else 0.0
+    percent_h6 = token_information.price_change.h6 if token_information.price_change and token_information.price_change.h6 is not None else 0.0
+    percent_h24 = token_information.price_change.h24 if token_information.price_change and token_information.price_change.h24 is not None else 0.0
 
-    age_hours = (
-        float(token_information.age_hours)
-        if token_information.age_hours > 0.0
-        else float(_age_hours(int(token_information.pair_created_at)))
+    order_flow_score = _buy_sell_score(token_information.transactions)
+
+    minimum_liquidity_usd = float(settings.TREND_MIN_LIQ_USD)
+
+    minimum_volume_m5_usd = float(settings.TREND_MIN_VOL5M_USD)
+    minimum_volume_h1_usd = float(settings.TREND_MIN_VOL1H_USD)
+    minimum_volume_h6_usd = float(settings.TREND_MIN_VOL6H_USD)
+    minimum_volume_h24_usd = float(settings.TREND_MIN_VOL24H_USD)
+
+    minimum_age_hours = float(settings.DEXSCREENER_MIN_AGE_HOURS)
+    maximum_age_hours = float(settings.DEXSCREENER_MAX_AGE_HOURS)
+
+    quality_context = QualityContext(
+        liquidity_usd=liquidity_usd,
+        volume_m5_usd=volume_m5_usd,
+        volume_h1_usd=volume_h1_usd,
+        volume_h6_usd=volume_h6_usd,
+        volume_h24_usd=volume_h24_usd,
+        age_hours=token_information.age_hours,
+        percent_m5=percent_m5,
+        percent_h1=percent_h1,
+        percent_h6=percent_h6,
+        percent_h24=percent_h24,
+        momentum_score=0.0,
+        liquidity_score=0.0,
+        volume_score=0.0,
+        order_flow_score=order_flow_score
     )
 
-    order_flow_score = _buy_sell_score(token_information.txns)
+    if liquidity_usd < minimum_liquidity_usd:
+        logger.debug("[TRENDING][QUALITY][REJECTION] Token %s rejected due to insufficient liquidity %f against minimum %f", base_token.symbol, liquidity_usd, minimum_liquidity_usd)
+        return QualityGateResult(is_admissible=False, score=0.0, rejection_reason="insufficient_liquidity", context=quality_context)
 
-    min_liquidity_usd = float(settings.TREND_MIN_LIQ_USD)
+    if volume_h24_usd < minimum_volume_h24_usd:
+        logger.debug("[TRENDING][QUALITY][REJECTION] Token %s rejected due to insufficient volume %f against minimum %f", base_token.symbol, volume_h24_usd, minimum_volume_h24_usd)
+        return QualityGateResult(is_admissible=False, score=0.0, rejection_reason="insufficient_volume", context=quality_context)
 
-    min_volume_5m_usd = float(settings.TREND_MIN_VOL5M_USD)
-    min_volume_1h_usd = float(settings.TREND_MIN_VOL1H_USD)
-    min_volume_6h_usd = float(settings.TREND_MIN_VOL6H_USD)
-    min_volume_24h_usd = float(settings.TREND_MIN_VOL24H_USD)
+    if token_information.age_hours < minimum_age_hours or token_information.age_hours > maximum_age_hours:
+        logger.debug("[TRENDING][QUALITY][REJECTION] Token %s rejected due to age %f falling outside bounds %f to %f", base_token.symbol, token_information.age_hours, minimum_age_hours, maximum_age_hours)
+        return QualityGateResult(is_admissible=False, score=0.0, rejection_reason="age_out_of_bounds", context=quality_context)
 
-    min_age_hours = float(settings.DEXSCREENER_MIN_AGE_HOURS)
-    max_age_hours = float(settings.DEXSCREENER_MAX_AGE_HOURS)
+    if not _momentum_ok(percent_5m=percent_m5, percent_1h=percent_h1, percent_6h=percent_h6, percent_24h=percent_h24):
+        logger.debug("[TRENDING][QUALITY][REJECTION] Token %s rejected due to invalid momentum characteristics", base_token.symbol)
+        return QualityGateResult(is_admissible=False, score=0.0, rejection_reason="invalid_momentum", context=quality_context)
 
-    if liquidity_usd < min_liquidity_usd:
-        log.debug("[TREND][QUALITY][DROP:LOW_LIQ] %s — %.0f < %.0f", base_token.symbol, liquidity_usd,
-                  min_liquidity_usd)
-        return QualityGateResult(
-            admissible=False,
-            score=0.0,
-            reason="low_liquidity",
-            context=QualityContext(
-                liq=liquidity_usd,
-                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
-                age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
-                momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
-            ),
-        )
+    squashed_percent_m5 = _squash_pct(percent_m5)
+    squashed_percent_h1 = _squash_pct(percent_h1)
+    squashed_percent_h6 = _squash_pct(percent_h6)
+    squashed_percent_h24 = _squash_pct(percent_h24)
 
-    if volume_24h_usd < min_volume_24h_usd:
-        log.debug("[TREND][QUALITY][DROP:LOW_VOL] %s — %.0f < %.0f", base_token.symbol, volume_24h_usd,
-                  min_volume_24h_usd)
-        return QualityGateResult(
-            admissible=False,
-            score=0.0,
-            reason="low_volume",
-            context=QualityContext(
-                liq=liquidity_usd,
-                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
-                age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
-                momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
-            ),
-        )
+    momentum_score = 0.6 * squashed_percent_m5 + 0.4 * squashed_percent_h1 + 0.25 * squashed_percent_h6 + 0.1 * squashed_percent_h24
+    liquidity_component_score = min(1.0, liquidity_usd / (minimum_liquidity_usd * 4.0))
 
-    if age_hours < min_age_hours or age_hours > max_age_hours:
-        log.debug(
-            "[TREND][QUALITY][DROP:AGE] %s — %.1fh not in [%.1f .. %.1f]",
-            base_token.symbol, age_hours, min_age_hours, max_age_hours,
-        )
-        return QualityGateResult(
-            admissible=False,
-            score=0.0,
-            reason="age_out_of_bounds",
-            context=QualityContext(
-                liq=liquidity_usd,
-                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
-                age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
-                momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
-            ),
-        )
+    volume_m5_component = min(1.0, volume_m5_usd / (minimum_volume_m5_usd * 4.0))
+    volume_h1_component = min(1.0, volume_h1_usd / (minimum_volume_h1_usd * 4.0))
+    volume_h6_component = min(1.0, volume_h6_usd / (minimum_volume_h6_usd * 4.0))
+    volume_h24_component = min(1.0, volume_h24_usd / (minimum_volume_h24_usd * 4.0))
 
-    if not _momentum_ok(pct_5m, pct_1h, pct_6h, pct_24h):
-        log.debug(
-            "[TREND][QUALITY][DROP:MOMENTUM] %s — m5=%s m1=%s m6=%s m24=%s",
-            base_token.symbol, _format(pct_5m), _format(pct_1h), _format(pct_6h), _format(pct_24h)
-        )
-        return QualityGateResult(
-            admissible=False,
-            score=0.0,
-            reason="choppy_or_spiky",
-            context=QualityContext(
-                liq=liquidity_usd,
-                vol5m=volume_5m_usd, vol1h=volume_1h_usd, vol6h=volume_6h_usd, vol24h=volume_24h_usd,
-                age_h=age_hours,
-                p5=float(pct_5m or 0.0), p1=float(pct_1h or 0.0), p6=float(pct_6h or 0.0), p24=float(pct_24h or 0.0),
-                momentum=0.0, liq_score=0.0, vol_score=0.0, order_flow_score=order_flow_score
-            ),
-        )
-
-    s5 = _squash_pct(float(pct_5m or 0.0))
-    s1 = _squash_pct(float(pct_1h or 0.0))
-    s6 = _squash_pct(float(pct_6h or 0.0))
-    s24 = _squash_pct(float(pct_24h or 0.0))
-
-    momentum_score = 0.6 * s5 + 0.4 * s1 + 0.25 * s6 + 0.1 * s24
-
-    liquidity_component = min(1.0, liquidity_usd / (min_liquidity_usd * 4.0))
-
-    volume_5m_component = min(1.0, volume_5m_usd / (min_volume_5m_usd * 4.0))
-    volume_1h_component = min(1.0, volume_1h_usd / (min_volume_1h_usd * 4.0))
-    volume_6h_component = min(1.0, volume_6h_usd / (min_volume_6h_usd * 4.0))
-    volume_24h_component = min(1.0, volume_24h_usd / (min_volume_24h_usd * 4.0))
-    volume_component = (
-            0.4 * volume_5m_component
-            + 0.3 * volume_1h_component
-            + 0.2 * volume_6h_component
-            + 0.1 * volume_24h_component
+    volume_component_score = (
+            0.4 * volume_m5_component
+            + 0.3 * volume_h1_component
+            + 0.2 * volume_h6_component
+            + 0.1 * volume_h24_component
     )
 
     quality_score = 100.0 * (
             0.45 * momentum_score
-            + 0.25 * liquidity_component
-            + 0.30 * volume_component
+            + 0.25 * liquidity_component_score
+            + 0.30 * volume_component_score
     )
 
-    context = QualityContext(
-        liq=liquidity_usd,
-        vol5m=volume_5m_usd,
-        vol1h=volume_1h_usd,
-        vol6h=volume_6h_usd,
-        vol24h=volume_24h_usd,
-        age_h=age_hours,
-        p5=float(pct_5m or 0.0),
-        p1=float(pct_1h or 0.0),
-        p6=float(pct_6h or 0.0),
-        p24=float(pct_24h or 0.0),
-        momentum=momentum_score,
-        liq_score=liquidity_component,
-        vol_score=volume_component,
-        order_flow_score=order_flow_score
-    )
+    quality_context.momentum_score = momentum_score
+    quality_context.liquidity_score = liquidity_component_score
+    quality_context.volume_score = volume_component_score
 
-    return QualityGateResult(admissible=True, score=quality_score, reason="ok", context=context)
+    return QualityGateResult(is_admissible=True, score=quality_score, rejection_reason="admissible", context=quality_context)
 
 
-def _attach_quality_score(candidate: Candidate, score: float) -> None:
-    """
-    Attach the computed quality score to the candidate via attribute assignment.
-
-    If the attribute is not assignable, a verbose log is emitted; no dict fallback.
-    """
-    try:
-        setattr(candidate, "quality_score", float(score))
-    except Exception:
-        log.debug(
-            "[TREND][QUALITY][WARN] Unable to set quality_score attribute on type=%s",
-            type(candidate).__name__,
-        )
-
-
-def apply_quality_filter(rows: Sequence[Candidate]) -> List[Candidate]:
-    """
-    Gate #1 — keep only candidates above the minimal quality score and
-    with valid intraday bars (m1/m5 present).
-
-    Args:
-        rows: Structured candidates.
-
-    Returns:
-        A filtered list of candidates. Each kept candidate receives `quality_score`
-        (attribute) when possible.
-    """
-    if not rows:
-        log.info("[TREND][QUALITY] 0 candidates provided to gate #1.")
+def filter_candidates_by_quality(candidate_cohort: list[Candidate]) -> list[Candidate]:
+    if not candidate_cohort:
+        logger.info("[TRENDING][QUALITY][FILTER] Cohort is empty, skipping quality gate evaluation")
         return []
 
-    minimum_quality_score = float(settings.SCORE_MIN_QUALITY)
-    kept: List[Candidate] = []
+    minimum_quality_score_threshold = float(settings.SCORE_MIN_QUALITY)
+    retained_candidates: list[Candidate] = []
 
-    for candidate in rows:
-        result = _compute_quality_score(candidate)
-        _attach_quality_score(candidate, result.score)
+    for candidate in candidate_cohort:
+        gate_result = evaluate_quality_gate(candidate=candidate)
+        candidate.quality_score = gate_result.score
 
         base_token = candidate.dexscreener_token_information.base_token
-        symbol_for_logs = base_token.symbol
         short_address = _tail(base_token.address)
 
-        if result.admissible and result.score >= minimum_quality_score:
+        if gate_result.is_admissible and gate_result.score >= minimum_quality_score_threshold:
             if not _has_valid_intraday_bars(candidate):
-                log.debug("[TREND][QUALITY][DROP:BARS] %s — intraday bars missing (m1/m5=NA)", base_token.symbol)
+                logger.debug("[TRENDING][QUALITY][FILTER][REJECTION] Token %s rejected due to missing intraday bars", base_token.symbol)
                 continue
 
-            kept.append(candidate)
-            log.debug(
-                "[TREND][QUALITY][KEEP] %s (%s) — quality=%.2f ≥ %.2f",
-                symbol_for_logs, short_address, result.score, minimum_quality_score,
-            )
+            retained_candidates.append(candidate)
+            logger.debug("[TRENDING][QUALITY][FILTER][RETAINED] Token %s (%s) passed quality gate with score %f", base_token.symbol, short_address, gate_result.score)
         else:
-            log.debug(
-                "[TREND][QUALITY][DROP:SCORE] %s (%s) — quality=%.2f < %.2f ctx=%s",
-                symbol_for_logs, short_address, result.score, minimum_quality_score, result.context,
-            )
+            logger.debug("[TRENDING][QUALITY][FILTER][REJECTION] Token %s (%s) failed quality gate with score %f against threshold %f. Reason: %s", base_token.symbol, short_address, gate_result.score, minimum_quality_score_threshold, gate_result.rejection_reason)
 
-    if not kept:
-        log.info("[TREND][QUALITY] 0 candidates passed gate #1.")
+    if not retained_candidates:
+        logger.info("[TRENDING][QUALITY][FILTER] Zero candidates passed the quality gate")
     else:
-        log.info("[TREND][QUALITY] %d/%d candidates passed gate #1.", len(kept), len(rows))
+        logger.info("[TRENDING][QUALITY][FILTER] Successfully retained %d out of %d candidates through the quality gate", len(retained_candidates), len(candidate_cohort))
 
-    return kept
+    return retained_candidates

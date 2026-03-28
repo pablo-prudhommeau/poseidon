@@ -1,19 +1,66 @@
-<div class="space-y-8">
+<div class="space-y-6">
 	@if (dcaStrategies().length > 0) {
+		<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+			<div class="flex items-center gap-2 bg-zinc-900/10 border border-white/5 rounded-2xl px-4 py-2 backdrop-blur-2xl shadow-2xl transition-all hover:border-blue-500/20 group">
+				<i class="fa fa-robot text-zinc-600 group-hover:text-blue-400 transition-all duration-300"></i>
+				<div class="h-4 w-[1px] bg-white/10 ml-2"></div>
+				<p-select [options]="dcaStrategies()"
+				          [(ngModel)]="selectedStrategyId"
+				          optionLabel="target_asset_symbol"
+				          optionValue="id"
+				          [style]="{'background': 'transparent', 'border': 'none', 'padding': '0', 'box-shadow': 'none'}"
+				          [panelStyle]="{'background': '#0a0a0a', 'border': '1px solid rgba(255,255,255,0.1)', 'box-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.5)'}"
+				          class="min-w-[210px]">
+					<ng-template pTemplate="selectedItem" let-selectedOption>
+						<div class="flex items-center gap-2.5">
+							<span class="text-[10px] text-zinc-500 uppercase font-bold tracking-widest hidden sm:inline">Accumulation</span>
+							<div class="flex items-center gap-1.5">
+								<span class="font-bold text-zinc-100 tracking-wide">{{ selectedOption.target_asset_symbol }}</span>
+								<span class="text-zinc-600 text-xs">/</span>
+								<span class="text-zinc-400 text-xs">{{ selectedOption.source_asset_symbol }}</span>
+							</div>
+						</div>
+					</ng-template>
+					<ng-template pTemplate="item" let-strategy>
+						<div class="flex flex-col py-1.5 group/item">
+							<div class="flex items-center justify-between gap-8">
+								<div class="flex flex-col">
+									<span class="font-bold text-zinc-100 transition-colors group-hover/item:text-blue-400">{{ strategy.target_asset_symbol }}</span>
+									<div class="flex">
+										<span class="text-[11px] text-zinc-600 uppercase tracking-tighter pr-2">Blockchain:</span>
+										<span class="text-[11px] text-zinc-400 uppercase tracking-tighter">{{ strategy.blockchain_network }}</span>
+									</div>
+								</div>
+								<div class="flex flex-col items-end">
+									<span class="text-[11px] font-medium text-zinc-400">via {{ strategy.source_asset_symbol }}</span>
+									<div class="flex">
+										<span class="text-[11px] text-zinc-600 italic pr-2">ID: #</span>
+										<span class="text-[11px] text-zinc-400 italic">{{ strategy.id }}</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</ng-template>
+				</p-select>
+			</div>
+		</div>
+
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-4">
 			<app-dca-synthesis class="contents" [strategy]="activeStrategy()!"></app-dca-synthesis>
 		</div>
+		<app-dca-strategy-execution-timeline class="block mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-execution-timeline>
 		<app-dca-strategy-path-projection class="block mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-path-projection>
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
 			<app-dca-strategy-charts class="contents" [strategy]="activeStrategy()!"></app-dca-strategy-charts>
 		</div>
-		<app-dca-strategy-execution-timeline class="block mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-execution-timeline>
 	} @else {
 		<p-card>
-			<div class="flex flex-col items-center justify-center py-20 text-slate-400">
-				<i class="fa fa-robot text-5xl mb-4 opacity-50"></i>
-				<h3 class="text-lg font-medium text-slate-300">No active DCA strategy</h3>
+			<div class="flex flex-col items-center justify-center py-20 text-zinc-600">
+				<i class="fa fa-robot text-5xl mb-4 opacity-20 animate-pulse"></i>
+				<h3 class="text-xl font-medium text-zinc-400">No active DCA strategy</h3>
+				<p class="text-sm text-zinc-500 mt-2">Deploy a strategy to start monitoring your automated trades</p>
 			</div>
 		</p-card>
 	}
 </div>
+

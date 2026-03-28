@@ -1,0 +1,33 @@
+.reticle-core {
+    animation: breathe-glow 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes breathe-glow {
+    0% {
+        box-shadow: 0 0 4px 0px rgba(59, 130, 246, 0.2);
+        transform: scale(0.9);
+        opacity: 0.2;
+    }
+    100% {
+        box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.6);
+        transform: scale(1.1);
+        opacity: 0.3;
+    }
+}
+
+.reticle-ring {
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 50%;
+    border-left-color: transparent;
+    border-right-color: transparent;
+    animation: slow-spin 6s linear infinite;
+}
+
+@keyframes slow-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}

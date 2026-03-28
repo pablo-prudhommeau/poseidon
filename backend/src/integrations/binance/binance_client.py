@@ -37,7 +37,7 @@ async def fetch_exponential_moving_average_and_price(
             response.raise_for_status()
             payload = response.json()
     except Exception as exception:
-        logger.error("[BINANCE][CLIENT][EMA] Failed to retrieve data for %s: %s", symbol, exception)
+        logger.exception("[BINANCE][CLIENT][EMA] Failed to retrieve data for %s: %s", symbol, exception)
         raise RuntimeError(f"Failed to fetch candlestick data for {symbol}") from exception
 
     if not payload:

@@ -144,7 +144,7 @@ export class PositionsTableComponent implements AfterViewInit {
         this.columnDefinitions = [
             {
                 headerName: 'Symbol',
-                field: 'symbol',
+                field: 'token_symbol',
                 sortable: true,
                 filter: true,
                 cellRenderer: SymbolChipRendererComponent,
@@ -164,7 +164,7 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Quantity',
-                field: 'qty',
+                field: 'open_quantity',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -174,7 +174,7 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Entry',
-                field: 'entry',
+                field: 'entry_price',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -185,7 +185,7 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'TP1',
-                field: 'tp1',
+                field: 'take_profit_tier_1_price',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -196,7 +196,7 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'TP2',
-                field: 'tp2',
+                field: 'take_profit_tier_2_price',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -207,7 +207,7 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Stop',
-                field: 'stop' as unknown as keyof Position,
+                field: 'stop_loss_price' as unknown as keyof Position,
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -230,7 +230,7 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Phase',
-                field: 'phase' as unknown as keyof Position,
+                field: 'position_phase' as unknown as keyof Position,
                 sortable: true,
                 cellRenderer: (p: ValueFormatterParams<Position>) => {
                     const sev = this.phaseSeverity(String((p.value as any) ?? ''));
@@ -312,7 +312,7 @@ export class PositionsTableComponent implements AfterViewInit {
             return enriched;
         }
         const last = this.numberFormattingService.toNumberSafe((row as any).last_price as number | null);
-        const entry = this.numberFormattingService.toNumberSafe(row.entry);
+        const entry = this.numberFormattingService.toNumberSafe(row.entry_price);
         if (last === null || entry === null || entry === 0) {
             return null;
         }
@@ -327,10 +327,10 @@ export class PositionsTableComponent implements AfterViewInit {
         if (!row) {
             return null;
         }
-        const quantity = this.numberFormattingService.toNumberSafe(row.qty);
+        const quantity = this.numberFormattingService.toNumberSafe(row.open_quantity);
         const price =
             priceBasis === 'entry'
-                ? this.numberFormattingService.toNumberSafe(row.entry)
+                ? this.numberFormattingService.toNumberSafe(row.entry_price)
                 : this.numberFormattingService.toNumberSafe((row as any).last_price as number | null);
         if (quantity === null || price === null) {
             return null;
@@ -345,13 +345,13 @@ export class PositionsTableComponent implements AfterViewInit {
         const rows = (this.webSocketService.analytics() ?? []) as Analytics[];
         const candidates = rows.filter(
             (a) =>
-                (a.pairAddress && a.pairAddress === position.pairAddress) ||
-                (a.tokenAddress && a.tokenAddress === position.tokenAddress)
+                (a.pair_address && a.pair_address === position.pair_address) ||
+                (a.token_address && a.token_address === position.token_address)
         );
         if (candidates.length === 0) {
             return null;
         }
-        candidates.sort((a, b) => (b.evaluatedAt || '').localeCompare(a.evaluatedAt || ''));
+        candidates.sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
         return candidates[0] ?? null;
     }
 
@@ -359,15 +359,15 @@ export class PositionsTableComponent implements AfterViewInit {
         return this.selectedAnalytics();
     }
 
-    public dexUrlForPair(row: { chain?: string; pairAddress?: string } | null): string {
-        const chain = (row as any)?.chain as string | undefined;
-        const pair = row?.pairAddress;
+    public dexUrlForPair(row: { blockchain_network?: string; pair_address?: string } | null): string {
+        const chain = (row as any)?.blockchain_network as string | undefined;
+        const pair = row?.pair_address;
         return chain && pair ? `https://dexscreener.com/${chain}/${pair}` : '';
     }
 
-    public dexUrlForToken(row: { chain?: string; tokenAddress?: string } | null): string {
-        const chain = (row as any)?.chain as string | undefined;
-        const token = row?.tokenAddress;
+    public dexUrlForToken(row: { blockchain_network?: string; token_address?: string } | null): string {
+        const chain = (row as any)?.blockchain_network as string | undefined;
+        const token = row?.token_address;
         return chain && token ? `https://dexscreener.com/${chain}/${token}` : '';
     }
 
@@ -389,7 +389,7 @@ export class PositionsTableComponent implements AfterViewInit {
             return null;
         }
         const trades = (this.webSocketService.trades() ?? []) as Trade[];
-        const candidates = trades.filter((t) => t.side === 'BUY' && t.pairAddress === position.pairAddress);
+        const candidates = trades.filter((t) => t.trade_side === 'BUY' && t.pair_address === position.pair_address);
         if (candidates.length === 0) {
             return null;
         }
@@ -448,18 +448,18 @@ export class PositionsTableComponent implements AfterViewInit {
         this.scoresLabels = scoreLabels;
         this.scoresSeries = scoreValues;
 
-        const pct5m = this.toNumberSafe((a as any)?.rawMetrics?.pct5m);
-        const pct1h = this.toNumberSafe((a as any)?.rawMetrics?.pct1h);
-        const pct24h = this.toNumberSafe((a as any)?.rawMetrics?.pct24h);
+        const pct5m = this.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_m5);
+        const pct1h = this.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h1);
+        const pct24h = this.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h24);
         const deltas: number[] = [pct5m ?? 0, pct1h ?? 0, pct24h ?? 0];
         this.deltaSeries = [{name: 'Δ', data: deltas}];
         this.deltaColors = deltas.map((v) => (v >= 0 ? '#22c55e' : '#ef4444'));
 
-        const liq = this.toNumberSafe((a as any)?.rawMetrics?.liquidityUsd) ?? 0;
-        const vol = this.toNumberSafe((a as any)?.rawMetrics?.volume24hUsd) ?? 0;
+        const liq = this.toNumberSafe((a as any)?.fundamentals?.liquidity_usd) ?? 0;
+        const vol = this.toNumberSafe((a as any)?.fundamentals?.volume_h24_usd) ?? 0;
         this.liqVolSeries = [Math.max(liq, 0), Math.max(vol, 0)];
 
-        const prob = this.toPercent0to100((a as any)?.ai?.probabilityTp1BeforeSl ?? null);
+        const prob = this.toPercent0to100((a as any)?.ai?.ai_probability_take_profit_before_stop_loss ?? null);
         this.probSeries = Number.isFinite(prob) ? [prob] : [];
 
         const entryNotional = this.orderNotionalUsd(pos, 'entry') ?? 0;

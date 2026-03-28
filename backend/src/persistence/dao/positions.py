@@ -1,62 +1,64 @@
 from __future__ import annotations
 
-from typing import List
-
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from src.core.structures.structures import Token
-from src.persistence.models import Position, Phase
+from src.logging.logger import get_logger
+from src.persistence.models import Position, PositionPhase
+
+logger = get_logger(__name__)
 
 
-def get_open_tokens(database_session: Session) -> List[Token]:
-    """
-    Return tokens (chain, symbol, token address, pair address) for all ACTIVE positions.
-    ACTIVE includes OPEN, PARTIAL, and STALED (visible but autosell-disabled).
-    """
-    statement = (
+def retrieve_open_position_tokens(database_session: Session) -> list[Token]:
+    logger.debug("[DATABASE][DAO][POSITIONS][TOKENS] Retrieving all tokens associated with open, partial, or staled positions")
+    database_query = (
         select(
-            Position.chain,
-            Position.symbol,
-            Position.tokenAddress,
-            Position.pairAddress,
+            Position.blockchain_network,
+            Position.token_symbol,
+            Position.token_address,
+            Position.pair_address,
         )
         .where(
             or_(
-                Position.phase == Phase.OPEN,
-                Position.phase == Phase.PARTIAL,
-                Position.phase == Phase.STALED,
+                Position.position_phase == PositionPhase.OPEN,
+                Position.position_phase == PositionPhase.PARTIAL,
+                Position.position_phase == PositionPhase.STALED,
             )
         )
         .order_by(Position.opened_at.desc())
     )
-    results = database_session.execute(statement).all()
-    tokens: List[Token] = []
-    for chain, symbol, token_address, pair_address in results:
-        tokens.append(
+    query_results = database_session.execute(database_query).all()
+    extracted_tokens: list[Token] = []
+
+    for chain, symbol, token_address, pair_address in query_results:
+        extracted_tokens.append(
             Token(
                 chain=chain,
                 symbol=symbol,
-                tokenAddress=token_address,
-                pairAddress=pair_address,
+                token_address=token_address,
+                pair_address=pair_address,
             )
         )
-    return tokens
+
+    logger.debug("[DATABASE][DAO][POSITIONS][TOKENS] Successfully retrieved %d active tokens", len(extracted_tokens))
+    return extracted_tokens
 
 
-def get_open_positions(database_session: Session) -> List[Position]:
-    """
-    Return all ACTIVE positions (OPEN, PARTIAL, STALED), newest first.
-    """
-    statement = (
+def retrieve_open_positions(database_session: Session) -> list[Position]:
+    logger.debug("[DATABASE][DAO][POSITIONS] Retrieving all open, partial, or staled position records")
+    database_query = (
         select(Position)
         .where(
             or_(
-                Position.phase == Phase.OPEN,
-                Position.phase == Phase.PARTIAL,
-                Position.phase == Phase.STALED,
+                Position.position_phase == PositionPhase.OPEN,
+                Position.position_phase == PositionPhase.PARTIAL,
+                Position.position_phase == PositionPhase.STALED,
             )
         )
         .order_by(Position.opened_at.desc())
     )
-    return list(database_session.execute(statement).scalars().all())
+    active_positions = list(database_session.execute(database_query).scalars().all())
+
+    logger.debug("[DATABASE][DAO][POSITIONS] Successfully retrieved %d active position records", len(active_positions))
+    return active_positions

@@ -2,15 +2,6 @@ import {ENVIRONMENT_INITIALIZER, Provider} from '@angular/core';
 import {AgGridAngular} from 'ag-grid-angular';
 import type {ColDef, ColGroupDef, ColumnState, GridApi, GridOptions, ManagedGridOptionKey} from 'ag-grid-community';
 
-/**
- * [UI][AGGRID][HMR] PoseidonAgGridHmrRegistry (AG Grid v34 only)
- *
- * Registers all AgGridAngular instances and, on every HMR accept, forces
- * renderer re-creation by reapplying fresh columnDefs while preserving
- * column state (order, width, pinned, visibility).
- *
- * Logging format: [UI][AGGRID][HMR][...]
- */
 class PoseidonAgGridHmrRegistry {
     private static readonly singleton = new PoseidonAgGridHmrRegistry();
     private readonly grids = new Set<AgGridAngular>();
@@ -31,14 +22,6 @@ class PoseidonAgGridHmrRegistry {
         console.info('[UI][AGGRID][HMR][UNREGISTER] grid unregistered');
     }
 
-    /**
-     * Forces renderer re-creation on all registered grids by:
-     * 1) reading current columnDefs,
-     * 2) cloning each definition and bumping params identity,
-     * 3) re-applying columnDefs via setGridOption('columnDefs', ...),
-     * 4) restoring column state,
-     * 5) refreshing cells.
-     */
     public rebindAll(): void {
         const versionToken: number = Date.now();
 
@@ -49,20 +32,17 @@ class PoseidonAgGridHmrRegistry {
                 continue;
             }
 
-            // 1) Read current defs (AG Grid v34).
             const currentDefs = api.getColumnDefs() as (ColDef | ColGroupDef)[] | undefined;
             if (!currentDefs || currentDefs.length === 0) {
                 console.debug('[UI][AGGRID][HMR][SKIP] no column definitions');
                 continue;
             }
 
-            // Capture state before rebind.
             const columnStateBefore: ColumnState[] = api.getColumnState();
 
-            // 2) Clone defs and bump params identity only on leaf columns.
             const nextDefs: (ColDef | ColGroupDef)[] = currentDefs.map((def) => {
                 if (isColGroupDef(def)) {
-                    return def; // keep groups intact
+                    return def;
                 }
 
                 const leaf = def as ColDef;
@@ -88,17 +68,14 @@ class PoseidonAgGridHmrRegistry {
 
             console.info('[UI][AGGRID][HMR][REBUILD] applying next column definitions');
 
-            // 3) Re-apply defs (typed key/value for v34).
             type ColumnDefsOption = NonNullable<GridOptions['columnDefs']>;
             const key: ManagedGridOptionKey = 'columnDefs';
             api.setGridOption(key, nextDefs as ColumnDefsOption);
 
-            // 4) Restore state.
             if (columnStateBefore.length > 0) {
                 api.applyColumnState({state: columnStateBefore, applyOrder: true});
             }
 
-            // 5) Hard refresh for safety.
             api.refreshCells({force: true});
         }
 
@@ -106,22 +83,15 @@ class PoseidonAgGridHmrRegistry {
     }
 }
 
-/** Type guard: detect a ColGroupDef. */
 function isColGroupDef(def: ColDef | ColGroupDef): def is ColGroupDef {
     return typeof (def as ColGroupDef).children !== 'undefined';
 }
 
-/** Lifecycle hooks we patch on AgGridAngular prototype (typed, no any). */
 interface AgGridAngularLifecycle {
     ngAfterViewInit?: () => void;
     ngOnDestroy?: () => void;
 }
 
-/**
- * Install a single global patch:
- * - auto-register/unregister every grid instance,
- * - Vite HMR accept hook that triggers rebindAll().
- */
 function installAgGridHmrPatch(): void {
     const registry = PoseidonAgGridHmrRegistry.instance();
 
@@ -145,7 +115,6 @@ function installAgGridHmrPatch(): void {
         }
     };
 
-    // Angular ≥17 uses Vite HMR.
     const metaHot = (import.meta as unknown as { hot?: { accept: (cb?: () => void) => void } }).hot;
     if (metaHot && typeof metaHot.accept === 'function') {
         metaHot.accept((): void => registry.rebindAll());
@@ -155,7 +124,6 @@ function installAgGridHmrPatch(): void {
     }
 }
 
-/** Public provider: add once in app.config.ts */
 export function providePoseidonAgGridHmr(): Provider {
     return {
         provide: ENVIRONMENT_INITIALIZER,

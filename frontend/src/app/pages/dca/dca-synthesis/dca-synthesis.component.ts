@@ -14,39 +14,39 @@ import {DcaOrder, DcaStrategy, EquityCurvePoint, MacroProjectionSavings, YieldMe
 export class DcaSynthesisComponent {
     public strategy = input.required<DcaStrategy>();
 
-    public readonly deployedAmount = computed<number>(() => this.strategy().deployed_amount ?? 0);
-    public readonly totalBudget = computed<number>(() => this.strategy().total_budget ?? 0);
+    public readonly deployedAmount = computed<number>(() => this.strategy().total_deployed_amount ?? 0);
+    public readonly totalBudget = computed<number>(() => this.strategy().total_allocated_budget ?? 0);
     public readonly currentAveragePurchasePrice = computed<number>(() => this.strategy().average_purchase_price ?? 0);
 
     public readonly progressPercentage = computed<number>(() => {
         const strat = this.strategy();
-        return strat.total_budget > 0 ? (strat.deployed_amount / strat.total_budget) * 100 : 0;
+        return strat.total_allocated_budget > 0 ? (strat.total_deployed_amount / strat.total_allocated_budget) * 100 : 0;
     });
 
     public readonly purchasePriceSparkline = computed<EquityCurvePoint[]>(() => {
         const strat = this.strategy();
-        if (!strat.orders) {
+        if (!strat.execution_orders) {
             return [];
         }
 
-        return strat.orders
-            .filter((order: DcaOrder) => order.status === 'EXECUTED' && order.execution_price != null && order.executed_at != null)
+        return strat.execution_orders
+            .filter((order: DcaOrder) => order.order_status === 'EXECUTED' && order.actual_execution_price != null && order.executed_at != null)
             .sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime())
             .map((order: DcaOrder) => ({
-                timestamp: new Date(order.executed_at!).getTime(),
-                equity: order.execution_price as number
+                timestamp_milliseconds: new Date(order.executed_at!).getTime(),
+                total_equity_value: order.actual_execution_price as number
             }));
     });
 
     public readonly yieldMetrics = computed<YieldMetrics>(() => {
         const strat = this.strategy();
-        const realized = strat.realized_aave_yield;
+        const realized = strat.realized_aave_yield_amount;
         const now = Date.now();
-        const end = strat.end_date ? new Date(strat.end_date).getTime() : now;
-        const start = strat.start_date ? new Date(strat.start_date).getTime() : now;
+        const end = strat.strategy_end_date ? new Date(strat.strategy_end_date).getTime() : now;
+        const start = strat.strategy_start_date ? new Date(strat.strategy_start_date).getTime() : now;
         const effectiveStartForProjection = Math.max(now, start);
         const remainingYears = Math.max(0, (end - effectiveStartForProjection) / (1000 * 60 * 60 * 24 * 365.25));
-        const unspentBudget = strat.total_budget - strat.deployed_amount;
+        const unspentBudget = strat.total_allocated_budget - strat.total_deployed_amount;
         const apyFactor = strat.live_aave_apy;
         const projectedRemaining = unspentBudget * apyFactor * remainingYears;
 
@@ -59,16 +59,16 @@ export class DcaSynthesisComponent {
 
     public readonly projectedSavings = computed<MacroProjectionSavings>(() => {
         const strat = this.strategy();
-        const metadata = strat.backtest_payload.metadata;
-        const baselineCryptoQuantity = strat.total_budget / metadata.final_dumb_average_unit_price;
-        const smartCryptoQuantity = strat.total_budget / metadata.final_smart_average_unit_price;
+        const metadata = strat.historical_backtest_payload.metadata;
+        const baselineCryptoQuantity = strat.total_allocated_budget / metadata.final_dumb_average_unit_price;
+        const smartCryptoQuantity = strat.total_allocated_budget / metadata.final_smart_average_unit_price;
         const extraCryptoGained = smartCryptoQuantity - baselineCryptoQuantity;
         const livePrice = strat.live_market_price;
-        const bearMarketBottomPrice = strat.previous_ath * strat.bear_bottom_multiplier;
-        const previousAmplitudeMultiplier = 1 + (strat.previous_bull_amplitude_pct / 100);
-        const topPriceMultiplier = Math.pow(previousAmplitudeMultiplier, 1 / strat.flattening_factor);
+        const bearMarketBottomPrice = strat.previous_all_time_high_price * strat.bear_market_bottom_multiplier;
+        const previousAmplitudeMultiplier = 1 + (strat.previous_bull_market_amplitude_percentage / 100);
+        const topPriceMultiplier = Math.pow(previousAmplitudeMultiplier, 1 / strat.curve_flattening_factor);
         const targetCycleTopPrice = bearMarketBottomPrice * topPriceMultiplier;
-        const minimumProgressionAth = strat.previous_ath * strat.minimum_bull_multiplier;
+        const minimumProgressionAth = strat.previous_all_time_high_price * strat.minimum_bull_market_multiplier;
         const finalizedTargetPrice = Math.max(targetCycleTopPrice, minimumProgressionAth);
         return {
             live: extraCryptoGained * livePrice,

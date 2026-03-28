@@ -10,22 +10,16 @@ log = get_logger(__name__)
 
 
 class TrendingPipeline:
-    """
-    Orchestrates the full trending evaluation and execution pipeline.
-    """
-
     def __init__(self) -> None:
         self.selection_stage = CandidateSelectionStage()
         self.gates_stage = CandidateGatesStage()
         self.execution_stage = AiExecutionStage()
 
     def run_once(self) -> None:
-        """Execute one full trending evaluation cycle."""
         if not settings.TREND_ENABLE:
             log.info("[TREND][RUN] disabled.")
             return
 
-        # 1) Collect and pre-filter candidates
         raw_rows = self.selection_stage.fetch_candidates_raw()
         if not raw_rows:
             return
@@ -43,15 +37,12 @@ class TrendingPipeline:
         if not pruned_candidates:
             return
 
-        # 2) Preload prices once, then run the contradictions gate (pre-trade semantic sanity)
         token_prices = self.gates_stage.preload_best_prices(pruned_candidates)
 
-        # NEW: semantic contradictions gate (FDV/Mcap, Liquidity/Mcap, Volume↔Txns, monotonicity)
         contradiction_clean: list = self.gates_stage.apply_contradictions_gate(pruned_candidates, token_prices)
         if not contradiction_clean:
             return
 
-        # 3) Score + risk/price gates + AI execution
         statistics_ready, engine = self.gates_stage.apply_statistics_gate(contradiction_clean)
         if not statistics_ready:
             return
@@ -63,5 +54,4 @@ class TrendingPipeline:
         self.execution_stage.ai_gate_and_execute(eligible_candidates, engine)
 
     def run(self) -> None:
-        """Public entry-point to run one cycle. Kept for backwards compatibility."""
         self.run_once()

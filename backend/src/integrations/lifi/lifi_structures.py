@@ -1,41 +1,37 @@
-from dataclasses import dataclass
-from typing import Mapping
+from __future__ import annotations
+
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 
-class LifiAction:
-    """Subset of the LI.FI `action` object we read for logging."""
+class LifiAction(BaseModel):
     type: str
 
 
-class LifiEstimate:
-    """Subset of the LI.FI `estimate` object we read for logging."""
+class LifiEstimate(BaseModel):
     tool: str
 
 
-class LifiQuoteJson:
-    """
-    Minimal typed view over LI.FI quote JSON.
+class LifiTransactionRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    to: str
+    data: str
+    value: str
+    from_address: Optional[str] = None
 
-    We preserve the full raw shape but provide a typed surface for the fields
-    we actually consume. Unknown fields remain available for callers as needed.
-    """
+
+class LifiQuote(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     type: str
     tool: str
     action: LifiAction
     estimate: LifiEstimate
-    transactionRequest: Mapping[str, object]
+    transaction_request: LifiTransactionRequest
 
 
-@dataclass(frozen=True)
-class EvmChain:
-    """
-    Canonical mapping entry for an EVM chain supported by Dexscreener and LI.FI.
-
-    Attributes:
-        dexscreener_key: Lowercase identifier as provided by Dexscreener.
-        chain_id: The LI.FI numeric chain identifier (EVM chainId).
-        native_symbol: The native asset symbol for display/logging purposes.
-    """
-    dexscreener_key: str
-    chain_id: int
-    native_symbol: str
+class EvmChain(BaseModel):
+    dexscreener_chain_identifier: str
+    chain_identifier: int
+    native_token_symbol: str

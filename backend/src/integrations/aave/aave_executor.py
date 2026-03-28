@@ -24,16 +24,14 @@ Account.enable_unaudited_hdwallet_features()
 
 
 class AaveExecutor:
-    """
-    On-chain execution module for Aave interactions and raw DeFi routing.
-    Dynamic chain resolution prevents network hardcoding.
-    """
-
     def __init__(self) -> None:
         self._web3_clients: dict[str, AsyncWeb3] = {}
         self._pool_contracts: dict[str, AsyncContract] = {}
         self._wallet_address: str = ""
         self._private_key: str = ""
+
+    def get_wallet_address(self) -> str:
+        return self._wallet_address
 
     async def _initialize_provider(self, chain: str) -> None:
         if chain in self._web3_clients:
@@ -43,7 +41,7 @@ class AaveExecutor:
             logger.error("[AAVE][EXECUTOR][INIT] Mnemonic configuration is missing")
             raise ValueError("Mnemonic configuration is missing.")
 
-        account: LocalAccount = Account.from_mnemonic(
+        account: LocalAccount = Account.from_mnemonic(  # pylint: disable=no-value-for-parameter
             settings.AAVE_MNEMONIC,
             account_path=f"m/44'/60'/0'/0/{settings.AAVE_DERIVATION_INDEX}"
         )
@@ -138,7 +136,7 @@ class AaveExecutor:
             debt_balance = await debt_contract.functions.balanceOf(self._wallet_address).call()
             return debt_balance > 0
         except Exception as exception:
-            logger.error("[AAVE][EXECUTOR] Debt verification failed: %s", exception)
+            logger.exception("[AAVE][EXECUTOR] Debt verification failed: %s", exception)
             return True
 
     async def execute_withdrawal(self, chain: str, asset_address: str, amount_in_wei: int) -> Optional[str]:
@@ -167,7 +165,7 @@ class AaveExecutor:
             logger.info("[AAVE][EXECUTOR][WITHDRAW] Transaction sent: %s", transaction_hash.hex())
             return transaction_hash.hex()
         except Exception as exception:
-            logger.error("[AAVE][EXECUTOR][WITHDRAW] Withdrawal execution failed: %s", exception)
+            logger.exception("[AAVE][EXECUTOR][WITHDRAW] Withdrawal execution failed: %s", exception)
             return None
 
     async def execute_supply(self, chain: str, asset_address: str, amount_in_wei: int) -> Optional[str]:
@@ -206,14 +204,13 @@ class AaveExecutor:
             transaction_hash = await client.eth.send_raw_transaction(signed_supply.rawTransaction)
             return transaction_hash.hex()
         except Exception as exception:
-            logger.error("[AAVE][EXECUTOR] Supply execution failed: %s", exception)
+            logger.exception("[AAVE][EXECUTOR] Supply execution failed: %s", exception)
             return None
 
     async def approve_and_execute_raw_transaction(
             self, chain: str, source_token: str, spender: str, amount_in_wei: int,
             to_address: str, tx_data: str, tx_value: int, gas_limit: int, chain_id_numeric: int
     ) -> Optional[str]:
-        """Approves a router (e.g., LI.FI) and executes a raw EVM transaction payload."""
         await self._initialize_provider(chain)
         client = self._web3_clients[chain]
 
@@ -253,7 +250,7 @@ class AaveExecutor:
             transaction_hash = await client.eth.send_raw_transaction(signed_tx.rawTransaction)
             return transaction_hash.hex()
         except Exception as exception:
-            logger.error("[ONCHAIN][EXECUTOR] Raw transaction failed: %s", exception)
+            logger.exception("[ONCHAIN][EXECUTOR] Raw transaction failed: %s", exception)
             return None
 
     async def fetch_erc20_balance(self, chain: str, token_address: str) -> int:

@@ -14,16 +14,16 @@ import {DcaBacktestSeriesPoint, DcaOrder, DcaStrategy} from '../../../core/model
 export class DcaStrategyPathProjectionComponent {
     public strategy = input.required<DcaStrategy>();
 
-    public readonly engineStatus = computed<string>(() => this.strategy().status);
+    public readonly engineStatus = computed<string>(() => this.strategy().strategy_status);
 
     private readonly mappedBacktestSeries = computed(() => {
         const strat = this.strategy();
-        if (!strat.backtest_payload) {
+        if (!strat.historical_backtest_payload) {
             return null;
         }
 
-        const baselineSeries: DcaBacktestSeriesPoint[] = strat.backtest_payload.dumb_dca_series;
-        const smartSeries: DcaBacktestSeriesPoint[] = strat.backtest_payload.smart_dca_series;
+        const baselineSeries: DcaBacktestSeriesPoint[] = strat.historical_backtest_payload.dumb_dca_series;
+        const smartSeries: DcaBacktestSeriesPoint[] = strat.historical_backtest_payload.smart_dca_series;
 
         if (!baselineSeries || baselineSeries.length === 0) {
             return null;
@@ -33,8 +33,8 @@ export class DcaStrategyPathProjectionComponent {
         const historicalEndTimestamp = new Date(baselineSeries[baselineSeries.length - 1].timestamp_iso).getTime();
         const historicalStartPrice = baselineSeries[0].execution_price;
 
-        const liveStartTimestamp = new Date(strat.start_date).getTime();
-        const liveEndTimestamp = new Date(strat.end_date).getTime();
+        const liveStartTimestamp = new Date(strat.strategy_start_date).getTime();
+        const liveEndTimestamp = new Date(strat.strategy_end_date).getTime();
 
         const livePrice = this.calculateCurrentLivePrice(strat);
         const priceMultiplier = (livePrice > 0 && historicalStartPrice > 0) ? (livePrice / historicalStartPrice) : 1;
@@ -81,7 +81,7 @@ export class DcaStrategyPathProjectionComponent {
             height: 400,
             toolbar: {show: false},
             background: 'transparent',
-            animations: {enabled: false}, // Indispensable pour les WS
+            animations: {enabled: false},
             zoom: {enabled: false}
         } as ApexChart,
         colors: ['#334155', '#ef4444', '#10b981'],
@@ -92,12 +92,12 @@ export class DcaStrategyPathProjectionComponent {
             type: 'datetime',
             labels: {
                 style: {colors: '#94a3b8'},
-                datetimeUTC: false // Force l'affichage en heure locale
+                datetimeUTC: false
             },
             axisBorder: {show: false}
         } as ApexXAxis,
         yaxis: {
-            tickAmount: 8, // Augmente la densité des traits horizontaux
+            tickAmount: 8,
             labels: {
                 style: {colors: '#94a3b8'},
                 formatter: (value: number) => `$${value.toFixed(0)}`
@@ -115,14 +115,14 @@ export class DcaStrategyPathProjectionComponent {
     };
 
     private calculateCurrentLivePrice(strategy: DcaStrategy): number {
-        if (!strategy.orders) {
+        if (!strategy.execution_orders) {
             return 0;
         }
-        const executedOrders = strategy.orders.filter((order: DcaOrder) => order.status === 'EXECUTED' && order.execution_price !== null);
+        const executedOrders = strategy.execution_orders.filter((order: DcaOrder) => order.order_status === 'EXECUTED' && order.actual_execution_price !== null);
         if (executedOrders.length === 0) {
             return 0;
         }
         executedOrders.sort((orderA, orderB) => new Date(orderB.executed_at as string).getTime() - new Date(orderA.executed_at as string).getTime());
-        return executedOrders[0].execution_price ?? 0;
+        return executedOrders[0].actual_execution_price ?? 0;
     }
 }

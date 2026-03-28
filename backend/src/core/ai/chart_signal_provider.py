@@ -1,72 +1,68 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Optional
 
 from src.configuration.config import settings
-from src.core.ai.chart_capture import ChartCaptureResult, ChartCaptureError, ChartCaptureService
-from src.core.ai.chart_openai_client import ChartAiOutput, ChartOpenAiClient
+from src.core.ai.chart_capture import ChartCaptureService, ChartCaptureError
+from src.core.ai.chart_openai_client import ChartOpenAiClient
+from src.core.ai.chart_structures import (
+    ChartAiSignal,
+    ChartAiOutput,
+    ChartCaptureResult,
+    ChartSignalCacheEntry
+)
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class ChartAiSignal:
-    """Chart-based AI signal for blending into the quality score."""
-    probability_tp1_before_sl: float
-    quality_score_delta: float
-    meta: Dict[str, Any]
+logger = get_logger(__name__)
 
 
 class ChartAiSignalProvider:
-    """
-    Orchestrates chart capture and OpenAI analysis to produce a compact signal.
-    Includes local caching and simple rate limiting.
-    """
-
     def __init__(self) -> None:
-        self._capture = ChartCaptureService()
-        self._client = ChartOpenAiClient()
-        self._last_minute_timestamps: list[float] = []
-        self._cache: Dict[str, tuple[float, ChartAiSignal]] = {}
+        self._capture_service = ChartCaptureService()
+        self._openai_client = ChartOpenAiClient()
+        self._request_window_timestamps: list[float] = []
+        self._signal_cache: dict[str, ChartSignalCacheEntry] = {}
 
-    def _rate_limit_ok(self) -> bool:
-        now = time.time()
-        self._last_minute_timestamps = [t for t in self._last_minute_timestamps if now - t < 60.0]
-        if len(self._last_minute_timestamps) >= int(settings.CHART_AI_MAX_REQUESTS_PER_MINUTE):
-            return False
-        self._last_minute_timestamps.append(now)
-        return True
+    def _is_rate_limit_exceeded(self) -> bool:
+        current_time = time.time()
+        self._request_window_timestamps = [
+            request_timestamp for request_timestamp in self._request_window_timestamps
+            if current_time - request_timestamp < 60.0
+        ]
 
-    def predict(
+        if len(self._request_window_timestamps) >= int(settings.CHART_AI_MAX_REQUESTS_PER_MINUTE):
+            return True
+
+        self._request_window_timestamps.append(current_time)
+        return False
+
+    def predict_market_signal(
             self,
             symbol: Optional[str],
             chain_name: Optional[str],
             pair_address: Optional[str],
             timeframe_minutes: int,
             lookback_minutes: int,
-            token_age_hours: float
+            token_age_hours: Optional[float] = None
     ) -> Optional[ChartAiSignal]:
-        """
-        Produce a probability that TP1 occurs before SL in the next 30–60 minutes,
-        along with a suggested delta to the baseline quality score.
-        """
         if not settings.CHART_AI_ENABLED:
             return None
-        key = f"{symbol or chain_name}:{pair_address}:{timeframe_minutes}:{lookback_minutes}"
-        now = time.time()
-        cached = self._cache.get(key)
-        if cached and (now - cached[0]) < float(settings.CHART_AI_MIN_CACHE_SECONDS):
-            return cached[1]
 
-        if not self._rate_limit_ok():
-            log.warning("ChartAI: rate limit reached, skipping for %s", key)
+        cache_lookup_key = f"{symbol or chain_name}:{pair_address}:{timeframe_minutes}:{lookback_minutes}"
+        current_timestamp = time.time()
+
+        cached_entry = self._signal_cache.get(cache_lookup_key)
+        if cached_entry and (current_timestamp - cached_entry.timestamp) < float(settings.CHART_AI_MIN_CACHE_SECONDS):
+            logger.debug("[AI][SIGNAL][PROVIDER][CACHE] Cache hit for %s", cache_lookup_key)
+            return cached_entry.signal
+
+        if self._is_rate_limit_exceeded():
+            logger.warning("[AI][SIGNAL][PROVIDER][LIMIT] Rate limit reached, skipping analysis for %s", cache_lookup_key)
             return None
 
         try:
-            capture: ChartCaptureResult = self._capture.capture_chart_png(
+            capture_result: ChartCaptureResult = self._capture_service.capture_chart_png(
                 symbol=symbol,
                 chain_name=chain_name,
                 pair_address=pair_address,
@@ -74,38 +70,45 @@ class ChartAiSignalProvider:
                 lookback_minutes=lookback_minutes,
                 token_age_hours=token_age_hours
             )
-        except ChartCaptureError as exc:
-            log.warning("ChartAI: capture failed for %s: %s", key, exc)
+        except ChartCaptureError as exception:
+            logger.warning("[AI][SIGNAL][PROVIDER][CAPTURE] Market chart capture failed for %s", cache_lookup_key, exc_info=exception)
             return None
 
-        analysis: Optional[ChartAiOutput] = self._client.analyze_chart_png(
-            png_bytes=capture.png_bytes,
+        ai_analysis: Optional[ChartAiOutput] = self._openai_client.analyze_chart_vision(
+            screenshot_bytes=capture_result.png_bytes,
             symbol=symbol,
             chain_name=chain_name,
             pair_address=pair_address,
             timeframe_minutes=timeframe_minutes,
             lookback_minutes=lookback_minutes,
         )
-        if analysis is None:
+
+        if ai_analysis is None:
+            logger.warning("[AI][SIGNAL][PROVIDER][OPENAI] OpenAI analysis returned empty payload for %s", cache_lookup_key)
             return None
 
-        prob = float(analysis.tp1_probability)
-        delta = float(analysis.quality_score_delta)
-
-        signal = ChartAiSignal(
-            probability_tp1_before_sl=prob,
-            quality_score_delta=delta,
-            meta={
-                "source": capture.source_name,
-                "timeframe_minutes": timeframe_minutes,
-                "lookback_minutes": lookback_minutes,
-                "trend_state": analysis.trend_state,
-                "momentum_bias": analysis.momentum_bias,
-                "patterns": analysis.patterns,
-                "screenshot_path": capture.file_path
-            },
+        generated_signal = ChartAiSignal(
+            take_profit_one_probability=ai_analysis.take_profit_one_probability,
+            quality_score_delta=ai_analysis.quality_score_delta,
+            source_name=capture_result.source_name,
+            timeframe_minutes=timeframe_minutes,
+            lookback_minutes=lookback_minutes,
+            trend_state=ai_analysis.trend_state,
+            momentum_bias=ai_analysis.momentum_bias,
+            detected_patterns=ai_analysis.detected_patterns,
+            screenshot_path=capture_result.file_path
         )
-        self._cache[key] = (now, signal)
-        log.info("ChartAI: generated signal p=%.3f delta=%.2f for %s", prob, delta, key)
-        log.debug("ChartAI: meta=%s", signal.meta)
-        return signal
+
+        self._signal_cache[cache_lookup_key] = ChartSignalCacheEntry(
+            timestamp=current_timestamp,
+            signal=generated_signal
+        )
+
+        logger.info(
+            "[AI][SIGNAL][PROVIDER][SUCCESS] Signal generated: probability=%.3f, delta=%.2f for %s",
+            generated_signal.take_profit_one_probability,
+            generated_signal.quality_score_delta,
+            cache_lookup_key
+        )
+
+        return generated_signal

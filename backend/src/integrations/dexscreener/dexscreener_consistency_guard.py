@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Deque, Dict, Optional
+from typing import Optional
+
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_logger
@@ -12,49 +12,35 @@ from src.logging.logger import get_logger
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
-class PairIdentity:
-    """
-    Stable identity for a traded pair (pool-aware).
-
-    The `key()` is used to partition internal state by chain and pool (pair address when available).
-    """
+class PairIdentity(BaseModel):
     chain: str
     token_address: str
     pair_address: str
 
-    def key(self) -> str:
-        strict_pair_or_token = self.pair_address if self.pair_address else self.token_address
-        return f"{self.chain}:{strict_pair_or_token}".lower()
+    def get_unique_key(self) -> str:
+        strict_pair_or_token_address = self.pair_address if self.pair_address else self.token_address
+        return f"{self.chain}:{strict_pair_or_token_address}".lower()
 
 
-@dataclass(frozen=True)
-class WindowActivity:
-    """
-    Activity snapshot for a time window.
+class WindowActivity(BaseModel):
+    buys: Optional[int] = None
+    sells: Optional[int] = None
 
-    Only `buys` and `sells` are modeled here as they are the most stable cross-sources signals.
-    Additional fields can be added later without changing the guard's logic.
-    """
-    buys: Optional[int]
-    sells: Optional[int]
-
-    def total_transactions(self) -> Optional[int]:
+    def get_total_transactions(self) -> Optional[int]:
         if self.buys is None or self.sells is None:
             return None
-        return int(self.buys + self.sells)
+        return self.buys + self.sells
 
 
-@dataclass(frozen=True)
-class Observation:
-    observation_date: Optional[datetime]
-    liquidity_usd: Optional[float]
-    fully_diluted_valuation_usd: Optional[float]
-    market_cap_usd: Optional[float]
-    window_5m: Optional[WindowActivity]
-    window_1h: Optional[WindowActivity]
-    window_6h: Optional[WindowActivity]
-    window_24h: Optional[WindowActivity]
+class Observation(BaseModel):
+    observation_date: Optional[datetime] = None
+    liquidity_usd: Optional[float] = None
+    fully_diluted_valuation_usd: Optional[float] = None
+    market_cap_usd: Optional[float] = None
+    window_5m: Optional[WindowActivity] = None
+    window_1h: Optional[WindowActivity] = None
+    window_6h: Optional[WindowActivity] = None
+    window_24h: Optional[WindowActivity] = None
 
 
 class ConsistencyVerdict(Enum):
@@ -62,247 +48,191 @@ class ConsistencyVerdict(Enum):
     REQUIRES_MANUAL_INTERVENTION = "REQUIRES_MANUAL_INTERVENTION"
 
 
-@dataclass
-class _State:
-    recent_fingerprints: Deque[str]
-    last_liquidity_usd: Optional[float]
-    last_fully_diluted_valuation_usd: Optional[float]
-    last_market_cap_usd: Optional[float]
-    last_txns_5m: Optional[int]
-    last_txns_1h: Optional[int]
-    last_txns_6h: Optional[int]
-    last_txns_24h: Optional[int]
+class StateRecord(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    recent_fingerprints: list[str] = Field(default_factory=list)
+    last_liquidity_usd: Optional[float] = None
+    last_fully_diluted_valuation_usd: Optional[float] = None
+    last_market_cap_usd: Optional[float] = None
+    last_transactions_5m: Optional[int] = None
+    last_transactions_1h: Optional[int] = None
+    last_transactions_6h: Optional[int] = None
+    last_transactions_24h: Optional[int] = None
 
 
-class DexConsistencyGuard:
-    """
-    Detect provider **inconsistency** and **multi-field abnormal jumps** on:
-
-      - liquidity_usd
-      - fully_diluted_valuation_usd
-      - market_cap_usd
-      - windowed transactions: 5m / 1h / 6h / 24h
-
-    This guard is designed to protect the runtime (including live positions)
-    against the well-known Dexscreener ABAB alternation bug and sudden
-    cross-field discontinuities. It deliberately **does not** run semantic
-    contradictions; push those to selection gates.
-    """
-
+class DexscreenerConsistencyGuard:
     def __init__(
             self,
-            *,
             window_size: int,
-            alternation_min_cycles: int,
+            alternation_minimum_cycles: int,
             jump_factor: float,
-            fields_mismatch_min: int,
+            fields_mismatch_minimum: int,
             staleness_horizon: timedelta,
     ) -> None:
-        self._window_size = max(2, int(window_size))
-        self._alternation_min_cycles = max(1, int(alternation_min_cycles))
-        self._jump_factor = max(1.0, float(jump_factor))
-        self._fields_mismatch_min = max(1, int(fields_mismatch_min))
-        self._staleness_horizon = staleness_horizon
-        self._states: Dict[str, _State] = {}
+        self.window_size = max(2, window_size)
+        self.alternation_minimum_cycles = max(1, alternation_minimum_cycles)
+        self.jump_factor = max(1.0, jump_factor)
+        self.fields_mismatch_minimum = max(1, fields_mismatch_minimum)
+        self.staleness_horizon = staleness_horizon
+        self.states_registry: dict[str, StateRecord] = {}
 
     @staticmethod
-    def _bucket_float(value: Optional[float], *, granularity: float) -> str:
+    def _compute_float_bucket(value: Optional[float], granularity: float) -> str:
         if value is None:
-            return "NA"
+            return "UNAVAILABLE"
         if value <= 0.0:
-            return "Z"
-        safe = max(granularity, 1e-12)
-        return f"{round(value / safe)}"
+            return "ZERO"
+        safe_granularity = max(granularity, 1e-12)
+        return f"{round(value / safe_granularity)}"
 
     @staticmethod
-    def _bucket_int(value: Optional[int], *, divisor: int) -> str:
+    def _compute_integer_bucket(value: Optional[int], divisor: int) -> str:
         if value is None:
-            return "NA"
+            return "UNAVAILABLE"
         if value <= 0:
-            return "Z"
-        safe = max(divisor, 1)
-        return f"{value // safe}"
+            return "ZERO"
+        safe_divisor = max(divisor, 1)
+        return f"{value // safe_divisor}"
 
     @staticmethod
-    def _total_txns(w: Optional[WindowActivity]) -> Optional[int]:
-        return w.total_transactions() if w else None
+    def _extract_total_transactions(window_activity: Optional[WindowActivity]) -> Optional[int]:
+        if window_activity is None:
+            return None
+        return window_activity.get_total_transactions()
 
-    def _fingerprint(self, o: Observation) -> str:
-        """
-        Build a coarse fingerprint that is resilient to small numeric noise, yet
-        switches when the upstream alternates pools.
-        """
-        l = self._bucket_float(o.liquidity_usd, granularity=10.0)
-        f = self._bucket_float(o.fully_diluted_valuation_usd, granularity=1000.0)
-        m = self._bucket_float(o.market_cap_usd, granularity=1000.0)
+    def _generate_fingerprint(self, observation: Observation) -> str:
+        liquidity_bucket = self._compute_float_bucket(value=observation.liquidity_usd, granularity=10.0)
+        valuation_bucket = self._compute_float_bucket(value=observation.fully_diluted_valuation_usd, granularity=1000.0)
+        market_cap_bucket = self._compute_float_bucket(value=observation.market_cap_usd, granularity=1000.0)
 
-        tx5 = self._bucket_int(self._total_txns(o.window_5m), divisor=5)
-        tx1 = self._bucket_int(self._total_txns(o.window_1h), divisor=10)
-        tx6 = self._bucket_int(self._total_txns(o.window_6h), divisor=50)
-        tx24 = self._bucket_int(self._total_txns(o.window_24h), divisor=200)
+        transactions_5m_bucket = self._compute_integer_bucket(value=self._extract_total_transactions(window_activity=observation.window_5m), divisor=5)
+        transactions_1h_bucket = self._compute_integer_bucket(value=self._extract_total_transactions(window_activity=observation.window_1h), divisor=10)
+        transactions_6h_bucket = self._compute_integer_bucket(value=self._extract_total_transactions(window_activity=observation.window_6h), divisor=50)
+        transactions_24h_bucket = self._compute_integer_bucket(value=self._extract_total_transactions(window_activity=observation.window_24h), divisor=200)
 
-        return f"l={l}|fdv={f}|mcap={m}|t5={tx5}|t1={tx1}|t6={tx6}|t24={tx24}"
+        return f"liquidity={liquidity_bucket}|valuation={valuation_bucket}|market_cap={market_cap_bucket}|transactions_5m={transactions_5m_bucket}|transactions_1h={transactions_1h_bucket}|transactions_6h={transactions_6h_bucket}|transactions_24h={transactions_24h_bucket}"
 
     @staticmethod
-    def _alternates(seq: Deque[str], min_cycles: int) -> bool:
-        """
-        True when the tail of 'seq' looks like A,B,A,B,... for at least 'min_cycles'.
-        """
-        needed = 2 * min_cycles
-        if len(seq) < needed:
+    def _detect_alternating_pattern(sequence: list[str], minimum_cycles: int) -> bool:
+        needed_elements = 2 * minimum_cycles
+        if len(sequence) < needed_elements:
             return False
-        tail = list(seq)[-needed:]
-        a, b = tail[0], tail[1]
-        if a == b:
+
+        tail_elements = sequence[-needed_elements:]
+        first_element = tail_elements[0]
+        second_element = tail_elements[1]
+
+        if first_element == second_element:
             return False
-        for idx, fp in enumerate(tail):
-            if fp != (a if idx % 2 == 0 else b):
+
+        for index, fingerprint in enumerate(tail_elements):
+            expected_element = first_element if index % 2 == 0 else second_element
+            if fingerprint != expected_element:
                 return False
+
         return True
 
     @staticmethod
-    def _ratio(current: Optional[float], previous: Optional[float]) -> Optional[float]:
-        if current is None or previous is None:
-            return None
-        if previous == 0.0:
-            return None
-        if current <= 0.0 or previous <= 0.0:
-            return None
-        return current / previous
+    def _has_value_jumped(current_value: Optional[float], previous_value: Optional[float], threshold_factor: float) -> bool:
+        if current_value is None or previous_value is None:
+            return False
+        if current_value == 0.0 and previous_value == 0.0:
+            return False
+        if current_value == 0.0 or previous_value == 0.0:
+            return True
+        if current_value < 0.0 or previous_value < 0.0:
+            return True
+
+        ratio = current_value / previous_value
+        return ratio >= threshold_factor or ratio <= (1.0 / threshold_factor)
 
     @staticmethod
-    def _jumped(current: Optional[float], previous: Optional[float], factor: float) -> bool:
-        """
-        Decide if a value has jumped abnormally between two observations.
-        - If either side is None → not enough info.
-        - 0 → positive or positive → 0 is considered a jump.
-        - Otherwise, compare ratio to the factor threshold.
-        """
-        if current is None or previous is None:
-            return False
-        if current == 0.0 and previous == 0.0:
-            return False
-        if current == 0.0 or previous == 0.0:
-            return True
-        if current < 0.0 or previous < 0.0:
-            return True
-        ratio = current / previous
-        return ratio >= factor or ratio <= 1.0 / factor
-
-    @staticmethod
-    def _now_is_stale(as_of: Optional[datetime], horizon: timedelta) -> bool:
-        if as_of is None:
+    def _is_observation_stale(observation_date: Optional[datetime], staleness_horizon: timedelta) -> bool:
+        if observation_date is None:
             return False
         try:
-            return (get_current_local_datetime() - as_of) > horizon
-        except Exception:
+            return (get_current_local_datetime() - observation_date) > staleness_horizon
+        except Exception as date_exception:
+            logger.warning("[DEXSCREENER][CONSISTENCY][STALENESS] Failed to compute staleness duration with error: %s", date_exception)
             return False
 
-    def observe(self, pair: PairIdentity, obs: Observation) -> ConsistencyVerdict:
-        """
-        Ingest one observation and decide whether the feed is inconsistent.
+    def _update_state_record(self, state_record: StateRecord, observation: Observation, fingerprint: str) -> None:
+        state_record.recent_fingerprints.append(fingerprint)
+        if len(state_record.recent_fingerprints) > self.window_size:
+            state_record.recent_fingerprints = state_record.recent_fingerprints[-self.window_size:]
 
-        Tripwires (in order):
-          1) Staleness guard: ignore acting on excessively old observations.
-          2) Multi-field jumps: if >= N fields jump simultaneously by factor F, flag.
-          3) Alternation: fingerprint ABAB... for 'alternation_min_cycles'.
+        state_record.last_liquidity_usd = observation.liquidity_usd
+        state_record.last_fully_diluted_valuation_usd = observation.fully_diluted_valuation_usd
+        state_record.last_market_cap_usd = observation.market_cap_usd
+        state_record.last_transactions_5m = self._extract_total_transactions(window_activity=observation.window_5m)
+        state_record.last_transactions_1h = self._extract_total_transactions(window_activity=observation.window_1h)
+        state_record.last_transactions_6h = self._extract_total_transactions(window_activity=observation.window_6h)
+        state_record.last_transactions_24h = self._extract_total_transactions(window_activity=observation.window_24h)
 
-        Returns:
-            ConsistencyVerdict
-        """
-        key = pair.key()
-        state = self._states.get(key)
-        if state is None:
-            state = _State(
-                recent_fingerprints=deque(maxlen=self._window_size),
-                last_liquidity_usd=None,
-                last_fully_diluted_valuation_usd=None,
-                last_market_cap_usd=None,
-                last_txns_5m=None,
-                last_txns_1h=None,
-                last_txns_6h=None,
-                last_txns_24h=None,
-            )
-            self._states[key] = state
+    def evaluate_consistency(self, pair_identity: PairIdentity, observation: Observation) -> ConsistencyVerdict:
+        unique_key = pair_identity.get_unique_key()
+        state_record = self.states_registry.get(unique_key)
 
-        # (1) If the event is too old, just record the fingerprint and update state silently.
-        if self._now_is_stale(obs.observation_date, self._staleness_horizon):
-            logger.debug("[DEX][CONSISTENCY][STALE] key=%s observation too old, skipping actions", key)
-            fp = self._fingerprint(obs)
-            state.recent_fingerprints.append(fp)
-            state.last_liquidity_usd = obs.liquidity_usd
-            state.last_fully_diluted_valuation_usd = obs.fully_diluted_valuation_usd
-            state.last_market_cap_usd = obs.market_cap_usd
-            state.last_txns_5m = self._total_txns(obs.window_5m)
-            state.last_txns_1h = self._total_txns(obs.window_1h)
-            state.last_txns_6h = self._total_txns(obs.window_6h)
-            state.last_txns_24h = self._total_txns(obs.window_24h)
+        if state_record is None:
+            state_record = StateRecord()
+            self.states_registry[unique_key] = state_record
+
+        if self._is_observation_stale(observation_date=observation.observation_date, staleness_horizon=self.staleness_horizon):
+            logger.debug("[DEXSCREENER][CONSISTENCY][EVALUATION] Observation for key %s is too old, skipping jump evaluation", unique_key)
+            fingerprint = self._generate_fingerprint(observation=observation)
+            self._update_state_record(state_record=state_record, observation=observation, fingerprint=fingerprint)
             return ConsistencyVerdict.OK
 
-        # (2) Multi-field synchronous jumps across the required set
-        jump_fields = 0
-        ratios_log: list[str] = []
+        jumped_fields_count = 0
+        ratios_log_entries: list[str] = []
 
-        def test_float(name: str, current: Optional[float], previous: Optional[float]) -> None:
-            nonlocal jump_fields
-            if self._jumped(current, previous, self._jump_factor):
-                jump_fields += 1
-                if current is not None and previous is not None and previous > 0.0 and current > 0.0:
-                    ratios_log.append(f"{name}={current / previous:.4f}")
+        def evaluate_float_metric(metric_name: str, current_metric_value: Optional[float], previous_metric_value: Optional[float]) -> None:
+            nonlocal jumped_fields_count
+            if self._has_value_jumped(current_value=current_metric_value, previous_value=previous_metric_value, threshold_factor=self.jump_factor):
+                jumped_fields_count += 1
+                if current_metric_value is not None and previous_metric_value is not None and previous_metric_value > 0.0 and current_metric_value > 0.0:
+                    ratios_log_entries.append(f"{metric_name}={current_metric_value / previous_metric_value:.4f}")
                 else:
-                    ratios_log.append(f"{name}=EDGE")
+                    ratios_log_entries.append(f"{metric_name}=EDGE_CASE")
 
-        def test_int(name: str, current: Optional[int], previous: Optional[int]) -> None:
-            nonlocal jump_fields
-            curf = float(current) if current is not None else None
-            prevf = float(previous) if previous is not None else None
-            if self._jumped(curf, prevf, self._jump_factor):
-                jump_fields += 1
-                if curf is not None and prevf is not None and prevf > 0.0 and curf > 0.0:
-                    ratios_log.append(f"{name}={curf / prevf:.4f}")
+        def evaluate_integer_metric(metric_name: str, current_metric_value: Optional[int], previous_metric_value: Optional[int]) -> None:
+            nonlocal jumped_fields_count
+            current_float_value = float(current_metric_value) if current_metric_value is not None else None
+            previous_float_value = float(previous_metric_value) if previous_metric_value is not None else None
+
+            if self._has_value_jumped(current_value=current_float_value, previous_value=previous_float_value, threshold_factor=self.jump_factor):
+                jumped_fields_count += 1
+                if current_float_value is not None and previous_float_value is not None and previous_float_value > 0.0 and current_float_value > 0.0:
+                    ratios_log_entries.append(f"{metric_name}={current_float_value / previous_float_value:.4f}")
                 else:
-                    ratios_log.append(f"{name}=EDGE")
+                    ratios_log_entries.append(f"{metric_name}=EDGE_CASE")
 
-        test_float("liquidity", obs.liquidity_usd, state.last_liquidity_usd)
-        test_float("fdv", obs.fully_diluted_valuation_usd, state.last_fully_diluted_valuation_usd)
-        test_float("mcap", obs.market_cap_usd, state.last_market_cap_usd)
-        test_int("tx5m", self._total_txns(obs.window_5m), state.last_txns_5m)
-        test_int("tx1h", self._total_txns(obs.window_1h), state.last_txns_1h)
-        test_int("tx6h", self._total_txns(obs.window_6h), state.last_txns_6h)
-        test_int("tx24h", self._total_txns(obs.window_24h), state.last_txns_24h)
+        evaluate_float_metric(metric_name="liquidity", current_metric_value=observation.liquidity_usd, previous_metric_value=state_record.last_liquidity_usd)
+        evaluate_float_metric(metric_name="fully_diluted_valuation", current_metric_value=observation.fully_diluted_valuation_usd, previous_metric_value=state_record.last_fully_diluted_valuation_usd)
+        evaluate_float_metric(metric_name="market_cap", current_metric_value=observation.market_cap_usd, previous_metric_value=state_record.last_market_cap_usd)
 
-        if jump_fields >= self._fields_mismatch_min:
+        evaluate_integer_metric(metric_name="transactions_5m", current_metric_value=self._extract_total_transactions(window_activity=observation.window_5m), previous_metric_value=state_record.last_transactions_5m)
+        evaluate_integer_metric(metric_name="transactions_1h", current_metric_value=self._extract_total_transactions(window_activity=observation.window_1h), previous_metric_value=state_record.last_transactions_1h)
+        evaluate_integer_metric(metric_name="transactions_6h", current_metric_value=self._extract_total_transactions(window_activity=observation.window_6h), previous_metric_value=state_record.last_transactions_6h)
+        evaluate_integer_metric(metric_name="transactions_24h", current_metric_value=self._extract_total_transactions(window_activity=observation.window_24h), previous_metric_value=state_record.last_transactions_24h)
+
+        if jumped_fields_count >= self.fields_mismatch_minimum:
             logger.info(
-                "[DEX][CONSISTENCY][MULTI_JUMP] key=%s jump_fields=%d/%d ratios=[%s] → [REQUIRES_MANUAL_INTERVENTION]",
-                key,
-                jump_fields,
-                7,
-                ", ".join(ratios_log),
+                "[DEXSCREENER][CONSISTENCY][EVALUATION] Multiple jumps detected for key %s with %d fields out of 7. Ratios: [%s]. Verdict: REQUIRES_MANUAL_INTERVENTION",
+                unique_key,
+                jumped_fields_count,
+                ", ".join(ratios_log_entries),
             )
-            fp = self._fingerprint(obs)
-            state.recent_fingerprints.append(fp)
-            state.last_liquidity_usd = obs.liquidity_usd
-            state.last_fully_diluted_valuation_usd = obs.fully_diluted_valuation_usd
-            state.last_market_cap_usd = obs.market_cap_usd
-            state.last_txns_5m = self._total_txns(obs.window_5m)
-            state.last_txns_1h = self._total_txns(obs.window_1h)
-            state.last_txns_6h = self._total_txns(obs.window_6h)
-            state.last_txns_24h = self._total_txns(obs.window_24h)
+            fingerprint = self._generate_fingerprint(observation=observation)
+            self._update_state_record(state_record=state_record, observation=observation, fingerprint=fingerprint)
             return ConsistencyVerdict.REQUIRES_MANUAL_INTERVENTION
 
-        # (3) Record fingerprint and test alternation last
-        fp = self._fingerprint(obs)
-        state.recent_fingerprints.append(fp)
-        state.last_liquidity_usd = obs.liquidity_usd
-        state.last_fully_diluted_valuation_usd = obs.fully_diluted_valuation_usd
-        state.last_market_cap_usd = obs.market_cap_usd
-        state.last_txns_5m = self._total_txns(obs.window_5m)
-        state.last_txns_1h = self._total_txns(obs.window_1h)
-        state.last_txns_6h = self._total_txns(obs.window_6h)
-        state.last_txns_24h = self._total_txns(obs.window_24h)
+        fingerprint = self._generate_fingerprint(observation=observation)
+        self._update_state_record(state_record=state_record, observation=observation, fingerprint=fingerprint)
 
-        if self._alternates(state.recent_fingerprints, self._alternation_min_cycles):
-            logger.info("[DEX][CONSISTENCY][ALTERNATION] key=%s detected AB pattern", key)
+        if self._detect_alternating_pattern(sequence=state_record.recent_fingerprints, minimum_cycles=self.alternation_minimum_cycles):
+            logger.info("[DEXSCREENER][CONSISTENCY][EVALUATION] Alternating pattern detected for key %s. Verdict: REQUIRES_MANUAL_INTERVENTION", unique_key)
             return ConsistencyVerdict.REQUIRES_MANUAL_INTERVENTION
 
         return ConsistencyVerdict.OK

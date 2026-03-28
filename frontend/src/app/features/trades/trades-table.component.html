@@ -32,12 +32,12 @@
 
 	<ng-template pTemplate="header">
 		<div class="flex items-center gap-3">
-			<span class="font-semibold text-lg">{{ selectedTrade()?.symbol }}</span>
-			@if (selectedTrade()?.chain) {
-				<p-tag [value]="selectedTrade()?.chain" severity="info"></p-tag>
+			<span class="font-semibold text-lg">{{ selectedTrade()?.token_symbol }}</span>
+			@if (selectedTrade()?.blockchain_network) {
+				<p-tag [value]="selectedTrade()?.blockchain_network" severity="info"></p-tag>
 			}
-			@if (selectedTrade()?.side) {
-				<p-tag [value]="selectedTrade()?.side" [severity]="selectedTrade()?.side === 'BUY' ? 'success' : 'warn'"></p-tag>
+			@if (selectedTrade()?.trade_side) {
+				<p-tag [value]="selectedTrade()?.trade_side" [severity]="selectedTrade()?.trade_side === 'BUY' ? 'success' : 'warn'"></p-tag>
 			}
 		</div>
 	</ng-template>
@@ -55,28 +55,28 @@
 					<div class="col-span-12 md:col-span-6">
 						<div class="opacity-70">Token</div>
 						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedTrade()?.tokenAddress }}
+							{{ selectedTrade()?.token_address }}
 							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy token address"
-							        (click)="copyToClipboard(selectedTrade()?.tokenAddress)"></button>
+							        (click)="copyToClipboard(selectedTrade()?.token_address)"></button>
 						</div>
 					</div>
 
 					<div class="col-span-12 md:col-span-6">
 						<div class="opacity-70">Pair</div>
 						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedTrade()?.pairAddress }}
+							{{ selectedTrade()?.pair_address }}
 							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy pair address"
-							        (click)="copyToClipboard(selectedTrade()?.pairAddress)"></button>
+							        (click)="copyToClipboard(selectedTrade()?.pair_address)"></button>
 						</div>
 					</div>
 
 					<div class="col-span-4">
 						<div class="opacity-70">Quantity</div>
-						<div class="font-semibold">{{ formatNumber(selectedTrade()?.qty, 2, 6) }}</div>
+						<div class="font-semibold">{{ formatNumber(selectedTrade()?.execution_quantity, 2, 6) }}</div>
 					</div>
 					<div class="col-span-4">
 						<div class="opacity-70">Price</div>
-						<div class="font-semibold">{{ formatCurrency(selectedTrade()?.price, 'USD', 4, 8) }}</div>
+						<div class="font-semibold">{{ formatCurrency(selectedTrade()?.execution_price, 'USD', 4, 8) }}</div>
 					</div>
 					<div class="col-span-4">
 						<div class="opacity-70">Order notional</div>
@@ -89,7 +89,7 @@
 					</div>
 					<div class="col-span-6">
 						<div class="opacity-70">Status</div>
-						<div class="font-semibold">{{ selectedTrade()?.status }}</div>
+						<div class="font-semibold">{{ selectedTrade()?.execution_status }}</div>
 					</div>
 
 					<p-divider class="col-span-12"></p-divider>

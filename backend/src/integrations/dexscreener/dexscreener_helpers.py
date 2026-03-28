@@ -15,46 +15,23 @@ log = get_logger(__name__)
 
 
 def _split_into_chunks(tokens: List[Token], chunk_size: int) -> List[List[str]]:
-    """
-    Split a list into equally sized chunks (last chunk may be smaller).
-
-    Args:
-        tokens: The list of items to split.
-        chunk_size: The desired chunk size; values <= 0 are coerced to 1.
-
-    Returns:
-        A list of chunks preserving the original order.
-    """
     chunks: List[List[str]] = []
     for i in range(0, len(tokens), chunk_size):
-        chunk = [token.tokenAddress for token in tokens[i: i + chunk_size]]
+        chunk = [token.token_address for token in tokens[i: i + chunk_size]]
         chunks.append(chunk)
     return chunks
 
 
 def _split_token_addressed_into_chunks(items: List[str], chunk_size: int) -> List[List[str]]:
-    """
-    Split a list into equally sized chunks (last chunk may be smaller).
-
-    Args:
-        items: The list of items to split.
-        chunk_size: The desired chunk size; values <= 0 are coerced to 1.
-
-    Returns:
-        A list of chunks preserving the original order.
-    """
     effective_size = max(1, int(chunk_size or 1))
     return [items[i: i + effective_size] for i in range(0, len(items), effective_size)]
 
 
 def _deduplicate_preserving_order(values: Iterable[Token]) -> List[Token]:
-    """
-    Deduplicate tokens while preserving their first-seen order.
-    """
     seen = set()
     deduped: List[Token] = []
     for token in values:
-        identifier = (token.symbol, token.chain, token.tokenAddress, token.pairAddress)
+        identifier = (token.symbol, token.chain, token.token_address, token.pair_address)
         if identifier not in seen:
             seen.add(identifier)
             deduped.append(token)
@@ -62,9 +39,6 @@ def _deduplicate_preserving_order(values: Iterable[Token]) -> List[Token]:
 
 
 def _deduplicate_token_addresses_preserving_order(values: Iterable[str]) -> List[str]:
-    """
-    Deduplicate string values while preserving their first-seen order.
-    """
     seen: set[str] = set()
     unique: List[str] = []
     for value in values:
@@ -75,12 +49,6 @@ def _deduplicate_token_addresses_preserving_order(values: Iterable[str]) -> List
 
 
 async def _http_get_json(client: httpx.AsyncClient, url: str) -> Union[Dict[str, JSON], List[JSON], None]:
-    """
-    Perform an HTTP GET request and parse the response as JSON.
-
-    Returns:
-        The decoded JSON document (object or array) or None if parsing fails.
-    """
     response = await client.get(url, timeout=HTTP_TIMEOUT_SECONDS)
     response.raise_for_status()
     try:
@@ -91,13 +59,6 @@ async def _http_get_json(client: httpx.AsyncClient, url: str) -> Union[Dict[str,
 
 
 def _extract_addresses(payload: Union[Dict[str, JSON], List[JSON], None]) -> List[str]:
-    """
-    Extract potential token addresses from various Dexscreener payload shapes.
-    Supports dicts and lists; gracefully ignores non-dict items.
-
-    Returns:
-        A list of addresses (possibly empty) discovered in the payload.
-    """
     addresses: List[str] = []
 
     def _pull_from_item(item: Dict[str, JSON]) -> None:
@@ -135,7 +96,6 @@ def _extract_addresses(payload: Union[Dict[str, JSON], List[JSON], None]) -> Lis
 
 
 def _chunk_strings(items: List[str], size: int) -> List[List[str]]:
-    """Split a list of strings into chunks of at most 'size' elements."""
     limit = max(1, int(size or 1))
     return [items[i: i + limit] for i in range(0, len(items), limit)]
 
@@ -145,9 +105,6 @@ async def _fetch_token_information_for_chain(
         chain_id: str,
         pair_addresses: List[str],
 ) -> List[DexscreenerTokenInformation]:
-    """
-    Fetch Dexscreener pairs for a given chain and **pair address** list.
-    """
     if not pair_addresses:
         return []
 
@@ -171,12 +128,6 @@ async def _fetch_token_information_list(
         client: httpx.AsyncClient,
         batch_addresses: List[str],
 ) -> List[DexscreenerTokenInformation]:
-    """
-    Fetch Dexscreener pairs for a batch of **base token addresses** with resilience.
-
-    Dexscreener sometimes returns HTTP 200 with {"pairs": null}.
-    For mixed batches, we split and retry to salvage partial results.
-    """
     if not batch_addresses:
         return []
 
@@ -221,10 +172,6 @@ async def _fetch_token_information_list(
 
 
 def _select_best_pair(pairs: List[DexscreenerTokenInformation]) -> Optional[DexscreenerTokenInformation]:
-    """
-    Select the 'best' pair using (liquidity.usd, volume.h24) as a score.
-    Used **only** by fetch_trending_candidates (per product policy).
-    """
     if not pairs:
         return None
 

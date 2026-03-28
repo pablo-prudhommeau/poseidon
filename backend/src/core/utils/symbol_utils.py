@@ -51,36 +51,6 @@ def _is_native_symbol(symbol: str, chain_key: str) -> bool:
 
 
 def get_currency_symbol(asset_symbol: str) -> str:
-    """
-    Maps an asset symbol to its typographical currency symbol.
-    Returns the original symbol if no specific typographical mapping is found.
-    """
-    if not asset_symbol:
-        return ""
-
-    symbol_upper = asset_symbol.upper()
-
-    if any(sub in symbol_upper for sub in ["USD", "DAI", "USDT", "USDC"]):
-        return "$"
-    if "EUR" in symbol_upper:
-        return "€"
-    if "BTC" in symbol_upper:
-        return "₿"
-    if "ETH" in symbol_upper:
-        return "Ξ"
-    if "SOL" in symbol_upper:
-        return "◎"
-    if "LINK" in symbol_upper:
-        return "⬡"
-
-    return asset_symbol
-
-
-def get_currency_symbol(asset_symbol: str) -> str:
-    """
-    Maps an asset symbol to its typographical currency symbol.
-    Returns the original symbol if no specific typographical mapping is found.
-    """
     if not asset_symbol:
         return ""
 

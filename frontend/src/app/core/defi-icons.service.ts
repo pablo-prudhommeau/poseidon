@@ -8,7 +8,7 @@ export class DefiIconsService {
     private readonly enableVerboseLogging = false;
 
     private readonly lsPrefix = 'poseidon.iconcache.';
-    private readonly lsTtlMs = 1000 * 60 * 60 * 24 * 7; // 7 days
+    private readonly lsTtlMs = 1000 * 60 * 60 * 24 * 7;
 
     private readonly dexImagePromiseCache = new Map<string, Promise<string | null>>();
 
@@ -22,9 +22,9 @@ export class DefiIconsService {
 
     public readonly tokenChainChipRenderer = (params: ICellRendererParams): HTMLElement => {
         const row = params.data ?? {};
-        const chainName = String(row.chain ?? '').toLowerCase();
-        const tokenAddress = String(row.address ?? row.tokenAddress ?? '').toLowerCase();
-        const tokenSymbol = String(row.symbol ?? params.value ?? '').toUpperCase();
+        const chainName = String(row.blockchain_network ?? '').toLowerCase();
+        const tokenAddress = String(row.token_address ?? '').toLowerCase();
+        const tokenSymbol = String(row.token_symbol ?? params.value ?? '').toUpperCase();
 
         const root = document.createElement('span');
         root.className = 'inline-flex items-center gap-2';
@@ -346,25 +346,17 @@ export class DefiIconsService {
     }
 
     private persistUrl(key: string, src: string): void {
-        try {
-            localStorage.setItem(this.lsPrefix + key, JSON.stringify({src, updatedAt: Date.now()}));
-        } catch {
-            // ignore quota
-        }
+        localStorage.setItem(this.lsPrefix + key, JSON.stringify({src, updatedAt: Date.now()}));
     }
 
     private async tryPersistAsDataUrl(key: string, src: string): Promise<void> {
-        try {
-            const resp = await fetch(src, {mode: 'cors', credentials: 'omit', cache: 'force-cache'});
-            if (!resp.ok) {
-                return;
-            }
-            const blob = await resp.blob();
-            const dataUrl = await this.blobToDataUrl(blob);
-            this.persistUrl(key, dataUrl);
-        } catch {
-            // ignore
+        const resp = await fetch(src, {mode: 'cors', credentials: 'omit', cache: 'force-cache'});
+        if (!resp.ok) {
+            return;
         }
+        const blob = await resp.blob();
+        const dataUrl = await this.blobToDataUrl(blob);
+        this.persistUrl(key, dataUrl);
     }
 
     private blobToDataUrl(blob: Blob): Promise<string> {

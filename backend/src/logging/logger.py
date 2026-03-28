@@ -1,4 +1,3 @@
-# src/logging/logger.py
 from __future__ import annotations
 
 import logging
@@ -8,8 +7,7 @@ from typing import Optional
 
 from src.configuration.config import settings
 
-# ANSI colors
-_COLORS = {
+_TERMINAL_COLORS: dict[str, str] = {
     "RESET": "\033[0m",
     "DIM": "\033[2m",
     "BOLD": "\033[1m",
@@ -22,7 +20,7 @@ _COLORS = {
     "CYAN": "\033[36m",
 }
 
-_LEVEL_EMOJI = {
+_LOG_LEVEL_EMOJIS: dict[str, str] = {
     "DEBUG": "🔍",
     "INFO": "ℹ️",
     "WARNING": "⚠️",
@@ -30,142 +28,140 @@ _LEVEL_EMOJI = {
     "CRITICAL": "🛑",
 }
 
-_LEVEL_COLOR = {
-    "DEBUG": _COLORS["CYAN"],
-    "INFO": _COLORS["GREEN"],
-    "WARNING": _COLORS["YELLOW"],
-    "ERROR": _COLORS["RED"],
-    "CRITICAL": _COLORS["MAGENTA"],
+_LOG_LEVEL_COLORS: dict[str, str] = {
+    "DEBUG": _TERMINAL_COLORS["CYAN"],
+    "INFO": _TERMINAL_COLORS["GREEN"],
+    "WARNING": _TERMINAL_COLORS["YELLOW"],
+    "ERROR": _TERMINAL_COLORS["RED"],
+    "CRITICAL": _TERMINAL_COLORS["MAGENTA"],
 }
 
-APP_NAMESPACE = "poseidon"
+_LOG_LEVEL_MAPPING: dict[str, int] = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+APPLICATION_NAMESPACE: str = "poseidon"
 
 
-def _level_from_str(value: str) -> int:
-    try:
-        return getattr(logging, (value or "INFO").upper())
-    except Exception:
-        return logging.INFO
+def _get_logging_level_from_string(level_string: str) -> int:
+    sanitized_level_string = (level_string or "INFO").upper()
+    if sanitized_level_string in _LOG_LEVEL_MAPPING:
+        return _LOG_LEVEL_MAPPING[sanitized_level_string]
+    return logging.INFO
 
 
-def _canonical_name(name: str) -> str:
-    """Map module logger names to the canonical 'poseidon.*' namespace."""
-    if name.startswith(APP_NAMESPACE + "."):
-        return name
-    if name == "src":
-        return APP_NAMESPACE
-    if name.startswith("src."):
-        return APP_NAMESPACE + "." + name[len("src."):]
-    return f"{APP_NAMESPACE}.{name}"
+def _get_canonical_logger_name(module_name: str) -> str:
+    if module_name.startswith(APPLICATION_NAMESPACE + "."):
+        return module_name
+    if module_name == "src":
+        return APPLICATION_NAMESPACE
+    if module_name.startswith("src."):
+        return APPLICATION_NAMESPACE + "." + module_name[len("src."):]
+    return f"{APPLICATION_NAMESPACE}.{module_name}"
 
 
-def _silence_logger(name: str, level: int) -> None:
-    lg = logging.getLogger(name)
-    lg.setLevel(level)
-    # Some libraries attach their own handlers with raw formats
-    lg.handlers.clear()
-    lg.propagate = False
+def _silence_logger_output(logger_name: str, target_level: int) -> None:
+    logger_instance = logging.getLogger(logger_name)
+    logger_instance.setLevel(target_level)
+    logger_instance.handlers.clear()
+    logger_instance.propagate = False
 
 
-class ColorFormatter(logging.Formatter):
-    """
-    Readable, colored formatter with emoji per level and UTC ISO-8601 timestamps.
-    Example:
-      2025-10-02 01:36:22.123+0000 ℹ️ INFO     poseidon.core.pnl - Realized P&L computed: total=9.54 recent_24h=9.54
-    """
-
-    def __init__(self, use_color: bool = True, datefmt: Optional[str] = None) -> None:
+class TerminalColorFormatter(logging.Formatter):
+    def __init__(self, is_color_enabled: bool = True, date_format: Optional[str] = None) -> None:
         super().__init__()
-        self.use_color = use_color
-        self.datefmt = datefmt or "%Y-%m-%d %H:%M:%S.%03d%z"
-        self.converter = time.localtime
+        self.is_color_enabled = is_color_enabled
+        self.date_format = date_format or "%Y-%m-%d %H:%M:%S"
+        self.time_converter = time.localtime
 
-    def format(self, record: logging.LogRecord) -> str:
-        ct = self.converter(record.created)
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", ct) + f".{int(record.msecs):03d}+0000"
+    def format(self, log_record: logging.LogRecord) -> str:
+        local_creation_time = self.time_converter(log_record.created)
+        base_timestamp = time.strftime(self.date_format, local_creation_time)
+        timezone_offset = time.strftime("%z", local_creation_time)
+        formatted_timestamp_with_milliseconds = f"{base_timestamp}.{int(log_record.msecs):03d}{timezone_offset}"
 
-        level_name = record.levelname.upper()
-        emoji = _LEVEL_EMOJI.get(level_name, "")
-        message = record.getMessage()
-        name = record.name or ""
+        level_name = log_record.levelname.upper()
+        emoji_indicator = _LOG_LEVEL_EMOJIS.get(level_name, "")
+        log_message = log_record.getMessage()
+        logger_name = log_record.name or ""
 
-        if self.use_color:
-            color = _LEVEL_COLOR.get(level_name, "")
-            reset = _COLORS["RESET"]
-            dim = _COLORS["DIM"]
-            line = f"{dim}{timestamp}{reset} {color}{emoji} {level_name:<8}{reset} {name} {dim}- {message}{reset}"
+        if self.is_color_enabled:
+            level_color = _LOG_LEVEL_COLORS.get(level_name, "")
+            color_reset = _TERMINAL_COLORS["RESET"]
+            color_dim = _TERMINAL_COLORS["DIM"]
+            formatted_log_line = f"{color_dim}{formatted_timestamp_with_milliseconds}{color_reset} {level_color}{emoji_indicator} {level_name:<8}{color_reset} {logger_name} {color_dim}- {log_message}{color_reset}"
         else:
-            line = f"{timestamp} {emoji} {level_name:<8} {name} - {message}"
+            formatted_log_line = f"{formatted_timestamp_with_milliseconds} {emoji_indicator} {level_name:<8} {logger_name} - {log_message}"
 
-        if record.exc_info:
-            line = f"{line}\n{self.formatException(record.exc_info)}"
-        return line
+        if log_record.exc_info:
+            formatted_log_line = f"{formatted_log_line}\n{self.formatException(log_record.exc_info)}"
+
+        return formatted_log_line
 
 
-def _install_console_handler(root: logging.Logger) -> None:
-    """Install a single console handler that does not filter by level (NOTSET)."""
-    for h in root.handlers:
-        if isinstance(h, logging.StreamHandler) and getattr(h, "_poseidon_handler", False):
-            h.setLevel(logging.NOTSET)
+def _install_console_stream_handler(root_logger: logging.Logger) -> None:
+    for existing_handler in root_logger.handlers:
+        if isinstance(existing_handler, logging.StreamHandler) and hasattr(existing_handler, "is_poseidon_custom_handler"):
+            existing_handler.setLevel(logging.NOTSET)
             return
 
-    use_color = sys.stderr.isatty() and (not bool(getattr(settings, "NO_COLOR", False)))
-    handler = logging.StreamHandler(stream=sys.stderr)
-    handler._poseidon_handler = True
-    handler.setLevel(logging.NOTSET)
-    handler.setFormatter(ColorFormatter(use_color=use_color))
-    root.addHandler(handler)
+    is_color_enabled = sys.stderr.isatty() and not bool(getattr(settings, "NO_COLOR", False))
+    stream_handler = logging.StreamHandler(stream=sys.stderr)
+    setattr(stream_handler, "is_poseidon_custom_handler", True)
+    stream_handler.setLevel(logging.NOTSET)
+    stream_handler.setFormatter(TerminalColorFormatter(is_color_enabled=is_color_enabled))
+    root_logger.addHandler(stream_handler)
 
 
 def init_logging() -> None:
-    """
-    Initialize logging with:
-    - UTC ISO-8601 timestamps
-    - Emoji per level
-    - Unified format for uvicorn/access/error + asyncio + websockets
-    """
-    root = logging.getLogger()
+    root_logger = logging.getLogger()
+    root_logger.setLevel(_get_logging_level_from_string(settings.LOG_LEVEL))
+    _install_console_stream_handler(root_logger=root_logger)
 
-    # Root level
-    root.setLevel(_level_from_str(settings.LOG_LEVEL))
-    _install_console_handler(root)
+    logging.getLogger(APPLICATION_NAMESPACE).setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_POSEIDON))
 
-    # All application loggers under 'poseidon' use LOG_LEVEL_POSEIDON
-    logging.getLogger(APP_NAMESPACE).setLevel(_level_from_str(settings.LOG_LEVEL_POSEIDON))
+    logging.getLogger("requests").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_REQUESTS))
+    logging.getLogger("urllib3").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_URLLIB3))
+    logging.getLogger("websockets").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_WEBSOCKETS))
+    logging.getLogger("httpx").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_HTTPX))
+    logging.getLogger("httpcore").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_HTTPCORE))
+    logging.getLogger("asyncio").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_ASYNCIO))
+    logging.getLogger("anyio").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_ANYIO))
+    logging.getLogger("openai").setLevel(_get_logging_level_from_string(settings.LOG_LEVEL_LIB_OPENAI))
 
-    # Tame noisy libs (configurable)
-    logging.getLogger("requests").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_REQUESTS))
-    logging.getLogger("urllib3").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_URLLIB3))
-    logging.getLogger("websockets").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_WEBSOCKETS))
-    logging.getLogger("httpx").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_HTTPX))
-    logging.getLogger("httpcore").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_HTTPCORE))
-    logging.getLogger("asyncio").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_ASYNCIO))
-    logging.getLogger("anyio").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_ANYIO))
-    logging.getLogger("openai").setLevel(_level_from_str(settings.LOG_LEVEL_LIB_OPENAI))
+    websockets_log_level = _get_logging_level_from_string(settings.LOG_LEVEL_LIB_WEBSOCKETS)
+    _silence_logger_output("websockets", websockets_log_level)
+    _silence_logger_output("websockets.server", websockets_log_level)
+    _silence_logger_output("websockets.client", websockets_log_level)
+    _silence_logger_output("wsproto", websockets_log_level)
+    _silence_logger_output("uvicorn.protocols.websockets", websockets_log_level)
 
-    # 🔇 Silence raw websocket/protocol traces
-    ws_level = _level_from_str(settings.LOG_LEVEL_LIB_WEBSOCKETS)
-    _silence_logger("websockets", ws_level)
-    _silence_logger("websockets.server", ws_level)
-    _silence_logger("websockets.client", ws_level)
-    _silence_logger("wsproto", ws_level)
-    _silence_logger("uvicorn.protocols.websockets", ws_level)
+    uvicorn_loggers = [
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "uvicorn.asgi",
+        "uvicorn.protocols.http",
+        "uvicorn.protocols.websockets",
+    ]
 
-    # Force uvicorn family to propagate to our root handler (same formatting)
-    for name in (
-            "uvicorn", "uvicorn.error", "uvicorn.access",
-            "uvicorn.asgi", "uvicorn.protocols.http", "uvicorn.protocols.websockets",
-    ):
-        lg = logging.getLogger(name)
-        lg.handlers.clear()
-        lg.setLevel(_level_from_str(settings.LOG_LEVEL))
-        lg.propagate = True
+    for uvicorn_logger_name in uvicorn_loggers:
+        uvicorn_logger_instance = logging.getLogger(uvicorn_logger_name)
+        uvicorn_logger_instance.handlers.clear()
+        uvicorn_logger_instance.setLevel(_get_logging_level_from_string(settings.LOG_LEVEL))
+        uvicorn_logger_instance.propagate = True
+
+    application_logger = get_logger(__name__)
+    application_logger.info("[LOGGING][SYSTEM][INIT] Application logging successfully initialized with local timezone synchronization")
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
-    """Return a logger in the canonical 'poseidon.*' namespace."""
-    base = name or __name__
-    full = _canonical_name(base)
-    logger = logging.getLogger(full)
-    logger.propagate = True
-    return logger
+def get_logger(module_name: Optional[str] = None) -> logging.Logger:
+    base_module_name = module_name or __name__
+    canonical_module_name = _get_canonical_logger_name(module_name=base_module_name)
+    application_logger = logging.getLogger(canonical_module_name)
+    application_logger.propagate = True
+    return application_logger

@@ -6,7 +6,7 @@ from src.configuration.config import settings
 from src.core.gates.contradictions import DexscreenerContradictionsGate, GateVerdict
 from src.core.gates.trending_scoring import ScoringEngine
 from src.core.structures.structures import Candidate
-from src.core.utils.trending_utils import preload_best_prices, recently_traded, _price_from
+from src.core.utils.trending_utils import preload_best_prices, recently_traded, get_price_from_token_information_list
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
 
@@ -24,13 +24,9 @@ class CandidateGatesStage:
     @staticmethod
     def _find_token_information_for_candidate(token_information_list: List[DexscreenerTokenInformation], candidate: Candidate) \
             -> Optional[DexscreenerTokenInformation]:
-        """
-        Try to find the TokenPrice object that matches the candidate.
-        Prefer exact (tokenAddress + pairAddress) match; fallback to tokenAddress only.
-        """
         preferred_pair: Optional[str] = candidate.pair_address if hasattr(candidate, "pair_address") else None
         for token_information in token_information_list:
-            same_token = token_information.base_token.address == candidate.token.tokenAddress
+            same_token = token_information.base_token.address == candidate.token.token_address
             if not same_token:
                 continue
             if preferred_pair and token_information.pair_address == preferred_pair:
@@ -43,10 +39,6 @@ class CandidateGatesStage:
     def apply_contradictions_gate(self, candidates: List[Candidate],
                                   token_information_list: List[DexscreenerTokenInformation]) -> List[
         Candidate]:
-        """
-        Filter out candidates failing semantic contradictions (FDV/Mcap, Liquidity/Mcap,
-        Volume↔Txns, Txns monotonicity).
-        """
         from src.core.jobs.trending.execution_stage import AnalyticsRecorder
 
         eligible: List[Candidate] = []
@@ -65,11 +57,10 @@ class CandidateGatesStage:
         return eligible
 
     def apply_statistics_gate(self, candidates: List[Candidate]) -> Tuple[List[Candidate], ScoringEngine]:
-        """Statistics scoring and filtering."""
-        engine = ScoringEngine().fit(candidates)
+        engine = ScoringEngine().fit_scalers_to_cohort(candidates)
         ready: List[Candidate] = []
         for candidate in candidates:
-            stat_score = engine.stat_score(candidate)
+            stat_score = engine.compute_statistics_score(candidate)
             candidate.statistics_score = stat_score
             if stat_score >= self.minimum_statistics_score:
                 ready.append(candidate)
@@ -87,7 +78,6 @@ class CandidateGatesStage:
     def apply_risk_and_price_gates(self, candidates: List[Candidate],
                                    token_information_list: List[DexscreenerTokenInformation]) -> \
             List[Candidate]:
-        """Cooldown, risk manager, and price sanity checks."""
         from src.core.gates.risk_manager import AdaptiveRiskManager
         from src.core.jobs.trending.execution_stage import AnalyticsRecorder
 
@@ -98,21 +88,21 @@ class CandidateGatesStage:
         eligible: List[Candidate] = []
         for candidate in sorted(candidates, key=lambda x: x.statistics_score, reverse=True):
             if candidate.dexscreener_token_information.base_token.address and recently_traded(
-                    candidate.dexscreener_token_information.base_token.address, minutes=cooldown_minutes):
+                    candidate.dexscreener_token_information.base_token.address, time_window_minutes=cooldown_minutes):
                 log.debug("[TREND][GATE][COOLDOWN] %s", candidate.dexscreener_token_information.base_token.symbol)
                 AnalyticsRecorder.persist_and_broadcast_skip(candidate, len(eligible) + 1, "COOLDOWN")
                 continue
 
             pre_decision = risk_manager.pre_entry_decision(candidate)
-            if not pre_decision.should_buy:
+            if not pre_decision.is_valid_for_entry:
                 log.debug("[TREND][GATE][RISK] %s — %s", candidate.dexscreener_token_information.base_token.symbol,
-                          pre_decision.reason)
+                          pre_decision.decision_reason)
                 AnalyticsRecorder.persist_and_broadcast_skip(
-                    candidate, len(eligible) + 1, f"RISK:{pre_decision.reason}"
+                    candidate, len(eligible) + 1, f"RISK:{pre_decision.decision_reason}"
                 )
                 continue
 
-            dex_price = _price_from(token_information_list, candidate)
+            dex_price = get_price_from_token_information_list(token_information_list, candidate)
             if dex_price is None or dex_price <= 0.0:
                 log.debug("[TREND][GATE][PRICE] Invalid DEX price for %s",
                           candidate.dexscreener_token_information.base_token.symbol)

@@ -1,39 +1,36 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Optional
 
 from src.api.http.api_schemas import AnalyticsPayload
 from src.api.serializers import serialize_analytics
 from src.api.websocket.ws_manager import ws_manager
 from src.logging.logger import get_logger
-from src.persistence.dao.analytics import insert_analytics, attach_outcome_for_trade
+from src.persistence.dao.analytics import insert_analytics_record, attach_trade_outcome_to_analytics
 from src.persistence.db import _session
 from src.persistence.models import Analytics
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class TelemetryService:
-    """
-    Persistance + diffusion WebSocket des analytics.
-
-    IMPORTANT : les événements live sont alignés sur le reste du flux:
-      → { "type": "analytics", "payload": <row> }
-    """
-
     @staticmethod
-    def record_analytics_event(analytics: Analytics) -> Dict[str, Any]:
-        """
-        Persiste une ligne analytics et diffuse un événement WebSocket 'analytics'.
-        Toutes les colonnes sont remplies (0.0 / {} par défaut).
-        """
-        with _session() as db:
-            insert_analytics(db, analytics)
-            data = serialize_analytics(analytics)
+    def record_analytics_event(analytics_record: Analytics) -> AnalyticsPayload:
+        logger.debug("[WEBSOCKET][TELEMETRY][RECORD] Initiating analytics event recording process")
 
-        ws_manager.broadcast_json_threadsafe({"type": "analytics", "payload": data})
-        return data
+        with _session() as db:
+            insert_analytics_record(db, analytics_record)
+            serialized_payload = serialize_analytics(analytics_record)
+
+        logger.info("[WEBSOCKET][TELEMETRY][RECORD] Successfully recorded analytics event")
+
+        ws_manager.broadcast_json_payload_threadsafe({
+            "type": "analytics",
+            "payload": serialized_payload.model_dump(mode="json")
+        })
+
+        return serialized_payload
 
     @staticmethod
     def link_trade_outcome(
@@ -44,27 +41,34 @@ class TelemetryService:
             pnl_usd: float,
             holding_minutes: float,
             was_profit: bool,
-            exit_reason: str = "",
-    ) -> AnalyticsPayload:
-        """
-        Rattache un outcome réalisé à la dernière ligne analytics du token
-        et rediffuse un événement 'analytics' (alignement).
-        """
+            exit_reason: Optional[str] = None,
+    ) -> Optional[AnalyticsPayload]:
+        logger.debug("[WEBSOCKET][TELEMETRY][OUTCOME] Initiating trade outcome linkage for trade id %s", trade_id)
+
         with _session() as db:
-            row = attach_outcome_for_trade(
+            analytics_record = attach_trade_outcome_to_analytics(
                 db,
-                address=token_address,
-                closed_at=closed_at,
-                trade_id=trade_id,
-                pnl_pct=pnl_pct,
-                pnl_usd=pnl_usd,
-                holding_minutes=holding_minutes,
-                was_profit=was_profit,
+                token_address=token_address,
+                closed_at_timestamp=closed_at,
+                trade_identifier=trade_id,
+                profit_and_loss_percentage=pnl_pct,
+                profit_and_loss_usd=pnl_usd,
+                holding_duration_minutes=holding_minutes,
+                was_profitable=was_profit,
                 exit_reason=exit_reason,
             )
-            if not row:
-                return None
-            data = serialize_analytics(row)
 
-        ws_manager.broadcast_json_threadsafe({"type": "analytics", "payload": data})
-        return data
+            if not analytics_record:
+                logger.warning("[WEBSOCKET][TELEMETRY][OUTCOME] Trade outcome linkage failed, no analytics record found for trade id %s", trade_id)
+                return None
+
+            serialized_payload = serialize_analytics(analytics_record)
+
+        logger.info("[WEBSOCKET][TELEMETRY][OUTCOME] Successfully linked outcome for trade id %s", trade_id)
+
+        ws_manager.broadcast_json_payload_threadsafe({
+            "type": "analytics",
+            "payload": serialized_payload.model_dump(mode="json")
+        })
+
+        return serialized_payload

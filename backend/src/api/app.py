@@ -14,25 +14,18 @@ from src.core.jobs.dca_job import dca_job as aave_dca
 from src.core.jobs.orchestrator_job import ensure_started, get_status
 from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
 from src.logging.logger import get_logger
-from src.persistence.db import init_db
+from src.persistence.db import initialize_database
 
 log = get_logger(__name__)
 
 
 def _parse_allowed_origins(env_value: str) -> List[str]:
-    """Parse a comma-separated CORS origins string into a clean list."""
     return [origin.strip() for origin in env_value.split(",") if origin.strip()]
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application.
-
-    Returns:
-        FastAPI: Configured Poseidon API application.
-    """
     app = FastAPI(title="Poseidon API")
 
-    # CORS configuration
     cors_origins_env = os.getenv(
         "CORS_ORIGINS",
         "http://localhost:4200,http://127.0.0.1:4200",
@@ -49,10 +42,16 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def on_startup() -> None:
-        """Initialize DB, bind the WebSocket manager to the current loop, and start the orchestrator."""
-        init_db()
-        ws_manager.attach_current_loop()
+        initialize_database()
+        ws_manager.attach_current_event_loop()
         ensure_started()
+
+        # Resync pending DCA approvals
+        from src.persistence.db import DatabaseSessionLocal
+        from src.core.dca.dca_manager import DcaManager
+        with DatabaseSessionLocal() as session:
+            manager = DcaManager(session)
+            manager.resync_waiting_approvals()
 
         asyncio.create_task(aave_sentinel.start())
         log.info("Aave Sentinel task scheduled.")
@@ -62,20 +61,16 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:
-        """Clean shutdown of services."""
         await aave_sentinel.stop()
 
     @app.get("/api/status")
     def api_status() -> Dict[str, Any]:
-        """Return a minimal health/status payload for the UI."""
         return {"ok": True, "status": get_status()}
 
-    # Routers
     app.include_router(ws_router)
     app.include_router(http_router)
 
     return app
 
 
-# Expose an application instance for WSGI/ASGI servers.
 app = create_app()

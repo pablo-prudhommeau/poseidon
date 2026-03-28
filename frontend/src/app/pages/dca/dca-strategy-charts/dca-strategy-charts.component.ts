@@ -14,17 +14,17 @@ export class DcaStrategyChartsComponent {
 
     private readonly mappedMarketAndSmartData = computed(() => {
         const strat = this.strategy();
-        if (!strat.backtest_payload?.smart_dca_series || !strat.backtest_payload?.dumb_dca_series) {
+        if (!strat.historical_backtest_payload?.smart_dca_series || !strat.historical_backtest_payload?.dumb_dca_series) {
             return null;
         }
 
-        const smartSeries: DcaBacktestSeriesPoint[] = strat.backtest_payload.smart_dca_series;
-        const baselineSeries: DcaBacktestSeriesPoint[] = strat.backtest_payload.dumb_dca_series;
+        const smartSeries: DcaBacktestSeriesPoint[] = strat.historical_backtest_payload.smart_dca_series;
+        const baselineSeries: DcaBacktestSeriesPoint[] = strat.historical_backtest_payload.dumb_dca_series;
 
         const historicalStartTimestamp = new Date(baselineSeries[0].timestamp_iso).getTime();
         const historicalEndTimestamp = new Date(baselineSeries[baselineSeries.length - 1].timestamp_iso).getTime();
-        const liveStartTimestamp = new Date(strat.start_date).getTime();
-        const liveEndTimestamp = new Date(strat.end_date).getTime();
+        const liveStartTimestamp = new Date(strat.strategy_start_date).getTime();
+        const liveEndTimestamp = new Date(strat.strategy_end_date).getTime();
 
         const historicalStartPrice = baselineSeries[0].execution_price;
         const livePrice = this.calculateCurrentLivePrice(strat);
@@ -62,8 +62,8 @@ export class DcaStrategyChartsComponent {
 
     public readonly dryPowderSeries = computed<number[]>(() => {
         const strat = this.strategy();
-        const startTimeTimestamp = new Date(strat.start_date).getTime();
-        const endTimeTimestamp = new Date(strat.end_date).getTime();
+        const startTimeTimestamp = new Date(strat.strategy_start_date).getTime();
+        const endTimeTimestamp = new Date(strat.strategy_end_date).getTime();
         const currentTimestamp = Date.now();
 
         let timeElapsedPercentage = 0;
@@ -73,22 +73,22 @@ export class DcaStrategyChartsComponent {
             timeElapsedPercentage = ((currentTimestamp - startTimeTimestamp) / (endTimeTimestamp - startTimeTimestamp)) * 100;
         }
 
-        const progressPercentage = strat.total_budget > 0 ? (strat.deployed_amount / strat.total_budget) * 100 : 0;
+        const progressPercentage = strat.total_allocated_budget > 0 ? (strat.total_deployed_amount / strat.total_allocated_budget) * 100 : 0;
 
         return [timeElapsedPercentage, progressPercentage];
     });
 
     public readonly jitterSeries = computed(() => {
         const strat = this.strategy();
-        if (!strat.orders) {
+        if (!strat.execution_orders) {
             return [];
         }
-        const scatterData = strat.orders
-            .filter((order: DcaOrder) => order.status === 'EXECUTED' && order.execution_price !== null)
+        const scatterData = strat.execution_orders
+            .filter((order: DcaOrder) => order.order_status === 'EXECUTED' && order.actual_execution_price !== null)
             .map((order: DcaOrder) => {
                 const executionDate = new Date(order.executed_at as string);
                 const hourOfDay = executionDate.getHours() + (executionDate.getMinutes() / 60);
-                return [hourOfDay, order.execution_price as number];
+                return [hourOfDay, order.actual_execution_price as number];
             });
         return [{name: "Snipes", data: scatterData}];
     });
@@ -137,14 +137,14 @@ export class DcaStrategyChartsComponent {
     };
 
     private calculateCurrentLivePrice(strategy: DcaStrategy): number {
-        if (!strategy.orders) {
+        if (!strategy.execution_orders) {
             return 0;
         }
-        const executedOrders = strategy.orders.filter((o: DcaOrder) => o.status === 'EXECUTED' && o.execution_price !== null);
+        const executedOrders = strategy.execution_orders.filter((o: DcaOrder) => o.order_status === 'EXECUTED' && o.actual_execution_price !== null);
         if (executedOrders.length === 0) {
             return 0;
         }
         executedOrders.sort((a, b) => new Date(b.executed_at as string).getTime() - new Date(a.executed_at as string).getTime());
-        return executedOrders[0].execution_price ?? 0;
+        return executedOrders[0].actual_execution_price ?? 0;
     }
 }

@@ -1,4 +1,3 @@
-# backend/src/core/risk/risk_manager.py
 from __future__ import annotations
 
 import statistics
@@ -12,14 +11,6 @@ log = get_logger(__name__)
 
 
 class AdaptiveRiskManager:
-    """
-    Adaptive risk & execution utilities:
-      - Pre-entry anti-chase filter (avoid top-ticking exhaustion spikes)
-      - ATR-like volatility proxy to derive TP1/TP2/SL
-      - Risk-based sizing multiplier
-      - Post-TP1 stop tightening helper
-    """
-
     def __init__(self) -> None:
         self.max_abs_percent_5m: float = settings.DEXSCREENER_MAX_ABS_M5_PCT
         self.max_abs_percent_1h: float = settings.DEXSCREENER_MAX_ABS_H1_PCT
@@ -33,10 +24,6 @@ class AdaptiveRiskManager:
 
     @staticmethod
     def _prices_to_simple_returns(prices: Sequence[float]) -> List[float]:
-        """
-        Convert a sequence of positive prices into simple returns.
-        Returns an empty list if not enough valid points are available.
-        """
         if prices is None or len(prices) < 2:
             return []
 
@@ -50,11 +37,6 @@ class AdaptiveRiskManager:
         return returns
 
     def _estimate_atr_like_volatility(self, candidate: Candidate) -> Optional[float]:
-        """
-        Robust ATR-like volatility proxy (fractional, e.g. 0.07 for 7%):
-          - Prefer sparkline arrays when present
-          - Fallback to dispersion of percent_5m / percent_1h if needed
-        """
         token_information = candidate.dexscreener_token_information
         pct_5m = token_information.price_change.m5
         pct_1h = token_information.price_change.h1
@@ -77,14 +59,6 @@ class AdaptiveRiskManager:
         return float(max(0.01, min(0.30, statistics.fmean(window))))
 
     def pre_entry_decision(self, candidate: Candidate) -> PreEntryDecision:
-        """
-        Decide if we should skip a buy now (anti-chase and basic sanity checks).
-
-        Heuristics:
-          - Enforce a minimum liquidity floor.
-          - Prevent chasing when short-term (%5m) and hourly (%1h) are already extended.
-          - Discourage entries with weak buy flow when price is already spiking.
-        """
         token_information = candidate.dexscreener_token_information
         symbol = token_information.base_token.symbol
         liquidity_usd = float(token_information.liquidity.usd)
@@ -111,46 +85,41 @@ class AdaptiveRiskManager:
                       symbol, liquidity_usd, self.min_liquidity_usd)
             diag = RiskDiagnostics(
                 liquidity_usd=liquidity_usd,
-                percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
-                percent_24h=float(pct_24h or 0.0),
-                buy_ratio=buy_ratio)
-            return PreEntryDecision(should_buy=False, reason="low_liquidity", diagnostics=diag.as_plain_dict())
+                percent_change_5m=float(pct_5m or 0.0), percent_change_1h=float(pct_1h or 0.0), percent_change_6h=float(pct_6h or 0.0),
+                percent_change_24h=float(pct_24h or 0.0),
+                buy_to_sell_ratio=buy_ratio)
+            return PreEntryDecision(is_valid_for_entry=False, decision_reason="low_liquidity", risk_diagnostics_map=diag.as_plain_dict())
 
         if pct_5m is not None and abs(pct_5m) > self.max_abs_percent_5m and (
                 pct_1h or 0.0) > self.max_abs_percent_1h * 0.7:
             log.debug("[RISK][PRE-ENTRY][DROP:SPIKE] %s pct5m=%.1f pct1h=%.1f", symbol, pct_5m or -1.0, pct_1h or -1.0)
             diag = RiskDiagnostics(
                 liquidity_usd=liquidity_usd,
-                percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
-                percent_24h=float(pct_24h or 0.0),
-                buy_ratio=buy_ratio
+                percent_change_5m=float(pct_5m or 0.0), percent_change_1h=float(pct_1h or 0.0), percent_change_6h=float(pct_6h or 0.0),
+                percent_change_24h=float(pct_24h or 0.0),
+                buy_to_sell_ratio=buy_ratio
             )
-            return PreEntryDecision(should_buy=False, reason="overextended_spike", diagnostics=diag.as_plain_dict())
+            return PreEntryDecision(is_valid_for_entry=False, decision_reason="overextended_spike", risk_diagnostics_map=diag.as_plain_dict())
 
         if buy_ratio < 0.48 and (pct_5m or 0.0) > 6.0:
             log.debug("[RISK][PRE-ENTRY][DROP:WEAK_FLOW] %s buy_ratio=%.2f", symbol, buy_ratio)
             diag = RiskDiagnostics(
                 liquidity_usd=liquidity_usd,
-                percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
-                percent_24h=float(pct_24h or 0.0),
-                buy_ratio=buy_ratio
+                percent_change_5m=float(pct_5m or 0.0), percent_change_1h=float(pct_1h or 0.0), percent_change_6h=float(pct_6h or 0.0),
+                percent_change_24h=float(pct_24h or 0.0),
+                buy_to_sell_ratio=buy_ratio
             )
-            return PreEntryDecision(should_buy=False, reason="weak_buy_flow", diagnostics=diag.as_plain_dict())
+            return PreEntryDecision(is_valid_for_entry=False, decision_reason="weak_buy_flow", risk_diagnostics_map=diag.as_plain_dict())
 
         diag = RiskDiagnostics(
             liquidity_usd=liquidity_usd,
-            percent_5m=float(pct_5m or 0.0), percent_1h=float(pct_1h or 0.0), percent_6h=float(pct_6h or 0.0),
-            percent_24h=float(pct_24h or 0.0),
-            buy_ratio=buy_ratio
+            percent_change_5m=float(pct_5m or 0.0), percent_change_1h=float(pct_1h or 0.0), percent_change_6h=float(pct_6h or 0.0),
+            percent_change_24h=float(pct_24h or 0.0),
+            buy_to_sell_ratio=buy_ratio
         )
-        return PreEntryDecision(should_buy=True, reason="ok", diagnostics=diag.as_plain_dict())
+        return PreEntryDecision(is_valid_for_entry=True, decision_reason="ok", risk_diagnostics_map=diag.as_plain_dict())
 
     def compute_thresholds(self, entry_price: float, candidate: Candidate) -> Thresholds:
-        """
-        Compute TP1 / TP2 / SL using an ATR-like volatility proxy (fractional).
-        The stop fraction is clamped to a safe floor/cap to avoid both noise exits
-        and catastrophic risk.
-        """
         if entry_price is None or entry_price <= 0.0:
             raise ValueError("entry_price must be > 0")
 
@@ -173,13 +142,9 @@ class AdaptiveRiskManager:
             "[RISK][THRESHOLDS][DETAILS] stop_frac=%.3f tp1_frac=%.3f tp2_frac=%.3f (defaults tp1=%.3f tp2=%.3f)",
             stop_fraction, tp1_fraction, tp2_fraction, self.tp1_exit_fraction_default, self.tp2_exit_fraction_default,
         )
-        return Thresholds(take_profit_tp1=tp1, take_profit_tp2=tp2, stop_loss=stop)
+        return Thresholds(take_profit_one=tp1, take_profit_two=tp2, stop_loss=stop)
 
     def post_tp1_adjustments(self, entry_price: float, current_stop: float, tp1_price: float) -> float:
-        """
-        Raise the stop after TP1 to lock in profit while keeping room for trend continuation.
-        Adds a small fee/slippage buffer and a cushion based on the TP1 distance.
-        """
         if entry_price is None or entry_price <= 0.0:
             raise ValueError("entry_price must be > 0")
         if current_stop is None or current_stop <= 0.0:
@@ -199,10 +164,6 @@ class AdaptiveRiskManager:
         return new_stop
 
     def size_multiplier(self, candidate: Candidate) -> float:
-        """
-        Return a down-sizing multiplier in [0.5 .. 1.0] depending on realized volatility.
-        Targets a stable per-position volatility exposure.
-        """
         volatility = self._estimate_atr_like_volatility(candidate) or self.default_volatility_fraction
         target = self.target_position_volatility_fraction
 

@@ -13,5 +13,6 @@ if __name__ == "__main__":
         "src.api.app:create_app",
         factory=True,
         host=settings.API_HOST,
-        port=settings.API_PORT
+        port=settings.API_PORT,
+        reload=True
     )

@@ -1,6 +1,3 @@
-"""
-Aave V3 Contract ABIs and Constants
-"""
 from decimal import Decimal
 from typing import Final, List, Any
 

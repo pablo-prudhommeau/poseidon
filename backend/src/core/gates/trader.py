@@ -4,7 +4,7 @@ import asyncio
 from typing import List, Optional
 
 from src.api.serializers import serialize_trade
-from src.api.websocket.ws_hub import _recompute_positions_portfolio_analytics_and_broadcast
+from src.api.websocket.ws_hub import recompute_metrics_and_broadcast
 from src.api.websocket.ws_manager import ws_manager
 from src.configuration.config import settings
 from src.core.gates.risk_manager import AdaptiveRiskManager
@@ -17,44 +17,24 @@ from src.integrations.dexscreener.dexscreener_structures import DexscreenerToken
 from src.logging.logger import get_logger
 from src.persistence.dao import trades
 from src.persistence.db import _session
-from src.persistence.models import Status
+from src.persistence.models import ExecutionStatus
 from src.persistence.service import check_thresholds_and_autosell
 
 log = get_logger(__name__)
 
 
 class Trader:
-    """
-    Main trading coordinator.
-
-    PAPER mode by default; optionally supports LIVE execution.
-
-    Responsibilities:
-        - Pair-aware price discovery (exact pairAddress only)
-        - Risk thresholds computation
-        - Paper trade persistence and auto-sell handling
-        - Live execution via LI.FI route (EVM or Solana)
-        - Portfolio recomputation and WebSocket broadcasts
-    """
-
     def __init__(self) -> None:
         self.paper_mode_enabled: bool = settings.PAPER_MODE
 
     def _fetch_dex_price_for_token(self, token: Token) -> Optional[float]:
-        """
-        Return a live Dexscreener USD price for a single Token using the synchronous client.
-
-        Safety:
-            - If a running event loop is detected, skip the sync call to avoid blocking.
-            - Only returns a price when Dexscreener has data for the exact pairAddress.
-        """
         try:
             try:
                 asyncio.get_running_loop()
                 log.debug("[TRADER][PRICE][DEX] Event loop detected — skip sync price fetch for %s", token)
                 return None
             except RuntimeError:
-                pass  # no loop in this thread → safe to run sync client
+                pass
 
             token_information_list: List[DexscreenerTokenInformation] = fetch_dexscreener_token_information_list_sync(
                 [token])
@@ -64,7 +44,7 @@ class Trader:
 
             for toke_information in token_information_list:
                 if (
-                        toke_information.pair_address == token.pairAddress
+                        toke_information.pair_address == token.pair_address
                         and toke_information.price_usd > 0.0
                 ):
                     log.debug("[TRADER][PRICE][DEX] Price fetched for %s = %.12f", token, toke_information.price_usd)
@@ -77,17 +57,13 @@ class Trader:
             return None
 
     def _schedule_portfolio_rebroadcast(self) -> None:
-        """
-        Schedule a portfolio recomputation if a running asyncio loop is available.
-        Uses call_soon_threadsafe to avoid 'Task was destroyed' warnings.
-        """
         try:
             loop = asyncio.get_running_loop()
             if not loop.is_running() or loop.is_closed():
                 log.debug("[TRADER][PORTFOLIO] Skip schedule (loop closing)")
                 return
             loop.call_soon_threadsafe(
-                lambda: loop.create_task(_recompute_positions_portfolio_analytics_and_broadcast()))
+                lambda: loop.create_task(recompute_metrics_and_broadcast()))
             log.debug("[TRADER][PORTFOLIO] Scheduled recomputation on running loop")
         except RuntimeError:
             log.debug("[TRADER][PORTFOLIO] Skip schedule (no running loop)")
@@ -95,15 +71,6 @@ class Trader:
 
     @staticmethod
     def _infer_route_network(route: LifiRoute, *, hint_chain: Optional[str] = None) -> str:
-        """
-        Infer whether a LI.FI route targets EVM or Solana.
-
-        Rules (priority order):
-          1) chain hint 'solana' → SOLANA
-          2) fromChain/toChain == 'SOL' → SOLANA
-          3) serializedTransaction present → SOLANA
-          4) else → EVM
-        """
         from src.core.utils.dict_utils import _read_path
 
         if isinstance(hint_chain, str) and hint_chain.strip().lower() == "solana":
@@ -133,9 +100,6 @@ class Trader:
             take_profit_tp2_usd: float,
             lifi_route: LifiRoute,
     ) -> None:
-        """
-        Execute a LIVE buy via a precomputed LI.FI route and persist the trade.
-        """
         execution_service = LiveExecutionService()
         try:
             network = self._infer_route_network(lifi_route, hint_chain=token.chain)
@@ -158,11 +122,11 @@ class Trader:
                     tp1=take_profit_tp1_usd,
                     tp2=take_profit_tp2_usd,
                     fee=0.0,
-                    status=Status.LIVE,
+                    status=ExecutionStatus.LIVE,
                 )
-                ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(trade_row)})
+                ws_manager.broadcast_json_payload_threadsafe({"type": "trade", "payload": serialize_trade(trade_row)})
         except Exception as exc:
-            log.exception("[TRADER][LIVE][BUY] Execution failed for %s (%s) — %s", token.symbol, token.tokenAddress,
+            log.exception("[TRADER][LIVE][BUY] Execution failed for %s (%s) — %s", token.symbol, token.token_address,
                           exc)
         finally:
             try:
@@ -172,48 +136,35 @@ class Trader:
             self._schedule_portfolio_rebroadcast()
 
     def buy(self, payload: OrderPayload) -> None:
-        """
-        Process a BUY order in PAPER or LIVE mode.
+        log.debug("[TRADER][BUY] Normalized order — %s", payload.target_token)
 
-        Pipeline:
-            1) Pair-aware price discovery from Dexscreener (exact pair only)
-            2) Sanity checks (pair present, price deviation)
-            3) Order sizing and risk thresholds
-            4) PAPER persistence or LIVE execution via LI.FI route
-            5) Portfolio broadcast
-        """
-        log.debug("[TRADER][BUY] Normalized order — %s", payload.token)
-
-        # Require chain and pair for strict pair pricing
-        if not payload.token.chain or not payload.token.pairAddress:
-            log.debug("[TRADER][BUY] Skip: missing chain or pairAddress — %s", payload.token)
+        if not payload.target_token.chain or not payload.target_token.pair_address:
+            log.debug("[TRADER][BUY] Skip: missing chain or pairAddress — %s", payload.target_token)
             return
 
-        # Primary price source = Dexscreener; fallback to payload.price if provided
-        dex_price_usd = self._fetch_dex_price_for_token(payload.token)
-        price_candidate: Optional[float] = dex_price_usd if dex_price_usd is not None else payload.price
+        dex_price_usd = self._fetch_dex_price_for_token(payload.target_token)
+        price_candidate: Optional[float] = dex_price_usd if dex_price_usd is not None else payload.execution_price
         if price_candidate is None or price_candidate <= 0.0:
-            log.debug("[TRADER][BUY] Skip: no valid price for %s", payload.token)
+            log.debug("[TRADER][BUY] Skip: no valid price for %s", payload.target_token)
             return
         price_usd = float(price_candidate)
 
-        # Deviation guard if both sources available
         maximum_price_multiplier = float(settings.TRENDING_MAX_PRICE_DEVIATION_MULTIPLIER)
-        if dex_price_usd is not None and payload.price is not None:
-            low_price, high_price = sorted([dex_price_usd, float(payload.price)])
+        if dex_price_usd is not None and payload.execution_price is not None:
+            low_price, high_price = sorted([dex_price_usd, float(payload.execution_price)])
             if high_price > 0.0 and (high_price / low_price) > maximum_price_multiplier:
                 log.warning(
                     "[TRADER][BUY] Skip: price mismatch for %s — dex=%.12f ext=%.12f (>×%.1f)",
-                    payload.token,
+                    payload.target_token,
                     dex_price_usd,
-                    float(payload.price),
+                    float(payload.execution_price),
                     maximum_price_multiplier,
                 )
                 return
 
         if payload.order_notional <= 0.0:
             log.debug("[TRADER][BUY] Skip: non-positive order_notional_usd=%.6f for %s", payload.order_notional,
-                      payload.token)
+                      payload.target_token)
             return
 
         quantity = payload.order_notional / price_usd
@@ -226,53 +177,51 @@ class Trader:
 
         thresholds = AdaptiveRiskManager().compute_thresholds(price_usd, payload.original_candidate)
         stop_loss = thresholds.stop_loss
-        take_profit_tp1 = thresholds.take_profit_tp1
-        take_profit_tp2 = thresholds.take_profit_tp2
+        take_profit_tp1 = thresholds.take_profit_one
+        take_profit_tp2 = thresholds.take_profit_two
 
-        # PAPER mode
         if self.paper_mode_enabled:
-            log.info("[TRADER][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.token, price_usd, quantity)
+            log.info("[TRADER][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.target_token, price_usd, quantity)
             with _session() as database_session:
                 trade_row = trades.buy(
                     db=database_session,
-                    token=payload.token,
+                    token=payload.target_token,
                     qty=quantity,
                     price=price_usd,
                     stop=stop_loss,
                     tp1=take_profit_tp1,
                     tp2=take_profit_tp2,
                     fee=0.0,
-                    status=Status.PAPER,
+                    status=ExecutionStatus.PAPER,
                 )
-                ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(trade_row)})
+                ws_manager.broadcast_json_payload_threadsafe({"type": "trade", "payload": serialize_trade(trade_row)})
 
                 auto_trades = check_thresholds_and_autosell(
                     database_session,
                     dexscreener_token_information=payload.original_candidate.dexscreener_token_information,
                 )
                 for auto_trade in auto_trades:
-                    ws_manager.broadcast_json_threadsafe({"type": "trade", "payload": serialize_trade(auto_trade)})
+                    ws_manager.broadcast_json_payload_threadsafe({"type": "trade", "payload": serialize_trade(auto_trade)})
 
             self._schedule_portfolio_rebroadcast()
             return
 
-        # LIVE mode
-        if payload.lifi_route is None:
+        if payload.lifi_routing_path is None:
             log.info("[TRADER][LIVE][BUY] Skip: missing LI.FI route for %s (LIVE disabled for this order).",
-                     payload.token)
+                     payload.target_token)
             return
 
         try:
             event_loop = asyncio.get_running_loop()
             event_loop.create_task(
                 self._execute_live_buy(
-                    token=payload.token,
+                    token=payload.target_token,
                     quantity=quantity,
                     price_usd=price_usd,
                     stop_loss_usd=stop_loss,
                     take_profit_tp1_usd=take_profit_tp1,
                     take_profit_tp2_usd=take_profit_tp2,
-                    lifi_route=payload.lifi_route,
+                    lifi_route=payload.lifi_routing_path,
                 )
             )
             log.debug("[TRADER][LIVE][BUY] Scheduled LIVE execution on running loop")
@@ -280,12 +229,12 @@ class Trader:
             log.debug("[TRADER][LIVE][BUY] No loop detected — running LIVE execution synchronously")
             asyncio.run(
                 self._execute_live_buy(
-                    token=payload.token,
+                    token=payload.target_token,
                     quantity=quantity,
                     price_usd=price_usd,
                     stop_loss_usd=stop_loss,
                     take_profit_tp1_usd=take_profit_tp1,
                     take_profit_tp2_usd=take_profit_tp2,
-                    lifi_route=payload.lifi_route,
+                    lifi_route=payload.lifi_routing_path,
                 )
             )

@@ -3,7 +3,7 @@ import threading
 import time
 from typing import Optional, Dict, Any
 
-from src.api.websocket.ws_hub import _recompute_positions_portfolio_analytics_and_broadcast
+from src.api.websocket.ws_hub import recompute_metrics_and_broadcast
 from src.configuration.config import settings
 from src.core.jobs.trending_job import TrendingJob
 from src.core.structures.structures import Mode
@@ -18,7 +18,6 @@ _orchestrator_loop_task: asyncio.Task | None = None
 
 
 def _loop() -> None:
-    """Background loop that runs the trending job at a fixed interval."""
     interval = int(settings.TREND_INTERVAL_SEC)
     log.info("Background trending loop starting (interval=%ss)", interval)
     while True:
@@ -49,7 +48,6 @@ def ensure_started() -> None:
 
 
 def get_status() -> Dict[str, Any]:
-    """Return a lightweight orchestrator status for the API/UI."""
     return {
         "mode": Mode.PAPER if settings.PAPER_MODE else Mode.LIVE,
         "trading_enabled": settings.TRADING_BOT_ENABLED,
@@ -64,7 +62,9 @@ async def _orchestrator_loop() -> None:
 
     while True:
         try:
-            await _recompute_positions_portfolio_analytics_and_broadcast()
+            await recompute_metrics_and_broadcast()
             await asyncio.sleep(fetch_interval)
         except Exception as exception:
             log.exception("Orchestrator loop error: %s", exception)
+        finally:
+            await asyncio.sleep(fetch_interval)

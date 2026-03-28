@@ -25,20 +25,20 @@ class PaperResetPayload(BaseModel):
 
 
 class CreateDcaPayload(BaseModel):
-    chain: str
-    asset_in_symbol: str
-    asset_in_address: str
-    asset_in_decimals: int
-    asset_out_symbol: str
-    asset_out_address: str
-    binance_pair: str
-    total_budget: float
-    total_executions: int
-    start_date: datetime
-    end_date: datetime
-    bypass_approval: bool
-    slippage: float
-    pru_elasticity_factor: float
+    blockchain_network: str
+    source_asset_symbol: str
+    source_asset_address: str
+    source_asset_decimals: int
+    target_asset_symbol: str
+    target_asset_address: str
+    binance_trading_pair: str
+    total_allocated_budget: float
+    total_planned_executions: int
+    strategy_start_date: datetime
+    strategy_end_date: datetime
+    bypass_security_approval: bool = False
+    slippage_tolerance: float
+    average_unit_price_elasticity_factor: float
     bear_market_start_date: datetime
     bear_market_end_date: datetime
 
@@ -52,14 +52,15 @@ class CreateDcaStrategyResponse(BaseModel):
 class DcaOrderPayload(BaseModel):
     id: int
     strategy_id: int
-    planned_date: str
-    planned_amount: float
-    executed_amount_in: Optional[float] = None
-    executed_amount_out: Optional[float] = None
-    status: str
+    planned_execution_date: str
+    planned_source_asset_amount: float
+    executed_source_asset_amount: Optional[float] = None
+    executed_target_asset_amount: Optional[float] = None
+    order_status: str
     transaction_hash: Optional[str] = None
-    execution_price: Optional[float] = None
+    actual_execution_price: Optional[float] = None
     executed_at: Optional[str] = None
+    allocation_decision_description: Optional[str] = None
 
 
 class DcaBacktestSeriesPointPayload(BaseModel):
@@ -71,9 +72,9 @@ class DcaBacktestSeriesPointPayload(BaseModel):
 
 
 class DcaBacktestMetadataPayload(BaseModel):
-    symbol: str
-    total_budget: float
-    executions: int
+    source_asset_symbol: str
+    total_allocated_budget: float
+    total_planned_executions: int
     final_dumb_average_unit_price: float
     final_smart_average_unit_price: float
     total_overheat_retentions: int
@@ -87,40 +88,40 @@ class DcaBacktestPayloadModel(BaseModel):
 
 class DcaStrategyPayload(BaseModel):
     id: int
-    chain: str
-    asset_in_symbol: str
-    asset_in_address: str
-    asset_in_decimals: int
-    asset_in_currency_symbol: str
-    asset_out_symbol: str
-    asset_out_address: str
-    asset_out_currency_symbol: str
-    binance_pair: str
-    total_budget: float
-    total_executions: int
-    amount_per_order: float
-    slippage: float
-    pru_elasticity_factor: float
-    cycle_index: int
-    previous_ath: float
-    previous_bull_amplitude_pct: float
-    flattening_factor: float
-    bear_bottom_multiplier: float
-    minimum_bull_multiplier: float
-    aave_estimated_apy: float
-    realized_aave_yield: float
-    last_yield_calculation_at: str
-    start_date: str
-    end_date: str
-    status: str
-    bypass_approval: bool
-    dry_powder: float
-    deployed_amount: float
+    blockchain_network: str
+    source_asset_symbol: str
+    source_asset_address: str
+    source_asset_decimals: int
+    source_asset_currency_symbol: str
+    target_asset_symbol: str
+    target_asset_address: str
+    target_asset_currency_symbol: str
+    binance_trading_pair: str
+    total_allocated_budget: float
+    total_planned_executions: int
+    amount_per_execution_order: float
+    slippage_tolerance: float
+    average_unit_price_elasticity_factor: float
+    current_cycle_index: int
+    previous_all_time_high_price: float
+    previous_bull_market_amplitude_percentage: float
+    curve_flattening_factor: float
+    bear_market_bottom_multiplier: float
+    minimum_bull_market_multiplier: float
+    aave_estimated_annual_percentage_yield: float
+    realized_aave_yield_amount: float
+    last_yield_calculation_timestamp: str
+    strategy_start_date: str
+    strategy_end_date: str
+    strategy_status: str
+    bypass_security_approval: bool
+    available_dry_powder: float
+    total_deployed_amount: float
     average_purchase_price: float
-    backtest_payload: DcaBacktestPayloadModel
+    historical_backtest_payload: DcaBacktestPayloadModel
     created_at: str
     updated_at: str
-    orders: List[DcaOrderPayload] = []
+    execution_orders: List[DcaOrderPayload] = []
     live_aave_apy: float
     live_market_price: float
 
@@ -135,118 +136,118 @@ class DcaOrdersResponse(BaseModel):
 
 class TradePayload(BaseModel):
     id: int
-    side: str
-    symbol: str
-    chain: str
-    price: float
-    qty: float
-    fee: float
-    status: str
-    tokenAddress: str
-    pairAddress: str
+    trade_side: str
+    token_symbol: str
+    blockchain_network: str
+    execution_price: float
+    execution_quantity: float
+    transaction_fee: float
+    execution_status: str
+    token_address: str
+    pair_address: str
     created_at: str
-    pnl: Optional[float] = None
-    tx_hash: Optional[str] = None
+    realized_profit_and_loss: Optional[float] = None
+    transaction_hash: Optional[str] = None
 
 
 class PositionPayload(BaseModel):
     id: int
-    symbol: str
-    tokenAddress: str
-    pairAddress: str
-    qty: float
-    entry: float
-    tp1: float
-    tp2: float
-    stop: float
-    phase: str
-    chain: str
+    token_symbol: str
+    token_address: str
+    pair_address: str
+    open_quantity: float
+    entry_price: float
+    take_profit_tier_1_price: float
+    take_profit_tier_2_price: float
+    stop_loss_price: float
+    position_phase: str
+    blockchain_network: str
     opened_at: str
     updated_at: str
-    closed_at: str
+    closed_at: Optional[str] = None
     last_price: float
 
 
 class EquityCurvePointPayload(BaseModel):
-    timestamp: int
-    equity: float
+    timestamp_milliseconds: int
+    total_equity_value: float
 
 
 class PortfolioPayload(BaseModel):
-    equity: float
-    cash: float
-    holdings: float
-    updated_at: str
+    total_equity_value: float
+    available_cash_balance: float
+    active_holdings_value: float
+    created_at: str
     equity_curve: List[EquityCurvePointPayload]
-    unrealized_pnl: float
-    realized_pnl_24h: float
-    realized_pnl_total: float
+    unrealized_profit_and_loss: float
+    realized_profit_and_loss_24h: float
+    realized_profit_and_loss_total: float
 
 
 class AnalyticsScoresPayload(BaseModel):
-    quality: float
-    statistics: float
-    entry: float
-    final: float
+    quality_score: float
+    statistics_score: float
+    entry_score: float
+    final_score: float
 
 
 class AnalyticsAiPayload(BaseModel):
-    probabilityTp1BeforeSl: float
-    qualityScoreDelta: float
+    ai_probability_take_profit_before_stop_loss: float
+    ai_quality_score_delta: float
 
 
 class AnalyticsDecisionPayload(BaseModel):
-    action: str
-    reason: str
-    sizingMultiplier: float
-    orderNotionalUsd: float
-    freeCashBeforeUsd: float
-    freeCashAfterUsd: float
+    execution_decision: str
+    execution_decision_reason: str
+    sizing_multiplier: float
+    order_notional_value_usd: float
+    free_cash_before_execution_usd: float
+    free_cash_after_execution_usd: float
 
 
 class AnalyticsOutcomePayload(BaseModel):
-    hasOutcome: bool
-    tradeId: int
-    closedAt: str
-    holdingMinutes: float
-    pnlPct: float
-    pnlUsd: float
-    wasProfit: bool
-    exitReason: str
+    has_trade_outcome: bool
+    outcome_trade_identifier: int
+    outcome_closed_at: str
+    outcome_holding_duration_minutes: float
+    outcome_realized_profit_and_loss_percentage: float
+    outcome_realized_profit_and_loss_usd: float
+    outcome_was_profitable: bool
+    outcome_exit_reason: str
 
 
 class AnalyticsFundamentalsPayload(BaseModel):
-    tokenAgeHours: float
-    volume5mUsd: float
-    volume1hUsd: float
-    volume6hUsd: float
-    volume24hUsd: float
-    liquidityUsd: float
-    pct5m: float
-    pct1h: float
-    pct6h: float
-    pct24h: float
-    tx5m: int
-    tx1h: int
-    tx6h: int
-    tx24h: int
+    token_age_hours: float
+    volume_m5_usd: float
+    volume_h1_usd: float
+    volume_h6_usd: float
+    volume_h24_usd: float
+    liquidity_usd: float
+    price_change_percentage_m5: float
+    price_change_percentage_h1: float
+    price_change_percentage_h6: float
+    price_change_percentage_h24: float
+    transaction_count_m5: int
+    transaction_count_hour_1: int
+    transaction_count_h6: int
+    transaction_count_h24: int
 
 
 class AnalyticsPayload(BaseModel):
     id: int
-    symbol: str
-    chain: str
-    tokenAddress: str
-    pairAddress: str
-    evaluatedAt: str
-    rank: int
+    token_symbol: str
+    blockchain_network: str
+    token_address: str
+    pair_address: str
+    evaluated_at: str
+    candidate_rank: int
     scores: AnalyticsScoresPayload
     ai: AnalyticsAiPayload
     fundamentals: AnalyticsFundamentalsPayload
     decision: AnalyticsDecisionPayload
     outcome: AnalyticsOutcomePayload
-    rawScreener: Any
-    rawSettings: Any
+    raw_dexscreener_payload: Any
+    raw_configuration_settings: Any
 
 
 class AnalyticsResponse(BaseModel):
@@ -257,13 +258,13 @@ class PositionsResponse(BaseModel):
     positions: List[PositionPayload]
 
 
-class WsStatusPayload(BaseModel):
-    paperMode: bool
-    interval: int
+class WebsocketStatusPayload(BaseModel):
+    paper_mode: bool
+    interval_seconds: int
 
 
-class WsInitPayload(BaseModel):
-    status: WsStatusPayload
+class WebsocketInitializationPayload(BaseModel):
+    status: WebsocketStatusPayload
     portfolio: PortfolioPayload
     positions: List[PositionPayload]
     trades: List[TradePayload]
@@ -271,6 +272,6 @@ class WsInitPayload(BaseModel):
     dca_strategies: List[DcaStrategyPayload]
 
 
-class WsEventPayload(BaseModel):
+class WebsocketEventPayload(BaseModel):
     type: str
     payload: Any

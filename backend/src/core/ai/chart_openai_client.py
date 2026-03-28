@@ -4,82 +4,43 @@ import base64
 from typing import Optional
 
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from src.configuration.config import settings
-from src.core.ai.chart_prompt import build_chartist_system_prompt, build_chartist_user_prompt, chartist_json_schema
+from src.core.ai.chart_prompt import (
+    build_chartist_system_prompt,
+    build_chartist_user_prompt,
+    chartist_json_schema
+)
+from src.core.ai.chart_structures import ChartAiOutput
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
-
-
-def _is_gpt5_family(model_name: str) -> bool:
-    """Return True if the model is in the GPT-5 family (e.g., gpt-5, gpt-5-mini)."""
-    name = (model_name or "").lower()
-    return name.startswith("gpt-5")
-
-
-def _build_common_kwargs(
-        *,
-        model_name: str,
-        messages: list[dict],
-        response_format: dict,
-) -> dict:
-    """
-    Build request kwargs compatible with both GPT-5 and non-GPT-5 models.
-    - GPT-5 family: do NOT send temperature/top_p (unsupported).
-    - Others: honor optional settings.CHART_AI_TEMPERATURE if provided.
-    - Seed is added when configured (helps reproducibility where supported).
-    """
-    kwargs: dict = {
-        "model": model_name,
-        "messages": messages,
-        "response_format": response_format,
-    }
-    return kwargs
-
-
-class ChartAiOutput(BaseModel):
-    """Validated output from the model."""
-    tp1_probability: float = Field(ge=0.0, le=1.0)
-    sl_before_tp_probability: float = Field(ge=0.0, le=1.0)
-    trend_state: str
-    momentum_bias: str
-    quality_score_delta: float = Field(ge=-20.0, le=20.0)
-    patterns: list[dict]
+logger = get_logger(__name__)
 
 
 class ChartOpenAiClient:
-    """
-    Thin wrapper around OpenAI API for image understanding + structured JSON.
-    Uses the Chat Completions or Responses API format that supports images and json_schema.
-    """
-
     def __init__(self) -> None:
         if not settings.OPENAI_API_KEY:
-            log.info("ChartAI(OpenAI): API key not configured; client will remain inactive.")
-        self._client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            logger.info("[AI][OPENAI][INIT] API key not configured, client will remain inactive")
 
-    def analyze_chart_png(
+        self._openai_internal_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+    def analyze_chart_vision(
             self,
-            png_bytes: bytes,
+            screenshot_bytes: bytes,
             symbol: Optional[str],
             chain_name: Optional[str],
             pair_address: Optional[str],
             timeframe_minutes: int,
             lookback_minutes: int,
     ) -> Optional[ChartAiOutput]:
-        """
-        Sends the chart image to the OpenAI vision model with a strict JSON schema.
-        Returns parsed ChartAiOutput, or None on failure.
-        """
         if not settings.OPENAI_API_KEY:
-            log.warning("ChartAI(OpenAI): missing API key.")
+            logger.warning("[AI][OPENAI][AUTH] Aborting analysis: missing OpenAI API key")
             return None
 
-        model_name = settings.OPENAI_MODEL
-        system_prompt = build_chartist_system_prompt()
-        user_prompt = build_chartist_user_prompt(
+        target_model = settings.OPENAI_MODEL
+        system_instructions = build_chartist_system_prompt()
+        user_instructions = build_chartist_user_prompt(
             symbol=symbol,
             chain_name=chain_name,
             pair_address=pair_address,
@@ -87,16 +48,17 @@ class ChartOpenAiClient:
             lookback_minutes=lookback_minutes,
         )
 
-        data_url = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
+        base64_image_payload = base64.b64encode(screenshot_bytes).decode("ascii")
+        data_url_payload = f"data:image/png;base64,{base64_image_payload}"
 
         try:
-            primary_kwargs = _build_common_kwargs(
-                model_name=model_name,
+            chat_completion_response = self._openai_internal_client.chat.completions.create(
+                model=target_model,
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": system_instructions},
                     {"role": "user", "content": [
-                        {"type": "text", "text": user_prompt},
-                        {"type": "image_url", "image_url": {"url": data_url}},
+                        {"type": "text", "text": user_instructions},
+                        {"type": "image_url", "image_url": {"url": data_url_payload}},
                     ]},
                 ],
                 response_format={
@@ -104,38 +66,58 @@ class ChartOpenAiClient:
                     "json_schema": chartist_json_schema(),
                 },
             )
-            response = self._client.chat.completions.create(**primary_kwargs)
-            raw = response.choices[0].message.content
-            parsed = ChartAiOutput.model_validate_json(raw)
-            log.info("ChartAI(OpenAI): analysis completed (model=%s, tf=%dm)", model_name, timeframe_minutes)
-            return parsed
-        except Exception as exc:
-            log.warning("ChartAI(OpenAI): primary call failed (%s). Falling back to json_object mode.", exc)
+
+            raw_content = chat_completion_response.choices[0].message.content
+            if not raw_content:
+                return None
+
+            validated_output = ChartAiOutput.model_validate_json(raw_content)
+            logger.info(
+                "[AI][OPENAI][ANALYSIS] Vision analysis completed with schema mode (model=%s, timeframe=%sm)",
+                target_model,
+                timeframe_minutes
+            )
+            return validated_output
+
+        except Exception as exception:
+            logger.warning(
+                "[AI][OPENAI][ANALYSIS] Primary schema-based call failed, attempting fallback to json_object mode",
+                exc_info=exception
+            )
 
         try:
-            fallback_kwargs = _build_common_kwargs(
-                model_name=model_name,
+            fallback_completion_response = self._openai_internal_client.chat.completions.create(
+                model=target_model,
                 messages=[
-                    {"role": "system", "content": system_prompt + "\nReturn a single JSON object only."},
+                    {"role": "system", "content": f"{system_instructions}\nReturn a single JSON object only."},
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": user_prompt},
-                            {"type": "image_url", "image_url": {"url": data_url}},
+                            {"type": "text", "text": user_instructions},
+                            {"type": "image_url", "image_url": {"url": data_url_payload}},
                         ],
                     },
                 ],
                 response_format={"type": "json_object"},
             )
-            response = self._client.chat.completions.create(**fallback_kwargs)
-            raw = response.choices[0].message.content
-            parsed = ChartAiOutput.model_validate_json(raw)
-            log.info("ChartAI(OpenAI): analysis completed with JSON object mode (model=%s)", model_name)
-            log.debug("ChartAI(OpenAI): raw JSON (fallback) = %s", raw)
-            return parsed
-        except ValidationError as ve:
-            log.warning("ChartAI(OpenAI): schema validation failed: %s", ve)
+
+            raw_fallback_content = fallback_completion_response.choices[0].message.content
+            if not raw_fallback_content:
+                return None
+
+            validated_fallback_output = ChartAiOutput.model_validate_json(raw_fallback_content)
+            logger.info("[AI][OPENAI][ANALYSIS] Vision analysis completed via fallback JSON object mode")
+            return validated_fallback_output
+
+        except ValidationError as validation_exception:
+            logger.warning(
+                "[AI][OPENAI][SCHEMA] Fallback output failed Pydantic schema validation",
+                exc_info=validation_exception
+            )
             return None
-        except Exception as exc:
-            log.warning("ChartAI(OpenAI): fallback call failed: %s", exc)
+        except Exception as general_exception:
+            logger.warning(
+                "[AI][OPENAI][ANALYSIS] Fallback analysis call failed completely",
+                exc_info=general_exception
+            )
             return None

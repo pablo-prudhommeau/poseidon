@@ -17,11 +17,11 @@ import {SparklineComponent} from '../../widgets/sparkline/sparkline.component';
 export class DashboardComponent {
     constructor(public webSocketService: WebSocketService) {}
 
-    equity = computed(() => this.webSocketService.portfolio()?.equity ?? 0);
-    cash = computed(() => this.webSocketService.portfolio()?.cash ?? 0);
-    holdings = computed(() => this.webSocketService.portfolio()?.holdings ?? 0);
-    unrealized = computed(() => this.webSocketService.portfolio()?.unrealized_pnl ?? 0);
-    realizedTotal = computed(() => this.webSocketService.portfolio()?.realized_pnl_total ?? 0);
-    realized24h = computed(() => this.webSocketService.portfolio()?.realized_pnl_24h ?? 0);
+    equity = computed(() => this.webSocketService.portfolio()?.total_equity_value ?? 0);
+    cash = computed(() => this.webSocketService.portfolio()?.available_cash_balance ?? 0);
+    holdings = computed(() => this.webSocketService.portfolio()?.active_holdings_value ?? 0);
+    unrealized = computed(() => this.webSocketService.portfolio()?.unrealized_profit_and_loss ?? 0);
+    realizedTotal = computed(() => this.webSocketService.portfolio()?.realized_profit_and_loss_total ?? 0);
+    realized24h = computed(() => this.webSocketService.portfolio()?.realized_profit_and_loss_24h ?? 0);
     spark = computed<EquityCurvePoint[]>(() => this.webSocketService.portfolio()?.equity_curve ?? []);
 }

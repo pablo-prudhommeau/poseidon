@@ -4,9 +4,6 @@ from typing import Dict, Any
 
 
 def build_chartist_system_prompt() -> str:
-    """
-    System prompt: the model must act as a short-term crypto chart analyst.
-    """
     return (
         "You are a meticulous crypto chart analyst specialized in very short term trading on volatile tokens.\n"
         "You analyze a single candlestick chart image and output ONLY structured JSON matching the provided schema.\n"
@@ -23,9 +20,6 @@ def build_chartist_user_prompt(
         timeframe_minutes: int,
         lookback_minutes: int,
 ) -> str:
-    """
-    User prompt: context about the asset and time frame.
-    """
     label = symbol or f"{chain_name}:{pair_address}"
     return (
         f"Asset: {label}\n"
@@ -44,9 +38,6 @@ def build_chartist_user_prompt(
 
 
 def chartist_json_schema() -> Dict[str, Any]:
-    """
-    JSON Schema used with Structured Outputs to enforce shape and types.
-    """
     return {
         "name": "chart_ai_signal",
         "schema": {

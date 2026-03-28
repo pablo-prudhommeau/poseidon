@@ -1,6 +1,6 @@
 import {ChangeDetectionStrategy, Component, computed, input} from '@angular/core';
 
-export type SparklinePoint = number | string | null | undefined | [number, number] | { equity: number };
+export type SparklinePoint = number | string | null | undefined | [number, number] | { equity: number, [k: string]: any } | { total_equity_value: number, [k: string]: any };
 
 @Component({
     standalone: true,
@@ -48,6 +48,14 @@ export class SparklineComponent {
 
             if (typeof point === 'object' && 'equity' in point) {
                 const parsedValue = Number(point.equity);
+                if (Number.isFinite(parsedValue)) {
+                    extractedValues.push(parsedValue);
+                }
+                continue;
+            }
+
+            if (typeof point === 'object' && 'total_equity_value' in point) {
+                const parsedValue = Number(point.total_equity_value);
                 if (Number.isFinite(parsedValue)) {
                     extractedValues.push(parsedValue);
                 }

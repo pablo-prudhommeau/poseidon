@@ -9,10 +9,8 @@
      aria-live="polite"
      [attr.aria-label]="'WebSocket status: ' + label()">
 
-	<!-- Animated spinner ring shown only while connecting -->
 	<span *ngIf="isConnecting()" class="spinner-ring absolute -inset-1 rounded-full" aria-hidden="true"></span>
 
-	<!-- Status dot -->
 	<span class="inline-block h-3 w-3 rounded-full" [ngClass]="{
         'bg-emerald-400': isOpen(),
         'bg-amber-400': isConnecting(),

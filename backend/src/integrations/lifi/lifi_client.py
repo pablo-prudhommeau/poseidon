@@ -1,313 +1,314 @@
 from __future__ import annotations
 
-from typing import Optional, cast, Dict, Mapping
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.configuration.config import settings
-from src.core.structures.structures import LifiRoute
-from src.core.utils.dict_utils import _read_path
-from src.integrations.lifi.lifi_helpers import _normalize_chain_key, _http_get_json
-from src.integrations.lifi.lifi_structures import EvmChain, LifiQuoteJson
+from src.core.structures.structures import LifiRoute, LifiEvmTransactionRequest, LifiSolanaSerializedTransaction
+from src.integrations.lifi.lifi_helpers import normalize_chain_identifier, execute_http_get_json
+from src.integrations.lifi.lifi_structures import EvmChain, LifiQuote
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 EVM_NATIVE_TOKEN_ZERO_ADDRESS: str = "0x0000000000000000000000000000000000000000"
 
-# LI.FI chain code for Solana (use string code, not numeric id)
-SOLANA_CHAIN_CODE: str = "SOL"
-SOLANA_NATIVE_TICKER: str = "SOL"
+SOLANA_CHAIN_IDENTIFIER: str = "SOL"
+SOLANA_NATIVE_TOKEN_TICKER: str = "SOL"
 
-_EVM_CHAIN_REGISTRY: Dict[str, EvmChain] = {
-    "ethereum": EvmChain("ethereum", 1, "ETH"),
-    "arbitrum": EvmChain("arbitrum", 42161, "ETH"),
-    "optimism": EvmChain("optimism", 10, "ETH"),
-    "base": EvmChain("base", 8453, "ETH"),
-    "linea": EvmChain("linea", 59144, "ETH"),
-    "scroll": EvmChain("scroll", 534352, "ETH"),
-    "blast": EvmChain("blast", 81457, "ETH"),
-    "zksync": EvmChain("zksync", 324, "ETH"),
-    "era": EvmChain("era", 324, "ETH"),
-    "polygon-zkevm": EvmChain("polygon-zkevm", 1101, "ETH"),
-    "polygon_zkevm": EvmChain("polygon_zkevm", 1101, "ETH"),
-    "bsc": EvmChain("bsc", 56, "BNB"),
-    "opbnb": EvmChain("opbnb", 204, "BNB"),
-    "polygon": EvmChain("polygon", 137, "MATIC"),
-    "avalanche": EvmChain("avalanche", 43114, "AVAX"),
-    "fantom": EvmChain("fantom", 250, "FTM"),
-    "cronos": EvmChain("cronos", 25, "CRO"),
-    "gnosis": EvmChain("gnosis", 100, "xDAI"),
-    "celo": EvmChain("celo", 42220, "CELO"),
-    "metis": EvmChain("metis", 1088, "METIS"),
-    "mantle": EvmChain("mantle", 5000, "MNT"),
-    "kava": EvmChain("kava", 2222, "KAVA"),
-    "moonbeam": EvmChain("moonbeam", 1284, "GLMR"),
-    "moonriver": EvmChain("moonriver", 1285, "MOVR"),
+_EVM_CHAIN_REGISTRY: dict[str, EvmChain] = {
+    "ethereum": EvmChain(dexscreener_chain_identifier="ethereum", chain_identifier=1, native_token_symbol="ETH"),
+    "arbitrum": EvmChain(dexscreener_chain_identifier="arbitrum", chain_identifier=42161, native_token_symbol="ETH"),
+    "optimism": EvmChain(dexscreener_chain_identifier="optimism", chain_identifier=10, native_token_symbol="ETH"),
+    "base": EvmChain(dexscreener_chain_identifier="base", chain_identifier=8453, native_token_symbol="ETH"),
+    "linea": EvmChain(dexscreener_chain_identifier="linea", chain_identifier=59144, native_token_symbol="ETH"),
+    "scroll": EvmChain(dexscreener_chain_identifier="scroll", chain_identifier=534352, native_token_symbol="ETH"),
+    "blast": EvmChain(dexscreener_chain_identifier="blast", chain_identifier=81457, native_token_symbol="ETH"),
+    "zksync": EvmChain(dexscreener_chain_identifier="zksync", chain_identifier=324, native_token_symbol="ETH"),
+    "era": EvmChain(dexscreener_chain_identifier="era", chain_identifier=324, native_token_symbol="ETH"),
+    "polygon-zkevm": EvmChain(dexscreener_chain_identifier="polygon-zkevm", chain_identifier=1101, native_token_symbol="ETH"),
+    "polygon_zkevm": EvmChain(dexscreener_chain_identifier="polygon_zkevm", chain_identifier=1101, native_token_symbol="ETH"),
+    "bsc": EvmChain(dexscreener_chain_identifier="bsc", chain_identifier=56, native_token_symbol="BNB"),
+    "opbnb": EvmChain(dexscreener_chain_identifier="opbnb", chain_identifier=204, native_token_symbol="BNB"),
+    "polygon": EvmChain(dexscreener_chain_identifier="polygon", chain_identifier=137, native_token_symbol="MATIC"),
+    "avalanche": EvmChain(dexscreener_chain_identifier="avalanche", chain_identifier=43114, native_token_symbol="AVAX"),
+    "fantom": EvmChain(dexscreener_chain_identifier="fantom", chain_identifier=250, native_token_symbol="FTM"),
+    "cronos": EvmChain(dexscreener_chain_identifier="cronos", chain_identifier=25, native_token_symbol="CRO"),
+    "gnosis": EvmChain(dexscreener_chain_identifier="gnosis", chain_identifier=100, native_token_symbol="xDAI"),
+    "celo": EvmChain(dexscreener_chain_identifier="celo", chain_identifier=42220, native_token_symbol="CELO"),
+    "metis": EvmChain(dexscreener_chain_identifier="metis", chain_identifier=1088, native_token_symbol="METIS"),
+    "mantle": EvmChain(dexscreener_chain_identifier="mantle", chain_identifier=5000, native_token_symbol="MNT"),
+    "kava": EvmChain(dexscreener_chain_identifier="kava", chain_identifier=2222, native_token_symbol="KAVA"),
+    "moonbeam": EvmChain(dexscreener_chain_identifier="moonbeam", chain_identifier=1284, native_token_symbol="GLMR"),
+    "moonriver": EvmChain(dexscreener_chain_identifier="moonriver", chain_identifier=1285, native_token_symbol="MOVR"),
 }
 
 
-def resolve_lifi_chain_id(dexscreener_chain_key: str) -> Optional[int]:
-    """
-    Convert a Dexscreener chain key into a LI.FI numeric chain id (EVM-only).
+class LifiQuoteStepData(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    transaction_request: Optional[dict[str, object]] = Field(default=None, alias="transactionRequest")
 
-    Notes:
-        - Solana uses a string chain code 'SOL' with the generic /v1/quote endpoint.
-          This resolver returns None for non-EVM chains by design.
 
-    Args:
-        dexscreener_chain_key: The chain key as provided by Dexscreener.
+class LifiQuoteStepItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    data: Optional[LifiQuoteStepData] = None
 
-    Returns:
-        The LI.FI chain id if the chain is a supported EVM network, otherwise None.
-    """
-    normalized_key = _normalize_chain_key(dexscreener_chain_key)
-    chain = _EVM_CHAIN_REGISTRY.get(normalized_key)
-    if chain is None:
-        log.debug("[LI.FI][CHAIN][RESOLVE] Unsupported Dexscreener key '%s'", dexscreener_chain_key)
+
+class LifiQuoteStep(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    items: Optional[list[LifiQuoteStepItem]] = None
+
+
+class LifiRouteResponsePayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    transaction_request: Optional[dict[str, object]] = Field(default=None, alias="transactionRequest")
+    transaction: Optional[dict[str, object]] = None
+    transactions: Optional[list[dict[str, object]]] = None
+    items: Optional[list[LifiQuoteStepItem]] = None
+    steps: Optional[list[LifiQuoteStep]] = None
+
+
+def resolve_lifi_chain_identifier(dexscreener_chain_identifier: str) -> Optional[int]:
+    normalized_chain_identifier = normalize_chain_identifier(raw_chain_identifier=dexscreener_chain_identifier)
+    matched_chain = _EVM_CHAIN_REGISTRY.get(normalized_chain_identifier)
+
+    if matched_chain is None:
+        logger.debug("[LIFI][CLIENT][CHAIN][RESOLVE] Unsupported Dexscreener chain identifier '%s'", dexscreener_chain_identifier)
         return None
-    return int(chain.chain_id)
+
+    return matched_chain.chain_identifier
 
 
-def build_native_to_token_quote(
-        *,
-        chain_key: str,
-        from_address: str,
-        to_token_address: str,
-        from_amount_wei: int,
-        slippage: float = 0.03,
-) -> LifiQuoteJson:
-    """
-    Build a LI.FI single-step quote to swap native asset -> ERC-20 on the same **EVM** chain.
+def generate_native_token_to_erc20_quote(
+        chain_identifier: str,
+        source_address: str,
+        destination_token_address: str,
+        source_amount_wei: int,
+        slippage_tolerance: float = 0.03,
+) -> LifiQuote:
+    if not source_address.strip() or not destination_token_address.strip():
+        logger.error("[LIFI][CLIENT][QUOTE][EVM] Missing required address parameters")
+        raise ValueError("Source address and destination token address must be explicitly provided.")
 
-    This uses the generic `/v1/quote` endpoint with numeric `fromChain`/`toChain`.
-    """
-    if not from_address.strip() or not to_token_address.strip():
-        raise ValueError("from_address and to_token_address must be provided.")
-    if from_amount_wei <= 0:
-        raise ValueError("from_amount_wei must be greater than zero.")
+    if source_amount_wei <= 0:
+        logger.error("[LIFI][CLIENT][QUOTE][EVM] Invalid source amount %d", source_amount_wei)
+        raise ValueError("Source amount in wei must be strictly positive.")
 
-    lifi_chain_id = resolve_lifi_chain_id(chain_key)
-    if lifi_chain_id is None:
-        raise ValueError(f"Unsupported EVM chain for LI.FI: '{chain_key}'")
+    lifi_chain_identifier = resolve_lifi_chain_identifier(dexscreener_chain_identifier=chain_identifier)
+    if lifi_chain_identifier is None:
+        logger.error("[LIFI][CLIENT][QUOTE][EVM] Unsupported EVM chain %s", chain_identifier)
+        raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain_identifier}'")
 
-    base_url = str(settings.LIFI_BASE_URL).rstrip("/")
-    if not base_url:
-        raise ValueError("settings.LIFI_BASE_URL must be configured.")
+    lifi_base_url = str(settings.LIFI_BASE_URL).rstrip("/")
+    if not lifi_base_url:
+        raise ValueError("LI.FI base URL must be configured in settings.")
 
-    url = f"{base_url}/v1/quote"
-    query_params: Dict[str, object] = {
-        "fromChain": lifi_chain_id,
-        "toChain": lifi_chain_id,
+    target_endpoint_url = f"{lifi_base_url}/v1/quote"
+    query_parameters: dict[str, object] = {
+        "fromChain": lifi_chain_identifier,
+        "toChain": lifi_chain_identifier,
         "fromToken": EVM_NATIVE_TOKEN_ZERO_ADDRESS,
-        "toToken": to_token_address,
-        "fromAmount": str(from_amount_wei),
-        "fromAddress": from_address,
-        "slippage": slippage,
+        "toToken": destination_token_address,
+        "fromAmount": str(source_amount_wei),
+        "fromAddress": source_address,
+        "slippage": slippage_tolerance,
         "allowSwitchChain": "false",
     }
 
-    log.debug(
-        "[LI.FI][QUOTE][REQUEST][EVM] chain_key=%s chain_id=%s to_token=%s amount_wei=%s slippage=%.4f",
-        chain_key,
-        lifi_chain_id,
-        to_token_address,
-        from_amount_wei,
-        slippage,
+    logger.debug(
+        "[LIFI][CLIENT][QUOTE][EVM][REQUEST] Requesting quote for chain %s (ID: %s) to token %s for %d wei with slippage %f",
+        chain_identifier,
+        lifi_chain_identifier,
+        destination_token_address,
+        source_amount_wei,
+        slippage_tolerance,
     )
 
-    data = _http_get_json(url, query_params)
-    typed_data = cast(LifiQuoteJson, data)
+    response_payload = execute_http_get_json(endpoint_url=target_endpoint_url, query_parameters=query_parameters)
 
-    log.info("[LI.FI][QUOTE][RECEIVE][EVM] chain_key=%s chain_id=%s to_token=%s", chain_key, lifi_chain_id,
-             to_token_address)
-    log.debug("[LI.FI][QUOTE][PAYLOAD][EVM] Raw payload received (truncated in logs).")
-
-    return typed_data
+    logger.info("[LIFI][CLIENT][QUOTE][EVM][SUCCESS] Received quote for chain %s to token %s", chain_identifier, destination_token_address)
+    return LifiQuote.model_validate(response_payload)
 
 
-def _build_solana_native_to_token_quote(
-        *,
-        from_address: str,
-        to_token_mint: str,
-        from_amount_lamports: int,
-        slippage: float = 0.03,
-) -> LifiQuoteJson:
-    """
-    Build a LI.FI single-step quote to swap SOL -> SPL token on **Solana**.
+def generate_solana_native_to_token_quote(
+        source_address: str,
+        destination_token_mint: str,
+        source_amount_lamports: int,
+        slippage_tolerance: float = 0.03,
+) -> LifiRouteResponsePayload:
+    if not source_address.strip() or not destination_token_mint.strip():
+        logger.error("[LIFI][CLIENT][QUOTE][SOLANA] Missing required address parameters")
+        raise ValueError("Source address and destination token mint must be explicitly provided.")
 
-    Important:
-        - Use the **same** generic endpoint `/v1/quote`.
-        - Chain params are string codes: `fromChain=SOL`, `toChain=SOL`.
-        - Tokens: `fromToken=SOL`, `toToken=<SPL mint>`.
-        - Amount: `fromAmount` in lamports.
-    """
-    if not from_address.strip() or not to_token_mint.strip():
-        raise ValueError("from_address and to_token_mint must be provided.")
-    if from_amount_lamports <= 0:
-        raise ValueError("from_amount_lamports must be greater than zero.")
+    if source_amount_lamports <= 0:
+        logger.error("[LIFI][CLIENT][QUOTE][SOLANA] Invalid source amount %d", source_amount_lamports)
+        raise ValueError("Source amount in lamports must be strictly positive.")
 
-    base_url = str(settings.LIFI_BASE_URL).rstrip("/")
-    if not base_url:
-        raise ValueError("settings.LIFI_BASE_URL must be configured.")
+    lifi_base_url = str(settings.LIFI_BASE_URL).rstrip("/")
+    if not lifi_base_url:
+        raise ValueError("LI.FI base URL must be configured in settings.")
 
-    url = f"{base_url}/v1/quote"
-    query_params: Dict[str, object] = {
-        "fromChain": SOLANA_CHAIN_CODE,
-        "toChain": SOLANA_CHAIN_CODE,
-        "fromToken": SOLANA_NATIVE_TICKER,
-        "toToken": to_token_mint,
-        "fromAmount": str(from_amount_lamports),
-        "fromAddress": from_address,
-        # Keep toAddress same as fromAddress unless you want to separate source/destination owner.
-        "toAddress": from_address,
-        "slippage": slippage,
+    target_endpoint_url = f"{lifi_base_url}/v1/quote"
+    query_parameters: dict[str, object] = {
+        "fromChain": SOLANA_CHAIN_IDENTIFIER,
+        "toChain": SOLANA_CHAIN_IDENTIFIER,
+        "fromToken": SOLANA_NATIVE_TOKEN_TICKER,
+        "toToken": destination_token_mint,
+        "fromAmount": str(source_amount_lamports),
+        "fromAddress": source_address,
+        "toAddress": source_address,
+        "slippage": slippage_tolerance,
         "allowSwitchChain": "false",
     }
 
-    log.debug(
-        "[LI.FI][QUOTE][REQUEST][SOL] from=%s to_mint=%s amount_lamports=%s slippage=%.4f",
-        from_address,
-        to_token_mint,
-        from_amount_lamports,
-        slippage,
+    logger.debug(
+        "[LIFI][CLIENT][QUOTE][SOLANA][REQUEST] Requesting quote from %s to mint %s for %d lamports with slippage %f",
+        source_address,
+        destination_token_mint,
+        source_amount_lamports,
+        slippage_tolerance,
     )
 
-    data = _http_get_json(url, query_params)
-    typed_data = cast(LifiQuoteJson, data)
+    response_payload = execute_http_get_json(endpoint_url=target_endpoint_url, query_parameters=query_parameters)
 
-    log.info("[LI.FI][QUOTE][RECEIVE][SOL] to_mint=%s", to_token_mint)
-    log.debug("[LI.FI][QUOTE][PAYLOAD][SOL] Raw payload received (truncated in logs).")
-
-    return typed_data
+    logger.info("[LIFI][CLIENT][QUOTE][SOLANA][SUCCESS] Received quote to mint %s", destination_token_mint)
+    return LifiRouteResponsePayload.model_validate(response_payload)
 
 
-def _normalize_quote_to_route(quote: LifiQuoteJson) -> Optional[LifiRoute]:
-    """
-    Validate that the LI.FI quote contains an executable payload and return it as a route.
+def normalize_quote_response_to_route(quote_response: LifiRouteResponsePayload) -> Optional[LifiRoute]:
+    resolved_route = LifiRoute(transactionRequest=LifiEvmTransactionRequest())
 
-    Accepts the main shapes observed for:
-        - EVM: presence of a `transactionRequest` object at the root or in the first step/item.
-        - Solana: presence of either `transaction.serializedTransaction` or `transactionRequest.data` (base64).
-    """
-    # EVM shapes
-    if isinstance(_read_path(quote, ("transactionRequest",)), Mapping):
-        return cast(LifiRoute, quote)
-    if isinstance(_read_path(quote, ("items", 0, "data", "transactionRequest")), Mapping):
-        return cast(LifiRoute, quote)
-    if isinstance(_read_path(quote, ("steps", 0, "items", 0, "data", "transactionRequest")), Mapping):
-        return cast(LifiRoute, quote)
+    if quote_response.transaction_request is not None:
+        resolved_route.transactionRequest.to = str(quote_response.transaction_request.get("to", ""))
+        resolved_route.transactionRequest.data = str(quote_response.transaction_request.get("data", ""))
+        resolved_route.transactionRequest.value = str(quote_response.transaction_request.get("value", ""))
+        resolved_route.transactionRequest.from_ = str(quote_response.transaction_request.get("from", ""))
+        return resolved_route
 
-    # Solana shapes
-    serialized = _read_path(quote, ("transaction", "serializedTransaction"))
-    if isinstance(serialized, str) and len(serialized) > 0:
-        return cast(LifiRoute, quote)
-    serialized = _read_path(quote, ("transactions", 0, "serializedTransaction"))
-    if isinstance(serialized, str) and len(serialized) > 0:
-        return cast(LifiRoute, quote)
-    # Some SOL flows embed base64 into transactionRequest.data (for EVM-style executor wrappers)
-    data_field = _read_path(quote, ("transactionRequest", "data"))
-    if isinstance(data_field, str) and len(data_field) > 0:
-        return cast(LifiRoute, quote)
+    if quote_response.items is not None and len(quote_response.items) > 0:
+        item_data = quote_response.items[0].data
+        if item_data is not None and item_data.transaction_request is not None:
+            resolved_route.transactionRequest.to = str(item_data.transaction_request.get("to", ""))
+            resolved_route.transactionRequest.data = str(item_data.transaction_request.get("data", ""))
+            resolved_route.transactionRequest.value = str(item_data.transaction_request.get("value", ""))
+            resolved_route.transactionRequest.from_ = str(item_data.transaction_request.get("from", ""))
+            return resolved_route
+
+    if quote_response.steps is not None and len(quote_response.steps) > 0:
+        quote_step = quote_response.steps[0]
+        if quote_step.items is not None and len(quote_step.items) > 0:
+            step_item_data = quote_step.items[0].data
+            if step_item_data is not None and step_item_data.transaction_request is not None:
+                resolved_route.transactionRequest.to = str(step_item_data.transaction_request.get("to", ""))
+                resolved_route.transactionRequest.data = str(step_item_data.transaction_request.get("data", ""))
+                resolved_route.transactionRequest.value = str(step_item_data.transaction_request.get("value", ""))
+                resolved_route.transactionRequest.from_ = str(step_item_data.transaction_request.get("from", ""))
+                return resolved_route
+
+    if quote_response.transaction is not None:
+        serialized_transaction_data = quote_response.transaction.get("serializedTransaction")
+        if serialized_transaction_data:
+            solana_transaction = LifiSolanaSerializedTransaction(serialized_transaction=str(serialized_transaction_data))
+            resolved_route.transaction = solana_transaction
+            return resolved_route
+
+    if quote_response.transactions is not None and len(quote_response.transactions) > 0:
+        serialized_transaction_data = quote_response.transactions[0].get("serializedTransaction")
+        if serialized_transaction_data:
+            solana_transaction = LifiSolanaSerializedTransaction(serialized_transaction=str(serialized_transaction_data))
+            resolved_route.transactions = [solana_transaction]
+            return resolved_route
 
     return None
 
 
-def build_native_to_token_route(
-        *,
-        chain_key: str,
-        from_address: str,
-        to_token_address: str,
-        from_amount_wei: int,
-        slippage: float,
+def generate_native_to_token_route(
+        chain_identifier: str,
+        source_address: str,
+        destination_token_address: str,
+        source_amount_wei: int,
+        slippage_tolerance: float,
 ) -> Optional[LifiRoute]:
-    """
-    Build a LI.FI same-chain route ready for execution.
-
-    Behavior:
-        - **EVM**: native -> ERC-20 using numeric chain ids.
-        - **Solana**: SOL -> SPL using chain code 'SOL' on the same `/v1/quote` endpoint.
-
-    Args:
-        chain_key: Canonical Dexscreener chain key (e.g. 'ethereum', 'base', 'polygon', 'solana').
-        from_address: Sender address that will sign/broadcast.
-        to_token_address: ERC-20 contract (EVM) or SPL mint (Solana).
-        from_amount_wei: Amount in smallest unit (wei for EVM, lamports for Solana).
-        slippage: Allowed slippage (0.0 - 1.0).
-
-    Returns:
-        A typed `LifiRoute` if a valid executable payload is present; otherwise None.
-    """
-    normalized_chain = _normalize_chain_key(chain_key)
+    normalized_chain = normalize_chain_identifier(raw_chain_identifier=chain_identifier)
 
     if normalized_chain == "solana":
-        quote = _build_solana_native_to_token_quote(
-            from_address=from_address,
-            to_token_mint=to_token_address,
-            from_amount_lamports=from_amount_wei,
-            slippage=slippage,
+        quote_payload = generate_solana_native_to_token_quote(
+            source_address=source_address,
+            destination_token_mint=destination_token_address,
+            source_amount_lamports=source_amount_wei,
+            slippage_tolerance=slippage_tolerance,
         )
+        resolved_route = normalize_quote_response_to_route(quote_response=quote_payload)
     else:
-        quote = build_native_to_token_quote(
-            chain_key=normalized_chain,
-            from_address=from_address,
-            to_token_address=to_token_address,
-            from_amount_wei=from_amount_wei,
-            slippage=slippage,
+        evm_quote_model = generate_native_token_to_erc20_quote(
+            chain_identifier=normalized_chain,
+            source_address=source_address,
+            destination_token_address=destination_token_address,
+            source_amount_wei=source_amount_wei,
+            slippage_tolerance=slippage_tolerance,
         )
+        quote_payload = LifiRouteResponsePayload.model_validate(evm_quote_model.model_dump(by_alias=True))
+        resolved_route = normalize_quote_response_to_route(quote_response=quote_payload)
 
-    route = _normalize_quote_to_route(quote)
-    if route is None:
-        log.warning(
-            "[LI.FI][ROUTE][NORMALIZE] Missing executable payload in quote — chain=%s token=%s",
-            chain_key,
-            to_token_address,
+    if resolved_route is None:
+        logger.warning(
+            "[LIFI][CLIENT][ROUTE][NORMALIZE] Missing executable payload in quote for chain %s and token %s",
+            chain_identifier,
+            destination_token_address,
         )
         return None
 
-    network_tag = "SOL" if normalized_chain == "solana" else "EVM"
-    log.debug("[LI.FI][ROUTE][READY][%s] Normalized LI.FI quote to route.", network_tag)
-    return route
+    network_tag = "SOLANA" if normalized_chain == "solana" else "EVM"
+    logger.debug("[LIFI][CLIENT][ROUTE][SUCCESS] Successfully normalized LI.FI quote to route for network %s", network_tag)
+    return resolved_route
 
 
-def build_token_to_token_quote(
-        *,
-        chain_key: str,
-        from_address: str,
-        from_token_address: str,
-        to_token_address: str,
-        from_amount_wei: int,
-        slippage: float = 0.03,
-) -> LifiQuoteJson:
-    """
-    Build a LI.FI single-step quote to swap ERC-20 -> ERC-20 on the same EVM chain.
-    Uses the internal _EVM_CHAIN_REGISTRY to strictly resolve the chain ID.
-    """
-    if not from_address.strip() or not from_token_address.strip() or not to_token_address.strip():
+def generate_token_to_token_quote(
+        chain_identifier: str,
+        source_address: str,
+        source_token_address: str,
+        destination_token_address: str,
+        source_amount_wei: int,
+        slippage_tolerance: float = 0.03,
+) -> LifiQuote:
+    if not source_address.strip() or not source_token_address.strip() or not destination_token_address.strip():
+        logger.error("[LIFI][CLIENT][QUOTE][TOKEN] Missing required address parameters")
         raise ValueError("All addresses must be explicitly provided.")
-    if from_amount_wei <= 0:
-        raise ValueError("from_amount_wei must be greater than zero.")
 
-    lifi_chain_id = resolve_lifi_chain_id(chain_key)
-    if lifi_chain_id is None:
-        raise ValueError(f"Unsupported EVM chain for LI.FI: '{chain_key}'")
+    if source_amount_wei <= 0:
+        logger.error("[LIFI][CLIENT][QUOTE][TOKEN] Invalid source amount %d", source_amount_wei)
+        raise ValueError("Source amount in wei must be strictly positive.")
 
-    base_url = str(settings.LIFI_BASE_URL).rstrip("/")
+    lifi_chain_identifier = resolve_lifi_chain_identifier(dexscreener_chain_identifier=chain_identifier)
+    if lifi_chain_identifier is None:
+        logger.error("[LIFI][CLIENT][QUOTE][TOKEN] Unsupported EVM chain %s", chain_identifier)
+        raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain_identifier}'")
 
-    url = f"{base_url}/v1/quote"
-    query_params: Dict[str, object] = {
-        "fromChain": lifi_chain_id,
-        "toChain": lifi_chain_id,
-        "fromToken": from_token_address,
-        "toToken": to_token_address,
-        "fromAmount": str(from_amount_wei),
-        "fromAddress": from_address,
-        "slippage": slippage,
+    lifi_base_url = str(settings.LIFI_BASE_URL).rstrip("/")
+
+    target_endpoint_url = f"{lifi_base_url}/v1/quote"
+    query_parameters: dict[str, object] = {
+        "fromChain": lifi_chain_identifier,
+        "toChain": lifi_chain_identifier,
+        "fromToken": source_token_address,
+        "toToken": destination_token_address,
+        "fromAmount": str(source_amount_wei),
+        "fromAddress": source_address,
+        "slippage": slippage_tolerance,
         "allowSwitchChain": "false",
     }
 
-    log.debug(
-        "[LI.FI][QUOTE][REQUEST][EVM] chain=%s chain_id=%s from_token=%s to_token=%s amount=%s",
-        chain_key, lifi_chain_id, from_token_address, to_token_address, from_amount_wei
+    logger.debug(
+        "[LIFI][CLIENT][QUOTE][TOKEN][REQUEST] Requesting quote for chain %s (ID: %s) from token %s to token %s for amount %d",
+        chain_identifier,
+        lifi_chain_identifier,
+        source_token_address,
+        destination_token_address,
+        source_amount_wei,
     )
 
-    data = _http_get_json(url, query_params)
-    return cast(LifiQuoteJson, data)
+    response_payload = execute_http_get_json(endpoint_url=target_endpoint_url, query_parameters=query_parameters)
+    logger.info("[LIFI][CLIENT][QUOTE][TOKEN][SUCCESS] Received quote for chain %s from token %s to token %s", chain_identifier, source_token_address, destination_token_address)
+
+    return LifiQuote.model_validate(response_payload)

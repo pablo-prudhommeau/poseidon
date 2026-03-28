@@ -32,12 +32,12 @@
 
 	<ng-template pTemplate="header">
 		<div class="flex items-center gap-3">
-			<span class="font-semibold text-lg">{{ selectedPosition()?.symbol }}</span>
-			@if (selectedPosition()?.chain) {
-				<p-tag [value]="selectedPosition()?.chain" severity="info"></p-tag>
+			<span class="font-semibold text-lg">{{ selectedPosition()?.token_symbol }}</span>
+			@if (selectedPosition()?.blockchain_network) {
+				<p-tag [value]="selectedPosition()?.blockchain_network" severity="info"></p-tag>
 			}
-			@if (selectedPosition()?.phase) {
-				<p-tag [value]="selectedPosition()?.phase" [severity]="phaseSeverity(selectedPosition()?.phase)"></p-tag>
+			@if (selectedPosition()?.position_phase) {
+				<p-tag [value]="selectedPosition()?.position_phase" [severity]="phaseSeverity(selectedPosition()?.position_phase ?? '')"></p-tag>
 			}
 		</div>
 	</ng-template>
@@ -55,45 +55,45 @@
 					<div class="col-span-12 md:col-span-6">
 						<div class="opacity-70">Token</div>
 						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedPosition()?.tokenAddress }}
+							{{ selectedPosition()?.token_address }}
 							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy token address"
-							        (click)="copyToClipboard(selectedPosition()?.tokenAddress)"></button>
+							        (click)="copyToClipboard(selectedPosition()?.token_address)"></button>
 						</div>
 					</div>
 
 					<div class="col-span-12 md:col-span-6">
 						<div class="opacity-70">Pair</div>
 						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedPosition()?.pairAddress }}
+							{{ selectedPosition()?.pair_address }}
 							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy pair address"
-							        (click)="copyToClipboard(selectedPosition()?.pairAddress)"></button>
+							        (click)="copyToClipboard(selectedPosition()?.pair_address)"></button>
 						</div>
 					</div>
 
 					<div class="col-span-6">
 						<div class="opacity-70">Quantity</div>
-						<div class="font-semibold">{{ formatNumber(selectedPosition()?.qty, 2, 6) }}</div>
+						<div class="font-semibold">{{ formatNumber(selectedPosition()?.open_quantity, 2, 6) }}</div>
 					</div>
 					<div class="col-span-6">
 						<div class="opacity-70">Entry</div>
-						<div class="font-semibold">{{ formatCurrency(selectedPosition()?.entry, 'USD', 4, 8) }}</div>
+						<div class="font-semibold">{{ formatCurrency(selectedPosition()?.entry_price, 'USD', 4, 8) }}</div>
 					</div>
 
 					<div class="col-span-6">
 						<div class="opacity-70">TP1 / TP2</div>
 						<div class="font-semibold">
-							{{ formatCurrency(selectedPosition()?.tp1, 'USD', 4, 8) }}
-							({{ formatPercent(((selectedPosition()?.tp1 ?? 0) / (selectedPosition()?.entry ?? 1) - 1) * 100) }})
+							{{ formatCurrency(selectedPosition()?.take_profit_tier_1_price, 'USD', 4, 8) }}
+							({{ formatPercent(((selectedPosition()?.take_profit_tier_1_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }})
 							/
-							{{ formatCurrency(selectedPosition()?.tp2, 'USD', 4, 8) }}
-							({{ formatPercent(((selectedPosition()?.tp2 ?? 0) / (selectedPosition()?.entry ?? 1) - 1) * 100) }})
+							{{ formatCurrency(selectedPosition()?.take_profit_tier_2_price, 'USD', 4, 8) }}
+							({{ formatPercent(((selectedPosition()?.take_profit_tier_2_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }})
 						</div>
 					</div>
 					<div class="col-span-6">
 						<div class="opacity-70">Stop</div>
 						<div class="font-semibold">
-							{{ formatCurrency(selectedPosition()?.stop, 'USD', 4, 8) }}
-							({{ formatPercent(((selectedPosition()?.stop ?? 0) / (selectedPosition()?.entry ?? 1) - 1) * 100) }})
+							{{ formatCurrency(selectedPosition()?.stop_loss_price, 'USD', 4, 8) }}
+							({{ formatPercent(((selectedPosition()?.stop_loss_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }})
 						</div>
 					</div>
 
@@ -156,11 +156,11 @@
 									</div>
 									<div class="col-span-4">
 										<div class="opacity-70">Quantity</div>
-										<div class="font-semibold">{{ formatNumber(buy.qty, 2, 6) }}</div>
+										<div class="font-semibold">{{ formatNumber(buy.execution_quantity, 2, 6) }}</div>
 									</div>
 									<div class="col-span-4">
 										<div class="opacity-70">Price</div>
-										<div class="font-semibold">{{ formatCurrency(buy.price, 'USD', 4, 8) }}</div>
+										<div class="font-semibold">{{ formatCurrency(buy.execution_price, 'USD', 4, 8) }}</div>
 									</div>
 								</div>
 								<div class="mt-3 flex gap-2">

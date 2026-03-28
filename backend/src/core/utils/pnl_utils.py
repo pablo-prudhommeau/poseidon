@@ -8,10 +8,10 @@ from enum import Enum
 from typing import Deque, Dict, Iterable, List, Optional
 
 from src.core.structures.structures import (
-    RealizedPnl,
+    RealizedProfitAndLoss,
     Token,
     CashFromTrades,
-    HoldingsAndUnrealizedPnl,
+    HoldingsAndUnrealizedProfitAndLoss,
 )
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_logger
@@ -22,23 +22,16 @@ log = get_logger(__name__)
 
 @dataclass
 class InventoryLot:
-    """
-    FIFO inventory lot with explicit cost basis.
-    """
     quantity: float
     unit_price_usd: float
     buy_fee_per_unit_usd: float
 
 
 def _now_with_timezone() -> datetime:
-    """Return the current time with timezone information attached."""
     return datetime.now().astimezone()
 
 
 def _get_created_at_or_now(obj: Trade | object) -> datetime:
-    """
-    Accessor for 'created_at' with timezone normalization and safe fallback.
-    """
     try:
         created_at = obj.created_at
     except AttributeError:
@@ -54,7 +47,6 @@ def _get_created_at_or_now(obj: Trade | object) -> datetime:
 
 
 def _normalize_side_to_upper(value: str | Enum | None) -> str:
-    """Normalize a side string/enum to uppercase (e.g. 'BUY', 'SELL')."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -69,10 +61,6 @@ def _normalize_side_to_upper(value: str | Enum | None) -> str:
 
 
 def _decimal_from_primitive(value: float | int | str | None) -> Decimal:
-    """
-    Safe Decimal constructor from common primitives.
-    Returns Decimal('0') when parsing fails.
-    """
     try:
         return Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError):
@@ -80,35 +68,21 @@ def _decimal_from_primitive(value: float | int | str | None) -> Decimal:
 
 
 def _to_token_from_position(position: Position) -> Token:
-    """Build a TokenIdentity from a position-like object."""
-    pair_address: Optional[str] = position.pairAddress if isinstance(position.pairAddress,
-                                                                     str) and position.pairAddress else None
+    pair_address: Optional[str] = position.pair_address if isinstance(position.pair_address,
+                                                                      str) and position.pair_address else None
     return Token(
-        chain=position.chain,
-        tokenAddress=position.tokenAddress,
-        symbol=position.symbol,
-        pairAddress=pair_address,
+        chain=position.blockchain_network,
+        token_address=position.token_address,
+        symbol=position.token_symbol,
+        pair_address=pair_address,
     )
 
 
 def _quantize_2dp(amount: Decimal) -> Decimal:
-    """Round to 2 decimal places with HALF_UP."""
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> RealizedPnl:
-    """
-    Compute realized PnL using FIFO **per pair address when available, otherwise per token address**.
-
-    Policy:
-    - Buy fees are amortized per-unit into cost basis.
-    - Sell fee is applied per matched unit on the sell side.
-    - Grouping key: pairAddress if present; otherwise tokenAddress (chain-qualified).
-
-    Logging:
-    - [PNL][REALIZED][START]/[END] at function boundaries.
-    - [PNL][REALIZED][BUY]/[SELL]/[SKIP] at key steps (debug level).
-    """
+def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> RealizedProfitAndLoss:
     sorted_trades: List[Trade] = sorted(trades, key=_get_created_at_or_now)
 
     lots_by_token: Dict[Token, Deque[InventoryLot]] = defaultdict(deque)
@@ -117,18 +91,18 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Rea
     cutoff_timestamp = _now_with_timezone() - timedelta(hours=cutoff_hours)
 
     for trade in sorted_trades:
-        side = _normalize_side_to_upper(trade.side)
+        side = _normalize_side_to_upper(trade.trade_side)
         token = Token(
-            symbol=trade.symbol,
-            chain=trade.chain,
-            tokenAddress=trade.tokenAddress,
-            pairAddress=trade.pairAddress,
+            symbol=trade.token_symbol,
+            chain=trade.blockchain_network,
+            token_address=trade.token_address,
+            pair_address=trade.pair_address,
         )
 
         try:
-            quantity = float(trade.qty) if trade.qty is not None else 0.0
-            unit_price_usd = float(trade.price) if trade.price is not None else 0.0
-            fee_usd = float(trade.fee) if trade.fee is not None else 0.0
+            quantity = float(trade.execution_quantity) if trade.execution_quantity is not None else 0.0
+            unit_price_usd = float(trade.execution_price) if trade.execution_price is not None else 0.0
+            fee_usd = float(trade.transaction_fee) if trade.transaction_fee is not None else 0.0
         except (TypeError, ValueError):
             log.debug("[PNL][REALIZED][SKIP] token=%s reason=invalid_numeric_fields", token)
             continue
@@ -166,21 +140,15 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Rea
                 if lot.quantity <= 1e-12:
                     lots_by_token[token].popleft()
 
-    realized = RealizedPnl(
-        total=float(_quantize_2dp(realized_total)),
-        recent=float(_quantize_2dp(realized_recent)),
+    realized = RealizedProfitAndLoss(
+        total_realized_profit_and_loss=float(_quantize_2dp(realized_total)),
+        recent_realized_profit_and_loss=float(_quantize_2dp(realized_recent)),
     )
 
     return realized
 
 
 def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFromTrades:
-    """
-    Compute ending cash from trades based on trade USD prices.
-
-    Returns:
-        CashFromTrades(cash, total_buys, total_sells, total_fees)
-    """
     sorted_trades: List[Trade] = list(trades)
 
     total_buys: Decimal = Decimal("0")
@@ -188,12 +156,12 @@ def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFrom
     total_fees: Decimal = Decimal("0")
 
     for trade in sorted_trades:
-        side = _normalize_side_to_upper(trade.side)
+        side = _normalize_side_to_upper(trade.trade_side)
 
         try:
-            quantity = float(trade.qty) if trade.qty is not None else 0.0
-            unit_price_usd = float(trade.price) if trade.price is not None else 0.0
-            fee_usd_dec = _decimal_from_primitive(trade.fee)
+            quantity = float(trade.execution_quantity) if trade.execution_quantity is not None else 0.0
+            unit_price_usd = float(trade.execution_price) if trade.execution_price is not None else 0.0
+            fee_usd_dec = _decimal_from_primitive(trade.transaction_fee)
         except (TypeError, ValueError):
             log.debug("[PNL][CASH][SKIP] reason=invalid_numeric_fields")
             continue
@@ -211,10 +179,10 @@ def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFrom
 
     ending_cash = _decimal_from_primitive(start_cash_usd) - total_buys + total_sells - total_fees
     result = CashFromTrades(
-        cash=float(_quantize_2dp(ending_cash)),
-        total_buys=float(_quantize_2dp(total_buys)),
-        total_sells=float(_quantize_2dp(total_sells)),
-        total_fees=float(_quantize_2dp(total_fees)),
+        available_cash=float(_quantize_2dp(ending_cash)),
+        total_buy_volume=float(_quantize_2dp(total_buys)),
+        total_sell_volume=float(_quantize_2dp(total_sells)),
+        total_fees_paid=float(_quantize_2dp(total_fees)),
     )
     return result
 
@@ -222,7 +190,7 @@ def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFrom
 def holdings_and_unrealized_from_positions(
         positions: Iterable[Position],
         token_information_list: List[DexscreenerTokenInformation]
-) -> HoldingsAndUnrealizedPnl:
+) -> HoldingsAndUnrealizedProfitAndLoss:
     position_list: List[Position] = list(positions)
     holdings_value_dec = Decimal("0")
     unrealized_dec = Decimal("0")
@@ -230,14 +198,14 @@ def holdings_and_unrealized_from_positions(
     for position in position_list:
         token = _to_token_from_position(position)
         price_usd = next((token_information for token_information in token_information_list if
-                          token_information.pair_address == position.pairAddress)).price_usd
+                          token_information.pair_address == position.pair_address)).price_usd
         if price_usd is None or price_usd <= 0.0:
             log.debug("[PNL][UNREAL][NOPRICE] token=%s — skipping unrealized valuation", token)
             continue
 
         try:
             quantity = float(position.current_quantity)
-            entry_price = float(position.entry)
+            entry_price = float(position.entry_price)
         except (TypeError, ValueError):
             log.debug("[PNL][UNREAL][SKIP] token=%s reason=invalid_numeric_fields", token)
             continue
@@ -252,26 +220,16 @@ def holdings_and_unrealized_from_positions(
         unrealized_for_position = _decimal_from_primitive((price_usd - entry_price) * quantity)
         unrealized_dec += unrealized_for_position
 
-    result = HoldingsAndUnrealizedPnl(
-        holdings=float(_quantize_2dp(holdings_value_dec)),
-        unrealized_pnl=float(_quantize_2dp(unrealized_dec)),
+    result = HoldingsAndUnrealizedProfitAndLoss(
+        total_holdings_value=float(_quantize_2dp(holdings_value_dec)),
+        total_unrealized_profit_and_loss=float(_quantize_2dp(unrealized_dec)),
     )
     return result
 
 
 async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, float]:
-    """
-    Pair-aware live pricing for a set of positions, **preserving keys**:
-
-    Rules:
-    - When a position has a non-empty 'pairAddress' and a valid 'chain', query Dexscreener
-      and return a mapping {pairAddress -> priceUsd}.
-    - Positions without a pair are ignored here (pair-only policy).
-    """
     from src.core.structures.structures import Token as CoreToken
     from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
-    from src.integrations.dexscreener.dexscreener_structures import \
-        DexscreenerTokenPrice as CoreTokenPrice  # noqa: F401
 
     tokens: List[CoreToken] = []
     for position in positions:
@@ -285,7 +243,7 @@ async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, 
                 and isinstance(chain, str) and chain
                 and isinstance(token_address, str) and token_address
         ):
-            tokens.append(CoreToken(symbol=symbol, chain=chain, tokenAddress=token_address, pairAddress=pair_address))
+            tokens.append(CoreToken(symbol=symbol, chain=chain, token_address=token_address, pair_address=pair_address))
 
     result: Dict[str, float] = {}
     if not tokens:

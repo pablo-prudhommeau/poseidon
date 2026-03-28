@@ -1,56 +1,79 @@
+from __future__ import annotations
+
 from src.core.structures.structures import AllocationResult
+from src.logging.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class DcaAllocationEngine:
 
     @staticmethod
-    def calculate_allocation(
-            nominal_tranche: float,
-            current_dry_powder: float,
-            current_price: float,
+    def calculate_dynamic_allocation(
+            nominal_investment_amount: float,
+            current_dry_powder_reserve: float,
+            current_market_price: float,
             current_macro_ema: float,
-            current_pru: float,
-            is_last_execution: bool,
-            pru_elasticity_factor: float
+            current_average_purchase_price: float,
+            is_last_execution_cycle: bool,
+            price_elasticity_aggressiveness: float
     ) -> AllocationResult:
+        logger.debug(
+            "[DCA][ALLOCATION][CHECK] Nominal: %s | DryPowder: %s | Price: %s | PRU: %s",
+            nominal_investment_amount,
+            current_dry_powder_reserve,
+            current_market_price,
+            current_average_purchase_price
+        )
 
-        if is_last_execution:
+        if is_last_execution_cycle:
+            total_remaining_liquidity = nominal_investment_amount + current_dry_powder_reserve
+            logger.info("[DCA][ALLOCATION][FINAL] Final execution cycle triggered: deploying all remaining liquidity")
             return AllocationResult(
-                spend_amount=nominal_tranche + current_dry_powder,
-                dry_powder_delta=-current_dry_powder,
-                action_description="FINAL_DEPLOYMENT"
+                spend_amount=total_remaining_liquidity,
+                dry_powder_delta=-current_dry_powder_reserve,
+                action_description="FINAL_FULL_DEPLOYMENT"
             )
 
-        if current_pru > 0 and current_price > current_pru:
+        if current_average_purchase_price > 0 and current_market_price > current_average_purchase_price:
+            logger.info("[DCA][ALLOCATION][SKIP] Kill-switch active: market price is above average purchase price")
             return AllocationResult(
                 spend_amount=0.0,
-                dry_powder_delta=nominal_tranche,
-                action_description="KILL_SWITCH_ACTIVE"
+                dry_powder_delta=nominal_investment_amount,
+                action_description="AVERAGE_PRICE_PROTECTION_HALT"
             )
 
-        multiplier = 1.0
-        if current_pru > 0 and current_price <= current_pru:
-            distance_pct = (current_pru - current_price) / current_pru
-            multiplier = 1.0 + (distance_pct * pru_elasticity_factor)
+        investment_multiplier = 1.0
+        if current_average_purchase_price > 0 and current_market_price <= current_average_purchase_price:
+            distance_from_pru_percent = (current_average_purchase_price - current_market_price) / current_average_purchase_price
+            investment_multiplier = 1.0 + (distance_from_pru_percent * price_elasticity_aggressiveness)
+            logger.debug("[DCA][ALLOCATION][SCALING] Elasticity multiplier calculated: %s", investment_multiplier)
 
-        if current_macro_ema > 0 and current_price > current_macro_ema:
-            base_amount = nominal_tranche * 0.5
-            target_spend = base_amount * multiplier
-            action_prefix = "50%_RETENTION_SCALED"
-        elif current_macro_ema > 0 and current_price <= current_macro_ema:
-            base_amount = nominal_tranche + (current_dry_powder * 0.5)
-            target_spend = base_amount * multiplier
-            action_prefix = "DIP_ACCUMULATION_SCALED"
+        if current_macro_ema > 0 and current_market_price > current_macro_ema:
+            base_allocation_amount = nominal_investment_amount * 0.5
+            target_spend_amount = base_allocation_amount * investment_multiplier
+            action_prefix = "CONSERVATIVE_RETENTION_SCALED"
+        elif current_macro_ema > 0 and current_market_price <= current_macro_ema:
+            base_allocation_amount = nominal_investment_amount + (current_dry_powder_reserve * 0.5)
+            target_spend_amount = base_allocation_amount * investment_multiplier
+            action_prefix = "AGGRESSIVE_DIP_ACCUMULATION_SCALED"
         else:
-            target_spend = nominal_tranche
-            action_prefix = "FALLBACK_NOMINAL"
+            target_spend_amount = nominal_investment_amount
+            action_prefix = "FALLBACK_NOMINAL_STRATEGY"
 
-        max_available = nominal_tranche + current_dry_powder
-        actual_spend = min(target_spend, max_available)
-        dry_powder_delta = nominal_tranche - actual_spend
+        max_available_liquidity = nominal_investment_amount + current_dry_powder_reserve
+        actual_spend_amount = min(target_spend_amount, max_available_liquidity)
+        dry_powder_delta = nominal_investment_amount - actual_spend_amount
+
+        logger.info(
+            "[DCA][ALLOCATION][RESULT] Action: %s | Spend: %s | Multiplier: %s",
+            action_prefix,
+            actual_spend_amount,
+            investment_multiplier
+        )
 
         return AllocationResult(
-            spend_amount=actual_spend,
+            spend_amount=actual_spend_amount,
             dry_powder_delta=dry_powder_delta,
-            action_description=f"{action_prefix}_(M:{multiplier:.2f}x)"
+            action_description=f"{action_prefix}_(X:{investment_multiplier:.2f})"
         )

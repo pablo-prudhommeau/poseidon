@@ -1,6 +1,3 @@
-// frontend/src/app/apex.theme.ts
-
-/** Palette Poseidon */
 export const POSEIDON_COLORS = {
     background: '#0b1020',
     surface: '#111634',
@@ -14,7 +11,6 @@ export const POSEIDON_COLORS = {
     danger: '#ef4444'
 };
 
-/** Thème de base optimisé perfs (Apex 5.3.5 + ng-apexcharts) */
 export function baseTheme() {
     return {
         chart: {
@@ -59,7 +55,6 @@ export function baseTheme() {
     };
 }
 
-/** Exports legacy si tu les appelles ailleurs */
 export function areaStyle() { return {...baseTheme(), chart: {...baseTheme().chart, type: 'area' as const}}; }
 
 export function columnStyle() { return {...baseTheme(), chart: {...baseTheme().chart, type: 'bar' as const}}; }

@@ -1,0 +1,18 @@
+{
+    "blockchain_network": "avalanche",
+    "source_asset_symbol": "USDC",
+    "source_asset_address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+    "source_asset_decimals": 6,
+    "target_asset_symbol": "BTC.b",
+    "target_asset_address": "0x152b9d0FdC40C096757F570A51E494bd4b943E50",
+    "binance_trading_pair": "BTCUSDT",
+    "total_allocated_budget": 10000,
+    "total_planned_executions": 70,
+    "strategy_start_date": "2026-03-22T00:00:00+01:00",
+    "strategy_end_date": "2026-12-01T00:00:00+01:00",
+    "bypass_security_approval": false,
+    "slippage_tolerance": 0.01,
+    "average_unit_price_elasticity_factor": 3,
+    "bear_market_start_date": "2022-06-07T02:00:00+02:00",
+    "bear_market_end_date": "2023-01-20T18:00:00+01:00"
+}

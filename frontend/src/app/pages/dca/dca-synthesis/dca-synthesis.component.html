@@ -2,17 +2,17 @@
 	<ng-template pTemplate="title">
 		<div class="flex justify-between items-center">
 			<span class="uppercase font-bold">Deployed Budget</span>
-			<i class="fa fa-vault text-sky-400"></i>
+			<i class="fa fa-vault text-blue-400"></i>
 		</div>
 	</ng-template>
 	<div class="text-2xl font-semibold text-white mt-1">
-		{{ strategy().asset_in_currency_symbol }} {{ deployedAmount() | number:'1.2-2' }}
+		{{ strategy().source_asset_currency_symbol }} {{ deployedAmount() | number:'1.2-2' }}
 	</div>
 	<div class="text-xs text-slate-400 mt-1">
-		of {{ strategy().asset_in_currency_symbol }} {{ totalBudget() | number:'1.2-2' }} total
+		of {{ strategy().source_asset_currency_symbol }} {{ totalBudget() | number:'1.2-2' }} total
 	</div>
 	<div class="w-full bg-slate-700/50 rounded-full h-1.5 mt-4">
-		<div class="bg-sky-400 h-1.5 rounded-full" [style.width.%]="progressPercentage()"></div>
+		<div class="bg-blue-400 h-1.5 rounded-full" [style.width.%]="progressPercentage()"></div>
 	</div>
 </p-card>
 
@@ -24,7 +24,7 @@
 		</div>
 	</ng-template>
 	<div class="text-2xl font-semibold text-white mt-1">
-		{{ strategy().asset_in_currency_symbol }} {{ currentAveragePurchasePrice() | number:'1.2-2' }}
+		{{ strategy().source_asset_currency_symbol }} {{ currentAveragePurchasePrice() | number:'1.2-2' }}
 	</div>
 	<div class="mt-2 h-8">
 		<sparkline *ngIf="(purchasePriceSparkline()?.length ?? 0) > 1" [points]="purchasePriceSparkline()"></sparkline>
@@ -44,7 +44,7 @@
 			<i class="fa fa-coins text-purple-400"></i>
 			<span>Projected accumulated extra asset:</span>
 			<span class="font-bold text-white tracking-wide">
-                <span class="text-purple-300">{{ strategy().asset_out_currency_symbol }}</span> {{ proj.cryptoAmount | number:'1.2-6' }}
+                <span class="text-purple-300">{{ strategy().target_asset_currency_symbol }}</span> {{ proj.cryptoAmount | number:'1.2-6' }}
             </span>
 		</div>
 
@@ -52,19 +52,19 @@
 			<div class="p-3 rounded-lg bg-black/20 border border-red-500/20 flex flex-col justify-between">
 				<div class="flex flex-col">
 					<span class="text-xs font-semibold text-red-400 uppercase tracking-widest"><i class="fa fa-snowflake mr-1"></i>Bear Market</span>
-					<span class="text-[11px] text-slate-500 mt-1">Est. bottom: {{ strategy().asset_in_currency_symbol }} {{ proj.bearPriceTarget | number:'1.0-0' }}</span>
+					<span class="text-[11px] text-slate-500 mt-1">Est. bottom: {{ strategy().source_asset_currency_symbol }} {{ proj.bearPriceTarget | number:'1.0-0' }}</span>
 				</div>
 				<div class="mt-1">
-					<pnl-badge [value]="proj.bear" [currencySymbol]="strategy().asset_in_currency_symbol"></pnl-badge>
+					<pnl-badge [value]="proj.bear" [currencySymbol]="strategy().source_asset_currency_symbol"></pnl-badge>
 				</div>
 			</div>
 
-			<div class="p-3 rounded-lg bg-black/20 border border-sky-500/20 flex flex-col justify-between">
+			<div class="p-3 rounded-lg bg-black/20 border border-blue-500/20 flex flex-col justify-between">
 				<div class="flex flex-col">
-					<span class="text-xs font-semibold text-sky-400 uppercase tracking-widest"><i class="fa fa-bolt mr-1"></i>Live</span>
+					<span class="text-xs font-semibold text-blue-400 uppercase tracking-widest"><i class="fa fa-bolt mr-1"></i>Live</span>
 					<span class="text-[11px] text-slate-500 mt-1">
                    <ng-container *ngIf="proj.livePrice !== null; else noPrice">
-                      Valuation at {{ strategy().asset_in_currency_symbol }} {{ proj.livePrice | number:'1.0-2' }}
+                      Valuation at {{ strategy().source_asset_currency_symbol }} {{ proj.livePrice | number:'1.0-2' }}
                    </ng-container>
                    <ng-template #noPrice>
                       <span class="italic">Awaiting price feed...</span>
@@ -73,7 +73,7 @@
 				</div>
 				<div class="mt-1">
 					<ng-container *ngIf="proj.live !== null; else noLiveValue">
-						<pnl-badge [value]="proj.live" [currencySymbol]="strategy().asset_in_currency_symbol"></pnl-badge>
+						<pnl-badge [value]="proj.live" [currencySymbol]="strategy().source_asset_currency_symbol"></pnl-badge>
 					</ng-container>
 					<ng-template #noLiveValue>
 						<span class="text-xs font-semibold text-slate-500">N/A</span>
@@ -84,10 +84,10 @@
 			<div class="p-3 rounded-lg bg-black/20 border border-emerald-500/20 flex flex-col justify-between">
 				<div class="flex flex-col">
 					<span class="text-xs font-semibold text-emerald-400 uppercase tracking-widest"><i class="fa fa-rocket mr-1"></i>Target Cycle</span>
-					<span class="text-[11px] text-slate-500 mt-1">Est. top (C{{ strategy().cycle_index }}): {{ strategy().asset_in_currency_symbol }} {{ proj.bullPriceTarget | number:'1.0-0' }}</span>
+					<span class="text-[11px] text-slate-500 mt-1">Est. top (C{{ strategy().current_cycle_index }}): {{ strategy().source_asset_currency_symbol }} {{ proj.bullPriceTarget | number:'1.0-0' }}</span>
 				</div>
 				<div class="mt-1">
-					<pnl-badge [value]="proj.bull" [currencySymbol]="strategy().asset_in_currency_symbol"></pnl-badge>
+					<pnl-badge [value]="proj.bull" [currencySymbol]="strategy().source_asset_currency_symbol"></pnl-badge>
 				</div>
 			</div>
 		</div>
@@ -110,15 +110,15 @@
 			<i class="fa fa-coins text-amber-400"></i>
 			<span class="">Accumulated yied:</span>
 			<span class="font-bold text-white tracking-wide">
-                <span class="text-amber-400">{{ strategy().asset_in_currency_symbol }}</span> {{ yieldMetrics().realized | number:'1.2-2' }}
+                <span class="text-amber-400">{{ strategy().source_asset_currency_symbol }}</span> {{ yieldMetrics().realized | number:'1.2-2' }}
             </span>
 		</div>
 
 		<div class="mt-auto flex flex-col gap-2">
 			<div class="flex justify-between items-center p-2 rounded bg-black/20 border border-amber-500/20">
-				<span class="text-xs text-slate-400"><i class="fa fa-forward text-amber-500/50 mr-1"></i>Projected remainder</span>
+				<span class="text-xs text-slate-400"><i class="fa fa-forward text-amber-500/50 mr-1"></i>Remaining projected yield</span>
 				<span class="text-xs font-semibold text-slate-300">
-                    {{ strategy().asset_in_currency_symbol }} {{ yieldMetrics().projectedRemaining | number:'1.2-2' }}
+                    {{ strategy().source_asset_currency_symbol }} {{ yieldMetrics().projectedRemaining | number:'1.2-2' }}
                 </span>
 			</div>
 			<div class="flex justify-between items-center p-2 rounded bg-black/20 border border-slate-500/20">

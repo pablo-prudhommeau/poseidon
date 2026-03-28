@@ -66,3 +66,7 @@
 .apexcharts-xaxis text, .apexcharts-yaxis text, .apexcharts-legend-text {
     fill: #cbd5e1 !important;
 }
+
+.p-popover-content {
+    padding: 0 !important;
+}

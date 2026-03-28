@@ -33,15 +33,10 @@ from src.logging.logger import get_logger
 log = get_logger(__name__)
 
 _shared_async_client: Optional[httpx.AsyncClient] = None
-_shared_async_client_loop_id: Optional[int] = None  # tracks which loop owns the client
+_shared_async_client_loop_id: Optional[int] = None
 
 
 def _get_shared_client() -> httpx.AsyncClient:
-    """
-    Return (or lazily create) the shared AsyncClient, bound to the currently
-    running event loop.  If the loop has changed since the client was created,
-    the old client is discarded and a new one is instantiated.
-    """
     global _shared_async_client, _shared_async_client_loop_id
 
     try:
@@ -77,7 +72,7 @@ async def fetch_dexscreener_token_information_list(
 
     tokens_by_chain: Dict[str, List[Token]] = {}
     for token in unique_tokens:
-        if not token.chain or not token.pairAddress:
+        if not token.chain or not token.pair_address:
             log.debug("[DEX][TOKEN][INFORMATION] Skipping token without chain/pair: %s", str(token))
             continue
         tokens_by_chain.setdefault(token.chain, []).append(token)
@@ -92,9 +87,9 @@ async def fetch_dexscreener_token_information_list(
         seen_pair_addresses: set[str] = set()
         pair_addresses: List[str] = []
         for token in chain_tokens:
-            if token.pairAddress not in seen_pair_addresses:
-                seen_pair_addresses.add(token.pairAddress)
-                pair_addresses.append(token.pairAddress)
+            if token.pair_address not in seen_pair_addresses:
+                seen_pair_addresses.add(token.pair_address)
+                pair_addresses.append(token.pair_address)
 
         for batch in _chunk_strings(pair_addresses, DEFAULT_MAX_ADDRESSES_PER_CALL):
             try:
@@ -133,11 +128,6 @@ async def fetch_dexscreener_token_information_list(
 
 
 def fetch_dexscreener_token_information_list_sync(tokens: List[Token]) -> List[DexscreenerTokenInformation]:
-    """
-    Synchronous wrapper for fetch_dexscreener_token_information_list.
-    Uses a fully isolated local client in the new-loop path to avoid
-    'Event loop is closed' errors from the shared async client's transport teardown.
-    """
     if not tokens:
         log.debug("[DEX][TOKEN][INFORMATION] Called with an empty token list.")
         return []
@@ -217,10 +207,6 @@ async def fetch_token_information_by_token_addresses(token_addresses: Iterable[s
 
 
 async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTokenInformation]:
-    """
-    Aggregate trending candidates from public Dexscreener sources and normalize them.
-    Uses the shared HTTP client to maintain connection persistence.
-    """
     log.info("[DEX][TREND] Collecting trending candidates from public endpoints.")
 
     collected_addresses: List[str] = []

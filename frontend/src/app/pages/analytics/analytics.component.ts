@@ -1,4 +1,3 @@
-// frontend/src/app/pages/analytics/analytics.component.ts
 import {CommonModule} from '@angular/common';
 import {AfterViewInit, Component, Directive, ElementRef, EventEmitter, inject, OnDestroy, OnInit, Output, signal} from '@angular/core';
 import {FormsModule} from '@angular/forms';
@@ -27,13 +26,11 @@ import {baseTheme, POSEIDON_COLORS} from '../../apex.theme';
 import {ApiService} from '../../api.service';
 import type {Analytics, Position} from '../../core/models';
 
-/** Emits true/false when the element enters/leaves viewport (lazy build). */
 @Directive({selector: '[inViewport]', standalone: true})
 export class InViewportDirective implements AfterViewInit, OnDestroy {
     @Output() inViewportChange = new EventEmitter<boolean>();
     private observer?: IntersectionObserver;
 
-    /** Start observing the host element visibility. */
     constructor(private readonly host: ElementRef<HTMLElement>) {}
 
     ngAfterViewInit(): void {
@@ -49,26 +46,22 @@ export class InViewportDirective implements AfterViewInit, OnDestroy {
     }
 }
 
-/** Scatter point. */
 interface ScatterPoint {
     x: number;
     y: number;
     meta?: unknown;
 }
 
-/** Line point (nullable y creates gaps for empty buckets). */
 interface LinePoint {
     x: number;
     y: number | null;
 }
 
-/** RangeArea point [low, high]. */
 interface RangePoint {
     x: number;
     y: [number, number];
 }
 
-/** Heatmap cell extended with meta. */
 interface HeatCell {
     x: string;
     y: number;
@@ -131,29 +124,28 @@ export class AnalyticsComponent implements OnInit {
     };
 
     private readonly metricDefs: ReadonlyArray<MetricDefinition> = [
-        {key: 'final', label: 'Final score', accessor: r => r.scores?.final, usesLogScaleForDisplay: false, unit: 'score'},
-        {key: 'quality', label: 'Quality score', accessor: r => r.scores?.quality, usesLogScaleForDisplay: false, unit: 'score'},
-        {key: 'statistics', label: 'Statistics score', accessor: r => r.scores?.statistics, usesLogScaleForDisplay: false, unit: 'score'},
-        {key: 'entry', label: 'Entry score', accessor: r => r.scores?.entry, usesLogScaleForDisplay: false, unit: 'score'},
-        {key: 'liq', label: 'Liquidity ($)', accessor: r => r.fundamentals?.liquidityUsd, usesLogScaleForDisplay: true, unit: 'usd'},
-        {key: 'vol5m', label: 'Volume 5m ($)', accessor: r => r.fundamentals?.volume5mUsd, usesLogScaleForDisplay: true, unit: 'usd'},
-        {key: 'vol1h', label: 'Volume 1h ($)', accessor: r => r.fundamentals?.volume1hUsd, usesLogScaleForDisplay: true, unit: 'usd'},
-        {key: 'vol6h', label: 'Volume 6h ($)', accessor: r => r.fundamentals?.volume6hUsd, usesLogScaleForDisplay: true, unit: 'usd'},
-        {key: 'vol24h', label: 'Volume 24h ($)', accessor: r => r.fundamentals?.volume24hUsd, usesLogScaleForDisplay: true, unit: 'usd'},
-        {key: 'p5m', label: 'Δ5m (%)', accessor: r => r.fundamentals?.pct5m, usesLogScaleForDisplay: false, unit: 'percent'},
-        {key: 'p1h', label: 'Δ1h (%)', accessor: r => r.fundamentals?.pct1h, usesLogScaleForDisplay: false, unit: 'percent'},
-        {key: 'p6h', label: 'Δ6h (%)', accessor: r => r.fundamentals?.pct6h, usesLogScaleForDisplay: false, unit: 'percent'},
-        {key: 'p24h', label: 'Δ24h (%)', accessor: r => r.fundamentals?.pct24h, usesLogScaleForDisplay: false, unit: 'percent'},
-        {key: 'age', label: 'Token age (h)', accessor: r => r.fundamentals?.tokenAgeHours, usesLogScaleForDisplay: true, unit: 'hours'},
-        {key: 'tx5m', label: 'Transactions 5m', accessor: r => r.fundamentals.tx5m, usesLogScaleForDisplay: true, unit: 'count'},
-        {key: 'tx1h', label: 'Transactions 1h', accessor: r => r.fundamentals.tx1h, usesLogScaleForDisplay: true, unit: 'count'},
-        {key: 'tx6h', label: 'Transactions 6h', accessor: r => r.fundamentals.tx6h, usesLogScaleForDisplay: true, unit: 'count'},
-        {key: 'tx24h', label: 'Transactions 24h', accessor: r => r.fundamentals.tx24h, usesLogScaleForDisplay: true, unit: 'count'}
+        {key: 'final', label: 'Final score', accessor: r => r.scores?.final_score, usesLogScaleForDisplay: false, unit: 'score'},
+        {key: 'quality', label: 'Quality score', accessor: r => r.scores?.quality_score, usesLogScaleForDisplay: false, unit: 'score'},
+        {key: 'statistics', label: 'Statistics score', accessor: r => r.scores?.statistics_score, usesLogScaleForDisplay: false, unit: 'score'},
+        {key: 'entry', label: 'Entry score', accessor: r => r.scores?.entry_score, usesLogScaleForDisplay: false, unit: 'score'},
+        {key: 'liq', label: 'Liquidity ($)', accessor: r => r.fundamentals?.liquidity_usd, usesLogScaleForDisplay: true, unit: 'usd'},
+        {key: 'vol5m', label: 'Volume 5m ($)', accessor: r => r.fundamentals?.volume_m5_usd, usesLogScaleForDisplay: true, unit: 'usd'},
+        {key: 'vol1h', label: 'Volume 1h ($)', accessor: r => r.fundamentals?.volume_h1_usd, usesLogScaleForDisplay: true, unit: 'usd'},
+        {key: 'vol6h', label: 'Volume 6h ($)', accessor: r => r.fundamentals?.volume_h6_usd, usesLogScaleForDisplay: true, unit: 'usd'},
+        {key: 'vol24h', label: 'Volume 24h ($)', accessor: r => r.fundamentals?.volume_h24_usd, usesLogScaleForDisplay: true, unit: 'usd'},
+        {key: 'p5m', label: 'Δ5m (%)', accessor: r => r.fundamentals?.price_change_percentage_m5, usesLogScaleForDisplay: false, unit: 'percent'},
+        {key: 'p1h', label: 'Δ1h (%)', accessor: r => r.fundamentals?.price_change_percentage_h1, usesLogScaleForDisplay: false, unit: 'percent'},
+        {key: 'p6h', label: 'Δ6h (%)', accessor: r => r.fundamentals?.price_change_percentage_h6, usesLogScaleForDisplay: false, unit: 'percent'},
+        {key: 'p24h', label: 'Δ24h (%)', accessor: r => r.fundamentals?.price_change_percentage_h24, usesLogScaleForDisplay: false, unit: 'percent'},
+        {key: 'age', label: 'Token age (h)', accessor: r => r.fundamentals?.token_age_hours, usesLogScaleForDisplay: true, unit: 'hours'},
+        {key: 'tx5m', label: 'Transactions 5m', accessor: r => r.fundamentals.transaction_count_m5, usesLogScaleForDisplay: true, unit: 'count'},
+        {key: 'tx1h', label: 'Transactions 1h', accessor: r => r.fundamentals.transaction_count_hour_1, usesLogScaleForDisplay: true, unit: 'count'},
+        {key: 'tx6h', label: 'Transactions 6h', accessor: r => r.fundamentals.transaction_count_h6, usesLogScaleForDisplay: true, unit: 'count'},
+        {key: 'tx24h', label: 'Transactions 24h', accessor: r => r.fundamentals.transaction_count_h24, usesLogScaleForDisplay: true, unit: 'count'}
     ];
 
     constructor() {}
 
-    /** Load analytics and positions once via HTTP (no WebSocket). */
     ngOnInit(): void { this.loadAllFromHttp(); }
 
     private loadAllFromHttp(): void {
@@ -218,7 +210,7 @@ export class AnalyticsComponent implements OnInit {
     }
 
     private getPnL(row: Analytics): number | null {
-        const src = this.pnlAxisMode() === 'pct' ? row.outcome?.pnlPct : row.outcome?.pnlUsd;
+        const src = this.pnlAxisMode() === 'pct' ? row.outcome?.outcome_realized_profit_and_loss_percentage : row.outcome?.outcome_realized_profit_and_loss_usd;
         return this.coerceNumber(src as unknown);
     }
 
@@ -384,7 +376,7 @@ export class AnalyticsComponent implements OnInit {
             scatter.push({x, y: yRaw, meta: r});
             xAll.push(x);
 
-            if (r.outcome?.hasOutcome === true) {
+            if (r.outcome?.has_trade_outcome === true) {
                 xClosed.push(x);
                 yClosed.push(yRaw);
             }
@@ -459,7 +451,6 @@ export class AnalyticsComponent implements OnInit {
         return {series, chart, xaxis, yaxis, stroke, fill, grid, legend, tooltip, markers, dataLabels, annotations, colors};
     }
 
-    // ===== Heatmap “drivers” (closed trades)
     private buildDriversHeatmap(): {
         series: ApexAxisChartSeries; chart: ApexChart;
         xaxis: ApexXAxis; yaxis: ApexYAxis;
@@ -473,7 +464,7 @@ export class AnalyticsComponent implements OnInit {
             const xsRaw: number[] = [];
             const ys: number[] = [];
             for (const r of this.rows()) {
-                if (r.outcome?.hasOutcome !== true) {
+                if (r.outcome?.has_trade_outcome !== true) {
                     continue;
                 }
                 const x = this.coerceNumber(def.accessor(r));
@@ -605,7 +596,7 @@ export class AnalyticsComponent implements OnInit {
 
         const staledSet = new Set<string | number>();
         for (const p of this.positions()) {
-            const phase = (p as any)?.phase;
+            const phase = (p as any)?.position_phase;
             if (typeof phase === 'string' && phase.toUpperCase() === 'STALED') {
                 const key = (p as any).positionId ?? (p as any).id ?? (p as any).tradeId;
                 if (key !== undefined) {

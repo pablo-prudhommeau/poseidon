@@ -86,7 +86,7 @@ export class WebSocketService {
                 this.trades.set(payload?.trades ?? []);
                 this.dcaStrategies.set(payload?.dca_strategies ?? []);
                 const rows: Analytics[] = Array.isArray(payload?.analytics) ? payload.analytics : [];
-                const sorted = [...rows].sort((a, b) => (b.evaluatedAt || '').localeCompare(a.evaluatedAt || ''));
+                const sorted = [...rows].sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
                 this.analytics.set(sorted.slice(0, 5000));
                 console.debug('[WS][INIT] State initialized', {
                     trades: this.trades().length,
@@ -118,7 +118,7 @@ export class WebSocketService {
                 const payload = (message as AnalyticsMsg).payload;
                 if (Array.isArray(payload)) {
                     const rows: Analytics[] = payload;
-                    const sorted = [...rows].sort((a, b) => (b.evaluatedAt || '').localeCompare(a.evaluatedAt || ''));
+                    const sorted = [...rows].sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
                     this.analytics.set(sorted.slice(0, 5000));
                 } else if (payload) {
                     const row = payload as Analytics;

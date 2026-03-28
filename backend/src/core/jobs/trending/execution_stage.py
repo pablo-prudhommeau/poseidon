@@ -12,7 +12,7 @@ from src.core.onchain.evm_signer import build_default_evm_signer
 from src.core.onchain.solana_signer import build_default_solana_signer
 from src.core.structures.structures import Candidate, OrderPayload, LifiRoute, Token
 from src.core.utils.date_utils import get_current_local_datetime
-from src.integrations.lifi.lifi_client import build_native_to_token_route, resolve_lifi_chain_id
+from src.integrations.lifi.lifi_client import generate_native_to_token_route, resolve_lifi_chain_identifier
 from src.logging.logger import get_logger
 from src.persistence.dao.portfolio_snapshots import get_portfolio_snapshot
 from src.persistence.db import _session
@@ -21,11 +21,6 @@ log = get_logger(__name__)
 
 
 class AnalyticsRecorder:
-    """
-    Small helper around :class:`TelemetryService` to ensure strict payloads,
-    consistent tagging and clear intent logging.
-    """
-
     @staticmethod
     def persist_and_broadcast(
             candidate: Candidate,
@@ -38,20 +33,17 @@ class AnalyticsRecorder:
             free_cash_before_usd: float = 0.0,
             free_cash_after_usd: float = 0.0,
     ) -> None:
-        """
-        Persist an analytics event and broadcast it over WebSocket.
-        """
         from src.persistence.models import Analytics
 
-        final_score = candidate.entry_score if candidate.score_final <= 0 else candidate.score_final
+        final_score = candidate.entry_score if candidate.final_computed_score <= 0 else candidate.final_computed_score
 
         token_information = candidate.dexscreener_token_information
         base_token = token_information.base_token
         payload = Analytics(
             symbol=base_token.symbol.upper(),
             chain=str(token_information.chain_id),
-            tokenAddress=str(base_token.address),
-            pairAddress=str(token_information.pair_address),
+            token_address=str(base_token.address),
+            pair_address=str(token_information.pair_address),
             priceUsd=float(token_information.price_usd),
             priceNative=float(token_information.price_native),
             rank=int(rank),
@@ -93,9 +85,6 @@ class AnalyticsRecorder:
             rank: int,
             reason: str,
     ) -> None:
-        """
-        Shortcut to persist a SKIP decision.
-        """
         AnalyticsRecorder.persist_and_broadcast(
             candidate,
             rank=rank,
@@ -105,12 +94,6 @@ class AnalyticsRecorder:
 
 
 class AiExecutionStage:
-    """
-    ChartAI gate + buy loop (persist decision before execution).
-    Applies sizing and cash constraints, optionally attaches LI.FI route, then
-    delegates execution to the Trader (PAPER vs LIVE handled downstream).
-    """
-
     def __init__(self) -> None:
         self.trader = Trader()
         self.risk_manager = AdaptiveRiskManager()
@@ -122,32 +105,17 @@ class AiExecutionStage:
 
     @staticmethod
     def _current_free_cash_usd() -> float:
-        """
-        Return the currently available cash in USD from the latest portfolio snapshot.
-        """
         with _session() as db:
             snapshot = get_portfolio_snapshot(db, create_if_missing=True)
             return float(snapshot.cash or 0.0) if snapshot else 0.0
 
     @staticmethod
     def _compute_per_order_budget_usd(free_cash_usd: float) -> float:
-        """
-        Compute the per-order budget from free cash and configured fraction.
-        """
         fraction = float(settings.TREND_PER_BUY_FRACTION)
         return max(1.0, free_cash_usd * fraction)
 
     @staticmethod
     def _compute_from_amount_wei(order_notional_usd: float, candidate: Candidate) -> Optional[int]:
-        """
-        Compute the native input amount (in wei) for a USD notional, assuming:
-
-          tokens = notional_usd / price_usd
-          native = tokens * price_native
-          wei    = native * 1e18
-
-        Assumes 18 decimals for the EVM native asset (ETH, MATIC, BNB, AVAX C-chain, ...).
-        """
         token_information = candidate.dexscreener_token_information
         try:
             price_usd = float(token_information.price_usd)
@@ -164,15 +132,6 @@ class AiExecutionStage:
 
     @staticmethod
     def _compute_from_amount_lamports(order_notional_usd: float, candidate: Candidate) -> Optional[int]:
-        """
-        Compute the native input amount (in lamports) for a USD notional on Solana, assuming:
-
-          tokens    = notional_usd / price_usd
-          native    = tokens * price_native
-          lamports  = native * 1e9
-
-        Assumes 9 decimals for SOL.
-        """
         try:
             token_information = candidate.dexscreener_token_information
             price_usd = float(token_information.price_usd)
@@ -193,19 +152,12 @@ class AiExecutionStage:
             *,
             order_notional_usd: float,
     ) -> Optional[LifiRoute]:
-        """
-        Build a LI.FI route for a same-chain swap when LIVE mode is enabled.
-
-        - EVM chains: native -> ERC-20 (amount in wei)
-        - Solana: SOL -> SPL (amount in lamports)
-        """
         if settings.PAPER_MODE:
             return None
 
         token_information = candidate.dexscreener_token_information
         chain_key = (token_information.chain_id or "").strip().lower()
 
-        # --- Solana path ----------------------------------------------------
         if chain_key == "solana":
             token_mint = (token_information.base_token.address or "").strip()
             if not token_mint:
@@ -229,12 +181,12 @@ class AiExecutionStage:
                 return None
 
             try:
-                route = build_native_to_token_route(
-                    chain_key="solana",
-                    from_address=from_address,
-                    to_token_address=token_mint,
-                    from_amount_wei=from_amount_lamports,  # lamports here by design
-                    slippage=0.03,
+                route = generate_native_to_token_route(
+                    chain_identifier="solana",
+                    source_address=from_address,
+                    destination_token_address=token_mint,
+                    source_amount_wei=from_amount_lamports,
+                    slippage_tolerance=0.03,
                 )
                 return route
             except Exception as exc:
@@ -245,8 +197,7 @@ class AiExecutionStage:
                 )
                 return None
 
-        # --- EVM path -------------------------------------------------------
-        chain_id = resolve_lifi_chain_id(chain_key)
+        chain_id = resolve_lifi_chain_identifier(chain_key)
         if chain_id is None:
             log.debug("[TREND][LIVE][ROUTE] Unsupported Dexscreener chain '%s'.", chain_key or "?")
             return None
@@ -266,18 +217,18 @@ class AiExecutionStage:
 
         try:
             evm_signer = build_default_evm_signer()
-            evm_address = evm_signer.address
+            evm_address = evm_signer.wallet_address
         except Exception as exc:
             log.warning("[TREND][LIVE][ROUTE] EVM signer unavailable (%s).", exc)
             return None
 
         try:
-            route = build_native_to_token_route(
-                chain_key=chain_key,
-                from_address=evm_address,
-                to_token_address=to_token_address,
-                from_amount_wei=from_amount_wei,
-                slippage=0.03,
+            route = generate_native_to_token_route(
+                chain_identifier=chain_key,
+                source_address=evm_address,
+                destination_token_address=to_token_address,
+                source_amount_wei=from_amount_wei,
+                slippage_tolerance=0.03,
             )
             return route
         except Exception as exc:
@@ -290,10 +241,6 @@ class AiExecutionStage:
             return None
 
     def ai_gate_and_execute(self, candidates: List[Candidate], engine: ScoringEngine) -> None:
-        """
-        Run AI gating and execute eligible buys in a single pass.
-        Persist every decision via telemetry before handing execution to the Trader.
-        """
         free_cash = self._current_free_cash_usd()
         per_order_budget_usd = self._compute_per_order_budget_usd(free_cash)
         minimum_free_cash_usd = float(settings.TREND_MIN_FREE_CASH_USD)
@@ -314,10 +261,10 @@ class AiExecutionStage:
 
             if ai_budget_remaining > 0:
                 try:
-                    signal = self.chart_ai.predict(
+                    signal = self.chart_ai.predict_market_signal(
                         symbol=candidate.token.symbol,
                         chain_name=candidate.token.chain or None,
-                        pair_address=candidate.token.pairAddress or None,
+                        pair_address=candidate.token.pair_address or None,
                         timeframe_minutes=self.chart_ai_timeframe_minutes,
                         lookback_minutes=self.chart_ai_lookback_minutes,
                         token_age_hours=float(candidate.dexscreener_token_information.age_hours),
@@ -329,7 +276,7 @@ class AiExecutionStage:
 
                 if signal is not None:
                     ai_delta = float(signal.quality_score_delta)
-                    ai_probability = float(signal.probability_tp1_before_sl)
+                    ai_probability = float(signal.take_profit_one_probability)
                     entry_score = engine.apply_ai_adjustment(float(candidate.statistics_score), ai_delta)
 
             candidate.ai_quality_delta = ai_delta
@@ -403,15 +350,15 @@ class AiExecutionStage:
             token = Token(
                 symbol=candidate.token.symbol,
                 chain=candidate.token.chain,
-                tokenAddress=candidate.token.tokenAddress,
-                pairAddress=candidate.token.pairAddress
+                token_address=candidate.token.token_address,
+                pair_address=candidate.token.pair_address
             )
             order_payload = OrderPayload(
-                token=token,
-                price=candidate.dexscreener_token_information.price_usd,
+                target_token=token,
+                execution_price=candidate.dexscreener_token_information.price_usd,
                 order_notional=order_notional,
                 original_candidate=candidate,
-                lifi_route=lifi_route,
+                lifi_routing_path=lifi_route,
             )
 
             self.trader.buy(order_payload)

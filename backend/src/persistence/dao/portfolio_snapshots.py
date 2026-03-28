@@ -14,9 +14,8 @@ log = get_logger(__name__)
 
 
 def ensure_initial_cash(db: Session) -> PortfolioSnapshot:
-    """Create an initial portfolio snapshot using PAPER_STARTING_CASH."""
     starting_cash = float(settings.PAPER_STARTING_CASH)
-    snapshot = PortfolioSnapshot(equity=starting_cash, cash=starting_cash, holdings=0.0)
+    snapshot = PortfolioSnapshot(total_equity_value=starting_cash, available_cash_balance=starting_cash, active_holdings_value=0.0)
     db.add(snapshot)
     db.commit()
     db.refresh(snapshot)
@@ -24,7 +23,6 @@ def ensure_initial_cash(db: Session) -> PortfolioSnapshot:
 
 
 def get_portfolio_snapshot(db: Session, create_if_missing: bool = False) -> Optional[PortfolioSnapshot]:
-    """Return the latest portfolio snapshot; optionally create an initial one."""
     stmt = (
         select(PortfolioSnapshot)
         .order_by(PortfolioSnapshot.created_at.desc(), PortfolioSnapshot.id.desc())
@@ -37,33 +35,31 @@ def get_portfolio_snapshot(db: Session, create_if_missing: bool = False) -> Opti
 
 
 def equity_curve(db: Session, points: int = 60) -> EquityCurve:
-    """Return a simplified equity curve as (timestamp, equity) points."""
     snapshots = list(
         db.execute(select(PortfolioSnapshot).order_by(PortfolioSnapshot.created_at.asc())).scalars().all()
     )
     if not snapshots:
-        return EquityCurve(points=[])
+        return EquityCurve(curve_points=[])
 
     if len(snapshots) > points:
         step = max(1, len(snapshots) // points)
         snapshots = snapshots[::step]
 
-    out = EquityCurve(points=[])
+    out = EquityCurve(curve_points=[])
     for s in snapshots:
         equity_curve_point = EquityCurvePoint(
-            timestamp=int(s.created_at.timestamp()),
-            equity=float(s.equity or 0.0),
+            timestamp_milliseconds=int(s.created_at.timestamp() * 1000),
+            equity=float(s.total_equity_value or 0.0),
         )
-        out.points.append(equity_curve_point)
+        out.curve_points.append(equity_curve_point)
     return out
 
 
 def snapshot_portfolio(db: Session, equity: float, cash: float, holdings: float) -> PortfolioSnapshot:
-    """Persist a portfolio snapshot with values already computed by the orchestrator."""
     snapshot = PortfolioSnapshot(
-        equity=float(equity or 0.0),
-        cash=float(cash or 0.0),
-        holdings=float(holdings or 0.0),
+        total_equity_value=float(equity or 0.0),
+        available_cash_balance=float(cash or 0.0),
+        active_holdings_value=float(holdings or 0.0),
     )
     db.add(snapshot)
     db.commit()

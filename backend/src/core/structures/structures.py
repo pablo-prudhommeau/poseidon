@@ -1,6 +1,6 @@
-from dataclasses import dataclass
 from enum import Enum
-from typing import Mapping, List, Optional, Any, Dict
+from enum import Enum
+from typing import List, Optional, Dict
 
 from pydantic import BaseModel
 
@@ -11,39 +11,35 @@ from src.logging.logger import get_logger
 logger = get_logger(__name__)
 
 
-@dataclass
-class Token:
+class Token(BaseModel):
     symbol: str
     chain: str
-    tokenAddress: str
-    pairAddress: str
+    token_address: str
+    pair_address: str
 
     def __str__(self) -> str:
         return (f"[symbol={self.symbol} "
                 f"chain={self.chain} "
-                f"tokenAddress={_tail(self.tokenAddress)} "
-                f"pairAddress=…{_tail(self.pairAddress)}]")
+                f"token_address={_tail(self.token_address)} "
+                f"pair_address=…{_tail(self.pair_address)}]")
 
     def __hash__(self) -> int:
-        return hash((self.chain, self.symbol, self.tokenAddress, self.pairAddress))
+        return hash((self.chain, self.symbol, self.token_address, self.pair_address))
 
 
-@dataclass
-class Thresholds:
-    take_profit_tp1: float
-    take_profit_tp2: float
-    stop_loss: float
+class Thresholds(BaseModel):
+    take_profit_tier_1_price: float
+    take_profit_tier_2_price: float
+    stop_loss_price: float
 
 
-@dataclass
-class PreEntryDecision:
-    should_buy: bool
-    reason: str
-    diagnostics: Mapping[str, float]
+class PreEntryDecision(BaseModel):
+    is_valid_for_entry: bool
+    decision_reason: str
+    risk_diagnostics_map: dict[str, float]
 
 
-@dataclass(frozen=True)
-class ScoreComponents:
+class ScoreComponents(BaseModel):
     quality_score: float
     statistics_score: float
     entry_score: float
@@ -56,57 +52,56 @@ class ScoreComponents:
         }
 
 
-@dataclass
-class Candidate:
+class Candidate(BaseModel):
     token: Token
     quality_score: float
     statistics_score: float
     entry_score: float
-    score_final: float
+    final_computed_score: float
     score_components: ScoreComponents
     ai_quality_delta: float
     ai_buy_probability: float
     dexscreener_token_information: DexscreenerTokenInformation
 
 
-class LifiEvmTransactionRequest:
+class LifiEvmTransactionRequest(BaseModel):
     to: str
     data: str
     value: str
-    from_: str
+    gas: Optional[str] = None
+    from_address: Optional[str] = None
+    raw_transaction: Optional[str] = None
 
 
-class LifiSolanaSerializedTx:
-    serializedTransaction: str
+class LifiSolanaSerializedTransaction(BaseModel):
+    serialized_transaction: str
 
 
-@dataclass
-class LifiRoute:
-    transactionRequest: LifiEvmTransactionRequest
-    transaction: Optional[LifiSolanaSerializedTx] = None
-    transactions: Optional[List[LifiSolanaSerializedTx]] = None
+class LifiRoute(BaseModel):
+    transaction_request: LifiEvmTransactionRequest
+    transaction: Optional[LifiSolanaSerializedTransaction] = None
+    transactions: Optional[List[LifiSolanaSerializedTransaction]] = None
+    serialized_transaction: Optional[str] = None
+    from_address: Optional[str] = None
 
 
-@dataclass
-class OrderPayload:
-    token: Token
-    price: float
+class OrderPayload(BaseModel):
+    target_token: Token
+    execution_price: float
     order_notional: float
     original_candidate: Candidate
-    lifi_route: LifiRoute
+    lifi_routing_path: LifiRoute
 
 
-@dataclass(frozen=True)
-class EvmTransactionRequest:
-    to: str
-    data: str
-    value_wei: int
-    gas_limit: Optional[int] = None
+class EvmTransactionRequest(BaseModel):
+    recipient_address: str
+    transaction_data: str
+    value_in_wei: int
+    forced_gas_limit: Optional[int] = None
 
 
-@dataclass(frozen=True)
-class SolanaSerializedTransaction:
-    payload: bytes
+class SolanaSerializedTransaction(BaseModel):
+    serialized_payload_bytes: bytes
 
 
 class RouteNetwork(Enum):
@@ -119,60 +114,54 @@ class Mode(Enum):
     LIVE = "LIVE"
 
 
-@dataclass(frozen=True)
-class RiskDiagnostics:
+class RiskDiagnostics(BaseModel):
     liquidity_usd: float
-    percent_5m: float
-    percent_1h: float
-    percent_6h: float
-    percent_24h: float
-    buy_ratio: float
+    percent_change_5m: float
+    percent_change_1h: float
+    percent_change_6h: float
+    percent_change_24h: float
+    buy_to_sell_ratio: float
 
     def as_plain_dict(self) -> dict:
         return {
-            "liq": float(self.liquidity_usd),
-            "pct5m": float(self.percent_5m),
-            "pct1h": float(self.percent_1h),
-            "pct6h": float(self.percent_6h),
-            "pct24h": float(self.percent_24h),
-            "buy_ratio": float(self.buy_ratio)
+            "liquidity_usd": float(self.liquidity_usd),
+            "percent_change_5m": float(self.percent_change_5m),
+            "percent_change_1h": float(self.percent_change_1h),
+            "percent_change_6h": float(self.percent_change_6h),
+            "percent_change_24h": float(self.percent_change_24h),
+            "buy_to_sell_ratio": float(self.buy_to_sell_ratio)
         }
 
 
-@dataclass(frozen=True)
-class RealizedPnl:
-    total: float
-    recent: float
+class RealizedProfitAndLoss(BaseModel):
+    total_realized_profit_and_loss: float
+    recent_realized_profit_and_loss: float
 
 
-@dataclass(frozen=True)
-class CashFromTrades:
-    cash: float
-    total_buys: float
-    total_sells: float
-    total_fees: float
+class CashFromTrades(BaseModel):
+    available_cash: float
+    total_buy_volume: float
+    total_sell_volume: float
+    total_fees_paid: float
 
 
-@dataclass(frozen=True)
-class HoldingsAndUnrealizedPnl:
-    holdings: float
-    unrealized_pnl: float
+class HoldingsAndUnrealizedProfitAndLoss(BaseModel):
+    total_holdings_value: float
+    total_unrealized_profit_and_loss: float
 
 
-@dataclass(frozen=True)
-class EquityCurvePoint:
-    timestamp: int
+class EquityCurvePoint(BaseModel):
+    timestamp_milliseconds: int
     equity: float
 
 
-@dataclass(frozen=True)
-class EquityCurve:
-    points: List[EquityCurvePoint]
+class EquityCurve(BaseModel):
+    curve_points: list[EquityCurvePoint]
 
 
 class WebsocketInboundMessage(BaseModel):
     type: str
-    payload: Optional[Dict[str, Any]] = None
+    payload: Optional[dict] = None
 
 
 class DcaStrategyStatus(Enum):
@@ -183,7 +172,6 @@ class DcaStrategyStatus(Enum):
 
 
 class DcaOrderStatus(Enum):
-    """Lifecycle states of an individual DCA execution with idempotent pipeline tracking."""
     PENDING = "PENDING"
     WAITING_USER_APPROVAL = "WAITING_USER_APPROVAL"
     APPROVED = "APPROVED"
@@ -192,6 +180,7 @@ class DcaOrderStatus(Enum):
     EXECUTED = "EXECUTED"
     SKIPPED = "SKIPPED"
     FAILED = "FAILED"
+    REJECTED = "REJECTED"
 
 
 class DcaBacktestSeriesPoint(BaseModel):
@@ -203,9 +192,9 @@ class DcaBacktestSeriesPoint(BaseModel):
 
 
 class DcaBacktestMetadata(BaseModel):
-    symbol: str
-    total_budget: float
-    executions: int
+    source_asset_symbol: str
+    total_allocated_budget: float
+    total_planned_executions: int
     final_dumb_average_unit_price: float
     final_smart_average_unit_price: float
     total_overheat_retentions: int

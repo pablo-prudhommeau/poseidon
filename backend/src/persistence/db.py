@@ -9,72 +9,91 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from src.configuration.config import settings
+from src.logging.logger import get_logger
 
-Base = declarative_base()
+logger = get_logger(__name__)
 
-
-def _sqlite_path() -> Path:
-    """Resolve the SQLite file path from settings.DATABASE_URL (creating parent dirs)."""
-    raw = settings.DATABASE_URL
-    db_file = Path(raw).expanduser().resolve()
-    db_file.parent.mkdir(parents=True, exist_ok=True)
-    return db_file
+DatabaseBaseModel = declarative_base()
 
 
-def _resolve_db_url() -> str:
-    """Build the database URL from settings."""
-    sqlite_file = _sqlite_path()
-    return str(URL.create("sqlite", database=sqlite_file.as_posix()))
+def _resolve_sqlite_file_path() -> Path:
+    raw_database_url = settings.DATABASE_URL
+    database_file_path = Path(raw_database_url).expanduser().resolve()
+    database_file_path.parent.mkdir(parents=True, exist_ok=True)
+    return database_file_path
 
 
-DB_URL: str = _resolve_db_url()
-_url = make_url(DB_URL)
+def _build_database_connection_url() -> str:
+    sqlite_file_path = _resolve_sqlite_file_path()
+    return str(URL.create(drivername="sqlite", database=sqlite_file_path.as_posix()))
 
-connect_args: dict = {}
-engine_kwargs = dict(pool_pre_ping=True)
 
-if _url.drivername.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
+DATABASE_CONNECTION_URL: str = _build_database_connection_url()
+database_parsed_url = make_url(DATABASE_CONNECTION_URL)
 
-engine = create_engine(str(_url), connect_args=connect_args, **engine_kwargs)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, class_=Session)
+database_connection_arguments: dict[str, bool] = {}
 
-if _url.drivername.startswith("sqlite") and (_url.database or "") not in ("", ":memory:"):
+if database_parsed_url.drivername.startswith("sqlite"):
+    database_connection_arguments["check_same_thread"] = False
 
-    @event.listens_for(engine, "connect")
-    def _sqlite_pragmas(dbapi_connection, _) -> None:
-        try:
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.execute("PRAGMA synchronous=NORMAL;")
-            cursor.close()
-        except Exception:
-            pass
+database_engine = create_engine(
+    url=DATABASE_CONNECTION_URL,
+    connect_args=database_connection_arguments,
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=0
+)
+
+DatabaseSessionLocal = sessionmaker(
+    bind=database_engine,
+    autocommit=False,
+    autoflush=False,
+    class_=Session
+)
+
+if database_parsed_url.drivername.startswith("sqlite"):
+    database_name = database_parsed_url.database
+    if database_name is not None and database_name not in ("", ":memory:"):
+
+        @event.listens_for(database_engine, "connect")
+        def _apply_sqlite_performance_pragmas(database_api_connection, connection_record) -> None:
+            try:
+                database_cursor = database_api_connection.cursor()
+                database_cursor.execute("PRAGMA journal_mode=WAL;")
+                database_cursor.execute("PRAGMA synchronous=NORMAL;")
+                database_cursor.close()
+                logger.debug("[DATABASE][SQLITE][PRAGMA] Performance pragmas WAL and NORMAL successfully applied to connection")
+            except Exception as exception:
+                logger.exception("[DATABASE][SQLITE][PRAGMA] Failed to apply performance pragmas due to error: %s", exception)
 
 
 @contextmanager
-def _session():
-    """Yield a DB session, committing on success and rolling back on error."""
-    session = SessionLocal()
+def _session() -> Generator[Session, None, None]:
+    database_session = DatabaseSessionLocal()
     try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
+        yield database_session
+        database_session.commit()
+    except Exception as transaction_exception:
+        database_session.rollback()
+        logger.exception("[DATABASE][TRANSACTION][ROLLBACK] Transaction rolled back due to error: %s", transaction_exception)
+        raise transaction_exception
     finally:
-        session.close()
+        database_session.close()
 
 
-def get_db() -> Generator[Session, None, None]:
-    """Yield a scoped SQLAlchemy Session (FastAPI dependency)."""
-    db = SessionLocal()
+def get_database_session() -> Generator[Session, None, None]:
+    database_session = DatabaseSessionLocal()
     try:
-        yield db
+        yield database_session
     finally:
-        db.close()
+        database_session.close()
 
 
-def init_db() -> None:
-    """Create tables if they do not exist yet."""
-    Base.metadata.create_all(bind=engine)
+def initialize_database() -> None:
+    logger.info("[DATABASE][INITIALIZATION] Starting database schema creation process")
+    try:
+        DatabaseBaseModel.metadata.create_all(bind=database_engine)
+        logger.info("[DATABASE][INITIALIZATION] Database schema successfully created on target engine")
+    except Exception as initialization_exception:
+        logger.critical("[DATABASE][INITIALIZATION] Failed to create database schema due to error: %s", initialization_exception)
+        raise initialization_exception

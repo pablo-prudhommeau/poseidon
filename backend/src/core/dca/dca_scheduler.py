@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
-from typing import List
+from __future__ import annotations
+
+from datetime import datetime
 
 from src.core.structures.structures import DcaOrderStatus
 from src.core.utils.date_utils import get_current_local_datetime
@@ -10,53 +11,61 @@ logger = get_logger(__name__)
 
 
 class DcaScheduler:
-    """
-    Mathematical engine responsible for generating the strict execution calendar.
-    Distributes executions purely linearly across the target timeframe.
-    """
-
     @staticmethod
-    def generate_calendar(strategy: DcaStrategy) -> List[DcaOrder]:
-        """
-        Calculates and returns a list of DcaOrder entities based on the strategy parameters.
-        Explicitly initializes all execution-related fields to None to respect database integrity constraints.
-        """
-        generated_orders: List[DcaOrder] = []
+    def generate_linear_execution_calendar(dca_strategy: DcaStrategy) -> list[DcaOrder]:
+        scheduled_orders_collection: list[DcaOrder] = []
 
-        reference_tz = get_current_local_datetime().tzinfo or timezone.utc
+        system_local_timezone = get_current_local_datetime().tzinfo
 
-        def ensure_aware(dt: datetime) -> datetime:
-            return dt.replace(tzinfo=reference_tz) if dt.tzinfo is None else dt
+        strategy_start_date_local = dca_strategy.strategy_start_date
+        if strategy_start_date_local.tzinfo is None:
+            strategy_start_date_local = strategy_start_date_local.replace(tzinfo=system_local_timezone)
 
-        start_date_aware = ensure_aware(strategy.start_date)
-        end_date_aware = ensure_aware(strategy.end_date)
+        strategy_end_date_local = dca_strategy.strategy_end_date
+        if strategy_end_date_local.tzinfo is None:
+            strategy_end_date_local = strategy_end_date_local.replace(tzinfo=system_local_timezone)
 
-        strategy_duration_seconds = (end_date_aware - start_date_aware).total_seconds()
+        total_strategy_duration_in_seconds = (strategy_end_date_local - strategy_start_date_local).total_seconds()
 
-        if strategy_duration_seconds <= 0 or strategy.total_executions <= 0:
-            logger.warning("[DCA][SCHEDULER] Invalid duration or execution count for strategy %s", strategy.id)
-            return generated_orders
+        if total_strategy_duration_in_seconds <= 0 or dca_strategy.total_planned_executions <= 0:
+            logger.warning(
+                "[DCA][SCHEDULER][VALIDATION] Aborting calendar generation: invalid duration (%s s) or execution count (%s) for strategy id %s",
+                total_strategy_duration_in_seconds,
+                dca_strategy.total_planned_executions,
+                dca_strategy.id
+            )
+            return scheduled_orders_collection
 
-        interval_duration_seconds = strategy_duration_seconds / strategy.total_executions
-        current_theoretical_timestamp = start_date_aware.timestamp()
+        time_interval_between_executions_in_seconds = total_strategy_duration_in_seconds / dca_strategy.total_planned_executions
+        current_iterative_timestamp = strategy_start_date_local.timestamp()
 
-        for _ in range(strategy.total_executions):
-            scheduled_date = datetime.fromtimestamp(current_theoretical_timestamp, tz=reference_tz)
+        logger.debug(
+            "[DCA][SCHEDULER][COMPUTE] Generating %s orders with an interval of %0.2f seconds",
+            dca_strategy.total_planned_executions,
+            time_interval_between_executions_in_seconds
+        )
 
-            order = DcaOrder(
-                strategy_id=strategy.id,
-                planned_date=scheduled_date,
-                planned_amount=strategy.amount_per_order,
-                executed_amount_in=None,
-                executed_amount_out=None,
-                status=DcaOrderStatus.PENDING,
+        for execution_index in range(dca_strategy.total_planned_executions):
+            calculated_scheduled_date = datetime.fromtimestamp(current_iterative_timestamp, tz=system_local_timezone)
+
+            new_dca_order = DcaOrder(
+                strategy_id=dca_strategy.id,
+                planned_execution_date=calculated_scheduled_date,
+                planned_source_asset_amount=dca_strategy.amount_per_execution_order,
+                executed_source_asset_amount=None,
+                executed_target_asset_amount=None,
+                order_status=DcaOrderStatus.PENDING,
                 transaction_hash=None,
-                execution_price=None,
+                actual_execution_price=None,
                 executed_at=None
             )
-            generated_orders.append(order)
+            scheduled_orders_collection.append(new_dca_order)
 
-            current_theoretical_timestamp += interval_duration_seconds
+            current_iterative_timestamp += time_interval_between_executions_in_seconds
 
-        logger.info("[DCA][SCHEDULER] Generated %d linear orders for strategy %s", len(generated_orders), strategy.id)
-        return generated_orders
+        logger.info(
+            "[DCA][SCHEDULER][SUCCESS] Successfully generated %d linear execution orders for strategy id %s",
+            len(scheduled_orders_collection),
+            dca_strategy.id
+        )
+        return scheduled_orders_collection

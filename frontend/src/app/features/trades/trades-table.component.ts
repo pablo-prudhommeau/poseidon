@@ -104,7 +104,7 @@ export class TradesTableComponent implements AfterViewInit {
         this.columnDefinitions = [
             {
                 headerName: 'Symbol',
-                field: 'symbol',
+                field: 'token_symbol',
                 sortable: true,
                 filter: true,
                 cellRenderer: SymbolChipRendererComponent,
@@ -122,7 +122,7 @@ export class TradesTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Side',
-                field: 'side',
+                field: 'trade_side',
                 sortable: true,
                 filter: true,
                 cellRenderer: (p: ValueFormatterParams<Trade>) => {
@@ -134,7 +134,7 @@ export class TradesTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Quantity',
-                field: 'qty',
+                field: 'execution_quantity',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -144,7 +144,7 @@ export class TradesTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Price',
-                field: 'price',
+                field: 'execution_price',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -155,7 +155,7 @@ export class TradesTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'P&L',
-                field: 'pnl' as unknown as keyof Trade,
+                field: 'realized_profit_and_loss' as unknown as keyof Trade,
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -176,7 +176,7 @@ export class TradesTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Status',
-                field: 'status' as unknown as keyof Trade,
+                field: 'execution_status' as unknown as keyof Trade,
                 sortable: true,
                 filter: true,
                 flex: 0.5
@@ -211,13 +211,13 @@ export class TradesTableComponent implements AfterViewInit {
         const rows = (this.webSocketService.analytics() ?? []) as Analytics[];
         const candidates = rows.filter(
             (a) =>
-                (a.pairAddress && a.pairAddress === trade.pairAddress) ||
-                (a.tokenAddress && a.tokenAddress === trade.tokenAddress)
+                (a.pair_address && a.pair_address === trade.pair_address) ||
+                (a.token_address && a.token_address === trade.token_address)
         );
         if (candidates.length === 0) {
             return null;
         }
-        candidates.sort((a, b) => (b.evaluatedAt || '').localeCompare(a.evaluatedAt || ''));
+        candidates.sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
         return candidates[0] ?? null;
     }
 
@@ -225,15 +225,15 @@ export class TradesTableComponent implements AfterViewInit {
         return this.selectedAnalytics();
     }
 
-    public dexUrlForPair(row: { chain?: string; pairAddress?: string } | null): string {
-        const chain = (row as any)?.chain as string | undefined;
-        const pair = row?.pairAddress;
+    public dexUrlForPair(row: { blockchain_network?: string; pair_address?: string } | null): string {
+        const chain = (row as any)?.blockchain_network as string | undefined;
+        const pair = row?.pair_address;
         return chain && pair ? `https://dexscreener.com/${chain}/${pair}` : '';
     }
 
-    public dexUrlForToken(row: { chain?: string; tokenAddress?: string } | null): string {
-        const chain = (row as any)?.chain as string | undefined;
-        const token = row?.tokenAddress;
+    public dexUrlForToken(row: { blockchain_network?: string; token_address?: string } | null): string {
+        const chain = (row as any)?.blockchain_network as string | undefined;
+        const token = row?.token_address;
         return chain && token ? `https://dexscreener.com/${chain}/${token}` : '';
     }
 
@@ -241,8 +241,8 @@ export class TradesTableComponent implements AfterViewInit {
         if (!row) {
             return null;
         }
-        const q = this.numberFormattingService.toNumberSafe(row.qty);
-        const p = this.numberFormattingService.toNumberSafe(row.price);
+        const q = this.numberFormattingService.toNumberSafe((row as any).execution_quantity);
+        const p = this.numberFormattingService.toNumberSafe((row as any).execution_price);
         if (q === null || p === null) {
             return null;
         }
@@ -292,22 +292,22 @@ export class TradesTableComponent implements AfterViewInit {
             scoreLabels.push(label);
             scoreValues.push(n);
         };
-        push('Final', (a as any)?.scores?.final);
-        push('Quality', (a as any)?.scores?.quality);
-        push('Statistics', (a as any)?.scores?.statistics);
-        push('Entry', (a as any)?.scores?.entry);
+        push('Final', (a as any)?.scores?.final_score);
+        push('Quality', (a as any)?.scores?.quality_score);
+        push('Statistics', (a as any)?.scores?.statistics_score);
+        push('Entry', (a as any)?.scores?.entry_score);
         this.scoresLabels = scoreLabels;
         this.scoresSeries = scoreValues;
 
-        const pct5m = this.numberFormattingService.toNumberSafe((a as any)?.rawMetrics?.pct5m) ?? 0;
-        const pct1h = this.numberFormattingService.toNumberSafe((a as any)?.rawMetrics?.pct1h) ?? 0;
-        const pct24h = this.numberFormattingService.toNumberSafe((a as any)?.rawMetrics?.pct24h) ?? 0;
+        const pct5m = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_m5) ?? 0;
+        const pct1h = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h1) ?? 0;
+        const pct24h = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h24) ?? 0;
         const deltas = [pct5m, pct1h, pct24h];
         this.deltaSeries = [{name: 'Δ', data: deltas}];
         this.deltaColors = deltas.map((v) => (v >= 0 ? '#22c55e' : '#ef4444'));
 
-        const liq = this.numberFormattingService.toNumberSafe((a as any)?.rawMetrics?.liquidityUsd) ?? 0;
-        const vol = this.numberFormattingService.toNumberSafe((a as any)?.rawMetrics?.volume24hUsd) ?? 0;
+        const liq = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.liquidity_usd) ?? 0;
+        const vol = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.volume_h24_usd) ?? 0;
         this.liqVolSeries = [Math.max(liq, 0), Math.max(vol, 0)];
 
         const notional = this.orderNotionalUsd(t) ?? 0;
