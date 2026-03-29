@@ -125,7 +125,7 @@ class Settings:
     EVM_RPC_URL: str = os.getenv("EVM_RPC_URL", "")
     EVM_MNEMONIC: str = os.getenv("EVM_MNEMONIC", "")
     EVM_DERIVATION_INDEX: int = int(os.getenv("EVM_DERIVATION_INDEX", "0"))
-    SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "")
+    SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
     SOLANA_SECRET_KEY_BASE58: str = os.getenv("SOLANA_SECRET_KEY_BASE58", "")
     LIFI_BASE_URL: str = os.getenv("LIFI_BASE_URL", "https://li.quest")
 

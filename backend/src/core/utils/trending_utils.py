@@ -42,10 +42,11 @@ def _passes_percent_thresholds(
         threshold_6h: float,
         threshold_24h: float,
 ) -> bool:
-    percent_5m = candidate.dexscreener_token_information.price_change.m5
-    percent_1h = candidate.dexscreener_token_information.price_change.h1
-    percent_6h = candidate.dexscreener_token_information.price_change.h6
-    percent_24h = candidate.dexscreener_token_information.price_change.h24
+    price_change = candidate.dexscreener_token_information.price_change
+    percent_5m = price_change.m5 if price_change and price_change.m5 is not None else None
+    percent_1h = price_change.h1 if price_change and price_change.h1 is not None else None
+    percent_6h = price_change.h6 if price_change and price_change.h6 is not None else None
+    percent_24h = price_change.h24 if price_change and price_change.h24 is not None else None
 
     if interval == "5m":
         return (percent_5m is not None and percent_5m >= threshold_5m) or (percent_24h is not None and percent_24h >= threshold_24h)
@@ -64,10 +65,11 @@ def _passes_volume_thresholds(
         threshold_6h: float,
         threshold_24h: float,
 ) -> bool:
-    volume_5m = candidate.dexscreener_token_information.volume.m5
-    volume_1h = candidate.dexscreener_token_information.volume.h1
-    volume_6h = candidate.dexscreener_token_information.volume.h6
-    volume_24h = candidate.dexscreener_token_information.volume.h24
+    volume_data = candidate.dexscreener_token_information.volume
+    volume_5m = volume_data.m5 if volume_data and volume_data.m5 is not None else None
+    volume_1h = volume_data.h1 if volume_data and volume_data.h1 is not None else None
+    volume_6h = volume_data.h6 if volume_data and volume_data.h6 is not None else None
+    volume_24h = volume_data.h24 if volume_data and volume_data.h24 is not None else None
 
     if interval == "5m":
         return (volume_5m is not None and volume_5m >= threshold_5m) or (volume_24h is not None and volume_24h >= threshold_24h)
@@ -79,11 +81,15 @@ def _passes_volume_thresholds(
 
 
 def _has_valid_intraday_bars(candidate: Candidate) -> bool:
+    price_change = candidate.dexscreener_token_information.price_change
+    if not price_change:
+        return False
+
     return (
-            _is_number(candidate.dexscreener_token_information.price_change.m5)
-            and _is_number(candidate.dexscreener_token_information.price_change.h1)
-            and _is_number(candidate.dexscreener_token_information.price_change.h6)
-            and _is_number(candidate.dexscreener_token_information.price_change.h24)
+            _is_number(price_change.m5)
+            and _is_number(price_change.h1)
+            and _is_number(price_change.h6)
+            and _is_number(price_change.h24)
     )
 
 
@@ -114,7 +120,7 @@ def _candidate_from_dexscreener_token_information(token_information: Dexscreener
         quality_score=0.0,
         statistics_score=0.0,
         entry_score=0.0,
-        score_final=0.0,
+        final_computed_score=0.0,
         score_components=ScoreComponents(
             quality_score=0.0,
             statistics_score=0.0,
@@ -134,12 +140,21 @@ def _candidate_from_dexscreener_token_information(token_information: Dexscreener
 
 def _get_candidate_sort_value(candidate: Candidate, sort_key: str) -> float:
     if sort_key == "liquidity_usd":
-        return candidate.dexscreener_token_information.liquidity.usd
-    return candidate.dexscreener_token_information.volume.h24
+        liquidity = candidate.dexscreener_token_information.liquidity
+        return liquidity.usd if liquidity and liquidity.usd is not None else 0.0
+
+    volume = candidate.dexscreener_token_information.volume
+    return volume.h24 if volume and volume.h24 is not None else 0.0
 
 
-def _buy_sell_score(transaction_activity: DexscreenerTransactionActivity) -> float:
-    activity_bucket = transaction_activity.h1 or transaction_activity.h24
+def _buy_sell_score(transaction_activity: Optional[DexscreenerTransactionActivity]) -> float:
+    if not transaction_activity:
+        return 0.5
+
+    activity_bucket = transaction_activity.h1 if transaction_activity.h1 else transaction_activity.h24
+    if not activity_bucket:
+        return 0.5
+
     buys = activity_bucket.buys
     sells = activity_bucket.sells
     total_transactions = buys + sells
@@ -173,7 +188,8 @@ def filter_strict(
 
     for candidate in candidates:
         symbol = candidate.dexscreener_token_information.base_token.symbol
-        liquidity_usd = candidate.dexscreener_token_information.liquidity.usd
+        liquidity = candidate.dexscreener_token_information.liquidity
+        liquidity_usd = liquidity.usd if liquidity and liquidity.usd is not None else 0.0
 
         if not _passes_volume_thresholds(
                 candidate=candidate,
@@ -213,17 +229,20 @@ def filter_strict(
         symbol = candidate.dexscreener_token_information.base_token.symbol
         short_address = _tail(candidate.dexscreener_token_information.base_token.address)
 
-        volume_5m_usd = candidate.dexscreener_token_information.volume.m5
-        volume_1h_usd = candidate.dexscreener_token_information.volume.h1
-        volume_6h_usd = candidate.dexscreener_token_information.volume.h6
-        volume_24h_usd = candidate.dexscreener_token_information.volume.h24
+        volume_data = candidate.dexscreener_token_information.volume
+        volume_5m_usd = volume_data.m5 if volume_data and volume_data.m5 is not None else 0.0
+        volume_1h_usd = volume_data.h1 if volume_data and volume_data.h1 is not None else 0.0
+        volume_6h_usd = volume_data.h6 if volume_data and volume_data.h6 is not None else 0.0
+        volume_24h_usd = volume_data.h24 if volume_data and volume_data.h24 is not None else 0.0
 
-        liquidity_usd = candidate.dexscreener_token_information.liquidity.usd
+        liquidity_data = candidate.dexscreener_token_information.liquidity
+        liquidity_usd = liquidity_data.usd if liquidity_data and liquidity_data.usd is not None else 0.0
 
-        percent_5m = candidate.dexscreener_token_information.price_change.m5
-        percent_1h = candidate.dexscreener_token_information.price_change.h1
-        percent_6h = candidate.dexscreener_token_information.price_change.h6
-        percent_24h = candidate.dexscreener_token_information.price_change.h24
+        price_change = candidate.dexscreener_token_information.price_change
+        percent_5m = price_change.m5 if price_change and price_change.m5 is not None else 0.0
+        percent_1h = price_change.h1 if price_change and price_change.h1 is not None else 0.0
+        percent_6h = price_change.h6 if price_change and price_change.h6 is not None else 0.0
+        percent_24h = price_change.h24 if price_change and price_change.h24 is not None else 0.0
 
         matching_interval = "24h"
         if interval == "5m" and percent_5m is not None and percent_5m >= percent_threshold_5m:
@@ -276,10 +295,11 @@ def soft_fill(
         if address and address in retained_candidate_addresses:
             continue
 
-        volume_5m = candidate.dexscreener_token_information.volume.m5
-        volume_1h = candidate.dexscreener_token_information.volume.h1
-        volume_6h = candidate.dexscreener_token_information.volume.h6
-        volume_24h = candidate.dexscreener_token_information.volume.h24
+        volume_data = candidate.dexscreener_token_information.volume
+        volume_5m = volume_data.m5 if volume_data and volume_data.m5 is not None else None
+        volume_1h = volume_data.h1 if volume_data and volume_data.h1 is not None else None
+        volume_6h = volume_data.h6 if volume_data and volume_data.h6 is not None else None
+        volume_24h = volume_data.h24 if volume_data and volume_data.h24 is not None else None
 
         if (
                 volume_5m is None
@@ -290,10 +310,11 @@ def soft_fill(
         ):
             continue
 
-        percent_5m = candidate.dexscreener_token_information.price_change.m5
-        percent_1h = candidate.dexscreener_token_information.price_change.h1
-        percent_6h = candidate.dexscreener_token_information.price_change.h6
-        percent_24h = candidate.dexscreener_token_information.price_change.h24
+        price_change = candidate.dexscreener_token_information.price_change
+        percent_5m = price_change.m5 if price_change and price_change.m5 is not None else None
+        percent_1h = price_change.h1 if price_change and price_change.h1 is not None else None
+        percent_6h = price_change.h6 if price_change and price_change.h6 is not None else None
+        percent_24h = price_change.h24 if price_change and price_change.h24 is not None else None
 
         if (
                 percent_1h is not None
@@ -313,15 +334,27 @@ def soft_fill(
         if len(retained_candidates) >= minimum_required_candidates:
             break
 
+        liquidity_data = candidate.dexscreener_token_information.liquidity
+        liquidity_usd = liquidity_data.usd if liquidity_data and liquidity_data.usd is not None else 0.0
+        
+        volume_data = candidate.dexscreener_token_information.volume
+        volume_24h = volume_data.h24 if volume_data and volume_data.h24 is not None else 0.0
+        
+        price_change = candidate.dexscreener_token_information.price_change
+        percent_5m = price_change.m5 if price_change and price_change.m5 is not None else 0.0
+        percent_1h = price_change.h1 if price_change and price_change.h1 is not None else 0.0
+        percent_6h = price_change.h6 if price_change and price_change.h6 is not None else 0.0
+        percent_24h = price_change.h24 if price_change and price_change.h24 is not None else 0.0
+
         logger.debug(
             "[TRENDING][FILTER][SOFT_FILL][RETAIN] Token %s retained to meet minimum threshold. Volume 24h: %f, Liquidity: %f, Percent 5m: %s, 1h: %s, 6h: %s, 24h: %s",
             candidate.dexscreener_token_information.base_token.symbol,
-            candidate.dexscreener_token_information.volume.h24,
-            candidate.dexscreener_token_information.liquidity.usd,
-            candidate.dexscreener_token_information.price_change.m5,
-            candidate.dexscreener_token_information.price_change.h1,
-            candidate.dexscreener_token_information.price_change.h6,
-            candidate.dexscreener_token_information.price_change.h24,
+            volume_24h,
+            liquidity_usd,
+            percent_5m,
+            percent_1h,
+            percent_6h,
+            percent_24h,
         )
         retained_candidates.append(candidate)
         if candidate.dexscreener_token_information.base_token.address:

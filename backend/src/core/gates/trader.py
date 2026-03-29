@@ -176,9 +176,9 @@ class Trader:
         )
 
         thresholds = AdaptiveRiskManager().compute_thresholds(price_usd, payload.original_candidate)
-        stop_loss = thresholds.stop_loss
-        take_profit_tp1 = thresholds.take_profit_one
-        take_profit_tp2 = thresholds.take_profit_two
+        stop_loss = thresholds.stop_loss_price
+        take_profit_tp1 = thresholds.take_profit_tier_1_price
+        take_profit_tp2 = thresholds.take_profit_tier_2_price
 
         if self.paper_mode_enabled:
             log.info("[TRADER][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.target_token, price_usd, quantity)

@@ -15,7 +15,7 @@ from src.logging.logger import get_logger
 from src.persistence.dao.positions import retrieve_open_positions
 from src.persistence.db import _session
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class CandidateSelectionStage:
@@ -41,7 +41,7 @@ class CandidateSelectionStage:
     def fetch_candidates_raw(self) -> List[Candidate]:
         rows = fetch_trending_candidates_sync()
         if not rows:
-            log.info("[TREND][FETCH] 0 candidates.")
+            logger.info("[TREND][FETCH] 0 candidates.")
         return rows
 
     def apply_hard_filters(self, raw_rows: List[Candidate]) -> List[Candidate]:
@@ -59,7 +59,7 @@ class CandidateSelectionStage:
             percent_threshold_24h=self.minimum_percent_24h,
             maximum_results=self.max_results,
         )
-        log.info("[TREND][FILTER][STRICT] kept=%d rejected=%s", len(kept), rejected_counts)
+        logger.info("[TREND][FILTER][STRICT] kept=%d rejected=%s", len(kept), rejected_counts)
         return kept
 
     def apply_soft_fill(self, raw_rows: List[Candidate], kept_rows: List[Candidate]) -> List[Candidate]:
@@ -71,21 +71,29 @@ class CandidateSelectionStage:
             minimum_liquidity_usd=self.minimum_liquidity_usd,
             sort_key=self.soft_fill_sort_key,
         )
-        log.debug("[TREND][FILTER][SOFT_FILL] result=%d", len(filled))
+        logger.debug("[TREND][FILTER][SOFT_FILL] result=%d", len(filled))
         return filled
 
     def apply_quality_gate(self, kept_rows: List[Candidate]) -> List[Candidate]:
         result = filter_candidates_by_quality(kept_rows)
         if not result:
-            log.info("[TREND][GATE][QUALITY] 0 candidates after gate #1.")
+            logger.info("[TREND][GATE][QUALITY] 0 candidates after gate #1.")
         return result
 
     def order_and_truncate(self, candidates: List[Candidate]) -> List[Candidate]:
         sort_key = self.soft_fill_sort_key if self.soft_fill_sort_key in {"vol24h", "liqUsd"} else "vol24h"
         if sort_key == "liqUsd":
-            candidates.sort(key=lambda c: float(c.dexscreener_token_information.liquidity.usd), reverse=True)
+            def _liquidity_score(candidate_to_score: Candidate) -> float:
+                liquidity = candidate_to_score.dexscreener_token_information.liquidity
+                return liquidity.usd if liquidity and liquidity.usd is not None else 0.0
+            
+            candidates.sort(key=_liquidity_score, reverse=True)
         else:
-            candidates.sort(key=lambda c: float(c.dexscreener_token_information.volume.h24), reverse=True)
+            def _volume_score(candidate_to_score: Candidate) -> float:
+                volume = candidate_to_score.dexscreener_token_information.volume
+                return volume.h24 if volume and volume.h24 is not None else 0.0
+
+            candidates.sort(key=_volume_score, reverse=True)
         return candidates[: self.max_results]
 
     def _open_positions_sets(self) -> Tuple[Set[str], Set[str]]:
@@ -102,11 +110,11 @@ class CandidateSelectionStage:
             symbol_upper = candidate.dexscreener_token_information.base_token.symbol.upper()
             if symbol_upper in open_symbols or is_address_in_open_positions(
                     candidate.dexscreener_token_information.base_token.address, open_addresses):
-                log.debug("[TREND][DEDUP] Skip already open %s (%s).",
+                logger.debug("[TREND][DEDUP] Skip already open %s (%s).",
                           candidate.dexscreener_token_information.base_token.symbol,
                           candidate.dexscreener_token_information.base_token.address)
                 continue
             pruned.append(candidate)
         if not pruned:
-            log.debug("[TREND][DEDUP] 0 candidates after de-duplication.")
+            logger.debug("[TREND][DEDUP] 0 candidates after de-duplication.")
         return pruned

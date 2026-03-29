@@ -1,5 +1,4 @@
 from enum import Enum
-from enum import Enum
 from typing import List, Optional, Dict
 
 from pydantic import BaseModel
@@ -62,6 +61,8 @@ class Candidate(BaseModel):
     ai_quality_delta: float
     ai_buy_probability: float
     dexscreener_token_information: DexscreenerTokenInformation
+    pair_address: Optional[str] = None
+    dex_price: Optional[float] = None
 
 
 class LifiEvmTransactionRequest(BaseModel):
@@ -90,7 +91,7 @@ class OrderPayload(BaseModel):
     execution_price: float
     order_notional: float
     original_candidate: Candidate
-    lifi_routing_path: LifiRoute
+    lifi_routing_path: Optional[LifiRoute] = None
 
 
 class EvmTransactionRequest(BaseModel):

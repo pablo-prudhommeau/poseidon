@@ -17,7 +17,7 @@ from src.logging.logger import get_logger
 from src.persistence.dao.portfolio_snapshots import get_portfolio_snapshot
 from src.persistence.db import _session
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class AnalyticsRecorder:
@@ -39,43 +39,49 @@ class AnalyticsRecorder:
 
         token_information = candidate.dexscreener_token_information
         base_token = token_information.base_token
+        
+        volume = token_information.volume
+        liquidity = token_information.liquidity
+        price_change = token_information.price_change
+        transactions = token_information.transactions
+
         payload = Analytics(
-            symbol=base_token.symbol.upper(),
-            chain=str(token_information.chain_id),
+            token_symbol=base_token.symbol.upper(),
+            blockchain_network=str(token_information.chain_id),
             token_address=str(base_token.address),
             pair_address=str(token_information.pair_address),
-            priceUsd=float(token_information.price_usd),
-            priceNative=float(token_information.price_native),
-            rank=int(rank),
+            price_usd=float(token_information.price_usd or 0.0),
+            price_native=float(token_information.price_native or 0.0),
+            candidate_rank=int(rank),
             quality_score=float(candidate.quality_score),
             statistics_score=float(candidate.statistics_score),
             entry_score=float(candidate.entry_score),
             final_score=float(final_score),
-            ai_probability_tp1_before_sl=float(candidate.ai_buy_probability),
+            ai_probability_take_profit_before_stop_loss=float(candidate.ai_buy_probability),
             ai_quality_score_delta=float(candidate.ai_quality_delta),
             token_age_hours=float(token_information.age_hours),
-            volume5m_usd=float(token_information.volume.m5),
-            volume1h_usd=float(token_information.volume.h1),
-            volume6h_usd=float(token_information.volume.h6),
-            volume24h_usd=float(token_information.volume.h24),
-            liquidity_usd=float(token_information.liquidity.usd),
-            pct_5m=float(token_information.price_change.m5),
-            pct_1h=float(token_information.price_change.h1),
-            pct_6h=float(token_information.price_change.h6),
-            pct_24h=float(token_information.price_change.h24),
-            tx_5m=int(token_information.txns.m5.total),
-            tx_1h=int(token_information.txns.h1.total),
-            tx_6h=int(token_information.txns.h6.total),
-            tx_24h=int(token_information.txns.h24.total),
+            volume_m5_usd=float(volume.m5 if volume and volume.m5 is not None else 0.0),
+            volume_h1_usd=float(volume.h1 if volume and volume.h1 is not None else 0.0),
+            volume_h6_usd=float(volume.h6 if volume and volume.h6 is not None else 0.0),
+            volume_h24_usd=float(volume.h24 if volume and volume.h24 is not None else 0.0),
+            liquidity_usd=float(liquidity.usd if liquidity and liquidity.usd is not None else 0.0),
+            price_change_percentage_m5=float(price_change.m5 if price_change and price_change.m5 is not None else 0.0),
+            price_change_percentage_h1=float(price_change.h1 if price_change and price_change.h1 is not None else 0.0),
+            price_change_percentage_h6=float(price_change.h6 if price_change and price_change.h6 is not None else 0.0),
+            price_change_percentage_h24=float(price_change.h24 if price_change and price_change.h24 is not None else 0.0),
+            transaction_count_m5=int(transactions.m5.total_transactions if transactions and transactions.m5 else 0),
+            transaction_count_hour_1=int(transactions.h1.total_transactions if transactions and transactions.h1 else 0),
+            transaction_count_h6=int(transactions.h6.total_transactions if transactions and transactions.h6 else 0),
+            transaction_count_h24=int(transactions.h24.total_transactions if transactions and transactions.h24 else 0),
             evaluated_at=get_current_local_datetime(),
-            decision=decision.upper(),
-            decision_reason=reason,
+            execution_decision=decision.upper(),
+            execution_decision_reason=reason,
             sizing_multiplier=float(sizing_multiplier or 0.0),
-            order_notional_usd=float(order_notional_usd or 0.0),
-            free_cash_before_usd=float(free_cash_before_usd or 0.0),
-            free_cash_after_usd=float(free_cash_after_usd or 0.0),
-            raw_dexscreener=token_information.to_dict(),
-            raw_settings=_to_dict(settings)
+            order_notional_value_usd=float(order_notional_usd or 0.0),
+            free_cash_before_execution_usd=float(free_cash_before_usd or 0.0),
+            free_cash_after_execution_usd=float(free_cash_after_usd or 0.0),
+            raw_dexscreener_payload=token_information.model_dump(mode='json'),
+            raw_configuration_settings=_to_dict(settings)
         )
         TelemetryService.record_analytics_event(payload)
 
@@ -105,9 +111,9 @@ class AiExecutionStage:
 
     @staticmethod
     def _current_free_cash_usd() -> float:
-        with _session() as db:
-            snapshot = get_portfolio_snapshot(db, create_if_missing=True)
-            return float(snapshot.cash or 0.0) if snapshot else 0.0
+        with _session() as database_session:
+            portfolio_snapshot = get_portfolio_snapshot(database_session, create_if_missing=True)
+            return float(portfolio_snapshot.available_cash_balance if portfolio_snapshot and portfolio_snapshot.available_cash_balance is not None else 0.0)
 
     @staticmethod
     def _compute_per_order_budget_usd(free_cash_usd: float) -> float:
@@ -161,13 +167,13 @@ class AiExecutionStage:
         if chain_key == "solana":
             token_mint = (token_information.base_token.address or "").strip()
             if not token_mint:
-                log.debug("[TREND][LIVE][ROUTE] Missing SPL token mint for %s on Solana.",
+                logger.debug("[TREND][LIVE][ROUTE] Missing SPL token mint for %s on Solana.",
                           token_information.base_token.symbol)
                 return None
 
             from_amount_lamports = self._compute_from_amount_lamports(order_notional_usd, candidate)
             if from_amount_lamports is None:
-                log.debug(
+                logger.debug(
                     "[TREND][LIVE][ROUTE] Cannot compute fromAmount (need price_usd & price_native) for %s on Solana.",
                     token_information.base_token.symbol,
                 )
@@ -177,7 +183,7 @@ class AiExecutionStage:
                 sol_signer = build_default_solana_signer()
                 from_address = sol_signer.address
             except Exception as exc:
-                log.warning("[TREND][LIVE][ROUTE] Solana signer unavailable (%s).", exc)
+                logger.warning("[TREND][LIVE][ROUTE] Solana signer unavailable (%s).", exc)
                 return None
 
             try:
@@ -190,7 +196,7 @@ class AiExecutionStage:
                 )
                 return route
             except Exception as exc:
-                log.warning(
+                logger.warning(
                     "[TREND][LIVE][ROUTE] LI.FI route build failed for %s on solana: %s",
                     token_information.base_token.symbol,
                     exc,
@@ -199,17 +205,17 @@ class AiExecutionStage:
 
         chain_id = resolve_lifi_chain_identifier(chain_key)
         if chain_id is None:
-            log.debug("[TREND][LIVE][ROUTE] Unsupported Dexscreener chain '%s'.", chain_key or "?")
+            logger.debug("[TREND][LIVE][ROUTE] Unsupported Dexscreener chain '%s'.", chain_key or "?")
             return None
 
         to_token_address = (token_information.base_token.address or "").strip()
         if not to_token_address:
-            log.debug("[TREND][LIVE][ROUTE] Missing ERC-20 token address for %s.", token_information.base_token.symbol)
+            logger.debug("[TREND][LIVE][ROUTE] Missing ERC-20 token address for %s.", token_information.base_token.symbol)
             return None
 
         from_amount_wei = self._compute_from_amount_wei(order_notional_usd, candidate)
         if from_amount_wei is None:
-            log.debug(
+            logger.debug(
                 "[TREND][LIVE][ROUTE] Cannot compute fromAmount (need price_usd & price_native) for %s.",
                 token_information.base_token.symbol,
             )
@@ -219,7 +225,7 @@ class AiExecutionStage:
             evm_signer = build_default_evm_signer()
             evm_address = evm_signer.wallet_address
         except Exception as exc:
-            log.warning("[TREND][LIVE][ROUTE] EVM signer unavailable (%s).", exc)
+            logger.warning("[TREND][LIVE][ROUTE] EVM signer unavailable (%s).", exc)
             return None
 
         try:
@@ -232,7 +238,7 @@ class AiExecutionStage:
             )
             return route
         except Exception as exc:
-            log.warning(
+            logger.warning(
                 "[TREND][LIVE][ROUTE] LI.FI route build failed for %s on %s: %s",
                 token_information.base_token.symbol,
                 chain_key,
@@ -252,7 +258,7 @@ class AiExecutionStage:
 
         for rank, candidate in enumerate(sorted(candidates, key=lambda x: x.statistics_score, reverse=True), start=1):
             if executed_buys >= maximum_buys_per_run:
-                log.debug("[TREND][BUY] Max buys per run reached (%d).", maximum_buys_per_run)
+                logger.debug("[TREND][BUY] Max buys per run reached (%d).", maximum_buys_per_run)
                 break
 
             entry_score = float(candidate.statistics_score)
@@ -270,14 +276,14 @@ class AiExecutionStage:
                         token_age_hours=float(candidate.dexscreener_token_information.age_hours),
                     )
                 except Exception:
-                    log.exception("[TREND][AI] ChartAI failed for %s", candidate.token.symbol)
+                    logger.exception("[TREND][AI] ChartAI failed for %s", candidate.token.symbol)
                     signal = None
                 ai_budget_remaining -= 1
 
                 if signal is not None:
                     ai_delta = float(signal.quality_score_delta)
                     ai_probability = float(signal.take_profit_one_probability)
-                    entry_score = engine.apply_ai_adjustment(float(candidate.statistics_score), ai_delta)
+                    entry_score = engine.apply_artificial_intelligence_adjustment(float(candidate.statistics_score), ai_delta)
 
             candidate.ai_quality_delta = ai_delta
             candidate.ai_buy_probability = ai_probability
@@ -290,7 +296,7 @@ class AiExecutionStage:
                     decision="SKIP",
                     reason="ENTRY_SCORE_BELOW_MIN",
                 )
-                log.debug(
+                logger.debug(
                     "[TREND][AI][DROP] %s — entry=%.2f < %.2f (stat=%.2f aiΔ=%.2f prob=%.3f)",
                     candidate.token.symbol,
                     entry_score,
@@ -315,7 +321,7 @@ class AiExecutionStage:
                     free_cash_before_usd=simulated_cash,
                     free_cash_after_usd=simulated_cash,
                 )
-                log.debug(
+                logger.debug(
                     "[TREND][BUY][CASH_SKIP] %s need=%.2f have=%.2f min_free=%.2f",
                     candidate.token.symbol,
                     order_notional,
@@ -337,11 +343,11 @@ class AiExecutionStage:
 
             lifi_route = self._maybe_attach_lifi_route_for_live(candidate, order_notional_usd=order_notional)
             if lifi_route is not None:
-                log.info("[TREND][LIVE][ROUTE] Attached LI.FI route for %s on %s", candidate.token.symbol,
+                logger.info("[TREND][LIVE][ROUTE] Attached LI.FI route for %s on %s", candidate.token.symbol,
                          candidate.token.chain)
             else:
                 if not settings.PAPER_MODE:
-                    log.info(
+                    logger.info(
                         "[TREND][LIVE][ROUTE] Could not attach LI.FI route for %s on %s; Trader may skip LIVE buy.",
                         candidate.token.symbol,
                         candidate.token.chain,
@@ -355,7 +361,7 @@ class AiExecutionStage:
             )
             order_payload = OrderPayload(
                 target_token=token,
-                execution_price=candidate.dexscreener_token_information.price_usd,
+                execution_price=candidate.dexscreener_token_information.price_usd or 0.0,
                 order_notional=order_notional,
                 original_candidate=candidate,
                 lifi_routing_path=lifi_route,
@@ -366,7 +372,7 @@ class AiExecutionStage:
             executed_buys += 1
             simulated_cash -= order_notional
 
-            log.info(
+            logger.info(
                 "[TREND][BUY] %s quality=%.1f stat=%.1f entry=%.1f aiΔ=%.2f prob=%.3f size×=%.2f notional=%.2f",
                 candidate.token.symbol,
                 candidate.quality_score,
@@ -378,7 +384,7 @@ class AiExecutionStage:
                 order_notional,
             )
 
-        log.info(
+        logger.info(
             "[TREND][SUMMARY] executed=%d / %d candidates (cash=%.2f → %.2f)",
             executed_buys,
             len(candidates),

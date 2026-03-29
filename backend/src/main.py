@@ -1,6 +1,10 @@
-from __future__ import annotations
+import asyncio
+import sys
 
 from src.logging.logger import init_logging
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 init_logging()
 

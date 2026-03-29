@@ -226,18 +226,20 @@ async def recompute_metrics_and_broadcast() -> None:
                     pair_address=token_information.pair_address,
                 )
 
-                m5_buys = token_information.txns.m5.buys if token_information.txns and token_information.txns.m5 else None
-                m5_sells = token_information.txns.m5.sells if token_information.txns and token_information.txns.m5 else None
-                h1_buys = token_information.txns.h1.buys if token_information.txns and token_information.txns.h1 else None
-                h1_sells = token_information.txns.h1.sells if token_information.txns and token_information.txns.h1 else None
-                h6_buys = token_information.txns.h6.buys if token_information.txns and token_information.txns.h6 else None
-                h6_sells = token_information.txns.h6.sells if token_information.txns and token_information.txns.h6 else None
-                h24_buys = token_information.txns.h24.buys if token_information.txns and token_information.txns.h24 else None
-                h24_sells = token_information.txns.h24.sells if token_information.txns and token_information.txns.h24 else None
+                transactions = token_information.transactions
+                m5_buys = transactions.m5.buys if transactions and transactions.m5 else None
+                m5_sells = transactions.m5.sells if transactions and transactions.m5 else None
+                h1_buys = transactions.h1.buys if transactions and transactions.h1 else None
+                h1_sells = transactions.h1.sells if transactions and transactions.h1 else None
+                h6_buys = transactions.h6.buys if transactions and transactions.h6 else None
+                h6_sells = transactions.h6.sells if transactions and transactions.h6 else None
+                h24_buys = transactions.h24.buys if transactions and transactions.h24 else None
+                h24_sells = transactions.h24.sells if transactions and transactions.h24 else None
 
+                liquidity = token_information.liquidity
                 market_observation = Observation(
                     observation_date=token_information.retrieval_date,
-                    liquidity_usd=token_information.liquidity.usd,
+                    liquidity_usd=liquidity.usd if liquidity and liquidity.usd is not None else 0.0,
                     fully_diluted_valuation_usd=token_information.fully_diluted_valuation,
                     market_cap_usd=token_information.market_cap,
                     window_5m=WindowActivity(buys=m5_buys, sells=m5_sells),

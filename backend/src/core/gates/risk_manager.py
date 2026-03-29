@@ -7,7 +7,7 @@ from src.configuration.config import settings
 from src.core.structures.structures import Candidate, PreEntryDecision, Thresholds, RiskDiagnostics
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class AdaptiveRiskManager:
@@ -61,7 +61,7 @@ class AdaptiveRiskManager:
     def pre_entry_decision(self, candidate: Candidate) -> PreEntryDecision:
         token_information = candidate.dexscreener_token_information
         symbol = token_information.base_token.symbol
-        liquidity_usd = float(token_information.liquidity.usd)
+        liquidity_usd = token_information.liquidity.usd if token_information.liquidity and token_information.liquidity.usd is not None else 0.0
 
         pct_5m_raw = token_information.price_change.m5
         pct_1h_raw = token_information.price_change.h1
@@ -73,15 +73,18 @@ class AdaptiveRiskManager:
         pct_6h = float(pct_6h_raw) if isinstance(pct_6h_raw, (int, float)) else None
         pct_24h = float(pct_24h_raw) if isinstance(pct_24h_raw, (int, float)) else None
 
-        txns = token_information.txns
-        bucket = txns.h1 or txns.h24
-        buys = bucket.buys
-        sells = bucket.sells
-        total = buys + sells
-        buy_ratio = (buys / total) if total > 0 else 0.5
+        transactions = token_information.transactions
+        if transactions and (transactions.h1 or transactions.h24):
+            bucket = transactions.h1 if transactions.h1 else transactions.h24
+            buys = bucket.buys
+            sells = bucket.sells
+            total = buys + sells
+            buy_ratio = (buys / total) if total > 0 else 0.5
+        else:
+            buy_ratio = 0.5
 
         if liquidity_usd < self.min_liquidity_usd:
-            log.debug("[RISK][PRE-ENTRY][DROP:LOW_LIQ] %s liq=%.0f < %.0f",
+            logger.debug("[RISK][PRE-ENTRY][DROP:LOW_LIQ] %s liq=%.0f < %.0f",
                       symbol, liquidity_usd, self.min_liquidity_usd)
             diag = RiskDiagnostics(
                 liquidity_usd=liquidity_usd,
@@ -92,7 +95,7 @@ class AdaptiveRiskManager:
 
         if pct_5m is not None and abs(pct_5m) > self.max_abs_percent_5m and (
                 pct_1h or 0.0) > self.max_abs_percent_1h * 0.7:
-            log.debug("[RISK][PRE-ENTRY][DROP:SPIKE] %s pct5m=%.1f pct1h=%.1f", symbol, pct_5m or -1.0, pct_1h or -1.0)
+            logger.debug("[RISK][PRE-ENTRY][DROP:SPIKE] %s pct5m=%.1f pct1h=%.1f", symbol, pct_5m or -1.0, pct_1h or -1.0)
             diag = RiskDiagnostics(
                 liquidity_usd=liquidity_usd,
                 percent_change_5m=float(pct_5m or 0.0), percent_change_1h=float(pct_1h or 0.0), percent_change_6h=float(pct_6h or 0.0),
@@ -102,7 +105,7 @@ class AdaptiveRiskManager:
             return PreEntryDecision(is_valid_for_entry=False, decision_reason="overextended_spike", risk_diagnostics_map=diag.as_plain_dict())
 
         if buy_ratio < 0.48 and (pct_5m or 0.0) > 6.0:
-            log.debug("[RISK][PRE-ENTRY][DROP:WEAK_FLOW] %s buy_ratio=%.2f", symbol, buy_ratio)
+            logger.debug("[RISK][PRE-ENTRY][DROP:WEAK_FLOW] %s buy_ratio=%.2f", symbol, buy_ratio)
             diag = RiskDiagnostics(
                 liquidity_usd=liquidity_usd,
                 percent_change_5m=float(pct_5m or 0.0), percent_change_1h=float(pct_1h or 0.0), percent_change_6h=float(pct_6h or 0.0),
@@ -134,15 +137,19 @@ class AdaptiveRiskManager:
         tp2 = entry * (1.0 + tp2_fraction)
         stop = entry * (1.0 - stop_fraction)
 
-        log.info(
+        logger.info(
             "[RISK][THRESHOLDS] entry=%.10f vol≈%.3f tp1=%.6f tp2=%.6f stop=%.6f",
             entry, volatility, tp1, tp2, stop,
         )
-        log.debug(
+        logger.debug(
             "[RISK][THRESHOLDS][DETAILS] stop_frac=%.3f tp1_frac=%.3f tp2_frac=%.3f (defaults tp1=%.3f tp2=%.3f)",
             stop_fraction, tp1_fraction, tp2_fraction, self.tp1_exit_fraction_default, self.tp2_exit_fraction_default,
         )
-        return Thresholds(take_profit_one=tp1, take_profit_two=tp2, stop_loss=stop)
+        return Thresholds(
+            take_profit_tier_1_price=float(tp1),
+            take_profit_tier_2_price=float(tp2),
+            stop_loss_price=float(stop)
+        )
 
     def post_tp1_adjustments(self, entry_price: float, current_stop: float, tp1_price: float) -> float:
         if entry_price is None or entry_price <= 0.0:
@@ -160,7 +167,7 @@ class AdaptiveRiskManager:
         cushion = max(0.0, 0.35 * (tp1 - entry))
         new_stop = max(stop, buffer_target + cushion)
 
-        log.info("[RISK][AFTER_TP1] stop: %.6f → %.6f", stop, new_stop)
+        logger.info("[RISK][AFTER_TP1] stop: %.6f → %.6f", stop, new_stop)
         return new_stop
 
     def size_multiplier(self, candidate: Candidate) -> float:
@@ -168,9 +175,9 @@ class AdaptiveRiskManager:
         target = self.target_position_volatility_fraction
 
         if target <= 0.0:
-            log.debug("[RISK][SIZING][WARN] target_position_volatility_fraction <= 0; using 1.0")
+            logger.debug("[RISK][SIZING][WARN] target_position_volatility_fraction <= 0; using 1.0")
             return 1.0
 
         multiplier = float(max(0.5, min(1.0, target / max(volatility, 1e-9))))
-        log.debug("[RISK][SIZING] vol≈%.3f → size_mult=%.2f", volatility, multiplier)
+        logger.debug("[RISK][SIZING] vol≈%.3f → size_mult=%.2f", volatility, multiplier)
         return multiplier

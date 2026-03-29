@@ -11,7 +11,7 @@ from src.integrations.dexscreener.dexscreener_structures import (
 )
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def _split_into_chunks(tokens: List[Token], chunk_size: int) -> List[List[str]]:
@@ -54,7 +54,7 @@ async def _http_get_json(client: httpx.AsyncClient, url: str) -> Union[Dict[str,
     try:
         return response.json()
     except ValueError:
-        log.debug("[DEX][HTTP] JSON parse failed for URL '%s'.", url)
+        logger.debug("[DEX][HTTP] JSON parse failed for URL '%s'.", url)
         return None
 
 
@@ -117,10 +117,10 @@ async def _fetch_token_information_for_chain(
         if isinstance(raw_list, list):
             for item in raw_list:
                 if isinstance(item, dict):
-                    try:
-                        pairs.append(DexscreenerTokenInformation.from_json(item))
-                    except Exception:
-                        continue
+                        try:
+                            pairs.append(DexscreenerTokenInformation.model_validate(item))
+                        except Exception:
+                            continue
     return pairs
 
 
@@ -137,12 +137,12 @@ async def _fetch_token_information_list(
     except httpx.HTTPStatusError as error:
         status = error.response.status_code
         if status in (400, 413, 414) and len(batch_addresses) > 1:
-            log.debug("[DEX][FETCH] HTTP %d for batch size %d → splitting and retrying.", status, len(batch_addresses))
-            mid = len(batch_addresses) // 2
-            left = await _fetch_token_information_list(client, batch_addresses[:mid])
-            right = await _fetch_token_information_list(client, batch_addresses[mid:])
-            return left + right
-        log.warning("[DEX][FETCH] HTTP error %d for URL '%s'.", status, url)
+            logger.debug("[DEX][FETCH] HTTP %d for batch size %d → splitting and retrying.", status, len(batch_addresses))
+            middle_index = len(batch_addresses) // 2
+            left_side_results = await _fetch_token_information_list(client, batch_addresses[:middle_index])
+            right_side_results = await _fetch_token_information_list(client, batch_addresses[middle_index:])
+            return left_side_results + right_side_results
+        logger.warning("[DEX][FETCH] HTTP error %d for URL '%s'.", status, url)
         raise
 
     pairs_list: List[Dict[str, JSON]] = []
@@ -150,20 +150,20 @@ async def _fetch_token_information_list(
         pairs_value = payload.get("pairs")
         if pairs_value is None:
             if len(batch_addresses) > 1:
-                log.debug("[DEX][FETCH] 'pairs' is null for batch size %d → splitting and retrying.",
-                          len(batch_addresses))
-                mid = len(batch_addresses) // 2
-                left = await _fetch_token_information_list(client, batch_addresses[:mid])
-                right = await _fetch_token_information_list(client, batch_addresses[mid:])
-                return left + right
-            log.debug("[DEX][FETCH] 'pairs' is null for address '%s' (no result).", batch_addresses[0])
+                logger.debug("[DEX][FETCH] 'pairs' is null for batch size %d → splitting and retrying.",
+                             len(batch_addresses))
+                middle_index = len(batch_addresses) // 2
+                left_side_results = await _fetch_token_information_list(client, batch_addresses[:middle_index])
+                right_side_results = await _fetch_token_information_list(client, batch_addresses[middle_index:])
+                return left_side_results + right_side_results
+            logger.debug("[DEX][FETCH] 'pairs' is null for address '%s' (no result).", batch_addresses[0])
             return []
         if isinstance(pairs_value, list):
-            pairs_list = [p for p in pairs_value if isinstance(p, dict)]
+            pairs_list = [pair_item for pair_item in pairs_value if isinstance(pair_item, dict)]
 
     token_information_list: List[DexscreenerTokenInformation] = []
     for pair_payload in pairs_list:
-        dexscreener_token_information = DexscreenerTokenInformation.from_json(pair_payload)
+        dexscreener_token_information = DexscreenerTokenInformation.model_validate(pair_payload)
         address = dexscreener_token_information.base_token.address
         if not address:
             continue
@@ -175,7 +175,9 @@ def _select_best_pair(pairs: List[DexscreenerTokenInformation]) -> Optional[Dexs
     if not pairs:
         return None
 
-    def score(item: DexscreenerTokenInformation) -> Tuple[float, float]:
-        return item.liquidity.usd, item.volume.h24
+    def _calculate_pair_score(item: DexscreenerTokenInformation) -> tuple[float, float]:
+        liquidity_usd = item.liquidity.usd if item.liquidity and item.liquidity.usd else 0.0
+        volume_h24 = item.volume.h24 if item.volume and item.volume.h24 else 0.0
+        return liquidity_usd, volume_h24
 
-    return sorted(pairs, key=score, reverse=True)[0]
+    return sorted(pairs, key=_calculate_pair_score, reverse=True)[0]

@@ -30,7 +30,7 @@ from src.integrations.dexscreener.dexscreener_structures import (
 )
 from src.logging.logger import get_logger
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 _shared_async_client: Optional[httpx.AsyncClient] = None
 _shared_async_client_loop_id: Optional[int] = None
@@ -58,12 +58,12 @@ async def fetch_dexscreener_token_information_list(
 ) -> List[DexscreenerTokenInformation]:
     tokens_list: List[Token] = list(tokens or [])
     if not tokens_list:
-        log.debug("[DEX][PAIR][PRICE] Called with an empty token list.")
+        logger.debug("[DEX][PAIR][PRICE] Called with an empty token list.")
         return []
 
     unique_tokens: List[Token] = _deduplicate_preserving_order(tokens_list)
     if len(unique_tokens) > TOTAL_ADDRESS_HARD_CAP:
-        log.info(
+        logger.info(
             "[DEX][TOKEN][INFORMATION] Capping token list from %d to hard cap %d.",
             len(unique_tokens),
             TOTAL_ADDRESS_HARD_CAP,
@@ -73,7 +73,7 @@ async def fetch_dexscreener_token_information_list(
     tokens_by_chain: Dict[str, List[Token]] = {}
     for token in unique_tokens:
         if not token.chain or not token.pair_address:
-            log.debug("[DEX][TOKEN][INFORMATION] Skipping token without chain/pair: %s", str(token))
+            logger.debug("[DEX][TOKEN][INFORMATION] Skipping token without chain/pair: %s", str(token))
             continue
         tokens_by_chain.setdefault(token.chain, []).append(token)
 
@@ -98,7 +98,7 @@ async def fetch_dexscreener_token_information_list(
             except httpx.HTTPStatusError as error:
                 status_code = error.response.status_code
                 if status_code in (400, 413, 414) and len(batch) > 1:
-                    log.debug(
+                    logger.debug(
                         "[DEX][TOKEN][INFORMATION] HTTP %d for batch size=%d → splitting and retrying.",
                         status_code,
                         len(batch),
@@ -108,20 +108,20 @@ async def fetch_dexscreener_token_information_list(
                     right = await _fetch_token_information_for_chain(_client, chain_id, batch[midpoint:])
                     token_information_list_fetched = left + right
                 else:
-                    log.warning(
+                    logger.warning(
                         "[DEX][TOKEN][INFORMATION] HTTP error %d for URL '%s'.",
                         status_code,
                         f"{LATEST_PAIRS_ENDPOINT}/{chain_id}/…",
                     )
                     raise
 
-            for tokenInformation in token_information_list_fetched:
-                if tokenInformation.pair_address and tokenInformation.price_usd is not None and tokenInformation.price_usd > 0.0:
-                    token_information_list.append(tokenInformation)
+            for token_information_item in token_information_list_fetched:
+                if token_information_item.pair_address and token_information_item.price_usd is not None and token_information_item.price_usd > 0.0:
+                    token_information_list.append(token_information_item)
 
         await asyncio.sleep(0)
 
-    log.info("[DEX][TOKEN][INFORMATION] Returning %d token information (requested=%d).",
+    logger.info("[DEX][TOKEN][INFORMATION] Returning %d token information (requested=%d).",
              len(token_information_list),
              len(unique_tokens))
     return token_information_list
@@ -129,7 +129,7 @@ async def fetch_dexscreener_token_information_list(
 
 def fetch_dexscreener_token_information_list_sync(tokens: List[Token]) -> List[DexscreenerTokenInformation]:
     if not tokens:
-        log.debug("[DEX][TOKEN][INFORMATION] Called with an empty token list.")
+        logger.debug("[DEX][TOKEN][INFORMATION] Called with an empty token list.")
         return []
 
     try:
@@ -143,12 +143,12 @@ def fetch_dexscreener_token_information_list_sync(tokens: List[Token]) -> List[D
         def run_coroutine() -> List[DexscreenerTokenInformation]:
             return asyncio.run(fetch_dexscreener_token_information_list(tokens))
 
-        log.debug("[DEX][TOKEN][INFORMATION] Executing synchronous fetch in a worker thread.")
+        logger.debug("[DEX][TOKEN][INFORMATION] Executing synchronous fetch in a worker thread.")
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(run_coroutine)
             return future.result()
 
-    log.debug("[DEX][TOKEN][INFORMATION] Executing synchronous fetch in a new event loop.")
+    logger.debug("[DEX][TOKEN][INFORMATION] Executing synchronous fetch in a new event loop.")
     event_loop = asyncio.new_event_loop()
 
     async def _run_with_local_client() -> List[DexscreenerTokenInformation]:
@@ -177,12 +177,12 @@ async def fetch_token_information_by_token_addresses(token_addresses: Iterable[s
         -> Dict[str, List[DexscreenerTokenInformation]]:
     input_addresses: List[str] = list(token_addresses or [])
     if not input_addresses:
-        log.debug("[DEX][FETCH][PAIRS] Called with an empty address list.")
+        logger.debug("[DEX][FETCH][PAIRS] Called with an empty address list.")
         return {}
 
     unique_addresses: List[str] = _deduplicate_token_addresses_preserving_order(input_addresses)
     if len(unique_addresses) > TOTAL_ADDRESS_HARD_CAP:
-        log.info(
+        logger.info(
             "[DEX][FETCH][PAIRS] Capping address list from %d to hard cap %d.",
             len(unique_addresses),
             TOTAL_ADDRESS_HARD_CAP,
@@ -195,7 +195,7 @@ async def fetch_token_information_by_token_addresses(token_addresses: Iterable[s
     for batch in _split_token_addressed_into_chunks(unique_addresses, DEFAULT_MAX_ADDRESSES_PER_CALL):
         if not batch:
             continue
-        log.debug("[DEX][FETCH][PAIRS] Fetching pairs for batch size=%d.", len(batch))
+        logger.debug("[DEX][FETCH][PAIRS] Fetching pairs for batch size=%d.", len(batch))
         token_information_list = await _fetch_token_information_list(client, batch)
         for token_information in token_information_list:
             address = token_information.base_token.address
@@ -207,7 +207,7 @@ async def fetch_token_information_by_token_addresses(token_addresses: Iterable[s
 
 
 async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTokenInformation]:
-    log.info("[DEX][TREND] Collecting trending candidates from public endpoints.")
+    logger.info("[DEX][TREND] Collecting trending candidates from public endpoints.")
 
     collected_addresses: List[str] = []
     endpoints: List[str] = [
@@ -224,22 +224,22 @@ async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTok
                 collected_addresses.extend(extracted)
 
                 payload_size = len(payload) if isinstance(payload, list) else len(payload or {})
-                log.debug(
+                logger.debug(
                     "[DEX][TREND] Fetched %s → payload_items=%s, extracted_addresses=%s.",
                     "/".join(url.rsplit("/", 2)[-2:]),
                     payload_size,
                     len(extracted),
                 )
             except httpx.HTTPError as error:
-                log.warning("[DEX][TREND] Read failed for '%s' (%s).", url, error)
+                logger.warning("[DEX][TREND] Read failed for '%s' (%s).", url, error)
 
     if not collected_addresses:
-        log.info("[DEX][TREND] No addresses collected from trending sources.")
+        logger.info("[DEX][TREND] No addresses collected from trending sources.")
         return []
 
     pairs_by_address = await fetch_token_information_by_token_addresses(collected_addresses)
     if not any(pairs_by_address.values()):
-        log.info("[DEX][TREND] Pairs empty for collected addresses.")
+        logger.info("[DEX][TREND] Pairs empty for collected addresses.")
         return []
 
     token_information: List[DexscreenerTokenInformation] = []
@@ -249,7 +249,12 @@ async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTok
             continue
         token_information.append(best_pair)
 
-    token_information.sort(key=lambda t: (t.volume.h24, t.liquidity.usd), reverse=True)
+    def _calculate_trending_rank_score(item: DexscreenerTokenInformation) -> tuple[float, float]:
+        volume_h24 = item.volume.h24 if item.volume and item.volume.h24 else 0.0
+        liquidity_usd = item.liquidity.usd if item.liquidity and item.liquidity.usd else 0.0
+        return volume_h24, liquidity_usd
+
+    token_information.sort(key=_calculate_trending_rank_score, reverse=True)
     limited_rows = token_information[: max(1, int(page_size or 1))]
-    log.info("[DEX][TREND] Returning %d trending candidates.", len(limited_rows))
+    logger.info("[DEX][TREND] Returning %d trending candidates.", len(limited_rows))
     return limited_rows
