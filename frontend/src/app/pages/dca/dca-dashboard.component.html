@@ -1,7 +1,7 @@
 <div class="space-y-6">
 	@if (dcaStrategies().length > 0) {
 		<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-			<div class="flex items-center gap-2 bg-zinc-900/10 border border-white/5 rounded-2xl px-4 py-2 backdrop-blur-2xl shadow-2xl transition-all hover:border-blue-500/20 group">
+			<div class="flex items-center gap-2 bg-zinc-900/10 border border-white/5 rounded-2xl px-4 py-2 backdrop-blur-2xl shadow-2xl transition-all hover:border-blue-500/20 group relative z-50">
 				<i class="fa fa-robot text-zinc-600 group-hover:text-blue-400 transition-all duration-300"></i>
 				<div class="h-4 w-[1px] bg-white/10 ml-2"></div>
 				<p-select [options]="dcaStrategies()"

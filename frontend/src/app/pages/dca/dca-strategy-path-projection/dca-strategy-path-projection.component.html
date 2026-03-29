@@ -1,7 +1,7 @@
 <p-card>
 	<ng-template pTemplate="title">
 		<div class="flex justify-between items-center">
-			<span>Strategy Path Projection</span>
+			<span>Strategy path projection</span>
 			<div class="flex items-center gap-3">
                 <span class="relative flex h-2.5 w-2.5">
 	                @if (engineStatus() === 'ACTIVE') {
@@ -13,9 +13,6 @@
 			</div>
 		</div>
 	</ng-template>
-
-	<div class="text-xs text-slate-400 mb-4">Historical Bear Market behavior time-mapped and scaled to current strategy boundaries.</div>
-
 	<apx-chart
 			[series]="mainSeries()"
 			[chart]="mainChartConfig.chart"

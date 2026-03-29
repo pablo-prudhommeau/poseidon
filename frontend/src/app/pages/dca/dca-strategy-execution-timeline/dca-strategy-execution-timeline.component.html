@@ -7,7 +7,6 @@
 					<div class="h-2.5 w-2.5 rounded-full bg-emerald-500"></div>
 					<span class="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Executed</span>
 				</div>
-
 				<div class="flex items-center gap-1.5">
 					<div class="relative flex items-center justify-center w-5 h-5">
 						<div class="h-2.5 w-2.5 rounded-full bg-blue-500 z-10 relative"></div>
@@ -16,7 +15,6 @@
 					</div>
 					<span class="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Processing</span>
 				</div>
-
 				<div class="flex items-center gap-1.5">
 					<div class="h-2.5 w-2.5 rounded-full bg-amber-500"></div>
 					<span class="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Skipped</span>
@@ -32,9 +30,6 @@
 			</div>
 		</div>
 	</ng-template>
-
-	<div class="text-xs text-slate-400 mb-4">Live technical routing sync with strategy path.</div>
-
 	<div class="relative h-24 px-6 flex items-center">
 		<div class="absolute top-1/2 -translate-y-1/2 left-6 right-6 h-[1px] bg-slate-600/50 overflow-hidden">
 			<div class="h-full bg-gradient-to-r transition-all duration-1000 ease-out"
@@ -44,7 +39,6 @@
 			     [style.-webkit-mask-image]="'linear-gradient(to right, black calc(100% - 6px), transparent 100%)'">
 			</div>
 		</div>
-
 		<div class="relative w-full h-full flex items-center">
 			@for (marker of orderDueDateMarkers(); track marker.leftPositionPercent) {
 				<div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-[5]"
@@ -59,7 +53,6 @@
                 }"></div>
 				</div>
 			}
-
 			@for (timelineNode of timelineNodes(); track timelineNode.identifier) {
 				<div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 group transition-all duration-300"
 				     [style.left.%]="timelineNode.leftPositionPercent"
