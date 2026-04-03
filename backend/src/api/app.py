@@ -8,15 +8,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.http.http_api import router as http_router
-from src.api.websocket.ws_hub import router as ws_router
-from src.api.websocket.ws_manager import ws_manager
+from src.api.websocket.websocket_hub import router as ws_router
+from src.api.websocket.websocket_manager import websocket_manager
 from src.core.jobs.dca_job import dca_job as aave_dca
 from src.core.jobs.orchestrator_job import ensure_started, get_status
 from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.db import initialize_database
 
-log = get_logger(__name__)
+log = get_application_logger(__name__)
 
 
 def _parse_allowed_origins(env_value: str) -> List[str]:
@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def on_startup() -> None:
         initialize_database()
-        ws_manager.attach_current_event_loop()
+        websocket_manager.attach_current_event_loop()
         ensure_started()
 
         # Resync pending DCA approvals

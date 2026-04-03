@@ -11,9 +11,9 @@ from src.integrations.binance.binance_structures import (
     ExponentialMovingAverageAndPrice,
     CandlestickData
 )
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 async def fetch_exponential_moving_average_and_price(

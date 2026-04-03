@@ -10,7 +10,7 @@
 
 ---
 
-## 🏛️ System Architecture
+## 🏛️ System architecture
 
 ```text
                       ┌──────────────────────────────────────────────────────────┐
@@ -38,83 +38,84 @@
 
 ---
 
-## ⚡ Core Pillars
+## ⚡ Core pillars
 
-### 1. High-Frequency AI Trading Bot
+### 1. High-Frequency (optionnally AI-powered) trading bot
+![Screenshot trading](./examples/screenshots/trading.png)
 
 A multi-chain, highly configurable execution engine designed for speed and precision.
 
-* **AI-Driven Analysis**: Leverages OpenAI (GPT-5 Mini) to perform real-time chart analysis via automated screenshots (Playwright).
-* **Multi-Chain Execution**: Native support for **Ethereum**, **Solana**, and **Avalanche**.
-* **Granular Configuration**: Advanced momentum scoring, volume monitoring, and liquidity thresholds.
-* **Sentiment & Trend Integration**: Real-time data fetching from DexScreener and custom trend detection algorithms.
+* **AI-driven analysis** (optionnal) : Leverages OpenAI (GPT-5.x mini by default) to perform real-time chart analysis via automated screenshots (Playwright).
+* **Multi-chain execution**: Native support for **Ethereum**, **Solana**, and **Avalanche**.
+* **Granular configuration**: Advanced momentum scoring, volume monitoring, and liquidity thresholds.
+* **Sentiment and trend integration**: Real-time data fetching from DexScreener and custom trend detection algorithms.
 
-### 2. Ultra-Smart DCA (Dollar Cost Averaging)
+### 2. Next-generation DCA (Dollar cost averaging)
 ![Screenshot DCA](./examples/screenshots/dca.png)
 
 Next-generation DCA engine deeply integrated with the **Aave ecosystem**.
 
-* **Advanced Indicators**: Uses **EMA50** (Exponential Moving Average) to defer buys during market overheating and optimize entry points.
-* **PRU Optimization**: Focuses on **Unit Cost Price (Prix de Revient Unitaire)** synchronization to ensure long-term profitability.
-* **Seamless Relooping**: Dynamic management of supply/borrow positions to maximize capital efficiency.
+* **Advanced indicators**: Uses **EMA50** to defer buys during market overheating and optimize entry points.
+* **PRU optimization**: Focuses on **Unit Cost Price** synchronization to ensure long-term profitability.
+* **Seamless relooping**: Dynamic management of supply/borrow positions to maximize capital efficiency.
 
-### 3. Aave Sentinel (Liquidity Watch)
+### 3. Aave sentinel (Liquidity watch)
 <img src="./examples/screenshots/sentinel.png" width="300"/>
 
 An autonomous monitoring brick dedicated to capital preservation and liquidation prevention.
 
-* **Health Factor Oversight**: Continuous real-time monitoring of Aave Health Factors.
-* **Automated Rescue**: Automatically manages collateral and repays debt to maintain safety thresholds.
-* **Risk Mitigation**: Designed to react faster than human intervention during extreme market volatility.
-* **Telegram Alerts**: Direct integration for instant notification of critical health status changes.
+* **Health factor oversight**: Continuous real-time monitoring of Aave Health Factors.
+* **Automated rescue**: Automatically manages collateral and repays debt to maintain safety thresholds.
+* **Risk mitigation**: Designed to react faster than human intervention during extreme market volatility.
+* **Telegram alerts**: Direct integration for instant notification of critical health status changes.
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ Technology stack
 
 | Component      | Stack                                             |
 |:---------------|:--------------------------------------------------|
 | **Frontend**   | Angular 20, PrimeNG 20, TailwindCSS 4, ApexCharts |
 | **Backend**    | FastAPI (Python 3.11+), SQLAlchemy 2.0, Uvicorn   |
-| **Automation** | Playwright (Headless Browser), OpenAI SDK         |
-| **Web3**       | Web3.py, Solana-py, Li.Fi Integration             |
-| **Monitoring** | Telegram Bot API, Structured Logging with Tags    |
+| **Automation** | Playwright (headless browser), OpenAI SDK         |
+| **Web3**       | Web3.py, Solana-py, Li.Fi integration             |
+| **Monitoring** | Telegram Bot API, structured logging with tags    |
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting started
 
-### 1. Environment Configuration
+### 1. Environment configuration
 
 Create a `.env` file in the root directory. **Crucial keys are listed below:**
 
 ```bash
-# === CORE MODE (KEEP TRUE UNLESS YOU ARE SURE) ===
-PAPER_MODE=true
-
 # === API KEYS ===
 OPENAI_API_KEY=your_openai_key_here
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
+# === WALLET ===
+WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
+
 # === BLOCKCHAIN RPCs ===
 EVM_RPC_URL=https://your-eth-rpc-url
+SOLANA_RPC_URL=https://your-solana-rpc-url
 
-# === SECRETS / WALLETS ===
-# Use mnemonics or private keys for execution (STAY SAFE)
-AAVE_MNEMONIC="mnemonic_for_aave_operations"
+# === DCA ===
 AAVE_INITIAL_DEPOSIT_USD=10000
-EVM_MNEMONIC="your twelve words mnemonic here..."
-SOLANA_SECRET_KEY_BASE58="your_solana_private_key"
 
-# === DATABASE ===
+# === PATHS ===
 DATABASE_URL="/app/db/poseidon.db"
-
-# === SCREENSHOTS ===
 SCREENSHOT_DIR="/app/data/screenshots"
+
+# === TRADING ===
+# ⚠️ DANGEROUS SECTION ⚠️
+# Activates the trading engine
+TRADING_ENABLED=true
 ```
 
-### 2. Launch with Docker
+### 2. Launch with docker
 
 ```bash
 docker-compose up --build
@@ -122,7 +123,7 @@ docker-compose up --build
 
 ---
 
-## ⚖️ Final Disclaimer
+## ⚖️ Final disclaimer
 
 > **DO NOT DEPLOY WITHOUT LIVE TESTING IN PAPER MODE.**
 > This software is provided "as is", without warranty of any kind. Automated trading involves significant risk of capital loss. The DCA algorithms and AI analysis can fail during extreme market volatility. Ensure your `PAPER_MODE` is set to `true` for at least 48 hours before considering any real-money interactions.

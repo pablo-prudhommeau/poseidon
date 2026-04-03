@@ -18,10 +18,10 @@ from src.core.structures.structures import EquityCurve
 from src.core.utils.date_utils import format_datetime_to_local_iso
 from src.core.utils.symbol_utils import get_currency_symbol
 from src.integrations.aave.aave_structures import AaveLiveMetrics
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.models import Trade, Position, PortfolioSnapshot, Analytics, DcaOrder, DcaStrategy
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 def serialize_trade(trade: Trade) -> TradePayload:
@@ -115,7 +115,7 @@ def serialize_analytics(row: Analytics) -> AnalyticsPayload:
             price_change_percentage_h6=row.price_change_percentage_h6,
             price_change_percentage_h24=row.price_change_percentage_h24,
             transaction_count_m5=row.transaction_count_m5,
-            transaction_count_hour_1=row.transaction_count_hour_1,
+            transaction_count_h1=row.transaction_count_h1,
             transaction_count_h6=row.transaction_count_h6,
             transaction_count_h24=row.transaction_count_h24,
         ),

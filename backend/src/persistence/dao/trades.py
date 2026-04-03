@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from src.api.websocket.telemetry import TelemetryService
 from src.core.structures.structures import Token
 from src.core.utils.date_utils import get_current_local_datetime
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.models import PositionPhase, Position, TradeSide, ExecutionStatus, Trade
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 MINIMUM_QUANTITY_THRESHOLD = 1e-12
 
@@ -359,10 +359,10 @@ def sell(
                 token_address=token.token_address,
                 trade_id=trade_record.id,
                 closed_at=active_position.closed_at,
-                pnl_pct=final_profit_percentage,
-                pnl_usd=final_profit_usd,
-                holding_minutes=holding_duration_minutes,
-                was_profit=final_profit_usd > 0.0,
+                profit_and_loss_percentage=final_profit_percentage,
+                profit_and_loss_usd=final_profit_usd,
+                holding_duration_minutes=holding_duration_minutes,
+                was_profitable=final_profit_usd > 0.0,
                 exit_reason=exit_reason,
             )
 
@@ -382,10 +382,10 @@ def sell(
                 token_address=token.token_address,
                 trade_id=trade_record.id,
                 closed_at=trade_record.created_at,
-                pnl_pct=round(partial_profit_percentage, 6),
-                pnl_usd=round(partial_profit_usd, 8),
-                holding_minutes=round(holding_duration_minutes_partial, 4),
-                was_profit=partial_profit_usd > 0.0,
+                profit_and_loss_percentage=round(partial_profit_percentage, 6),
+                profit_and_loss_usd=round(partial_profit_usd, 8),
+                holding_duration_minutes=round(holding_duration_minutes_partial, 4),
+                was_profitable=partial_profit_usd > 0.0,
                 exit_reason="TP1",
             )
     except Exception as exception:

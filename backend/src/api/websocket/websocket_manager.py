@@ -11,12 +11,12 @@ from typing import Optional
 from fastapi.encoders import jsonable_encoder
 from starlette.websockets import WebSocket
 
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
-class WsManager:
+class WebsocketManager:
     def __init__(self) -> None:
         self._connected_clients: set[WebSocket] = set()
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -55,7 +55,7 @@ class WsManager:
                 await websocket_client.send_json(formatted_payload)
             except Exception as exception:
                 stale_websocket_clients.append(websocket_client)
-                logger.debug("[WEBSOCKET][MANAGER][BROADCAST] Payload transmission to client failed, scheduling for removal", exc_info=exception)
+                logger.debug("[WEBSOCKET][MANAGER][BROADCAST] Payload transmission to client failed, scheduling for removal", exception)
 
         for dead_websocket_client in stale_websocket_clients:
             self.unregister_client_connection(dead_websocket_client)
@@ -69,7 +69,7 @@ class WsManager:
             formatted_payload = self._convert_to_json_compatible_payload(raw_payload)
             asyncio.run_coroutine_threadsafe(self.broadcast_json_payload(formatted_payload), self._event_loop)
         except Exception as exception:
-            logger.exception("[WEBSOCKET][MANAGER][THREADSAFE] Threadsafe broadcast encountered a critical failure", exc_info=exception)
+            logger.exception("[WEBSOCKET][MANAGER][THREADSAFE] Threadsafe broadcast encountered a critical failure", exception)
 
 
-ws_manager = WsManager()
+websocket_manager = WebsocketManager()

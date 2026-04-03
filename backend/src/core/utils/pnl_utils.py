@@ -14,10 +14,10 @@ from src.core.structures.structures import (
     HoldingsAndUnrealizedProfitAndLoss,
 )
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.models import Trade, Position
 
-log = get_logger(__name__)
+log = get_application_logger(__name__)
 
 
 @dataclass
@@ -257,3 +257,14 @@ async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, 
             result[token_information.pair_address] = float(token_information.price_usd)
 
     return result
+
+
+def compute_portfolio_free_cash() -> float:
+    from src.configuration.config import settings
+    from src.persistence.dao.trades import get_recent_trades
+    from src.persistence.db import _session
+
+    with _session() as database_session:
+        all_trades = get_recent_trades(database_session, limit_count=100000)
+        cash_state = cash_from_trades(settings.PAPER_STARTING_CASH, all_trades)
+        return cash_state.available_cash

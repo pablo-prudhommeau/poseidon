@@ -28,9 +28,9 @@ from src.integrations.dexscreener.dexscreener_helpers import (
 from src.integrations.dexscreener.dexscreener_structures import (
     DexscreenerTokenInformation,
 )
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 _shared_async_client: Optional[httpx.AsyncClient] = None
 _shared_async_client_loop_id: Optional[int] = None
@@ -122,8 +122,8 @@ async def fetch_dexscreener_token_information_list(
         await asyncio.sleep(0)
 
     logger.info("[DEX][TOKEN][INFORMATION] Returning %d token information (requested=%d).",
-             len(token_information_list),
-             len(unique_tokens))
+                len(token_information_list),
+                len(unique_tokens))
     return token_information_list
 
 

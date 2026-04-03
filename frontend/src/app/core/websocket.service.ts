@@ -1,47 +1,25 @@
 import {Injectable, signal} from '@angular/core';
-import {Analytics, DcaStrategy, Portfolio, Position, Trade} from './models';
+import {Analytics, DcaStrategy, Portfolio, Position, Trade, WebsocketMessageType, WebsocketMessageUnion} from './models';
 
-type InitMsg = { type: 'init'; payload: any };
-type PortfolioMsg = { type: 'portfolio'; payload: any };
-type PositionsMsg = { type: 'positions'; payload: any[] };
-type TradeListMsg = { type: 'trades'; payload: any[] };
-type TradeMsg = { type: 'trade'; payload: any };
-type AnalyticsMsg = { type: 'analytics'; payload: any };
-type DcaStrategiesMsg = { type: 'dca_strategies'; payload: any[] };
-type PongMsg = { type: 'pong' };
-type ErrorMsg = { type: 'error'; payload?: any };
-
-type WsMsg =
-    | InitMsg
-    | PortfolioMsg
-    | PositionsMsg
-    | TradeListMsg
-    | TradeMsg
-    | AnalyticsMsg
-    | DcaStrategiesMsg
-    | PongMsg
-    | ErrorMsg
-    | { type: string; payload?: any };
-
-export type Status = 'connecting' | 'open' | 'closed';
+export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 
 @Injectable({providedIn: 'root'})
 export class WebSocketService {
     private socket?: WebSocket;
 
-    public readonly status = signal<Status>('closed');
+    public readonly status = signal<WebsocketConnectionStatus>('closed');
     public readonly portfolio = signal<Portfolio | null>(null);
     public readonly positions = signal<Position[]>([]);
     public readonly trades = signal<Trade[]>([]);
     public readonly analytics = signal<Analytics[]>([]);
     public readonly dcaStrategies = signal<DcaStrategy[]>([]);
 
-    private defaultWsUrl(): string {
+    private defaultWebsocketUrl(): string {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         return `${protocol}//${location.host}/ws`;
     }
 
-    public connect(url = this.defaultWsUrl()): void {
+    public connect(url = this.defaultWebsocketUrl()): void {
         if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)) {
             return;
         }
@@ -52,99 +30,85 @@ export class WebSocketService {
 
         socket.onopen = () => {
             this.status.set('open');
-            console.info('[WS][OPEN] WebSocket connection established');
+            console.info('[WEBSOCKET][CONNECTION][OPEN] WebSocket connection established');
         };
 
         socket.onmessage = (event) => {
             try {
-                const message = JSON.parse(event.data) as WsMsg;
+                const message = JSON.parse(event.data) as WebsocketMessageUnion;
                 this.apply(message);
             } catch {
-                console.debug('[WS][ERROR] Invalid WS message payload', event.data);
+                console.debug('[WEBSOCKET][MESSAGE][ERROR] Invalid WebSocket message payload received', event.data);
             }
         };
 
         socket.onerror = () => {
             this.status.set('closed');
-            console.debug('[WS][ERROR] Socket error');
+            console.debug('[WEBSOCKET][CONNECTION][ERROR] WebSocket socket error encountered');
         };
 
         socket.onclose = () => {
             this.status.set('closed');
             this.socket = undefined;
-            console.info('[WS][CLOSE] Socket closed — attempting reconnect soon');
+            console.info('[WEBSOCKET][CONNECTION][CLOSE] Socket closed — attempting reconnection in 3 seconds');
             setTimeout(() => this.connect(url), 3000);
         };
     }
 
-    private apply(message: WsMsg): void {
+    private apply(message: WebsocketMessageUnion): void {
         switch (message.type) {
-            case 'init': {
-                const payload = (message as InitMsg).payload;
-                this.portfolio.set(payload?.portfolio ?? null);
-                this.positions.set(payload?.positions ?? []);
-                this.trades.set(payload?.trades ?? []);
-                this.dcaStrategies.set(payload?.dca_strategies ?? []);
-                const rows: Analytics[] = Array.isArray(payload?.analytics) ? payload.analytics : [];
-                const sorted = [...rows].sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
-                this.analytics.set(sorted.slice(0, 5000));
-                console.debug('[WS][INIT] State initialized', {
-                    trades: this.trades().length,
-                    positions: this.positions().length,
-                    analytics: this.analytics().length,
-                    dcaStrategies: this.dcaStrategies().length
-                });
+            case WebsocketMessageType.INITIALIZATION: {
+                console.info('[WEBSOCKET][MESSAGE][INITIALIZATION] Handshake received. System ready for data streaming.');
                 break;
             }
-            case 'portfolio': {
-                this.portfolio.set((message as PortfolioMsg).payload ?? null);
+            case WebsocketMessageType.PORTFOLIO: {
+                this.portfolio.set(message.payload);
                 break;
             }
-            case 'positions': {
-                this.positions.set((message as PositionsMsg).payload ?? []);
+            case WebsocketMessageType.POSITIONS: {
+                this.positions.set(message.payload);
                 break;
             }
-            case 'trades': {
-                const rows = (message as TradeListMsg).payload ?? [];
-                this.trades.set(rows);
+            case WebsocketMessageType.TRADES: {
+                this.trades.set(message.payload);
                 break;
             }
-            case 'trade': {
-                const row = (message as TradeMsg).payload as Trade;
-                this.trades.update((existing) => [row, ...existing].slice(0, 200));
+            case WebsocketMessageType.TRADE: {
+                const incomingTrade = message.payload;
+                this.trades.update((existingTrades) => [incomingTrade, ...existingTrades].slice(0, 200));
                 break;
             }
-            case 'analytics': {
-                const payload = (message as AnalyticsMsg).payload;
-                if (Array.isArray(payload)) {
-                    const rows: Analytics[] = payload;
-                    const sorted = [...rows].sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
-                    this.analytics.set(sorted.slice(0, 5000));
-                } else if (payload) {
-                    const row = payload as Analytics;
-                    this.analytics.update((previous) => {
-                        const index = previous.findIndex((r) => r.id === row.id);
-                        if (index >= 0) {
-                            const copy = [...previous];
-                            copy[index] = row;
-                            return copy;
+            case WebsocketMessageType.ANALYTICS: {
+                const incomingPayload = message.payload;
+                if (Array.isArray(incomingPayload)) {
+                    const sortedAnalytics = [...incomingPayload].sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
+                    this.analytics.set(sortedAnalytics.slice(0, 5000));
+                } else {
+                    const incomingAnalyticsCycle = incomingPayload;
+                    this.analytics.update((existingAnalytics) => {
+                        const existingRecordIndex = existingAnalytics.findIndex((record) => record.id === incomingAnalyticsCycle.id);
+                        if (existingRecordIndex >= 0) {
+                            const updatedAnalytics = [...existingAnalytics];
+                            updatedAnalytics[existingRecordIndex] = incomingAnalyticsCycle;
+                            return updatedAnalytics;
                         }
-                        return [row, ...previous].slice(0, 5000);
+                        return [incomingAnalyticsCycle, ...existingAnalytics].slice(0, 5000);
                     });
                 }
                 break;
             }
-            case 'dca_strategies': {
-                this.dcaStrategies.set((message as DcaStrategiesMsg).payload ?? []);
+            case WebsocketMessageType.DCA_STRATEGIES: {
+                this.dcaStrategies.set(message.payload);
                 break;
             }
-            case 'pong':
+            case WebsocketMessageType.PONG:
+                console.debug('[WEBSOCKET][MESSAGE][PONG] Heartbeat acknowledged by server');
                 break;
-            case 'error':
-                console.debug('[WS][SERVER][ERROR]', (message as ErrorMsg).payload);
+            case WebsocketMessageType.ERROR:
+                console.error('[WEBSOCKET][MESSAGE][ERROR] Server-side error reported:', message.payload);
                 break;
             default:
-                console.debug('[WS][WARN] Unhandled message type:', (message as any).type);
+                console.warn('[WEBSOCKET][MESSAGE][WARN] Unhandled message type received:', (message as any).type);
                 break;
         }
     }

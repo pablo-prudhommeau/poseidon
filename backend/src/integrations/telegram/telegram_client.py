@@ -10,9 +10,9 @@ from src.integrations.telegram.telegram_structures import (
     TelegramInlineKeyboardMarkup,
     TelegramMessagePayload,
 )
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 _TELEGRAM_API_BASE_URL: Final[str] = "https://api.telegram.org"
 

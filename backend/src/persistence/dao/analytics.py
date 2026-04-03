@@ -6,10 +6,10 @@ from typing import Optional
 from sqlalchemy import desc, select, and_
 from sqlalchemy.orm import Session
 
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.models import Analytics
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 def insert_analytics_record(database_session: Session, analytics_record: Analytics) -> Analytics:
@@ -51,7 +51,8 @@ def attach_trade_outcome_to_analytics(
             and_(
                 Analytics.token_address == token_address,
                 Analytics.evaluated_at <= closed_at_timestamp,
-                Analytics.has_outcome == False
+                Analytics.has_trade_outcome.is_(False),
+                Analytics.execution_decision == "BUY"
             )
         )
         .order_by(desc(Analytics.evaluated_at), desc(Analytics.id))
@@ -64,14 +65,14 @@ def attach_trade_outcome_to_analytics(
         logger.warning("[DATABASE][DAO][ANALYTICS][OUTCOME] No pending analytics record found for token %s to attach trade %d", token_address, trade_identifier)
         return None
 
-    target_analytics_record.has_outcome = True
-    target_analytics_record.outcome_trade_id = trade_identifier
+    target_analytics_record.has_trade_outcome = True
+    target_analytics_record.outcome_trade_identifier = trade_identifier
     target_analytics_record.outcome_closed_at = closed_at_timestamp
-    target_analytics_record.outcome_holding_minutes = holding_duration_minutes
-    target_analytics_record.outcome_pnl_pct = profit_and_loss_percentage
-    target_analytics_record.outcome_pnl_usd = profit_and_loss_usd
-    target_analytics_record.outcome_was_profit = was_profitable
-    target_analytics_record.outcome_exit_reason = exit_reason
+    target_analytics_record.outcome_holding_duration_minutes = holding_duration_minutes
+    target_analytics_record.outcome_realized_profit_and_loss_percentage = profit_and_loss_percentage
+    target_analytics_record.outcome_realized_profit_and_loss_usd = profit_and_loss_usd
+    target_analytics_record.outcome_was_profitable = was_profitable
+    target_analytics_record.outcome_exit_reason = exit_reason or ""
 
     database_session.flush()
     logger.info("[DATABASE][DAO][ANALYTICS][OUTCOME] Successfully attached trade outcome to analytics record %d for token %s", target_analytics_record.id, token_address)

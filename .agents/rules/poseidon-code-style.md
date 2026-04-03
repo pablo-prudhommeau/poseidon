@@ -20,6 +20,8 @@ Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un 
 
 * Privilégie l'utilisation de structure typées via BaseModel plutôt que des `dict` / `Tuple` / `Mapping` de types primitifs et n'utilise pas de dict.get() ni de dict["..."] ni de getattr() pour récupérer les attributs des structures (`structure.attribute` plutôt que `structure.get("attribute")` ou `structure["attribute"]`)
 
+* Ces structures typées backend doivent être regroupées dans des `*_structures.py` par "module applicatif"
+
 * Ne retype pas inutilement des types déjà établis float() d'un float, int() d'un int, etc.
 
 * N'affecte pas de manière hasardeuse des valeurs par défaut `0`, `""`, utilise proprement `Optional` ou throw des exceptions

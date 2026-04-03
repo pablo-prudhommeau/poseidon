@@ -12,9 +12,9 @@ from src.core.ai.chart_structures import (
     ChartCaptureResult,
     ChartSignalCacheEntry
 )
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 class ChartAiSignalProvider:
@@ -46,9 +46,6 @@ class ChartAiSignalProvider:
             lookback_minutes: int,
             token_age_hours: Optional[float] = None
     ) -> Optional[ChartAiSignal]:
-        if not settings.CHART_AI_ENABLED:
-            return None
-
         cache_lookup_key = f"{symbol or chain_name}:{pair_address}:{timeframe_minutes}:{lookback_minutes}"
         current_timestamp = time.time()
 
@@ -71,7 +68,7 @@ class ChartAiSignalProvider:
                 token_age_hours=token_age_hours
             )
         except ChartCaptureError as exception:
-            logger.warning("[AI][SIGNAL][PROVIDER][CAPTURE] Market chart capture failed for %s", cache_lookup_key, exc_info=exception)
+            logger.warning("[AI][SIGNAL][PROVIDER][CAPTURE] Market chart capture failed for %s", cache_lookup_key, exception)
             return None
 
         ai_analysis: Optional[ChartAiOutput] = self._openai_client.analyze_chart_vision(

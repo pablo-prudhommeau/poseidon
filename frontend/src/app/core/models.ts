@@ -117,8 +117,8 @@ export interface Analytics {
     fundamentals: AnalyticsFundamentals;
     decision: AnalyticsDecision;
     outcome: AnalyticsOutcome;
-    raw_dexscreener_payload: any;
-    raw_configuration_settings: any;
+    raw_dexscreener_payload: Record<string, unknown>;
+    raw_configuration_settings: Record<string, unknown>;
 }
 
 export interface DcaBacktestSeriesPoint {
@@ -222,20 +222,6 @@ export interface WebsocketStatusPayload {
     interval_seconds: number;
 }
 
-export interface WebsocketInitializationPayload {
-    status: WebsocketStatusPayload;
-    portfolio: Portfolio;
-    positions: Position[];
-    trades: Trade[];
-    analytics: Analytics[];
-    dca_strategies: DcaStrategy[];
-}
-
-export interface WebsocketEventPayload {
-    type: string;
-    payload: any;
-}
-
 export interface MacroProjectionSavings {
     live: number;
     bear: number;
@@ -277,3 +263,83 @@ export interface OrderDueDateMarker {
     leftPositionPercent: number;
     status: string;
 }
+
+export interface WebsocketInitializationPayload {
+    status: WebsocketStatusPayload;
+}
+
+export enum WebsocketMessageType {
+    INITIALIZATION = 'initialization',
+    PORTFOLIO = 'portfolio',
+    POSITIONS = 'positions',
+    TRADES = 'trades',
+    TRADE = 'trade',
+    ANALYTICS = 'analytics',
+    DCA_STRATEGIES = 'dca_strategies',
+    PONG = 'pong',
+    ERROR = 'error',
+    REFRESH = 'refresh',
+    PING = 'ping',
+}
+
+export interface BaseWebsocketMessage<T> {
+    type: WebsocketMessageType;
+    payload: T;
+}
+
+export interface WebsocketInitializationMessage extends BaseWebsocketMessage<WebsocketInitializationPayload> {
+    type: WebsocketMessageType.INITIALIZATION;
+}
+
+export interface WebsocketPortfolioMessage extends BaseWebsocketMessage<Portfolio> {
+    type: WebsocketMessageType.PORTFOLIO;
+}
+
+export interface WebsocketPositionsMessage extends BaseWebsocketMessage<Position[]> {
+    type: WebsocketMessageType.POSITIONS;
+}
+
+export interface WebsocketTradesMessage extends BaseWebsocketMessage<Trade[]> {
+    type: WebsocketMessageType.TRADES;
+}
+
+export interface WebsocketTradeMessage extends BaseWebsocketMessage<Trade> {
+    type: WebsocketMessageType.TRADE;
+}
+
+export interface WebsocketAnalyticsMessage extends BaseWebsocketMessage<Analytics | Analytics[]> {
+    type: WebsocketMessageType.ANALYTICS;
+}
+
+export interface WebsocketDcaStrategiesMessage extends BaseWebsocketMessage<DcaStrategy[]> {
+    type: WebsocketMessageType.DCA_STRATEGIES;
+}
+
+export interface WebsocketErrorMessage extends BaseWebsocketMessage<string | object> {
+    type: WebsocketMessageType.ERROR;
+}
+
+export interface WebsocketPongMessage {
+    type: WebsocketMessageType.PONG;
+}
+
+export interface WebsocketPingMessage {
+    type: WebsocketMessageType.PING;
+}
+
+export interface WebsocketRefreshMessage {
+    type: WebsocketMessageType.REFRESH;
+}
+
+export type WebsocketMessageUnion =
+    | WebsocketInitializationMessage
+    | WebsocketPortfolioMessage
+    | WebsocketPositionsMessage
+    | WebsocketTradesMessage
+    | WebsocketTradeMessage
+    | WebsocketAnalyticsMessage
+    | WebsocketDcaStrategiesMessage
+    | WebsocketErrorMessage
+    | WebsocketPongMessage
+    | WebsocketPingMessage
+    | WebsocketRefreshMessage;

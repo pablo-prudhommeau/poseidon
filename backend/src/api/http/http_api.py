@@ -25,7 +25,7 @@ from src.api.serializers import (
     serialize_dca_order,
     serialize_position,
 )
-from src.api.websocket.ws_hub import schedule_full_recompute_broadcast
+from src.api.websocket.websocket_hub import schedule_full_recompute_broadcast
 from src.configuration.config import settings
 from src.core.dca.dca_backtester import DcaBacktester
 from src.core.dca.dca_scheduler import DcaScheduler
@@ -33,7 +33,7 @@ from src.core.structures.structures import Token, DcaStrategyStatus
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence import service
 from src.persistence.dao.analytics import retrieve_recent_analytics
 from src.persistence.dao.dca_dao import DcaDao
@@ -43,7 +43,7 @@ from src.persistence.db import get_database_session
 from src.persistence.models import DcaStrategy
 
 router = APIRouter()
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 aave_executor_client = AaveExecutor()
 
@@ -59,7 +59,7 @@ async def get_health_status(db: Session = Depends(get_database_session)) -> Heal
         is_db_connected = True
         logger.info("[HTTP][HEALTH][DB] Database connectivity successfully validated")
     except Exception as exception:
-        logger.exception("[HTTP][HEALTH][DB] Health check database connectivity failed", exc_info=exception)
+        logger.exception("[HTTP][HEALTH][DB] Health check database connectivity failed", exception)
 
     return HealthPayload(
         status="ok" if is_db_connected else "degraded",
@@ -85,7 +85,7 @@ def reset_paper_mode(db: Session = Depends(get_database_session)) -> PaperResetP
         else:
             logger.debug("[HTTP][PAPER][REBROADCAST] No running event loop detected, user interface will refresh on next orchestrator tick")
     except RuntimeError as exception:
-        logger.debug("[HTTP][PAPER][REBROADCAST] Event loop runtime error encountered, user interface will refresh on next orchestrator tick", exc_info=exception)
+        logger.debug("[HTTP][PAPER][REBROADCAST] Event loop runtime error encountered, user interface will refresh on next orchestrator tick", exception)
 
     return PaperResetPayload(ok=True)
 

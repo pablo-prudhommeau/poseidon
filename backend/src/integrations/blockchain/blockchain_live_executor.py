@@ -6,19 +6,18 @@ from typing import Optional
 import base58
 
 from src.configuration.config import settings
-from src.core.onchain.evm_signer import build_default_evm_signer, EvmSigner
-from src.core.onchain.solana_signer import build_default_solana_signer, SolanaSigner
-from src.core.structures.structures import LifiRoute
 from src.core.utils.dict_utils import _read_path
-from src.logging.logger import get_logger
+from src.integrations.blockchain.blockchain_evm_signer import build_default_evm_signer, EvmSigner
+from src.integrations.blockchain.blockchain_solana_signer import build_default_solana_signer, SolanaSigner
+from src.logging.logger import get_application_logger
 
-log = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 @dataclass(frozen=True)
-class ExecutionResult:
+class BlockchainExecutionResult:
     network: str
-    tx_hash_or_signature: str
+    transaction_hash_or_signature: str
 
 
 class LiveExecutionService:
@@ -29,10 +28,10 @@ class LiveExecutionService:
     async def close(self) -> None:
         return
 
-    async def solana_execute_route(self, route: LifiRoute) -> str:
+    async def solana_execute_route(self, route: object) -> str:
         serialized = self._extract_solana_serialized_blob(route)
         if not isinstance(serialized, bytes) or len(serialized) == 0:
-            raise ValueError("Invalid Solana serialized transaction payload.")
+            raise ValueError("Invalid Solana serialized transaction payload")
 
         route_from = _read_path(route, ("fromAddress",))
         if self._solana_signer is None:
@@ -41,12 +40,12 @@ class LiveExecutionService:
         if isinstance(route_from, str) and len(route_from) > 0:
             if route_from.strip() != self._solana_signer.address:
                 raise ValueError(
-                    f"Route fromAddress ({route_from}) does not match signer address ({self._solana_signer.address})."
+                    f"Route fromAddress ({route_from}) does not match signer address ({self._solana_signer.address})"
                 )
 
-        log.info("[EXECUTOR][SOL] Broadcasting serialized transaction (bytes=%d)", len(serialized))
+        logger.info("[BLOCKCHAIN][EXECUTOR][SOL] Broadcasting serialized transaction (bytes=%d)", len(serialized))
         signature = self._solana_signer.send_raw_transaction(serialized)
-        log.info("[EXECUTOR][SOL] Broadcast success — signature=%s", signature)
+        logger.info("[BLOCKCHAIN][EXECUTOR][SOL] Broadcast success — signature=%s", signature)
         return signature
 
     @staticmethod
@@ -80,7 +79,7 @@ class LiveExecutionService:
         return b""
 
     @classmethod
-    def _extract_solana_serialized_blob(cls, route: LifiRoute) -> bytes:
+    def _extract_solana_serialized_blob(cls, route: object) -> bytes:
         candidates = [
             (("transaction", "serializedTransaction"), "transaction.serializedTransaction"),
             (("transactions", 0, "serializedTransaction"), "transactions[0].serializedTransaction"),
@@ -93,17 +92,16 @@ class LiveExecutionService:
             if isinstance(candidate, str) and len(candidate) > 0:
                 decoded = cls._decode_blob(candidate)
                 if len(decoded) > 0:
-                    log.debug("[EXECUTOR][SOL][EXTRACT] Using %s (len(raw)=%d, len(decoded)=%d)",
-                              label, len(candidate), len(decoded))
+                    logger.debug("[BLOCKCHAIN][EXECUTOR][SOL][EXTRACT] Using %s (len(raw)=%d, len(decoded)=%d)", label, len(candidate), len(decoded))
                     return decoded
 
-        log.debug("[EXECUTOR][SOL][EXTRACT] No suitable serialized payload found in route")
+        logger.debug("[BLOCKCHAIN][EXECUTOR][SOL][EXTRACT] No suitable serialized payload found in route")
         return b""
 
-    async def evm_execute_route(self, route: LifiRoute) -> str:
+    async def evm_execute_route(self, route: object) -> str:
         transaction_request = _read_path(route, ("transactionRequest",))
         if transaction_request is None:
-            raise ValueError("Missing transactionRequest for EVM route.")
+            raise ValueError("Missing transactionRequest for EVM route")
 
         raw_rlp = _read_path(transaction_request, ("rawTransaction",))
         if isinstance(raw_rlp, str) and len(raw_rlp) > 0:
@@ -112,7 +110,7 @@ class LiveExecutionService:
             web3 = Web3(provider)
             tx_hash = web3.eth.send_raw_transaction(bytes.fromhex(raw_rlp.removeprefix("0x")))
             hex_hash = tx_hash.hex()
-            log.info("[EXECUTOR][EVM] Broadcast success — tx=%s", hex_hash)
+            logger.info("[BLOCKCHAIN][EXECUTOR][EVM] Broadcast success — tx=%s", hex_hash)
             return hex_hash
 
         to = _read_path(transaction_request, ("to",))
@@ -121,7 +119,7 @@ class LiveExecutionService:
         gas = _read_path(transaction_request, ("gas",))
 
         if not isinstance(to, str) or len(to) == 0 or not isinstance(data, str) or len(data) == 0:
-            raise ValueError("Unsupported EVM route shape: missing 'to' or 'data' in transactionRequest.")
+            raise ValueError("Unsupported EVM route shape: missing 'to' or 'data' in transactionRequest")
 
         value_wei: Optional[int] = None
         if isinstance(value, int):
@@ -138,7 +136,7 @@ class LiveExecutionService:
         if self._evm_signer is None:
             self._evm_signer = build_default_evm_signer()
 
-        log.info("[EXECUTOR][EVM] Signing and broadcasting via local signer (to=%s)", to)
-        tx_hash_hex = self._evm_signer.broadcast_transaction(recipient_address=to, transaction_data_hex=data, value_in_wei=value_wei, gas_limit=gas_limit)
-        log.info("[EXECUTOR][EVM] Broadcast success — tx=%s", tx_hash_hex)
-        return tx_hash_hex
+        logger.info("[BLOCKCHAIN][EXECUTOR][EVM] Signing and broadcasting via local signer (to=%s)", to)
+        transaction_hash_hex = self._evm_signer.broadcast_transaction(recipient_address=to, transaction_data_hex=data, value_in_wei=value_wei, gas_limit=gas_limit)
+        logger.info("[BLOCKCHAIN][EXECUTOR][EVM] Broadcast success — tx=%s", transaction_hash_hex)
+        return transaction_hash_hex

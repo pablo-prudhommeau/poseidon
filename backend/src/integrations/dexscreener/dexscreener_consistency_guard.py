@@ -7,9 +7,9 @@ from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.core.utils.date_utils import get_current_local_datetime
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 class PairIdentity(BaseModel):

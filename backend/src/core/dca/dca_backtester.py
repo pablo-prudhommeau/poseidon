@@ -11,9 +11,9 @@ from src.core.structures.structures import (
 from src.core.utils.date_utils import convert_epoch_to_local_datetime
 from src.integrations.binance.binance_client import fetch_bulk_historical_candlesticks
 from src.integrations.binance.binance_structures import CandlestickData
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 class DcaBacktester:

@@ -13,7 +13,7 @@ from web3 import AsyncWeb3
 from web3.contract import AsyncContract
 from web3.types import TxParams
 
-from src.api.websocket.ws_hub import schedule_full_recompute_broadcast
+from src.api.websocket.websocket_hub import schedule_full_recompute_broadcast
 from src.configuration.config import settings
 from src.core.structures.structures import DcaOrderStatus
 from src.core.utils.format_utils import format_currency, format_percent
@@ -27,12 +27,12 @@ from src.integrations.aave.aave_abis import (
 )
 from src.integrations.aave.aave_structures import AaveAssetDetails, AavePositionSnapshot, SentinelState
 from src.integrations.telegram.telegram_client import edit_message_text
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.dao.dca_dao import DcaDao
 from src.persistence.db import DatabaseSessionLocal
 from src.persistence.models import DcaOrder
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 Account.enable_unaudited_hdwallet_features()
 
@@ -55,14 +55,14 @@ class AaveSentinelService:
         self._initial_basis_usd: Optional[float] = settings.AAVE_INITIAL_DEPOSIT_USD
 
     def _derive_credentials(self) -> None:
-        if not settings.AAVE_MNEMONIC:
-            logger.warning("[AAVE][SENTINEL][CREDENTIALS] Configuration missing: AAVE_MNEMONIC not set. Operation restricted.")
+        if not settings.WALLET_MNEMONIC:
+            logger.warning("[AAVE][SENTINEL][CREDENTIALS] Configuration missing: WALLET_MNEMONIC not set. Operation restricted.")
             return
 
         try:
             account_instance: LocalAccount = Account.from_mnemonic(
-                mnemonic=settings.AAVE_MNEMONIC,
-                account_path=f"m/44'/60'/0'/0/{settings.AAVE_DERIVATION_INDEX}"
+                mnemonic=settings.WALLET_MNEMONIC,
+                account_path=f"m/44'/60'/0'/0/{settings.WALLET_DERIVATION_INDEX}"
             )
             self._private_key = account_instance.key.hex()
             self._wallet_address = account_instance.address
@@ -258,7 +258,7 @@ class AaveSentinelService:
 
     async def _fetch_usd_eur_exchange_rate(self) -> float:
         default_fallback_rate = 0.95
-        fx_provider_api_url = "https://api.frankfurter.app/latest?from=USD&to=EUR"
+        fx_provider_api_url = "https://api.frankfurter.dev/v1/latest?from=USD&to=EUR"
 
         try:
             if not self._http_client:

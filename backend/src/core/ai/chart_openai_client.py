@@ -13,9 +13,9 @@ from src.core.ai.chart_prompt import (
     chartist_json_schema
 )
 from src.core.ai.chart_structures import ChartAiOutput
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 class ChartOpenAiClient:
@@ -82,7 +82,7 @@ class ChartOpenAiClient:
         except Exception as exception:
             logger.warning(
                 "[AI][OPENAI][ANALYSIS] Primary schema-based call failed, attempting fallback to json_object mode",
-                exc_info=exception
+                exception
             )
 
         try:
@@ -112,12 +112,12 @@ class ChartOpenAiClient:
         except ValidationError as validation_exception:
             logger.warning(
                 "[AI][OPENAI][SCHEMA] Fallback output failed Pydantic schema validation",
-                exc_info=validation_exception
+                validation_exception
             )
             return None
         except Exception as general_exception:
             logger.warning(
                 "[AI][OPENAI][ANALYSIS] Fallback analysis call failed completely",
-                exc_info=general_exception
+                general_exception
             )
             return None

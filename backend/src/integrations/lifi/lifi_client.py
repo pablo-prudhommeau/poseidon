@@ -5,12 +5,12 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.configuration.config import settings
-from src.core.structures.structures import LifiRoute, LifiEvmTransactionRequest, LifiSolanaSerializedTransaction
+from src.core.trading.trading_structures import TradingLifiRoute as LifiRoute, TradingLifiEvmTransactionRequest as LifiEvmTransactionRequest, TradingLifiSolanaSerializedTransaction as LifiSolanaSerializedTransaction
 from src.integrations.lifi.lifi_helpers import normalize_chain_identifier, execute_http_get_json
 from src.integrations.lifi.lifi_structures import EvmChain, LifiQuote
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 EVM_NATIVE_TOKEN_ZERO_ADDRESS: str = "0x0000000000000000000000000000000000000000"
 
@@ -177,22 +177,22 @@ def generate_solana_native_to_token_quote(
 
 
 def normalize_quote_response_to_route(quote_response: LifiRouteResponsePayload) -> Optional[LifiRoute]:
-    resolved_route = LifiRoute(transactionRequest=LifiEvmTransactionRequest())
+    resolved_route = LifiRoute(transaction_request=LifiEvmTransactionRequest(to="", data="", value=""))
 
     if quote_response.transaction_request is not None:
-        resolved_route.transactionRequest.to = str(quote_response.transaction_request.get("to", ""))
-        resolved_route.transactionRequest.data = str(quote_response.transaction_request.get("data", ""))
-        resolved_route.transactionRequest.value = str(quote_response.transaction_request.get("value", ""))
-        resolved_route.transactionRequest.from_ = str(quote_response.transaction_request.get("from", ""))
+        resolved_route.transaction_request.to = str(quote_response.transaction_request.get("to", ""))
+        resolved_route.transaction_request.data = str(quote_response.transaction_request.get("data", ""))
+        resolved_route.transaction_request.value = str(quote_response.transaction_request.get("value", ""))
+        resolved_route.transaction_request.from_address = str(quote_response.transaction_request.get("from", ""))
         return resolved_route
 
     if quote_response.items is not None and len(quote_response.items) > 0:
         item_data = quote_response.items[0].data
         if item_data is not None and item_data.transaction_request is not None:
-            resolved_route.transactionRequest.to = str(item_data.transaction_request.get("to", ""))
-            resolved_route.transactionRequest.data = str(item_data.transaction_request.get("data", ""))
-            resolved_route.transactionRequest.value = str(item_data.transaction_request.get("value", ""))
-            resolved_route.transactionRequest.from_ = str(item_data.transaction_request.get("from", ""))
+            resolved_route.transaction_request.to = str(item_data.transaction_request.get("to", ""))
+            resolved_route.transaction_request.data = str(item_data.transaction_request.get("data", ""))
+            resolved_route.transaction_request.value = str(item_data.transaction_request.get("value", ""))
+            resolved_route.transaction_request.from_address = str(item_data.transaction_request.get("from", ""))
             return resolved_route
 
     if quote_response.steps is not None and len(quote_response.steps) > 0:
@@ -200,10 +200,10 @@ def normalize_quote_response_to_route(quote_response: LifiRouteResponsePayload) 
         if quote_step.items is not None and len(quote_step.items) > 0:
             step_item_data = quote_step.items[0].data
             if step_item_data is not None and step_item_data.transaction_request is not None:
-                resolved_route.transactionRequest.to = str(step_item_data.transaction_request.get("to", ""))
-                resolved_route.transactionRequest.data = str(step_item_data.transaction_request.get("data", ""))
-                resolved_route.transactionRequest.value = str(step_item_data.transaction_request.get("value", ""))
-                resolved_route.transactionRequest.from_ = str(step_item_data.transaction_request.get("from", ""))
+                resolved_route.transaction_request.to = str(step_item_data.transaction_request.get("to", ""))
+                resolved_route.transaction_request.data = str(step_item_data.transaction_request.get("data", ""))
+                resolved_route.transaction_request.value = str(step_item_data.transaction_request.get("value", ""))
+                resolved_route.transaction_request.from_address = str(step_item_data.transaction_request.get("from", ""))
                 return resolved_route
 
     if quote_response.transaction is not None:

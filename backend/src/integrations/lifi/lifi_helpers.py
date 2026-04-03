@@ -5,9 +5,9 @@ from typing import cast, Optional
 import httpx
 
 from src.configuration.config import settings
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 def build_lifi_http_headers() -> dict[str, str]:

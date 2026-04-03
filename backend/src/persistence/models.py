@@ -30,7 +30,7 @@ class ExecutionStatus(Enum):
 
 
 class Position(DatabaseBaseModel):
-    __tablename__ = "positions"
+    __tablename__ = "trading_positions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
@@ -53,7 +53,7 @@ class Position(DatabaseBaseModel):
 
 
 class Trade(DatabaseBaseModel):
-    __tablename__ = "trades"
+    __tablename__ = "trading_trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trade_side: Mapped[TradeSide] = mapped_column(SQLAlchemyEnum(TradeSide), index=True)
@@ -87,7 +87,7 @@ class PortfolioSnapshot(DatabaseBaseModel):
 
 
 class Analytics(DatabaseBaseModel):
-    __tablename__ = "analytics"
+    __tablename__ = "trading_analytics"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
@@ -115,7 +115,7 @@ class Analytics(DatabaseBaseModel):
     price_change_percentage_h6: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     price_change_percentage_h24: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     transaction_count_m5: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    transaction_count_hour_1: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transaction_count_h1: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     transaction_count_h6: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     transaction_count_h24: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     execution_decision: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")

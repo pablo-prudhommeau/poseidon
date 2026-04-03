@@ -228,7 +228,7 @@ class AnalyticsFundamentalsPayload(BaseModel):
     price_change_percentage_h6: float
     price_change_percentage_h24: float
     transaction_count_m5: int
-    transaction_count_hour_1: int
+    transaction_count_h1: int
     transaction_count_h6: int
     transaction_count_h24: int
 
@@ -246,8 +246,8 @@ class AnalyticsPayload(BaseModel):
     fundamentals: AnalyticsFundamentalsPayload
     decision: AnalyticsDecisionPayload
     outcome: AnalyticsOutcomePayload
-    raw_dexscreener_payload: Any
-    raw_configuration_settings: Any
+    raw_dexscreener_payload: dict[str, Any]
+    raw_configuration_settings: dict[str, Any]
 
 
 class AnalyticsResponse(BaseModel):
@@ -265,13 +265,8 @@ class WebsocketStatusPayload(BaseModel):
 
 class WebsocketInitializationPayload(BaseModel):
     status: WebsocketStatusPayload
-    portfolio: PortfolioPayload
-    positions: List[PositionPayload]
-    trades: List[TradePayload]
-    analytics: List[AnalyticsPayload]
-    dca_strategies: List[DcaStrategyPayload]
 
 
 class WebsocketEventPayload(BaseModel):
     type: str
-    payload: Any
+    payload: dict[str, Any]

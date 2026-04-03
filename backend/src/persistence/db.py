@@ -9,9 +9,9 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from src.configuration.config import settings
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 DatabaseBaseModel = declarative_base()
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict, Iterable, Union, Optional, Tuple
+from typing import List, Dict, Iterable, Union, Optional
 
 import httpx
 
@@ -9,9 +9,9 @@ from src.integrations.dexscreener.dexscreener_constants import JSON, LATEST_TOKE
 from src.integrations.dexscreener.dexscreener_structures import (
     DexscreenerTokenInformation,
 )
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 def _split_into_chunks(tokens: List[Token], chunk_size: int) -> List[List[str]]:
@@ -117,10 +117,10 @@ async def _fetch_token_information_for_chain(
         if isinstance(raw_list, list):
             for item in raw_list:
                 if isinstance(item, dict):
-                        try:
-                            pairs.append(DexscreenerTokenInformation.model_validate(item))
-                        except Exception:
-                            continue
+                    try:
+                        pairs.append(DexscreenerTokenInformation.model_validate(item))
+                    except Exception:
+                        continue
     return pairs
 
 

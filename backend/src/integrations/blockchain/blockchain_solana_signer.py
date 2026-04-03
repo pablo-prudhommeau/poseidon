@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-import base58
+from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 from solana.rpc.api import Client
 from solana.rpc.types import TxOpts
 from solders.keypair import Keypair
@@ -17,29 +17,32 @@ except Exception:
     SendTransactionResp = object
 
 from src.configuration.config import settings
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-log = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 @dataclass(frozen=True)
-class SolanaSignerConfig:
+class SolanaSignerConfiguration:
     rpc_url: str
-    secret_key_base58: str
+    mnemonic: str
+    wallet_derivation_index: int
 
 
 class SolanaSigner:
-    def __init__(self, config: SolanaSignerConfig) -> None:
-        if not config.rpc_url or not config.secret_key_base58:
-            raise ValueError(
-                "Solana signer requires RPC URL and base58 secret key (SOLANA_SECRET_KEY_BASE58)."
-            )
+    def __init__(self, configuration: SolanaSignerConfiguration) -> None:
+        if not configuration.rpc_url or not configuration.mnemonic:
+            raise ValueError("Solana signer requires RPC URL and mnemonic")
 
-        self.client = Client(config.rpc_url, timeout=30)
-        raw_secret = base58.b58decode(config.secret_key_base58)
-        self.keypair = Keypair.from_bytes(raw_secret)
+        self.client = Client(configuration.rpc_url, timeout=30)
 
-        log.info("[SOLANA][SIGNER] Initialized signer. Address=%s", self.keypair.pubkey())
+        seed = Bip39SeedGenerator(configuration.mnemonic).Generate("")
+        bip_obj = Bip44.FromSeed(seed, Bip44Coins.SOLANA)
+        account = bip_obj.Purpose().Coin().Account(configuration.wallet_derivation_index).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
+        raw_private_key = account.PrivateKey().Raw().ToBytes()
+        self.keypair = Keypair.from_bytes(raw_private_key)
+
+        logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Initialized signer. Address=%s", self.keypair.pubkey())
 
     @property
     def address(self) -> str:
@@ -103,44 +106,44 @@ class SolanaSigner:
             except Exception:
                 pass
             return None
-        except Exception as exc:
-            log.debug("[SOLANA][SIGNER] is_blockhash_valid failed — %s", exc)
+        except Exception as exception:
+            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] is_blockhash_valid failed — %s", exception)
             return None
 
     def _sign_versioned_bytes(self, raw_bytes: bytes) -> bytes:
         try:
-            versioned_tx = VersionedTransaction.from_bytes(raw_bytes)
-        except Exception as exc:
-            raise ValueError(f"Payload is not a valid VersionedTransaction: {exc}") from exc
+            versioned_transaction = VersionedTransaction.from_bytes(raw_bytes)
+        except Exception as exception:
+            raise ValueError(f"Payload is not a valid VersionedTransaction: {exception}") from exception
 
-        message = versioned_tx.message
-
-        try:
-            signed_vtx = VersionedTransaction(message, [self.keypair])
-            signed_bytes = bytes(signed_vtx)
-            log.debug("[SOLANA][SIGNER] Signed using constructor(keypairs).")
-            return signed_bytes
-        except Exception as exc_ctor_keypair:
-            log.debug("[SOLANA][SIGNER] constructor(keypairs) path failed: %s", exc_ctor_keypair)
+        message = versioned_transaction.message
 
         try:
-            manual_sig: Signature = self.keypair.sign_message(bytes(message))
-            presigner = Presigner(self.keypair.pubkey(), manual_sig)
-            signed_vtx = VersionedTransaction(message, [presigner])
-            signed_bytes = bytes(signed_vtx)
-            log.debug("[SOLANA][SIGNER] Signed using constructor(Presigner).")
+            signed_versioned_transaction = VersionedTransaction(message, [self.keypair])
+            signed_bytes = bytes(signed_versioned_transaction)
+            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Signed using constructor(keypairs)")
             return signed_bytes
-        except Exception as exc_ctor_presigner:
+        except Exception as exception_constructor_keypair:
+            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] constructor(keypairs) path failed: %s", exception_constructor_keypair)
+
+        try:
+            manual_signature: Signature = self.keypair.sign_message(bytes(message))
+            presigner = Presigner(self.keypair.pubkey(), manual_signature)
+            signed_versioned_transaction = VersionedTransaction(message, [presigner])
+            signed_bytes = bytes(signed_versioned_transaction)
+            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Signed using constructor(Presigner)")
+            return signed_bytes
+        except Exception as exception_constructor_presigner:
             raise ValueError(
-                f"[SOLANA][SIGNER] Could not sign VersionedTransaction using any method. "
-                f"ctor(keypairs): {exc_ctor_keypair!r} | ctor(presigner): {exc_ctor_presigner!r}"
-            ) from exc_ctor_presigner
+                f"[BLOCKCHAIN][SOLANA][SIGNER] Could not sign VersionedTransaction using any method. "
+                f"ctor(keypairs): {exception_constructor_keypair!r} | ctor(presigner): {exception_constructor_presigner!r}"
+            ) from exception_constructor_presigner
 
     def send_raw_transaction(self, raw_bytes: bytes) -> str:
         if len(raw_bytes) == 0:
-            raise ValueError("Raw transaction payload is empty.")
+            raise ValueError("Raw transaction payload is empty")
 
-        log.info("[SOLANA][SIGNER] Preparing to sign+broadcast serialized transaction (bytes=%d)", len(raw_bytes))
+        logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Preparing to sign+broadcast serialized transaction (bytes=%d)", len(raw_bytes))
 
         try:
             parsed = VersionedTransaction.from_bytes(raw_bytes)
@@ -148,13 +151,13 @@ class SolanaSigner:
             valid = self._is_blockhash_valid(blockhash_text)
             if valid is False:
                 raise ValueError(
-                    f"[SOLANA][SIGNER][STALE_BLOCKHASH] The route's recent blockhash is no longer valid "
+                    f"[BLOCKCHAIN][SOLANA][SIGNER][STALE_BLOCKHASH] The route's recent blockhash is no longer valid "
                     f"({blockhash_text}). Rebuild the LI.FI transaction and retry."
                 )
             if valid is True:
-                log.debug("[SOLANA][SIGNER] Recent blockhash is valid: %s", blockhash_text)
-        except Exception as exc_check:
-            log.debug("[SOLANA][SIGNER] Pre-send blockhash check skipped (%s).", exc_check)
+                logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Recent blockhash is valid: %s", blockhash_text)
+        except Exception as exception_check:
+            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Pre-send blockhash check skipped (%s)", exception_check)
 
         signed_payload = self._sign_versioned_bytes(raw_bytes)
 
@@ -163,13 +166,14 @@ class SolanaSigner:
             opts=TxOpts(skip_preflight=True, max_retries=5, preflight_commitment="processed"),
         )
         signature = self._extract_signature(response)
-        log.info("[SOLANA][SIGNER] Broadcasted signature %s", signature)
+        logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Broadcasted signature %s", signature)
         return signature
 
 
 def build_default_solana_signer() -> SolanaSigner:
-    config = SolanaSignerConfig(
+    configuration = SolanaSignerConfiguration(
         rpc_url=settings.SOLANA_RPC_URL,
-        secret_key_base58=settings.SOLANA_SECRET_KEY_BASE58,
+        mnemonic=settings.WALLET_MNEMONIC,
+        wallet_derivation_index=settings.WALLET_DERIVATION_INDEX
     )
-    return SolanaSigner(config)
+    return SolanaSigner(configuration)

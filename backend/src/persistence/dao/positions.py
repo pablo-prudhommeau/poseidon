@@ -4,10 +4,10 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from src.core.structures.structures import Token
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.models import Position, PositionPhase
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 def retrieve_open_position_tokens(database_session: Session) -> list[Token]:

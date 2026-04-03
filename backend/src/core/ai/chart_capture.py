@@ -15,9 +15,9 @@ from playwright.sync_api import (
 from src.configuration.config import settings
 from src.core.ai.chart_structures import ChartCaptureResult, ChartCacheEntry
 from src.core.utils.date_utils import get_current_local_datetime
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 class ChartCaptureError(Exception):
@@ -129,7 +129,7 @@ class ChartCaptureService:
             return False
 
         except Exception as exception:
-            logger.debug("[AI][CHART][CAPTURE][TOOLBAR] Toolbar interval setting operation failed", exc_info=exception)
+            logger.debug("[AI][CHART][CAPTURE][TOOLBAR] Toolbar interval setting operation failed", exception)
             return False
 
     def _try_set_tradingview_interval_via_keyboard(self, browser_page: Page, time_interval: str) -> bool:
@@ -154,7 +154,7 @@ class ChartCaptureService:
             logger.debug("[AI][CHART][CAPTURE][KEYBOARD] Keyboard interval sequence successfully dispatched for interval %s", time_interval)
             return True
         except Exception as exception:
-            logger.debug("[AI][CHART][CAPTURE][KEYBOARD] Keyboard interval setting operation failed", exc_info=exception)
+            logger.debug("[AI][CHART][CAPTURE][KEYBOARD] Keyboard interval setting operation failed", exception)
             return False
 
     @staticmethod
@@ -234,7 +234,7 @@ class ChartCaptureService:
                     logger.warning(
                         "[AI][CHART][CAPTURE][BROWSER] Chart canvas failed to become visible within the allocated timeout of %s milliseconds, proceeding with capture fallback",
                         int(settings.CHART_CAPTURE_WAIT_CANVAS_MS),
-                        exc_info=exception
+                        exception
                     )
 
                 browser_page.wait_for_timeout(int(settings.CHART_CAPTURE_AFTER_RENDER_MS))
@@ -242,7 +242,7 @@ class ChartCaptureService:
                 return captured_png_bytes
 
             except PlaywrightTimeoutError as exception:
-                logger.exception("[AI][CHART][CAPTURE][BROWSER] Critical timeout encountered while loading target URL %s", target_url, exc_info=exception)
+                logger.exception("[AI][CHART][CAPTURE][BROWSER] Critical timeout encountered while loading target URL %s", target_url, exception)
                 raise ChartCaptureError(f"Timeout while loading {target_url}") from exception
             finally:
                 try:
@@ -333,5 +333,5 @@ class ChartCaptureService:
                 file_path=persisted_file_path,
             )
         except Exception as exception:
-            logger.warning("[AI][CHART][CAPTURE][FAILURE] DexScreener chart capture completely failed for token %s on chain %s", pair_address, chain_name, exc_info=exception)
+            logger.warning("[AI][CHART][CAPTURE][FAILURE] DexScreener chart capture completely failed for token %s on chain %s", pair_address, chain_name, exception)
             raise ChartCaptureError(f"Dexscreener capture failed for {chain_name}/{pair_address}") from exception

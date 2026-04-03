@@ -4,7 +4,7 @@ import asyncio
 
 from sqlalchemy.orm import Session
 
-from src.api.websocket.ws_hub import schedule_full_recompute_broadcast
+from src.api.websocket.websocket_hub import schedule_full_recompute_broadcast
 from src.configuration.config import settings
 from src.core.dca.dca_allocation_engine import DcaAllocationEngine
 from src.core.structures.structures import DcaOrderStatus, DcaStrategyStatus
@@ -17,11 +17,11 @@ from src.integrations.telegram.telegram_structures import (
     TelegramInlineKeyboardButton,
     TelegramInlineKeyboardMarkup,
 )
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.dao.dca_dao import DcaDao
 from src.persistence.models import DcaOrder, DcaStrategy
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 class DcaManager:
@@ -339,7 +339,7 @@ class DcaManager:
             logger.exception(
                 "[DCA][MANAGER][ERROR] Pipeline execution failed at status %s. Halting for manual review.",
                 dca_order.order_status.name,
-                exc_info=exception
+                exception
             )
             dca_order.order_status = DcaOrderStatus.FAILED
             self.dca_dao.update_order(dca_order)

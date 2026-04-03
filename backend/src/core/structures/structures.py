@@ -1,13 +1,9 @@
 from enum import Enum
-from typing import List, Optional, Dict
+from typing import List, Optional
 
 from pydantic import BaseModel
 
 from src.core.utils.format_utils import _tail
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
-from src.logging.logger import get_logger
-
-logger = get_logger(__name__)
 
 
 class Token(BaseModel):
@@ -26,112 +22,9 @@ class Token(BaseModel):
         return hash((self.chain, self.symbol, self.token_address, self.pair_address))
 
 
-class Thresholds(BaseModel):
-    take_profit_tier_1_price: float
-    take_profit_tier_2_price: float
-    stop_loss_price: float
-
-
-class PreEntryDecision(BaseModel):
-    is_valid_for_entry: bool
-    decision_reason: str
-    risk_diagnostics_map: dict[str, float]
-
-
-class ScoreComponents(BaseModel):
-    quality_score: float
-    statistics_score: float
-    entry_score: float
-
-    def to_plain_dict(self) -> Dict[str, float]:
-        return {
-            "quality": float(self.quality_score),
-            "statistics": float(self.statistics_score),
-            "entry": float(self.entry_score),
-        }
-
-
-class Candidate(BaseModel):
-    token: Token
-    quality_score: float
-    statistics_score: float
-    entry_score: float
-    final_computed_score: float
-    score_components: ScoreComponents
-    ai_quality_delta: float
-    ai_buy_probability: float
-    dexscreener_token_information: DexscreenerTokenInformation
-    pair_address: Optional[str] = None
-    dex_price: Optional[float] = None
-
-
-class LifiEvmTransactionRequest(BaseModel):
-    to: str
-    data: str
-    value: str
-    gas: Optional[str] = None
-    from_address: Optional[str] = None
-    raw_transaction: Optional[str] = None
-
-
-class LifiSolanaSerializedTransaction(BaseModel):
-    serialized_transaction: str
-
-
-class LifiRoute(BaseModel):
-    transaction_request: LifiEvmTransactionRequest
-    transaction: Optional[LifiSolanaSerializedTransaction] = None
-    transactions: Optional[List[LifiSolanaSerializedTransaction]] = None
-    serialized_transaction: Optional[str] = None
-    from_address: Optional[str] = None
-
-
-class OrderPayload(BaseModel):
-    target_token: Token
-    execution_price: float
-    order_notional: float
-    original_candidate: Candidate
-    lifi_routing_path: Optional[LifiRoute] = None
-
-
-class EvmTransactionRequest(BaseModel):
-    recipient_address: str
-    transaction_data: str
-    value_in_wei: int
-    forced_gas_limit: Optional[int] = None
-
-
-class SolanaSerializedTransaction(BaseModel):
-    serialized_payload_bytes: bytes
-
-
-class RouteNetwork(Enum):
-    EVM = "EVM"
-    SOLANA = "SOLANA"
-
-
 class Mode(Enum):
     PAPER = "PAPER"
     LIVE = "LIVE"
-
-
-class RiskDiagnostics(BaseModel):
-    liquidity_usd: float
-    percent_change_5m: float
-    percent_change_1h: float
-    percent_change_6h: float
-    percent_change_24h: float
-    buy_to_sell_ratio: float
-
-    def as_plain_dict(self) -> dict:
-        return {
-            "liquidity_usd": float(self.liquidity_usd),
-            "percent_change_5m": float(self.percent_change_5m),
-            "percent_change_1h": float(self.percent_change_1h),
-            "percent_change_6h": float(self.percent_change_6h),
-            "percent_change_24h": float(self.percent_change_24h),
-            "buy_to_sell_ratio": float(self.buy_to_sell_ratio)
-        }
 
 
 class RealizedProfitAndLoss(BaseModel):
@@ -163,6 +56,20 @@ class EquityCurve(BaseModel):
 class WebsocketInboundMessage(BaseModel):
     type: str
     payload: Optional[dict] = None
+
+
+class WebsocketMessageType(str, Enum):
+    INITIALIZATION = "initialization"
+    PORTFOLIO = "portfolio"
+    POSITIONS = "positions"
+    TRADES = "trades"
+    TRADE = "trade"
+    ANALYTICS = "analytics"
+    DCA_STRATEGIES = "dca_strategies"
+    PONG = "pong"
+    ERROR = "error"
+    REFRESH = "refresh"
+    PING = "ping"
 
 
 class DcaStrategyStatus(Enum):

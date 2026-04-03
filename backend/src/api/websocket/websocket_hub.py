@@ -26,7 +26,7 @@ from src.api.serializers import (
     serialize_dca_strategy,
     serialize_position,
 )
-from src.api.websocket.ws_manager import ws_manager
+from src.api.websocket.websocket_manager import websocket_manager
 from src.configuration.config import settings
 from src.core.structures.structures import (
     Token,
@@ -35,6 +35,7 @@ from src.core.structures.structures import (
     EquityCurve,
     CashFromTrades,
     WebsocketInboundMessage,
+    WebsocketMessageType,
 )
 from src.core.utils.pnl_utils import (
     fifo_realized_pnl,
@@ -51,7 +52,7 @@ from src.integrations.dexscreener.dexscreener_consistency_guard import (
     ConsistencyVerdict,
 )
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.dao.analytics import retrieve_recent_analytics
 from src.persistence.dao.dca_dao import DcaDao
 from src.persistence.dao.portfolio_snapshots import (
@@ -65,13 +66,13 @@ from src.persistence.db import get_database_session, _session
 from src.persistence.models import PortfolioSnapshot, Position, Trade, Analytics, PositionPhase
 
 router = APIRouter()
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 dex_consistency_guard = DexscreenerConsistencyGuard(
-    window_size=settings.DEX_INCONSISTENCY_WINDOW_SIZE,
-    alternation_minimum_cycles=settings.DEX_INCONSISTENCY_ALTERNATION_CYCLES,
-    jump_factor=settings.DEX_INCONSISTENCY_JUMP_FACTOR,
-    fields_mismatch_minimum=settings.DEX_INCONSISTENCY_FIELDS_MISMATCH_MIN,
+    window_size=settings.TRADING_INCONSISTENCY_WINDOW_SIZE,
+    alternation_minimum_cycles=settings.TRADING_INCONSISTENCY_ALTERNATION_CYCLES,
+    jump_factor=settings.TRADING_INCONSISTENCY_JUMP_FACTOR,
+    fields_mismatch_minimum=settings.TRADING_INCONSISTENCY_FIELDS_MISMATCH_MIN,
     staleness_horizon=timedelta(seconds=settings.MARKETDATA_MAX_STALE_SECONDS),
 )
 
@@ -144,48 +145,129 @@ async def compute_dca_strategies_payload(database_session: Session) -> List[DcaS
     return dca_strategy_payloads
 
 
-async def send_initial_websocket_state(websocket_connection: WebSocket, database_session: Session) -> None:
-    current_portfolio_snapshot = get_portfolio_snapshot(database_session)
-    open_position_records = retrieve_open_positions(database_session)
+async def sync_portfolio_state_async(websocket_connection: WebSocket) -> None:
+    try:
+        with _session() as database_session:
+            current_portfolio_snapshot = get_portfolio_snapshot(database_session)
+            open_position_records = retrieve_open_positions(database_session)
+            recent_trade_records = get_recent_trades(database_session, limit_count=10000)
 
-    tokens_list: List[Token] = [
-        Token(
-            symbol=position_record.token_symbol,
-            chain=position_record.blockchain_network,
-            token_address=position_record.token_address,
-            pair_address=position_record.pair_address
-        )
-        for position_record in open_position_records
-    ]
+            tokens_list: List[Token] = [
+                Token(
+                    symbol=position_record.token_symbol,
+                    chain=position_record.blockchain_network,
+                    token_address=position_record.token_address,
+                    pair_address=position_record.pair_address
+                )
+                for position_record in open_position_records
+            ]
 
-    token_information_list: List[DexscreenerTokenInformation] = await fetch_dexscreener_token_information_list(tokens_list)
-    recent_trade_records = get_recent_trades(database_session, limit_count=10000)
-    recent_analytics_records = retrieve_recent_analytics(database_session, maximum_results_limit=10000)
+            try:
+                token_information_list = await fetch_dexscreener_token_information_list(tokens_list)
+            except Exception as exception:
+                logger.warning("[WEBSOCKET][HUB][SYNC][PORTFOLIO] DexScreener fetch failed: %s", exception)
+                token_information_list = []
 
-    initial_state_payload = WebsocketInitializationPayload(
-        status=WebsocketStatusPayload(paper_mode=settings.PAPER_MODE, interval_seconds=settings.TREND_INTERVAL_SEC),
-        portfolio=await compute_portfolio_payload(
-            token_information_list,
-            current_portfolio_snapshot,
-            open_position_records,
-            recent_trade_records,
-            equity_curve(database_session)
-        ),
-        positions=await compute_positions_payload(token_information_list, open_position_records),
-        trades=await compute_trades_payload(recent_trade_records),
-        analytics=await compute_analytics_payload(recent_analytics_records),
-        dca_strategies=await compute_dca_strategies_payload(database_session),
+            portfolio_payload = await compute_portfolio_payload(
+                token_information_list,
+                current_portfolio_snapshot,
+                open_position_records,
+                recent_trade_records,
+                equity_curve(database_session)
+            )
+
+            await websocket_connection.send_json({"type": WebsocketMessageType.PORTFOLIO.value, "payload": jsonable_encoder(portfolio_payload)})
+            logger.info("[WEBSOCKET][HUB][SYNC][PORTFOLIO] Portfolio state successfully streamed to client")
+    except Exception as exception:
+        logger.exception("[WEBSOCKET][HUB][SYNC][PORTFOLIO] Background portfolio sync failed", exception)
+
+
+async def sync_positions_state_async(websocket_connection: WebSocket) -> None:
+    try:
+        with _session() as database_session:
+            open_position_records = retrieve_open_positions(database_session)
+
+            tokens_list: List[Token] = [
+                Token(
+                    symbol=position_record.token_symbol,
+                    chain=position_record.blockchain_network,
+                    token_address=position_record.token_address,
+                    pair_address=position_record.pair_address
+                )
+                for position_record in open_position_records
+            ]
+
+            try:
+                token_information_list = await fetch_dexscreener_token_information_list(tokens_list)
+            except Exception as exception:
+                logger.warning("[WEBSOCKET][HUB][SYNC][POSITIONS] DexScreener fetch failed: %s", exception)
+                token_information_list = []
+
+            positions_payload = await compute_positions_payload(token_information_list, open_position_records)
+
+            await websocket_connection.send_json({"type": WebsocketMessageType.POSITIONS.value, "payload": jsonable_encoder(positions_payload)})
+            logger.info("[WEBSOCKET][HUB][SYNC][POSITIONS] Positions state successfully streamed to client")
+    except Exception as exception:
+        logger.exception("[WEBSOCKET][HUB][SYNC][POSITIONS] Background positions sync failed", exception)
+
+
+async def sync_trades_state_async(websocket_connection: WebSocket) -> None:
+    try:
+        with _session() as database_session:
+            recent_trade_records = get_recent_trades(database_session, limit_count=10000)
+            trades_payload = await compute_trades_payload(recent_trade_records)
+
+            await websocket_connection.send_json({"type": WebsocketMessageType.TRADES.value, "payload": jsonable_encoder(trades_payload)})
+            logger.info("[WEBSOCKET][HUB][SYNC][TRADES] Trades state successfully streamed to client")
+    except Exception as exception:
+        logger.exception("[WEBSOCKET][HUB][SYNC][TRADES] Background trades sync failed", exception)
+
+
+async def sync_analytics_state_async(websocket_connection: WebSocket) -> None:
+    try:
+        with _session() as database_session:
+            recent_analytics_records = retrieve_recent_analytics(database_session, maximum_results_limit=10000)
+            analytics_payload = await compute_analytics_payload(recent_analytics_records)
+
+            await websocket_connection.send_json({"type": WebsocketMessageType.ANALYTICS.value, "payload": jsonable_encoder(analytics_payload)})
+            logger.info("[WEBSOCKET][HUB][SYNC][ANALYTICS] Analytics state successfully streamed to client")
+    except Exception as exception:
+        logger.exception("[WEBSOCKET][HUB][SYNC][ANALYTICS] Background analytics sync failed", exception)
+
+
+async def sync_dca_strategies_state_async(websocket_connection: WebSocket) -> None:
+    try:
+        with _session() as database_session:
+            dca_strategies_payload = await compute_dca_strategies_payload(database_session)
+
+            await websocket_connection.send_json({"type": WebsocketMessageType.DCA_STRATEGIES.value, "payload": jsonable_encoder(dca_strategies_payload)})
+            logger.info("[WEBSOCKET][HUB][SYNC][DCA] DCA strategies state successfully streamed to client")
+    except Exception as exception:
+        logger.exception("[WEBSOCKET][HUB][SYNC][DCA] Background DCA strategies sync failed", exception)
+
+
+async def send_websocket_handshake(websocket_connection: WebSocket) -> None:
+    handshake_payload = WebsocketInitializationPayload(
+        status=WebsocketStatusPayload(paper_mode=settings.PAPER_MODE, interval_seconds=settings.TRADING_LOOP_INTERVAL_SECONDS)
     )
 
-    await websocket_connection.send_json({"type": "init", "payload": jsonable_encoder(initial_state_payload)})
-    logger.info("[WEBSOCKET][HUB][INIT] Initial state payload successfully sent to client")
+    await websocket_connection.send_json({"type": WebsocketMessageType.INITIALIZATION.value, "payload": jsonable_encoder(handshake_payload)})
+    logger.info("[WEBSOCKET][HUB][HANDSHAKE] Handshake payload successfully transmitted to client")
+
+
+def trigger_background_state_sync(websocket_connection: WebSocket) -> None:
+    asyncio.create_task(sync_portfolio_state_async(websocket_connection))
+    asyncio.create_task(sync_positions_state_async(websocket_connection))
+    asyncio.create_task(sync_trades_state_async(websocket_connection))
+    asyncio.create_task(sync_analytics_state_async(websocket_connection))
+    asyncio.create_task(sync_dca_strategies_state_async(websocket_connection))
 
 
 def schedule_full_recompute_broadcast() -> None:
     try:
         event_loop = asyncio.get_running_loop()
     except RuntimeError as exception:
-        logger.debug("[WEBSOCKET][HUB][REBROADCAST] No running event loop detected, recompute scheduled for next orchestrator tick", exc_info=exception)
+        logger.debug("[WEBSOCKET][HUB][REBROADCAST] No running event loop detected, recompute scheduled for next orchestrator tick", exception)
         return
 
     if not event_loop.is_running() or event_loop.is_closed():
@@ -198,7 +280,7 @@ def schedule_full_recompute_broadcast() -> None:
 
 
 async def recompute_metrics_and_broadcast() -> None:
-    from src.persistence.service import check_thresholds_and_autosell
+    from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell
 
     with _session() as database_session:
         open_position_records = retrieve_open_positions(database_session)
@@ -213,7 +295,11 @@ async def recompute_metrics_and_broadcast() -> None:
             for position_record in open_position_records
         ]
 
-        token_information_list: List[DexscreenerTokenInformation] = await fetch_dexscreener_token_information_list(tokens_list)
+        try:
+            token_information_list = await fetch_dexscreener_token_information_list(tokens_list)
+        except Exception as exception:
+            logger.warning("[WEBSOCKET][HUB][RECOMPUTE] DexScreener fetch failed: %s", exception)
+            return
 
         autosell_trade_records: List[Trade] = []
         staled_pair_keys: set[str] = set()
@@ -279,7 +365,7 @@ async def recompute_metrics_and_broadcast() -> None:
                 logger.warning(
                     "[WEBSOCKET][HUB][CONSISTENCY][CHECK] Market data consistency check failed for token %s",
                     token_information.base_token,
-                    exc_info=exception
+                    exception
                 )
 
         for token_information in token_information_list:
@@ -304,12 +390,12 @@ async def recompute_metrics_and_broadcast() -> None:
                 logger.warning(
                     "[WEBSOCKET][HUB][AUTOSELL][EVALUATION] Autosell threshold evaluation failed for token %s",
                     token_information.base_token,
-                    exc_info=exception
+                    exception
                 )
 
         for autosell_trade in autosell_trade_records:
-            ws_manager.broadcast_json_payload_threadsafe({
-                "type": "trade",
+            websocket_manager.broadcast_json_payload_threadsafe({
+                "type": WebsocketMessageType.TRADE.value,
                 "payload": jsonable_encoder(serialize_trade(autosell_trade))
             })
 
@@ -343,11 +429,11 @@ async def recompute_metrics_and_broadcast() -> None:
         analytics_payload = await compute_analytics_payload(recent_analytics_records)
         dca_strategies_payload = await compute_dca_strategies_payload(database_session)
 
-        ws_manager.broadcast_json_payload_threadsafe({"type": "positions", "payload": jsonable_encoder(positions_payload)})
-        ws_manager.broadcast_json_payload_threadsafe({"type": "portfolio", "payload": jsonable_encoder(portfolio_payload)})
-        ws_manager.broadcast_json_payload_threadsafe({"type": "trades", "payload": jsonable_encoder(trades_payload)})
-        ws_manager.broadcast_json_payload_threadsafe({"type": "analytics", "payload": jsonable_encoder(analytics_payload)})
-        ws_manager.broadcast_json_payload_threadsafe({"type": "dca_strategies", "payload": jsonable_encoder(dca_strategies_payload)})
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.POSITIONS.value, "payload": jsonable_encoder(positions_payload)})
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.PORTFOLIO.value, "payload": jsonable_encoder(portfolio_payload)})
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADES.value, "payload": jsonable_encoder(trades_payload)})
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.ANALYTICS.value, "payload": jsonable_encoder(analytics_payload)})
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.DCA_STRATEGIES.value, "payload": jsonable_encoder(dca_strategies_payload)})
 
         logger.info("[WEBSOCKET][HUB][RECOMPUTE][BROADCAST] All portfolio metrics and DCA strategy states successfully refreshed and broadcasted")
 
@@ -355,11 +441,12 @@ async def recompute_metrics_and_broadcast() -> None:
 @router.websocket("/ws")
 async def handle_websocket_connection(websocket_connection: WebSocket, database_session: Session = Depends(get_database_session)) -> None:
     await websocket_connection.accept()
-    ws_manager.register_client_connection(websocket_connection)
+    websocket_manager.register_client_connection(websocket_connection)
     logger.info("[WEBSOCKET][HUB][CONNECTION] New client successfully connected")
 
     try:
-        await send_initial_websocket_state(websocket_connection, database_session)
+        await send_websocket_handshake(websocket_connection)
+        trigger_background_state_sync(websocket_connection)
 
         while True:
             raw_inbound_message = await websocket_connection.receive_json()
@@ -367,27 +454,27 @@ async def handle_websocket_connection(websocket_connection: WebSocket, database_
             try:
                 validated_inbound_message = WebsocketInboundMessage.model_validate(raw_inbound_message)
             except ValidationError as exception:
-                logger.debug("[WEBSOCKET][HUB][RECEIVE] Invalid message schema received from client", exc_info=exception)
-                await websocket_connection.send_json({"type": "error", "payload": "Invalid message schema"})
+                logger.debug("[WEBSOCKET][HUB][RECEIVE] Invalid message schema received from client", exception)
+                await websocket_connection.send_json({"type": WebsocketMessageType.ERROR.value, "payload": "Invalid message schema"})
                 continue
 
-            if validated_inbound_message.type == "ping":
-                await websocket_connection.send_json({"type": "pong"})
+            if validated_inbound_message.type == WebsocketMessageType.PING.value:
+                await websocket_connection.send_json({"type": WebsocketMessageType.PONG.value})
                 logger.debug("[WEBSOCKET][HUB][RECEIVE] Ping request received, Pong response transmitted")
-            elif validated_inbound_message.type == "refresh":
-                await send_initial_websocket_state(websocket_connection, database_session)
-                logger.info("[WEBSOCKET][HUB][REFRESH] Full initialization payload transmitted upon explicit client request")
+            elif validated_inbound_message.type == WebsocketMessageType.REFRESH.value:
+                trigger_background_state_sync(websocket_connection)
+                logger.info("[WEBSOCKET][HUB][REFRESH] Asynchronous state synchronization triggered upon client request")
             else:
                 logger.debug("[WEBSOCKET][HUB][RECEIVE] Unknown message type received: %s", validated_inbound_message.type)
 
     except WebSocketDisconnect:
         logger.info("[WEBSOCKET][HUB][DISCONNECT] Client gracefully disconnected")
     except Exception as exception:
-        logger.exception("[WEBSOCKET][HUB][ERROR] Unexpected WebSocket error encountered", exc_info=exception)
+        logger.exception("[WEBSOCKET][HUB][ERROR] Unexpected WebSocket error encountered", exception)
         try:
-            await websocket_connection.send_json({"type": "error", "payload": str(exception)})
+            await websocket_connection.send_json({"type": WebsocketMessageType.ERROR.value, "payload": str(exception)})
         except Exception:
             pass
     finally:
-        ws_manager.unregister_client_connection(websocket_connection)
+        websocket_manager.unregister_client_connection(websocket_connection)
         logger.debug("[WEBSOCKET][HUB][CLEANUP] Socket safely removed from active connections manager")

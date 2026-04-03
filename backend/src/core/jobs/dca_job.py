@@ -5,11 +5,11 @@ import asyncio
 from src.configuration.config import settings
 from src.core.dca.dca_manager import DcaManager
 from src.core.utils.date_utils import get_current_local_datetime
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.dao.dca_dao import DcaDao
 from src.persistence.db import DatabaseSessionLocal
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 
 
 class DcaJob:

@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
 from src.core.structures.structures import EquityCurve, EquityCurvePoint
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 from src.persistence.models import PortfolioSnapshot
 
-log = get_logger(__name__)
+log = get_application_logger(__name__)
 
 
 def ensure_initial_cash(db: Session) -> PortfolioSnapshot:

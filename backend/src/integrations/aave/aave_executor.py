@@ -17,9 +17,9 @@ from src.integrations.aave.aave_abis import (
     AAVE_ORACLE_ABI
 )
 from src.integrations.aave.aave_structures import AaveLiveMetrics
-from src.logging.logger import get_logger
+from src.logging.logger import get_application_logger
 
-logger = get_logger(__name__)
+logger = get_application_logger(__name__)
 Account.enable_unaudited_hdwallet_features()
 
 
@@ -37,13 +37,13 @@ class AaveExecutor:
         if chain in self._web3_clients:
             return
 
-        if not settings.AAVE_MNEMONIC:
+        if not settings.WALLET_MNEMONIC:
             logger.error("[AAVE][EXECUTOR][INIT] Mnemonic configuration is missing")
             raise ValueError("Mnemonic configuration is missing.")
 
         account: LocalAccount = Account.from_mnemonic(  # pylint: disable=no-value-for-parameter
-            settings.AAVE_MNEMONIC,
-            account_path=f"m/44'/60'/0'/0/{settings.AAVE_DERIVATION_INDEX}"
+            settings.WALLET_MNEMONIC,
+            account_path=f"m/44'/60'/0'/0/{settings.WALLET_DERIVATION_INDEX}"
         )
         self._private_key = account.key.hex()
         self._wallet_address = account.address

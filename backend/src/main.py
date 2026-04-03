@@ -1,12 +1,12 @@
 import asyncio
 import sys
 
-from src.logging.logger import init_logging
+from src.logging.logger import initialize_application_logging
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-init_logging()
+initialize_application_logging()
 
 import uvicorn
 
