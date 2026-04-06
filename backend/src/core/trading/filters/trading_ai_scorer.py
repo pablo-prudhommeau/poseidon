@@ -60,8 +60,8 @@ def apply_ai_scorer(candidates: list[TradingCandidate], pipeline_context: Tradin
                 candidate.token.symbol, entry_score, candidate.statistics_score, ai_delta, ai_probability,
             )
         else:
-            from src.core.trading.analytics.trading_analytics_recorder import TradingAnalyticsRecorder
-            TradingAnalyticsRecorder.persist_and_broadcast(candidate, rank=len(retained) + 1, decision="SKIP", reason="ENTRY_SCORE_BELOW_MIN")
+            from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
+            TradingEvaluationRecorder.persist_and_broadcast(candidate, rank=len(retained) + 1, decision="SKIP", reason="ENTRY_SCORE_BELOW_MIN")
             logger.debug(
                 "[TRADING][FILTER][AI] %s dropped — entry=%.2f < %.2f (stat=%.2f aiΔ=%.2f prob=%.3f)",
                 candidate.token.symbol, entry_score, minimum_entry_score, candidate.statistics_score, ai_delta, ai_probability,

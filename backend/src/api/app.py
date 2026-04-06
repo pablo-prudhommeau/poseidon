@@ -46,7 +46,6 @@ def create_app() -> FastAPI:
         websocket_manager.attach_current_event_loop()
         ensure_started()
 
-        # Resync pending DCA approvals
         from src.persistence.db import DatabaseSessionLocal
         from src.core.dca.dca_manager import DcaManager
         with DatabaseSessionLocal() as session:

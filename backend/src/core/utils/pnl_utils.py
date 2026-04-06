@@ -15,7 +15,7 @@ from src.core.structures.structures import (
 )
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_application_logger
-from src.persistence.models import Trade, Position
+from src.persistence.models import TradingTrade, TradingPosition
 
 log = get_application_logger(__name__)
 
@@ -31,7 +31,7 @@ def _now_with_timezone() -> datetime:
     return datetime.now().astimezone()
 
 
-def _get_created_at_or_now(obj: Trade | object) -> datetime:
+def _get_created_at_or_now(obj: TradingTrade | object) -> datetime:
     try:
         created_at = obj.created_at
     except AttributeError:
@@ -67,7 +67,7 @@ def _decimal_from_primitive(value: float | int | str | None) -> Decimal:
         return Decimal("0")
 
 
-def _to_token_from_position(position: Position) -> Token:
+def _to_token_from_position(position: TradingPosition) -> Token:
     pair_address: Optional[str] = position.pair_address if isinstance(position.pair_address,
                                                                       str) and position.pair_address else None
     return Token(
@@ -82,8 +82,8 @@ def _quantize_2dp(amount: Decimal) -> Decimal:
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> RealizedProfitAndLoss:
-    sorted_trades: List[Trade] = sorted(trades, key=_get_created_at_or_now)
+def fifo_realized_pnl(trades: Iterable[TradingTrade], *, cutoff_hours: int = 24) -> RealizedProfitAndLoss:
+    sorted_trades: List[TradingTrade] = sorted(trades, key=_get_created_at_or_now)
 
     lots_by_token: Dict[Token, Deque[InventoryLot]] = defaultdict(deque)
     realized_total: Decimal = Decimal("0")
@@ -148,8 +148,8 @@ def fifo_realized_pnl(trades: Iterable[Trade], *, cutoff_hours: int = 24) -> Rea
     return realized
 
 
-def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFromTrades:
-    sorted_trades: List[Trade] = list(trades)
+def cash_from_trades(start_cash_usd: float, trades: Iterable[TradingTrade]) -> CashFromTrades:
+    sorted_trades: List[TradingTrade] = list(trades)
 
     total_buys: Decimal = Decimal("0")
     total_sells: Decimal = Decimal("0")
@@ -188,10 +188,10 @@ def cash_from_trades(start_cash_usd: float, trades: Iterable[Trade]) -> CashFrom
 
 
 def holdings_and_unrealized_from_positions(
-        positions: Iterable[Position],
+        positions: Iterable[TradingPosition],
         token_information_list: List[DexscreenerTokenInformation]
 ) -> HoldingsAndUnrealizedProfitAndLoss:
-    position_list: List[Position] = list(positions)
+    position_list: List[TradingPosition] = list(positions)
     holdings_value_dec = Decimal("0")
     unrealized_dec = Decimal("0")
 
@@ -261,10 +261,12 @@ async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, 
 
 def compute_portfolio_free_cash() -> float:
     from src.configuration.config import settings
-    from src.persistence.dao.trades import get_recent_trades
+    from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
     from src.persistence.db import _session
 
     with _session() as database_session:
-        all_trades = get_recent_trades(database_session, limit_count=100000)
+        trade_dao = TradingTradeDao(database_session)
+        all_trades = trade_dao.retrieve_recent_trades(limit_count=100000)
         cash_state = cash_from_trades(settings.PAPER_STARTING_CASH, all_trades)
         return cash_state.available_cash
+

@@ -5,12 +5,12 @@ from src.configuration.config import _to_dict, settings
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.models import Analytics
+from src.persistence.models import TradingEvaluation
 
 logger = get_application_logger(__name__)
 
 
-class TradingAnalyticsRecorder:
+class TradingEvaluationRecorder:
     @staticmethod
     def persist_and_broadcast(
             candidate: TradingCandidate,
@@ -32,7 +32,7 @@ class TradingAnalyticsRecorder:
         price_change = token_information.price_change
         transactions = token_information.transactions
 
-        payload = Analytics(
+        payload = TradingEvaluation(
             token_symbol=base_token.symbol.upper(),
             blockchain_network=str(token_information.chain_id),
             token_address=str(base_token.address),
@@ -72,6 +72,5 @@ class TradingAnalyticsRecorder:
         )
         TelemetryService.record_analytics_event(payload)
 
-    @staticmethod
-    def persist_and_broadcast_skip(candidate: TradingCandidate, rank: int, reason: str) -> None:
-        TradingAnalyticsRecorder.persist_and_broadcast(candidate, rank=rank, decision="SKIP", reason=reason)
+    def persist_and_broadcast_skip(evaluation_candidate: TradingCandidate, sequence_rank: int, exclusion_reason: str) -> None:
+        TradingEvaluationRecorder.persist_and_broadcast(evaluation_candidate, rank=sequence_rank, decision="SKIP", reason=exclusion_reason)

@@ -16,15 +16,15 @@ from src.api.http.api_schemas import (
     TradePayload,
     PositionPayload,
     PortfolioPayload,
-    AnalyticsPayload,
+    EvaluationPayload,
     DcaStrategyPayload,
 )
 from src.api.serializers import (
-    serialize_trade,
-    serialize_portfolio,
-    serialize_analytics,
+    serialize_trading_trade,
+    serialize_trading_portfolio_snapshot,
+    serialize_trading_evaluation,
     serialize_dca_strategy,
-    serialize_position,
+    serialize_trading_position,
 )
 from src.api.websocket.websocket_manager import websocket_manager
 from src.configuration.config import settings
@@ -36,6 +36,7 @@ from src.core.structures.structures import (
     CashFromTrades,
     WebsocketInboundMessage,
     WebsocketMessageType,
+    PositionPhase,
 )
 from src.core.utils.pnl_utils import (
     fifo_realized_pnl,
@@ -53,17 +54,18 @@ from src.integrations.dexscreener.dexscreener_consistency_guard import (
 )
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_application_logger
-from src.persistence.dao.analytics import retrieve_recent_analytics
-from src.persistence.dao.dca_dao import DcaDao
-from src.persistence.dao.portfolio_snapshots import (
-    get_portfolio_snapshot,
-    equity_curve,
-    snapshot_portfolio,
-)
-from src.persistence.dao.positions import retrieve_open_positions
-from src.persistence.dao.trades import get_recent_trades
+from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
+from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
+from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
+from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
+from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
 from src.persistence.db import get_database_session, _session
-from src.persistence.models import PortfolioSnapshot, Position, Trade, Analytics, PositionPhase
+from src.persistence.models import (
+    TradingPortfolioSnapshot,
+    TradingPosition,
+    TradingTrade,
+    TradingEvaluation,
+)
 
 router = APIRouter()
 logger = get_application_logger(__name__)
@@ -79,17 +81,17 @@ dex_consistency_guard = DexscreenerConsistencyGuard(
 aave_executor_client = AaveExecutor()
 
 
-async def compute_trades_payload(trade_records: List[Trade]) -> List[TradePayload]:
-    return [serialize_trade(trade_record) for trade_record in trade_records]
+async def compute_trades_payload(trade_records: List[TradingTrade]) -> List[TradePayload]:
+    return [serialize_trading_trade(trade_record) for trade_record in trade_records]
 
 
-async def compute_analytics_payload(analytics_records: List[Analytics]) -> List[AnalyticsPayload]:
-    return [serialize_analytics(analytics_record) for analytics_record in analytics_records]
+async def compute_analytics_payload(evaluation_records: List[TradingEvaluation]) -> List[EvaluationPayload]:
+    return [serialize_trading_evaluation(evaluation_record) for evaluation_record in evaluation_records]
 
 
 async def compute_positions_payload(
         token_information_list: List[DexscreenerTokenInformation],
-        position_records: List[Position],
+        position_records: List[TradingPosition],
 ) -> List[PositionPayload]:
     serialized_positions = []
 
@@ -103,24 +105,24 @@ async def compute_positions_payload(
             ),
             None,
         )
-        serialized_positions.append(serialize_position(position_record, last_price=last_known_price))
+        serialized_positions.append(serialize_trading_position(position_record, last_price=last_known_price))
 
     return serialized_positions
 
 
 async def compute_portfolio_payload(
         token_information_list: List[DexscreenerTokenInformation],
-        portfolio_snapshot: PortfolioSnapshot,
-        position_records: List[Position],
-        trade_records: List[Trade],
-        equity_curve_data: EquityCurve,
+        portfolio_snapshot: TradingPortfolioSnapshot,
+        position_records: List[TradingPosition],
+        trade_records: List[TradingTrade],
+        equity_curve_data: List[float],
 ) -> PortfolioPayload:
     realized_pnl_data: RealizedProfitAndLoss = fifo_realized_pnl(trade_records, cutoff_hours=24)
     holdings_and_unrealized_pnl_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(
         position_records, token_information_list
     )
 
-    return serialize_portfolio(
+    return serialize_trading_portfolio_snapshot(
         portfolio_snapshot,
         equity_curve=equity_curve_data,
         realized_total=realized_pnl_data.total_realized_profit_and_loss,
@@ -130,8 +132,8 @@ async def compute_portfolio_payload(
 
 
 async def compute_dca_strategies_payload(database_session: Session) -> List[DcaStrategyPayload]:
-    dca_data_access_object = DcaDao(database_session)
-    registered_strategies = dca_data_access_object.get_all_strategies()
+    dca_strategy_dao = DcaStrategyDao(database_session)
+    registered_strategies = dca_strategy_dao.retrieve_all()
     dca_strategy_payloads: List[DcaStrategyPayload] = []
 
     for registered_strategy in registered_strategies:
@@ -148,9 +150,17 @@ async def compute_dca_strategies_payload(database_session: Session) -> List[DcaS
 async def sync_portfolio_state_async(websocket_connection: WebSocket) -> None:
     try:
         with _session() as database_session:
-            current_portfolio_snapshot = get_portfolio_snapshot(database_session)
-            open_position_records = retrieve_open_positions(database_session)
-            recent_trade_records = get_recent_trades(database_session, limit_count=10000)
+            portfolio_dao = TradingPortfolioSnapshotDao(database_session)
+            position_dao = TradingPositionDao(database_session)
+            trade_dao = TradingTradeDao(database_session)
+
+            current_portfolio_snapshot = portfolio_dao.retrieve_latest_snapshot()
+            if not current_portfolio_snapshot:
+                logger.warning("[WEBSOCKET][HUB][SYNC][PORTFOLIO] No portfolio snapshot available")
+                return
+
+            open_position_records = position_dao.retrieve_open_positions()
+            recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
 
             tokens_list: List[Token] = [
                 Token(
@@ -173,7 +183,7 @@ async def sync_portfolio_state_async(websocket_connection: WebSocket) -> None:
                 current_portfolio_snapshot,
                 open_position_records,
                 recent_trade_records,
-                equity_curve(database_session)
+                portfolio_dao.retrieve_equity_curve()
             )
 
             await websocket_connection.send_json({"type": WebsocketMessageType.PORTFOLIO.value, "payload": jsonable_encoder(portfolio_payload)})
@@ -185,7 +195,8 @@ async def sync_portfolio_state_async(websocket_connection: WebSocket) -> None:
 async def sync_positions_state_async(websocket_connection: WebSocket) -> None:
     try:
         with _session() as database_session:
-            open_position_records = retrieve_open_positions(database_session)
+            position_dao = TradingPositionDao(database_session)
+            open_position_records = position_dao.retrieve_open_positions()
 
             tokens_list: List[Token] = [
                 Token(
@@ -214,7 +225,8 @@ async def sync_positions_state_async(websocket_connection: WebSocket) -> None:
 async def sync_trades_state_async(websocket_connection: WebSocket) -> None:
     try:
         with _session() as database_session:
-            recent_trade_records = get_recent_trades(database_session, limit_count=10000)
+            trade_dao = TradingTradeDao(database_session)
+            recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
             trades_payload = await compute_trades_payload(recent_trade_records)
 
             await websocket_connection.send_json({"type": WebsocketMessageType.TRADES.value, "payload": jsonable_encoder(trades_payload)})
@@ -226,10 +238,11 @@ async def sync_trades_state_async(websocket_connection: WebSocket) -> None:
 async def sync_analytics_state_async(websocket_connection: WebSocket) -> None:
     try:
         with _session() as database_session:
-            recent_analytics_records = retrieve_recent_analytics(database_session, maximum_results_limit=10000)
-            analytics_payload = await compute_analytics_payload(recent_analytics_records)
+            evaluation_dao = TradingEvaluationDao(database_session)
+            recent_evaluation_records = evaluation_dao.retrieve_recent_evaluations(limit_count=10000)
+            evaluation_payload = await compute_analytics_payload(recent_evaluation_records)
 
-            await websocket_connection.send_json({"type": WebsocketMessageType.ANALYTICS.value, "payload": jsonable_encoder(analytics_payload)})
+            await websocket_connection.send_json({"type": WebsocketMessageType.ANALYTICS.value, "payload": jsonable_encoder(evaluation_payload)})
             logger.info("[WEBSOCKET][HUB][SYNC][ANALYTICS] Analytics state successfully streamed to client")
     except Exception as exception:
         logger.exception("[WEBSOCKET][HUB][SYNC][ANALYTICS] Background analytics sync failed", exception)
@@ -283,7 +296,12 @@ async def recompute_metrics_and_broadcast() -> None:
     from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell
 
     with _session() as database_session:
-        open_position_records = retrieve_open_positions(database_session)
+        position_dao = TradingPositionDao(database_session)
+        trade_dao = TradingTradeDao(database_session)
+        evaluation_dao = TradingEvaluationDao(database_session)
+        portfolio_dao = TradingPortfolioSnapshotDao(database_session)
+
+        open_position_records = position_dao.retrieve_open_positions()
 
         tokens_list: List[Token] = [
             Token(
@@ -301,7 +319,7 @@ async def recompute_metrics_and_broadcast() -> None:
             logger.warning("[WEBSOCKET][HUB][RECOMPUTE] DexScreener fetch failed: %s", exception)
             return
 
-        autosell_trade_records: List[Trade] = []
+        autosell_trade_records: List[TradingTrade] = []
         staled_pair_keys: set[str] = set()
 
         for token_information in token_information_list:
@@ -341,18 +359,18 @@ async def recompute_metrics_and_broadcast() -> None:
 
                     staled_position = (
                         database_session.execute(
-                            select(Position).where(
-                                Position.blockchain_network == token_information.chain_id,
-                                Position.token_symbol == token_information.base_token.symbol,
-                                Position.token_address == token_information.base_token.address,
-                                Position.pair_address == token_information.pair_address,
-                                Position.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]),
+                            select(TradingPosition).where(
+                                TradingPosition.blockchain_network == token_information.chain_id,
+                                TradingPosition.token_symbol == token_information.base_token.symbol,
+                                TradingPosition.token_address == token_information.base_token.address,
+                                TradingPosition.pair_address == token_information.pair_address,
+                                TradingPosition.position_phase.in_([PositionPhase.OPEN.value, PositionPhase.PARTIAL.value]),
                             )
                         ).scalars().first()
                     )
 
                     if staled_position:
-                        staled_position.position_phase = PositionPhase.STALED
+                        staled_position.position_phase = PositionPhase.STALED.value
                         database_session.commit()
                         logger.warning(
                             "[WEBSOCKET][HUB][CONSISTENCY][TRIGGER] Consistency guard triggered manual intervention. Staling position with symbol %s and token address %s on pair %s",
@@ -396,22 +414,21 @@ async def recompute_metrics_and_broadcast() -> None:
         for autosell_trade in autosell_trade_records:
             websocket_manager.broadcast_json_payload_threadsafe({
                 "type": WebsocketMessageType.TRADE.value,
-                "payload": jsonable_encoder(serialize_trade(autosell_trade))
+                "payload": jsonable_encoder(serialize_trading_trade(autosell_trade))
             })
 
         if autosell_trade_records:
             logger.info("[WEBSOCKET][HUB][AUTOSELL][BROADCAST] Broadcasted %s automated sell trades", len(autosell_trade_records))
 
-        recent_trade_records = get_recent_trades(database_session, limit_count=10000)
-        recent_analytics_records = retrieve_recent_analytics(database_session, maximum_results_limit=10000)
+        recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
+        recent_evaluation_records = evaluation_dao.retrieve_recent_evaluations(limit_count=10000)
 
         starting_cash_balance_usd: float = settings.PAPER_STARTING_CASH
         realized_cash_flow: CashFromTrades = cash_from_trades(starting_cash_balance_usd, recent_trade_records)
         holdings_and_unrealized_pnl_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(open_position_records, token_information_list)
         total_equity_usd: float = round(realized_cash_flow.available_cash + holdings_and_unrealized_pnl_data.total_holdings_value, 2)
 
-        new_portfolio_snapshot = snapshot_portfolio(
-            database_session,
+        new_portfolio_snapshot = portfolio_dao.create_snapshot(
             equity=total_equity_usd,
             cash=realized_cash_flow.available_cash,
             holdings=holdings_and_unrealized_pnl_data.total_holdings_value
@@ -424,15 +441,15 @@ async def recompute_metrics_and_broadcast() -> None:
             new_portfolio_snapshot,
             open_position_records,
             recent_trade_records,
-            equity_curve(database_session)
+            portfolio_dao.retrieve_equity_curve()
         )
-        analytics_payload = await compute_analytics_payload(recent_analytics_records)
+        evaluation_payload = await compute_analytics_payload(recent_evaluation_records)
         dca_strategies_payload = await compute_dca_strategies_payload(database_session)
 
         websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.POSITIONS.value, "payload": jsonable_encoder(positions_payload)})
         websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.PORTFOLIO.value, "payload": jsonable_encoder(portfolio_payload)})
         websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADES.value, "payload": jsonable_encoder(trades_payload)})
-        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.ANALYTICS.value, "payload": jsonable_encoder(analytics_payload)})
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.ANALYTICS.value, "payload": jsonable_encoder(evaluation_payload)})
         websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.DCA_STRATEGIES.value, "payload": jsonable_encoder(dca_strategies_payload)})
 
         logger.info("[WEBSOCKET][HUB][RECOMPUTE][BROADCAST] All portfolio metrics and DCA strategy states successfully refreshed and broadcasted")

@@ -34,7 +34,7 @@ def _recently_traded(address: str, time_window_minutes: int) -> bool:
 
 
 def apply_cooldown_filter(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-    from src.core.trading.analytics.trading_analytics_recorder import TradingAnalyticsRecorder
+    from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
 
     cooldown_minutes = settings.TRADING_REBUY_COOLDOWN_MINUTES
     retained: list[TradingCandidate] = []
@@ -43,7 +43,7 @@ def apply_cooldown_filter(candidates: list[TradingCandidate]) -> list[TradingCan
         token_address = candidate.dexscreener_token_information.base_token.address
         if token_address and _recently_traded(token_address, time_window_minutes=cooldown_minutes):
             logger.debug("[TRADING][FILTER][COOLDOWN] %s — recently traded within %d minutes", candidate.dexscreener_token_information.base_token.symbol, cooldown_minutes)
-            TradingAnalyticsRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, "COOLDOWN")
+            TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, "COOLDOWN")
             continue
 
         retained.append(candidate)

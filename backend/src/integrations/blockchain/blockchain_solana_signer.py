@@ -98,7 +98,7 @@ class SolanaSigner:
         if not hasattr(self.client, "is_blockhash_valid"):
             return None
         try:
-            resp = self.client.is_blockhash_valid(blockhash)  # pylint: disable=no-member
+            resp = self.client.is_blockhash_valid(blockhash)
             try:
                 value = resp.__getattribute__("value")
                 if isinstance(value, bool):

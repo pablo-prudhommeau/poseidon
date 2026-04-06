@@ -81,7 +81,7 @@ def evaluate_pre_entry_decision(candidate: TradingCandidate) -> TradingPreEntryD
 
 
 def apply_risk_filter(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-    from src.core.trading.analytics.trading_analytics_recorder import TradingAnalyticsRecorder
+    from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
 
     retained: list[TradingCandidate] = []
     for candidate in sorted(candidates, key=lambda candidate_item: candidate_item.statistics_score, reverse=True):
@@ -91,7 +91,7 @@ def apply_risk_filter(candidates: list[TradingCandidate]) -> list[TradingCandida
             retained.append(candidate)
         else:
             logger.debug("[TRADING][FILTER][RISK] %s — %s", candidate.dexscreener_token_information.base_token.symbol, pre_decision.decision_reason)
-            TradingAnalyticsRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, f"RISK:{pre_decision.decision_reason}")
+            TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, f"RISK:{pre_decision.decision_reason}")
 
     if not retained:
         logger.info("[TRADING][FILTER][RISK] Zero candidates after risk filter")

@@ -205,15 +205,15 @@ class AnalyticsDecisionPayload(BaseModel):
     free_cash_after_execution_usd: float
 
 
-class AnalyticsOutcomePayload(BaseModel):
-    has_trade_outcome: bool
-    outcome_trade_identifier: int
-    outcome_closed_at: str
-    outcome_holding_duration_minutes: float
-    outcome_realized_profit_and_loss_percentage: float
-    outcome_realized_profit_and_loss_usd: float
-    outcome_was_profitable: bool
-    outcome_exit_reason: str
+class EvaluationOutcomePayload(BaseModel):
+    id: int
+    trade_id: Optional[int]
+    exit_reason: str
+    realized_profit_and_loss_percentage: float
+    realized_profit_and_loss_usd: float
+    holding_duration_minutes: float
+    is_profitable: bool
+    occurred_at: str
 
 
 class AnalyticsFundamentalsPayload(BaseModel):
@@ -233,7 +233,7 @@ class AnalyticsFundamentalsPayload(BaseModel):
     transaction_count_h24: int
 
 
-class AnalyticsPayload(BaseModel):
+class EvaluationPayload(BaseModel):
     id: int
     token_symbol: str
     blockchain_network: str
@@ -245,13 +245,13 @@ class AnalyticsPayload(BaseModel):
     ai: AnalyticsAiPayload
     fundamentals: AnalyticsFundamentalsPayload
     decision: AnalyticsDecisionPayload
-    outcome: AnalyticsOutcomePayload
+    outcomes: List[EvaluationOutcomePayload]
     raw_dexscreener_payload: dict[str, Any]
     raw_configuration_settings: dict[str, Any]
 
 
 class AnalyticsResponse(BaseModel):
-    analytics: List[AnalyticsPayload]
+    evaluations: List[EvaluationPayload]
 
 
 class PositionsResponse(BaseModel):

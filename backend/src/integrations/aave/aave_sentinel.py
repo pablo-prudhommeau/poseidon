@@ -28,9 +28,9 @@ from src.integrations.aave.aave_abis import (
 from src.integrations.aave.aave_structures import AaveAssetDetails, AavePositionSnapshot, SentinelState
 from src.integrations.telegram.telegram_client import edit_message_text
 from src.logging.logger import get_application_logger
-from src.persistence.dao.dca_dao import DcaDao
+from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 from src.persistence.db import DatabaseSessionLocal
-from src.persistence.models import DcaOrder
 
 logger = get_application_logger(__name__)
 
@@ -225,17 +225,19 @@ class AaveSentinelService:
             logger.info("[AAVE][SENTINEL][CALLBACK] Processing interaction [%s] for order identifier %s", status_display_label, target_order_identifier)
 
             with DatabaseSessionLocal() as database_session:
-                dca_data_access_object = DcaDao(database_session)
-                target_dca_order = database_session.query(DcaOrder).filter(DcaOrder.id == target_order_identifier).first()
+                order_dao = DcaOrderDao(database_session)
+                strategy_dao = DcaStrategyDao(database_session)
+                
+                target_dca_order = order_dao.retrieve_by_id(target_order_identifier)
 
                 if target_dca_order:
-                    target_dca_order.order_status = resolved_order_status
-                    database_session.add(target_dca_order)
+                    target_dca_order.order_status = resolved_order_status.value
+                    order_dao.save(target_dca_order)
                     database_session.commit()
 
                     from src.core.dca.dca_manager import DcaManager
                     dca_manager_instance = DcaManager(database_session)
-                    strategy_instance = dca_data_access_object.get_strategy_by_id(target_dca_order.strategy_id)
+                    strategy_instance = strategy_dao.retrieve_by_id(target_dca_order.strategy_id)
 
                     if strategy_instance:
                         base_message_details = dca_manager_instance._generate_approval_message_body(target_dca_order, strategy_instance)

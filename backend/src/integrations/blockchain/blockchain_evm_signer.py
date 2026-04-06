@@ -33,7 +33,7 @@ class EvmSigner:
         Account.enable_unaudited_hdwallet_features()
 
         derivation_path = f"m/44'/60'/0'/0/{configuration.wallet_derivation_index}"
-        self.local_account: LocalAccount = Account.from_mnemonic(  # pylint: disable=no-value-for-parameter
+        self.local_account: LocalAccount = Account.from_mnemonic(
             mnemonic=configuration.security_mnemonic_phrase,
             account_path=derivation_path
         )

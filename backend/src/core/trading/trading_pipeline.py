@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.core.trading.analytics.trading_analytics_recorder import TradingAnalyticsRecorder
+from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
 from src.core.trading.execution.trading_executor import TradingExecutor
 from src.core.trading.execution.trading_order_builder import build_lifi_route_for_live_execution
 from src.core.trading.execution.trading_risk_manager import TradingRiskManager
@@ -175,14 +175,14 @@ class TradingPipeline:
         if free_cash_usd < min_free_cash:
             logger.info("[TRADING][PIPELINE][EXECUTE] Insufficient free cash: %.2f < %.2f", free_cash_usd, min_free_cash)
             for rank, candidate in enumerate(candidates, start=1):
-                TradingAnalyticsRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
+                TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
             return
 
         executed_count = 0
 
         for rank, candidate in enumerate(candidates, start=1):
             if free_cash_usd < min_free_cash:
-                TradingAnalyticsRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
+                TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
                 continue
 
             sizing_multiplier = self._risk_manager.size_multiplier(candidate)
@@ -200,7 +200,7 @@ class TradingPipeline:
             free_cash_before = free_cash_usd
             free_cash_after = free_cash_usd - order_notional
 
-            TradingAnalyticsRecorder.persist_and_broadcast(
+            TradingEvaluationRecorder.persist_and_broadcast(
                 candidate,
                 rank=rank,
                 decision="BUY",

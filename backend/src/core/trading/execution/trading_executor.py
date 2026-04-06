@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import List, Optional
 
-from src.api.serializers import serialize_trade
+from src.api.serializers import serialize_trading_trade
 from src.api.websocket.websocket_hub import recompute_metrics_and_broadcast
 from src.api.websocket.websocket_manager import websocket_manager
 from src.core.structures.structures import Token, WebsocketMessageType
@@ -15,9 +15,10 @@ from src.integrations.blockchain.blockchain_live_executor import LiveExecutionSe
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_application_logger
-from src.persistence.dao import trades
+from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
+from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.db import _session
-from src.persistence.models import ExecutionStatus
+from src.persistence.models import ExecutionStatus, TradingTrade, TradingPosition
 
 logger = get_application_logger(__name__)
 
@@ -108,18 +109,35 @@ class TradingExecutor:
                 logger.info("[TRADING][EXECUTOR][LIVE][BUY][SOL] Broadcast successful for %s — sig=%s", token.symbol, signature)
 
             with _session() as database_session:
-                trade_row = trades.buy(
-                    db=database_session,
-                    token=token,
-                    qty=quantity,
-                    price=price_usd,
-                    stop=stop_loss_usd,
-                    tp1=take_profit_tp1_usd,
-                    tp2=take_profit_tp2_usd,
-                    fee=0.0,
-                    status=ExecutionStatus.LIVE,
+                trade_dao = TradingTradeDao(database_session)
+                position_dao = TradingPositionDao(database_session)
+
+                trading_trade = TradingTrade(
+                    token_address=token.address,
+                    token_symbol=token.symbol,
+                    quantity=quantity,
+                    entry_price_usd=price_usd,
+                    stop_loss_price_usd=stop_loss_usd,
+                    take_profit_price_tp1_usd=take_profit_tp1_usd,
+                    take_profit_price_tp2_usd=take_profit_tp2_usd,
+                    execution_status=ExecutionStatus.LIVE,
+                    blockchain_network=network,
                 )
-                websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trade(trade_row)})
+                trade_dao.save(trading_trade)
+
+                trading_position = TradingPosition(
+                    token_address=token.address,
+                    token_symbol=token.symbol,
+                    current_quantity=quantity,
+                    average_entry_price_usd=price_usd,
+                    latest_price_usd=price_usd,
+                    is_open=True,
+                    initial_notional_usd=quantity * price_usd,
+                )
+                position_dao.save(trading_position)
+
+                database_session.commit()
+                websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trading_trade(trading_trade)})
             return True
         except Exception as exception:
             logger.exception("[TRADING][EXECUTOR][LIVE][BUY] Execution failed for %s (%s) — %s", token.symbol, token.token_address, exception)
@@ -206,25 +224,41 @@ class TradingExecutor:
         if self.paper_mode_enabled:
             logger.info("[TRADING][EXECUTOR][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.target_token, price_usd, quantity)
             with _session() as database_session:
-                trade_row = trades.buy(
-                    db=database_session,
-                    token=payload.target_token,
-                    qty=quantity,
-                    price=price_usd,
-                    stop=stop_loss,
-                    tp1=take_profit_tp1,
-                    tp2=take_profit_tp2,
-                    fee=0.0,
-                    status=ExecutionStatus.PAPER,
+                trade_dao = TradingTradeDao(database_session)
+                position_dao = TradingPositionDao(database_session)
+
+                trading_trade = TradingTrade(
+                    token_address=payload.target_token.address,
+                    token_symbol=payload.target_token.symbol,
+                    quantity=quantity,
+                    entry_price_usd=price_usd,
+                    stop_loss_price_usd=stop_loss,
+                    take_profit_price_tp1_usd=take_profit_tp1,
+                    take_profit_price_tp2_usd=take_profit_tp2,
+                    execution_status=ExecutionStatus.PAPER,
                 )
-                websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trade(trade_row)})
+                trade_dao.save(trading_trade)
+
+                trading_position = TradingPosition(
+                    token_address=payload.target_token.address,
+                    token_symbol=payload.target_token.symbol,
+                    current_quantity=quantity,
+                    average_entry_price_usd=price_usd,
+                    latest_price_usd=price_usd,
+                    is_open=True,
+                    initial_notional_usd=quantity * price_usd,
+                )
+                position_dao.save(trading_position)
+
+                database_session.commit()
+                websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trading_trade(trading_trade)})
 
                 auto_trades = check_thresholds_and_autosell(
                     database_session,
                     dexscreener_token_information=payload.original_candidate.dexscreener_token_information,
                 )
                 for auto_trade in auto_trades:
-                    websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trade(auto_trade)})
+                    websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trading_trade(auto_trade)})
 
             self._schedule_portfolio_rebroadcast()
             return True
