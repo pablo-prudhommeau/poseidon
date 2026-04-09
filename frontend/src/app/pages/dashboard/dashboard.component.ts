@@ -1,7 +1,7 @@
 import {DecimalPipe} from '@angular/common';
 import {Component, computed} from '@angular/core';
 import {CardModule} from 'primeng/card';
-import {EquityCurvePoint} from '../../core/models';
+import {TradingEquityCurvePointPayload} from '../../core/models';
 import {WebSocketService} from '../../core/websocket.service';
 import {PositionsTableComponent} from '../../features/positions/positions-table.component';
 import {TradesTableComponent} from '../../features/trades/trades-table.component';
@@ -23,5 +23,5 @@ export class DashboardComponent {
     unrealized = computed(() => this.webSocketService.portfolio()?.unrealized_profit_and_loss ?? 0);
     realizedTotal = computed(() => this.webSocketService.portfolio()?.realized_profit_and_loss_total ?? 0);
     realized24h = computed(() => this.webSocketService.portfolio()?.realized_profit_and_loss_24h ?? 0);
-    spark = computed<EquityCurvePoint[]>(() => this.webSocketService.portfolio()?.equity_curve ?? []);
+    spark = computed<TradingEquityCurvePointPayload[]>(() => this.webSocketService.portfolio()?.equity_curve ?? []);
 }

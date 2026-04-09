@@ -87,7 +87,7 @@ class EvmSigner:
                 transaction_payload["gas"] = int(estimated_units * 1.1)
             except Exception as exception:
                 logger.warning(
-                    "[BLOCKCHAIN][EVM][GAS] Gas estimation failed, falling back to static limit of 400,000 units",
+                    "[BLOCKCHAIN][EVM][GAS] Gas estimation failed, falling back to static limit of 400,000 units: %s",
                     exception
                 )
                 transaction_payload["gas"] = 400000

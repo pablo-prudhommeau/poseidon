@@ -18,7 +18,7 @@ from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.db import _session
-from src.persistence.models import ExecutionStatus, TradingTrade, TradingPosition
+from src.persistence.models import ExecutionStatus, TradingTrade, TradingPosition, TradeSide, PositionPhase
 
 logger = get_application_logger(__name__)
 
@@ -113,26 +113,31 @@ class TradingExecutor:
                 position_dao = TradingPositionDao(database_session)
 
                 trading_trade = TradingTrade(
-                    token_address=token.address,
+                    trade_side=TradeSide.BUY,
                     token_symbol=token.symbol,
-                    quantity=quantity,
-                    entry_price_usd=price_usd,
-                    stop_loss_price_usd=stop_loss_usd,
-                    take_profit_price_tp1_usd=take_profit_tp1_usd,
-                    take_profit_price_tp2_usd=take_profit_tp2_usd,
-                    execution_status=ExecutionStatus.LIVE,
                     blockchain_network=network,
+                    execution_price=price_usd,
+                    execution_quantity=quantity,
+                    transaction_fee=0.0,
+                    realized_profit_and_loss=None,
+                    execution_status=ExecutionStatus.LIVE,
+                    token_address=token.token_address,
+                    pair_address=token.pair_address,
                 )
                 trade_dao.save(trading_trade)
 
                 trading_position = TradingPosition(
-                    token_address=token.address,
                     token_symbol=token.symbol,
+                    blockchain_network=network,
+                    token_address=token.token_address,
+                    pair_address=token.pair_address,
+                    open_quantity=quantity,
                     current_quantity=quantity,
-                    average_entry_price_usd=price_usd,
-                    latest_price_usd=price_usd,
-                    is_open=True,
-                    initial_notional_usd=quantity * price_usd,
+                    entry_price=price_usd,
+                    take_profit_tier_1_price=take_profit_tp1_usd,
+                    take_profit_tier_2_price=take_profit_tp2_usd,
+                    stop_loss_price=stop_loss_usd,
+                    position_phase=PositionPhase.OPEN,
                 )
                 position_dao.save(trading_position)
 
@@ -228,25 +233,31 @@ class TradingExecutor:
                 position_dao = TradingPositionDao(database_session)
 
                 trading_trade = TradingTrade(
-                    token_address=payload.target_token.address,
+                    trade_side=TradeSide.BUY,
                     token_symbol=payload.target_token.symbol,
-                    quantity=quantity,
-                    entry_price_usd=price_usd,
-                    stop_loss_price_usd=stop_loss,
-                    take_profit_price_tp1_usd=take_profit_tp1,
-                    take_profit_price_tp2_usd=take_profit_tp2,
+                    blockchain_network=payload.target_token.chain,
+                    execution_price=price_usd,
+                    execution_quantity=quantity,
+                    transaction_fee=0.0,
+                    realized_profit_and_loss=None,
                     execution_status=ExecutionStatus.PAPER,
+                    token_address=payload.target_token.token_address,
+                    pair_address=payload.target_token.pair_address,
                 )
                 trade_dao.save(trading_trade)
 
                 trading_position = TradingPosition(
-                    token_address=payload.target_token.address,
                     token_symbol=payload.target_token.symbol,
+                    blockchain_network=payload.target_token.chain,
+                    token_address=payload.target_token.token_address,
+                    pair_address=payload.target_token.pair_address,
+                    open_quantity=quantity,
                     current_quantity=quantity,
-                    average_entry_price_usd=price_usd,
-                    latest_price_usd=price_usd,
-                    is_open=True,
-                    initial_notional_usd=quantity * price_usd,
+                    entry_price=price_usd,
+                    take_profit_tier_1_price=take_profit_tp1,
+                    take_profit_tier_2_price=take_profit_tp2,
+                    stop_loss_price=stop_loss,
+                    position_phase=PositionPhase.OPEN,
                 )
                 position_dao.save(trading_position)
 

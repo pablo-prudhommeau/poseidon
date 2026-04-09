@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import desc, select, and_
@@ -24,12 +25,12 @@ class TradingEvaluationDao:
     def retrieve_by_id(self, evaluation_id: int) -> Optional[TradingEvaluation]:
         return self.database_session.get(TradingEvaluation, evaluation_id)
 
-    def retrieve_recent(self, limit: int = 1000) -> List[TradingEvaluation]:
-        logger.debug("[DATABASE][DAO][TRADING_EVALUATION][RETRIEVE] Fetching up to %d recent evaluation records", limit)
+    def retrieve_recent_evaluations(self, limit_count: int = 1000) -> List[TradingEvaluation]:
+        logger.debug("[DATABASE][DAO][TRADING_EVALUATION][RETRIEVE] Fetching up to %d recent evaluation records", limit_count)
         database_query = (
             select(TradingEvaluation)
             .order_by(desc(TradingEvaluation.evaluated_at), desc(TradingEvaluation.id))
-            .limit(limit)
+            .limit(limit_count)
         )
         return list(self.database_session.execute(database_query).scalars().all())
 
@@ -39,7 +40,7 @@ class TradingEvaluationDao:
             .where(
                 and_(
                     TradingEvaluation.token_address == token_address,
-                    TradingEvaluation.evaluated_at <= before_timestamp,
+                    TradingEvaluation.evaluated_at <= datetime.fromtimestamp(before_timestamp).astimezone(),
                     TradingEvaluation.execution_decision == "BUY"
                 )
             )

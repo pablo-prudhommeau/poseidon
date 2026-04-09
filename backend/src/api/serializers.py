@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from src.api.http.api_schemas import (
-    TradePayload,
-    PositionPayload,
-    PortfolioPayload,
-    EquityCurvePointPayload,
-    EvaluationPayload,
-    AnalyticsScoresPayload,
-    AnalyticsAiPayload,
-    AnalyticsFundamentalsPayload,
-    AnalyticsDecisionPayload,
-    EvaluationOutcomePayload,
+    TradingTradePayload,
+    TradingPositionPayload,
+    TradingPortfolioPayload,
+    TradingEquityCurvePointPayload,
+    TradingEvaluationPayload,
+    TradingEvaluationScoresPayload,
+    TradingEvaluationAiPayload,
+    TradingEvaluationFundamentalsPayload,
+    TradingEvaluationDecisionPayload,
+    TradingEvaluationOutcomePayload,
     DcaOrderPayload,
     DcaStrategyPayload,
 )
@@ -24,8 +24,8 @@ from src.persistence.models import TradingEvaluation, TradingOutcome, DcaOrder, 
 logger = get_application_logger(__name__)
 
 
-def serialize_trading_trade(trading_trade: TradingTrade) -> TradePayload:
-    return TradePayload(
+def serialize_trading_trade(trading_trade: TradingTrade) -> TradingTradePayload:
+    return TradingTradePayload(
         id=trading_trade.id,
         trade_side=trading_trade.trade_side.value,
         token_symbol=trading_trade.token_symbol,
@@ -42,8 +42,8 @@ def serialize_trading_trade(trading_trade: TradingTrade) -> TradePayload:
     )
 
 
-def serialize_trading_position(trading_position: TradingPosition, last_price: float) -> PositionPayload:
-    return PositionPayload(
+def serialize_trading_position(trading_position: TradingPosition, last_price: float) -> TradingPositionPayload:
+    return TradingPositionPayload(
         id=trading_position.id,
         token_symbol=trading_position.token_symbol,
         token_address=trading_position.token_address,
@@ -68,15 +68,15 @@ def serialize_trading_portfolio_snapshot(
         realized_total: float,
         realized_24h: float,
         unrealized: float,
-) -> PortfolioPayload:
-    return PortfolioPayload(
+) -> TradingPortfolioPayload:
+    return TradingPortfolioPayload(
         total_equity_value=snapshot.total_equity_value,
         available_cash_balance=snapshot.available_cash_balance,
         active_holdings_value=snapshot.active_holdings_value,
         created_at=format_datetime_to_local_iso(snapshot.created_at),
         equity_curve=[
-            EquityCurvePointPayload(timestamp_milliseconds=p.timestamp_milliseconds, total_equity_value=p.equity)
-            for p in equity_curve.curve_points
+            TradingEquityCurvePointPayload(timestamp_milliseconds=curve_point.timestamp_milliseconds, total_equity_value=curve_point.equity)
+            for curve_point in equity_curve.curve_points
         ],
         unrealized_profit_and_loss=unrealized,
         realized_profit_and_loss_total=realized_total,
@@ -84,8 +84,8 @@ def serialize_trading_portfolio_snapshot(
     )
 
 
-def serialize_trading_evaluation(row: TradingEvaluation) -> EvaluationPayload:
-    return EvaluationPayload(
+def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPayload:
+    return TradingEvaluationPayload(
         id=row.id,
         token_symbol=row.token_symbol,
         blockchain_network=row.blockchain_network,
@@ -93,17 +93,17 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> EvaluationPayload:
         pair_address=row.pair_address,
         evaluated_at=format_datetime_to_local_iso(row.evaluated_at),
         candidate_rank=row.candidate_rank,
-        scores=AnalyticsScoresPayload(
+        scores=TradingEvaluationScoresPayload(
             quality_score=row.quality_score,
             statistics_score=row.statistics_score,
             entry_score=row.entry_score,
             final_score=row.final_score,
         ),
-        ai=AnalyticsAiPayload(
+        ai=TradingEvaluationAiPayload(
             ai_probability_take_profit_before_stop_loss=row.ai_probability_take_profit_before_stop_loss,
             ai_quality_score_delta=row.ai_quality_score_delta,
         ),
-        fundamentals=AnalyticsFundamentalsPayload(
+        fundamentals=TradingEvaluationFundamentalsPayload(
             token_age_hours=row.token_age_hours,
             volume_m5_usd=row.volume_m5_usd,
             volume_h1_usd=row.volume_h1_usd,
@@ -118,8 +118,11 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> EvaluationPayload:
             transaction_count_h1=row.transaction_count_h1,
             transaction_count_h6=row.transaction_count_h6,
             transaction_count_h24=row.transaction_count_h24,
+            buy_to_sell_ratio=row.buy_to_sell_ratio,
+            market_cap_usd=row.market_cap_usd,
+            fully_diluted_valuation_usd=row.fully_diluted_valuation_usd,
         ),
-        decision=AnalyticsDecisionPayload(
+        decision=TradingEvaluationDecisionPayload(
             execution_decision=row.execution_decision,
             execution_decision_reason=row.execution_decision_reason,
             sizing_multiplier=row.sizing_multiplier,
@@ -128,7 +131,7 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> EvaluationPayload:
             free_cash_after_execution_usd=row.free_cash_after_execution_usd,
         ),
         outcomes=[
-            EvaluationOutcomePayload(
+            TradingEvaluationOutcomePayload(
                 id=outcome.id,
                 trade_id=outcome.trade_id,
                 exit_reason=outcome.exit_reason,
@@ -197,7 +200,7 @@ def serialize_dca_strategy(strategy: DcaStrategy, live_metrics: AaveLiveMetrics)
         historical_backtest_payload=strategy.historical_backtest_payload,
         created_at=format_datetime_to_local_iso(strategy.created_at),
         updated_at=format_datetime_to_local_iso(strategy.updated_at),
-        execution_orders=[serialize_dca_order(o) for o in (strategy.execution_orders or [])],
+        execution_orders=[serialize_dca_order(execution_order) for execution_order in (strategy.execution_orders or [])],
         live_aave_apy=live_metrics.supply_apy,
         live_market_price=live_metrics.asset_out_price_usd
     )

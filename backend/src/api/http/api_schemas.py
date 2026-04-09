@@ -1,30 +1,30 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
 
-class HealthComponentPayload(BaseModel):
+class SystemHealthComponentPayload(BaseModel):
     ok: bool
 
 
-class HealthComponentsPayload(BaseModel):
-    database: HealthComponentPayload
+class SystemHealthComponentsPayload(BaseModel):
+    database: SystemHealthComponentPayload
 
 
-class HealthPayload(BaseModel):
+class SystemHealthPayload(BaseModel):
     status: str
     timestamp: str
-    components: HealthComponentsPayload
+    components: SystemHealthComponentsPayload
 
 
-class PaperResetPayload(BaseModel):
+class TradingPaperResetPayload(BaseModel):
     ok: bool
 
 
-class CreateDcaPayload(BaseModel):
+class DcaStrategyCreatePayload(BaseModel):
     blockchain_network: str
     source_asset_symbol: str
     source_asset_address: str
@@ -43,7 +43,7 @@ class CreateDcaPayload(BaseModel):
     bear_market_end_date: datetime
 
 
-class CreateDcaStrategyResponse(BaseModel):
+class DcaStrategyCreateResponse(BaseModel):
     message: str
     strategy_id: int
     orders_count: int
@@ -80,7 +80,7 @@ class DcaBacktestMetadataPayload(BaseModel):
     total_overheat_retentions: int
 
 
-class DcaBacktestPayloadModel(BaseModel):
+class DcaBacktestPayload(BaseModel):
     metadata: DcaBacktestMetadataPayload
     dumb_dca_series: List[DcaBacktestSeriesPointPayload]
     smart_dca_series: List[DcaBacktestSeriesPointPayload]
@@ -118,7 +118,7 @@ class DcaStrategyPayload(BaseModel):
     available_dry_powder: float
     total_deployed_amount: float
     average_purchase_price: float
-    historical_backtest_payload: DcaBacktestPayloadModel
+    historical_backtest_payload: DcaBacktestPayload
     created_at: str
     updated_at: str
     execution_orders: List[DcaOrderPayload] = []
@@ -134,7 +134,7 @@ class DcaOrdersResponse(BaseModel):
     orders: List[DcaOrderPayload]
 
 
-class TradePayload(BaseModel):
+class TradingTradePayload(BaseModel):
     id: int
     trade_side: str
     token_symbol: str
@@ -150,7 +150,7 @@ class TradePayload(BaseModel):
     transaction_hash: Optional[str] = None
 
 
-class PositionPayload(BaseModel):
+class TradingPositionPayload(BaseModel):
     id: int
     token_symbol: str
     token_address: str
@@ -168,35 +168,35 @@ class PositionPayload(BaseModel):
     last_price: float
 
 
-class EquityCurvePointPayload(BaseModel):
+class TradingEquityCurvePointPayload(BaseModel):
     timestamp_milliseconds: int
     total_equity_value: float
 
 
-class PortfolioPayload(BaseModel):
+class TradingPortfolioPayload(BaseModel):
     total_equity_value: float
     available_cash_balance: float
     active_holdings_value: float
     created_at: str
-    equity_curve: List[EquityCurvePointPayload]
+    equity_curve: List[TradingEquityCurvePointPayload]
     unrealized_profit_and_loss: float
     realized_profit_and_loss_24h: float
     realized_profit_and_loss_total: float
 
 
-class AnalyticsScoresPayload(BaseModel):
+class TradingEvaluationScoresPayload(BaseModel):
     quality_score: float
     statistics_score: float
     entry_score: float
     final_score: float
 
 
-class AnalyticsAiPayload(BaseModel):
+class TradingEvaluationAiPayload(BaseModel):
     ai_probability_take_profit_before_stop_loss: float
     ai_quality_score_delta: float
 
 
-class AnalyticsDecisionPayload(BaseModel):
+class TradingEvaluationDecisionPayload(BaseModel):
     execution_decision: str
     execution_decision_reason: str
     sizing_multiplier: float
@@ -205,7 +205,7 @@ class AnalyticsDecisionPayload(BaseModel):
     free_cash_after_execution_usd: float
 
 
-class EvaluationOutcomePayload(BaseModel):
+class TradingEvaluationOutcomePayload(BaseModel):
     id: int
     trade_id: Optional[int]
     exit_reason: str
@@ -216,7 +216,7 @@ class EvaluationOutcomePayload(BaseModel):
     occurred_at: str
 
 
-class AnalyticsFundamentalsPayload(BaseModel):
+class TradingEvaluationFundamentalsPayload(BaseModel):
     token_age_hours: float
     volume_m5_usd: float
     volume_h1_usd: float
@@ -231,9 +231,12 @@ class AnalyticsFundamentalsPayload(BaseModel):
     transaction_count_h1: int
     transaction_count_h6: int
     transaction_count_h24: int
+    buy_to_sell_ratio: float
+    market_cap_usd: float
+    fully_diluted_valuation_usd: float
 
 
-class EvaluationPayload(BaseModel):
+class TradingEvaluationPayload(BaseModel):
     id: int
     token_symbol: str
     blockchain_network: str
@@ -241,21 +244,87 @@ class EvaluationPayload(BaseModel):
     pair_address: str
     evaluated_at: str
     candidate_rank: int
-    scores: AnalyticsScoresPayload
-    ai: AnalyticsAiPayload
-    fundamentals: AnalyticsFundamentalsPayload
-    decision: AnalyticsDecisionPayload
-    outcomes: List[EvaluationOutcomePayload]
-    raw_dexscreener_payload: dict[str, Any]
-    raw_configuration_settings: dict[str, Any]
+    scores: TradingEvaluationScoresPayload
+    ai: TradingEvaluationAiPayload
+    fundamentals: TradingEvaluationFundamentalsPayload
+    decision: TradingEvaluationDecisionPayload
+    outcomes: List[TradingEvaluationOutcomePayload]
+    raw_dexscreener_payload: dict[str, object]
+    raw_configuration_settings: dict[str, object]
 
 
-class AnalyticsResponse(BaseModel):
-    evaluations: List[EvaluationPayload]
+class TradingEvaluationsResponse(BaseModel):
+    evaluations: List[TradingEvaluationPayload]
 
 
-class PositionsResponse(BaseModel):
-    positions: List[PositionPayload]
+class TradingPositionsResponse(BaseModel):
+    positions: List[TradingPositionPayload]
+
+
+class AnalyticsHeatmapCellPayload(BaseModel):
+    range_label: str
+    range_min: float
+    range_max: float
+    median_pnl: float
+    mean_pnl: float
+    quartile_1_pnl: float
+    quartile_3_pnl: float
+    sample_count: int
+    win_count: int
+    win_rate_percentage: float
+    is_optimal: bool
+
+
+class AnalyticsHeatmapSeriesPayload(BaseModel):
+    metric_key: str
+    metric_label: str
+    cells: List[AnalyticsHeatmapCellPayload]
+
+
+class AnalyticsTimelinePointPayload(BaseModel):
+    date_iso: str
+    cumulative_pnl_usd: float
+    cumulative_pnl_percentage: float
+    rolling_win_rate: float
+    trade_count: int
+
+
+class AnalyticsScatterPointPayload(BaseModel):
+    metric_value: float
+    pnl_percentage: float
+    pnl_usd: float
+    token_symbol: str
+    exit_reason: str
+
+
+class AnalyticsScatterSeriesPayload(BaseModel):
+    metric_key: str
+    metric_label: str
+    points: List[AnalyticsScatterPointPayload]
+
+
+class AnalyticsKpiPayload(BaseModel):
+    total_evaluations: int
+    total_buy_evaluations: int
+    total_outcomes: int
+    win_count: int
+    loss_count: int
+    win_rate_percentage: float
+    total_pnl_usd: float
+    average_pnl_percentage: float
+    average_holding_duration_minutes: float
+    best_trade_pnl_percentage: float
+    worst_trade_pnl_percentage: float
+    profit_factor: float
+    expected_value_usd: float
+
+
+class AnalyticsAggregatedResponse(BaseModel):
+    kpis: AnalyticsKpiPayload
+    pnl_drivers_series: List[AnalyticsHeatmapSeriesPayload]
+    staled_risk_series: List[AnalyticsHeatmapSeriesPayload]
+    timeline: List[AnalyticsTimelinePointPayload]
+    scatter_series: List[AnalyticsScatterSeriesPayload]
 
 
 class WebsocketStatusPayload(BaseModel):
@@ -269,4 +338,4 @@ class WebsocketInitializationPayload(BaseModel):
 
 class WebsocketEventPayload(BaseModel):
     type: str
-    payload: dict[str, Any]
+    payload: dict[str, object]

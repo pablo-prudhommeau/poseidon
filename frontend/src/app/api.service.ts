@@ -1,7 +1,21 @@
 import {HttpClient} from '@angular/common/http';
 import {inject, Injectable} from '@angular/core';
 import {map, Observable} from 'rxjs';
-import {Analytics, CreateDcaPayload, DcaOrder, DcaStrategy, Position, TradeMode} from './core/models';
+import {
+    AnalyticsAggregatedResponse,
+    DcaOrderPayload,
+    DcaOrdersResponse,
+    DcaStrategiesResponse,
+    DcaStrategyCreatePayload,
+    DcaStrategyCreateResponse,
+    DcaStrategyPayload,
+    TradeMode,
+    TradingEvaluationPayload,
+    TradingEvaluationsResponse,
+    TradingPaperResetPayload,
+    TradingPositionPayload,
+    TradingPositionsResponse
+} from './core/models';
 
 export interface AppStatus {
     mode: TradeMode;
@@ -14,14 +28,6 @@ export interface AppStatusResponse {
     status: AppStatus;
 }
 
-interface AnalyticsResponse {analytics: Analytics[];}
-
-interface PositionsResponse {positions: Position[];}
-
-interface DcaStrategiesResponse {strategies: DcaStrategy[];}
-
-interface DcaOrdersResponse {orders: DcaOrder[];}
-
 @Injectable({providedIn: 'root'})
 export class ApiService {
     private http = inject(HttpClient);
@@ -30,33 +36,37 @@ export class ApiService {
         return this.http.get<AppStatusResponse>('/api/status');
     }
 
-    resetPaper(): Observable<{ ok: boolean }> {
-        return this.http.post<{ ok: boolean }>('/api/paper/reset', {});
+    resetPaper(): Observable<TradingPaperResetPayload> {
+        return this.http.post<TradingPaperResetPayload>('/api/paper/reset', {});
     }
 
-    getAnalytics(): Observable<Analytics[]> {
+    getAnalytics(): Observable<TradingEvaluationPayload[]> {
         return this.http
-            .get<AnalyticsResponse>('/api/analytics')
-            .pipe(map(response => response.analytics));
+            .get<TradingEvaluationsResponse>('/api/analytics')
+            .pipe(map(response => response.evaluations));
     }
 
-    getOpenPositions(): Observable<Position[]> {
+    getAggregatedAnalytics(): Observable<AnalyticsAggregatedResponse> {
+        return this.http.get<AnalyticsAggregatedResponse>('/api/analytics/aggregated');
+    }
+
+    getOpenPositions(): Observable<TradingPositionPayload[]> {
         return this.http
-            .get<PositionsResponse>('/api/positions')
+            .get<TradingPositionsResponse>('/api/positions')
             .pipe(map(response => response.positions));
     }
 
-    createDcaStrategy(payload: CreateDcaPayload): Observable<{ message: string; strategy_id: number; orders_count: number }> {
-        return this.http.post<{ message: string; strategy_id: number; orders_count: number }>('/api/dca/strategies', payload);
+    createDcaStrategy(payload: DcaStrategyCreatePayload): Observable<DcaStrategyCreateResponse> {
+        return this.http.post<DcaStrategyCreateResponse>('/api/dca/strategies', payload);
     }
 
-    getDcaStrategies(): Observable<DcaStrategy[]> {
+    getDcaStrategies(): Observable<DcaStrategyPayload[]> {
         return this.http
             .get<DcaStrategiesResponse>('/api/dca/strategies')
             .pipe(map(response => response.strategies));
     }
 
-    getDcaOrders(strategyId: number): Observable<DcaOrder[]> {
+    getDcaOrders(strategyId: number): Observable<DcaOrderPayload[]> {
         return this.http
             .get<DcaOrdersResponse>(`/api/dca/strategies/${strategyId}/orders`)
             .pipe(map(response => response.orders));

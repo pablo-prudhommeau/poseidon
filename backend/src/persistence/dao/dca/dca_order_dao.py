@@ -45,7 +45,7 @@ class DcaOrderDao:
         database_query = (
             select(DcaOrder)
             .where(DcaOrder.order_status == "PENDING")
-            .where(DcaOrder.scheduled_date <= current_timestamp)
+            .where(DcaOrder.planned_execution_date <= current_timestamp)
         )
         return list(self.database_session.execute(database_query).scalars().all())
 
@@ -53,12 +53,12 @@ class DcaOrderDao:
         database_query = (
             select(DcaOrder)
             .where(DcaOrder.strategy_id == strategy_id)
-            .order_by(DcaOrder.scheduled_date.asc())
+            .order_by(DcaOrder.planned_execution_date.asc())
         )
         return list(self.database_session.execute(database_query).scalars().all())
 
     def retrieve_history_by_strategy(self, strategy_id: int) -> List[DcaOrder]:
-        database_query = select(DcaOrder).where(DcaOrder.strategy_id == strategy_id).order_by(desc(DcaOrder.created_at))
+        database_query = select(DcaOrder).where(DcaOrder.strategy_id == strategy_id).order_by(desc(DcaOrder.planned_execution_date))
         return list(self.database_session.execute(database_query).scalars().all())
 
     def retrieve_latest_executed_by_strategy(self, strategy_id: int) -> Optional[DcaOrder]:

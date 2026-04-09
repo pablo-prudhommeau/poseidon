@@ -13,7 +13,7 @@ from src.integrations.dexscreener.dexscreener_structures import DexscreenerToken
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.models import TradingPosition, TradingTrade, ExecutionStatus, PositionPhase
+from src.persistence.models import TradingPosition, TradingTrade, ExecutionStatus, PositionPhase, TradeSide
 
 logger = get_application_logger(__name__)
 
@@ -28,14 +28,16 @@ def _execute_sell_operation(
     trade_dao = TradingTradeDao(database_session)
     execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
     sell_trade = TradingTrade(
-        token_address=position.token_address,
+        trade_side=TradeSide.SELL,
         token_symbol=position.token_symbol,
         blockchain_network=position.blockchain_network,
-        quantity=sell_quantity,
-        entry_price_usd=execution_price,
+        execution_price=execution_price,
+        execution_quantity=sell_quantity,
+        transaction_fee=0.0,
+        realized_profit_and_loss=0.0,
         execution_status=execution_status,
-        is_buy=False,
-        exit_reason=reason,
+        token_address=position.token_address,
+        pair_address=position.pair_address,
     )
     trade_dao.save(sell_trade)
 
@@ -43,33 +45,31 @@ def _execute_sell_operation(
     position.current_quantity -= sell_quantity
 
     exit_notional = sell_quantity * execution_price
-    entry_notional = sell_quantity * position.average_entry_price_usd
+    entry_notional = sell_quantity * position.entry_price
     trade_pnl_usd = exit_notional - entry_notional
-    
-    position.realized_pnl_usd += trade_pnl_usd
-    position.latest_price_usd = execution_price
+    sell_trade.realized_profit_and_loss = trade_pnl_usd
     
     if position.current_quantity <= 0.0:
-        position.is_open = False
         position.position_phase = PositionPhase.CLOSED
     else:
         position.position_phase = PositionPhase.PARTIAL
         
     database_session.flush()
     
-    pnl_percentage = ((execution_price / position.average_entry_price_usd) - 1) * 100
+    pnl_percentage = ((execution_price / position.entry_price) - 1) * 100
     
-    holding_duration = 0.0
+    holding_duration = (get_current_local_datetime() - position.opened_at).total_seconds() / 60.0
     
     TelemetryService.link_trade_outcome(
         token_address=position.token_address,
         trade_id=sell_trade.id,
         closed_at=get_current_local_datetime(),
-        profit_and_loss_percentage=pnl_percentage,
-        profit_and_loss_usd=trade_pnl_usd,
+        realized_profit_and_loss_percentage=pnl_percentage,
+        realized_profit_and_loss_usd=trade_pnl_usd,
         holding_duration_minutes=holding_duration,
         was_profitable=(trade_pnl_usd > 0),
-        exit_reason=reason
+        exit_reason=reason,
+        database_session=database_session,
     )
     
     return sell_trade
@@ -134,7 +134,6 @@ def check_thresholds_and_autosell(database_session: Session, dexscreener_token_i
     positions = list(database_session.execute(database_query).scalars().all())
 
     for position in positions:
-        position.latest_price_usd = last_price_value
         created_trades.extend(_evaluate_position_thresholds(database_session, position, last_price_value))
 
     if created_trades:
@@ -154,7 +153,7 @@ def check_thresholds_and_autosell_for_token_address(
 
     database_query = select(TradingPosition).where(
         TradingPosition.blockchain_network == token.chain,
-        TradingPosition.token_address == token.address,
+        TradingPosition.token_address == token.token_address,
         TradingPosition.pair_address == token.pair_address,
         TradingPosition.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]),
     )
@@ -163,7 +162,6 @@ def check_thresholds_and_autosell_for_token_address(
     if not position:
         return created_trades
 
-    position.latest_price_usd = last_price
     created_trades = _evaluate_position_thresholds(database_session, position, last_price)
 
     if created_trades:

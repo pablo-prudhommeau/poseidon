@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 from src.api.http.api_schemas import (
     WebsocketInitializationPayload,
     WebsocketStatusPayload,
-    TradePayload,
-    PositionPayload,
-    PortfolioPayload,
-    EvaluationPayload,
+    TradingTradePayload,
+    TradingPositionPayload,
+    TradingPortfolioPayload,
+    TradingEvaluationPayload,
     DcaStrategyPayload,
 )
 from src.api.serializers import (
@@ -36,7 +36,6 @@ from src.core.structures.structures import (
     CashFromTrades,
     WebsocketInboundMessage,
     WebsocketMessageType,
-    PositionPhase,
 )
 from src.core.utils.pnl_utils import (
     fifo_realized_pnl,
@@ -64,7 +63,7 @@ from src.persistence.models import (
     TradingPortfolioSnapshot,
     TradingPosition,
     TradingTrade,
-    TradingEvaluation,
+    TradingEvaluation, PositionPhase,
 )
 
 router = APIRouter()
@@ -81,18 +80,18 @@ dex_consistency_guard = DexscreenerConsistencyGuard(
 aave_executor_client = AaveExecutor()
 
 
-async def compute_trades_payload(trade_records: List[TradingTrade]) -> List[TradePayload]:
+async def compute_trades_payload(trade_records: List[TradingTrade]) -> List[TradingTradePayload]:
     return [serialize_trading_trade(trade_record) for trade_record in trade_records]
 
 
-async def compute_analytics_payload(evaluation_records: List[TradingEvaluation]) -> List[EvaluationPayload]:
+async def compute_analytics_payload(evaluation_records: List[TradingEvaluation]) -> List[TradingEvaluationPayload]:
     return [serialize_trading_evaluation(evaluation_record) for evaluation_record in evaluation_records]
 
 
 async def compute_positions_payload(
         token_information_list: List[DexscreenerTokenInformation],
         position_records: List[TradingPosition],
-) -> List[PositionPayload]:
+) -> List[TradingPositionPayload]:
     serialized_positions = []
 
     for position_record in position_records:
@@ -115,19 +114,19 @@ async def compute_portfolio_payload(
         portfolio_snapshot: TradingPortfolioSnapshot,
         position_records: List[TradingPosition],
         trade_records: List[TradingTrade],
-        equity_curve_data: List[float],
-) -> PortfolioPayload:
-    realized_pnl_data: RealizedProfitAndLoss = fifo_realized_pnl(trade_records, cutoff_hours=24)
-    holdings_and_unrealized_pnl_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(
+        equity_curve_data: EquityCurve,
+) -> TradingPortfolioPayload:
+    realized_profit_and_loss_data: RealizedProfitAndLoss = fifo_realized_pnl(trade_records, cutoff_hours=24)
+    holdings_and_unrealized_profit_and_loss_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(
         position_records, token_information_list
     )
 
     return serialize_trading_portfolio_snapshot(
         portfolio_snapshot,
         equity_curve=equity_curve_data,
-        realized_total=realized_pnl_data.total_realized_profit_and_loss,
-        realized_24h=realized_pnl_data.recent_realized_profit_and_loss,
-        unrealized=holdings_and_unrealized_pnl_data.total_unrealized_profit_and_loss,
+        realized_total=realized_profit_and_loss_data.total_realized_profit_and_loss,
+        realized_24h=realized_profit_and_loss_data.recent_realized_profit_and_loss,
+        unrealized=holdings_and_unrealized_profit_and_loss_data.total_unrealized_profit_and_loss,
     )
 
 
@@ -189,7 +188,7 @@ async def sync_portfolio_state_async(websocket_connection: WebSocket) -> None:
             await websocket_connection.send_json({"type": WebsocketMessageType.PORTFOLIO.value, "payload": jsonable_encoder(portfolio_payload)})
             logger.info("[WEBSOCKET][HUB][SYNC][PORTFOLIO] Portfolio state successfully streamed to client")
     except Exception as exception:
-        logger.exception("[WEBSOCKET][HUB][SYNC][PORTFOLIO] Background portfolio sync failed", exception)
+        logger.exception("[WEBSOCKET][HUB][SYNC][PORTFOLIO] Background portfolio sync failed: %s", exception)
 
 
 async def sync_positions_state_async(websocket_connection: WebSocket) -> None:
@@ -219,7 +218,7 @@ async def sync_positions_state_async(websocket_connection: WebSocket) -> None:
             await websocket_connection.send_json({"type": WebsocketMessageType.POSITIONS.value, "payload": jsonable_encoder(positions_payload)})
             logger.info("[WEBSOCKET][HUB][SYNC][POSITIONS] Positions state successfully streamed to client")
     except Exception as exception:
-        logger.exception("[WEBSOCKET][HUB][SYNC][POSITIONS] Background positions sync failed", exception)
+        logger.exception("[WEBSOCKET][HUB][SYNC][POSITIONS] Background positions sync failed: %s", exception)
 
 
 async def sync_trades_state_async(websocket_connection: WebSocket) -> None:
@@ -232,7 +231,7 @@ async def sync_trades_state_async(websocket_connection: WebSocket) -> None:
             await websocket_connection.send_json({"type": WebsocketMessageType.TRADES.value, "payload": jsonable_encoder(trades_payload)})
             logger.info("[WEBSOCKET][HUB][SYNC][TRADES] Trades state successfully streamed to client")
     except Exception as exception:
-        logger.exception("[WEBSOCKET][HUB][SYNC][TRADES] Background trades sync failed", exception)
+        logger.exception("[WEBSOCKET][HUB][SYNC][TRADES] Background trades sync failed: %s", exception)
 
 
 async def sync_analytics_state_async(websocket_connection: WebSocket) -> None:
@@ -245,7 +244,7 @@ async def sync_analytics_state_async(websocket_connection: WebSocket) -> None:
             await websocket_connection.send_json({"type": WebsocketMessageType.ANALYTICS.value, "payload": jsonable_encoder(evaluation_payload)})
             logger.info("[WEBSOCKET][HUB][SYNC][ANALYTICS] Analytics state successfully streamed to client")
     except Exception as exception:
-        logger.exception("[WEBSOCKET][HUB][SYNC][ANALYTICS] Background analytics sync failed", exception)
+        logger.exception("[WEBSOCKET][HUB][SYNC][ANALYTICS] Background analytics sync failed: %s", exception)
 
 
 async def sync_dca_strategies_state_async(websocket_connection: WebSocket) -> None:
@@ -256,7 +255,7 @@ async def sync_dca_strategies_state_async(websocket_connection: WebSocket) -> No
             await websocket_connection.send_json({"type": WebsocketMessageType.DCA_STRATEGIES.value, "payload": jsonable_encoder(dca_strategies_payload)})
             logger.info("[WEBSOCKET][HUB][SYNC][DCA] DCA strategies state successfully streamed to client")
     except Exception as exception:
-        logger.exception("[WEBSOCKET][HUB][SYNC][DCA] Background DCA strategies sync failed", exception)
+        logger.exception("[WEBSOCKET][HUB][SYNC][DCA] Background DCA strategies sync failed: %s", exception)
 
 
 async def send_websocket_handshake(websocket_connection: WebSocket) -> None:
@@ -280,7 +279,7 @@ def schedule_full_recompute_broadcast() -> None:
     try:
         event_loop = asyncio.get_running_loop()
     except RuntimeError as exception:
-        logger.debug("[WEBSOCKET][HUB][REBROADCAST] No running event loop detected, recompute scheduled for next orchestrator tick", exception)
+        logger.debug("[WEBSOCKET][HUB][REBROADCAST] No running event loop detected, recompute scheduled for next orchestrator tick: %s", exception)
         return
 
     if not event_loop.is_running() or event_loop.is_closed():
@@ -364,13 +363,13 @@ async def recompute_metrics_and_broadcast() -> None:
                                 TradingPosition.token_symbol == token_information.base_token.symbol,
                                 TradingPosition.token_address == token_information.base_token.address,
                                 TradingPosition.pair_address == token_information.pair_address,
-                                TradingPosition.position_phase.in_([PositionPhase.OPEN.value, PositionPhase.PARTIAL.value]),
+                                TradingPosition.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]),
                             )
                         ).scalars().first()
                     )
 
                     if staled_position:
-                        staled_position.position_phase = PositionPhase.STALED.value
+                        staled_position.position_phase = PositionPhase.STALED
                         database_session.commit()
                         logger.warning(
                             "[WEBSOCKET][HUB][CONSISTENCY][TRIGGER] Consistency guard triggered manual intervention. Staling position with symbol %s and token address %s on pair %s",
@@ -406,7 +405,7 @@ async def recompute_metrics_and_broadcast() -> None:
                     autosell_trade_records.extend(newly_created_trades)
             except Exception as exception:
                 logger.warning(
-                    "[WEBSOCKET][HUB][AUTOSELL][EVALUATION] Autosell threshold evaluation failed for token %s",
+                    "[WEBSOCKET][HUB][AUTOSELL][EVALUATION] Autosell threshold evaluation failed for token %s: %s",
                     token_information.base_token,
                     exception
                 )
@@ -425,13 +424,13 @@ async def recompute_metrics_and_broadcast() -> None:
 
         starting_cash_balance_usd: float = settings.PAPER_STARTING_CASH
         realized_cash_flow: CashFromTrades = cash_from_trades(starting_cash_balance_usd, recent_trade_records)
-        holdings_and_unrealized_pnl_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(open_position_records, token_information_list)
-        total_equity_usd: float = round(realized_cash_flow.available_cash + holdings_and_unrealized_pnl_data.total_holdings_value, 2)
+        holdings_and_unrealized_profit_and_loss_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(open_position_records, token_information_list)
+        total_equity_usd: float = round(realized_cash_flow.available_cash + holdings_and_unrealized_profit_and_loss_data.total_holdings_value, 2)
 
         new_portfolio_snapshot = portfolio_dao.create_snapshot(
             equity=total_equity_usd,
             cash=realized_cash_flow.available_cash,
-            holdings=holdings_and_unrealized_pnl_data.total_holdings_value
+            holdings=holdings_and_unrealized_profit_and_loss_data.total_holdings_value
         )
 
         positions_payload = await compute_positions_payload(token_information_list, open_position_records)
@@ -471,7 +470,7 @@ async def handle_websocket_connection(websocket_connection: WebSocket, database_
             try:
                 validated_inbound_message = WebsocketInboundMessage.model_validate(raw_inbound_message)
             except ValidationError as exception:
-                logger.debug("[WEBSOCKET][HUB][RECEIVE] Invalid message schema received from client", exception)
+                logger.debug("[WEBSOCKET][HUB][RECEIVE] Invalid message schema received from client: %s", exception)
                 await websocket_connection.send_json({"type": WebsocketMessageType.ERROR.value, "payload": "Invalid message schema"})
                 continue
 
@@ -487,7 +486,7 @@ async def handle_websocket_connection(websocket_connection: WebSocket, database_
     except WebSocketDisconnect:
         logger.info("[WEBSOCKET][HUB][DISCONNECT] Client gracefully disconnected")
     except Exception as exception:
-        logger.exception("[WEBSOCKET][HUB][ERROR] Unexpected WebSocket error encountered", exception)
+        logger.exception("[WEBSOCKET][HUB][ERROR] Unexpected WebSocket error encountered: %s", exception)
         try:
             await websocket_connection.send_json({"type": WebsocketMessageType.ERROR.value, "payload": str(exception)})
         except Exception:

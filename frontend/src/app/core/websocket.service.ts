@@ -1,5 +1,13 @@
 import {Injectable, signal} from '@angular/core';
-import {Analytics, DcaStrategy, Portfolio, Position, Trade, WebsocketMessageType, WebsocketMessageUnion} from './models';
+import {
+    TradingEvaluationPayload,
+    DcaStrategyPayload,
+    TradingPortfolioPayload,
+    TradingPositionPayload,
+    TradingTradePayload,
+    WebsocketMessageType,
+    WebsocketMessageUnion
+} from './models';
 
 export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 
@@ -8,11 +16,11 @@ export class WebSocketService {
     private socket?: WebSocket;
 
     public readonly status = signal<WebsocketConnectionStatus>('closed');
-    public readonly portfolio = signal<Portfolio | null>(null);
-    public readonly positions = signal<Position[]>([]);
-    public readonly trades = signal<Trade[]>([]);
-    public readonly analytics = signal<Analytics[]>([]);
-    public readonly dcaStrategies = signal<DcaStrategy[]>([]);
+    public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
+    public readonly positions = signal<TradingPositionPayload[]>([]);
+    public readonly trades = signal<TradingTradePayload[]>([]);
+    public readonly analytics = signal<TradingEvaluationPayload[]>([]);
+    public readonly dcaStrategies = signal<DcaStrategyPayload[]>([]);
 
     private defaultWebsocketUrl(): string {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';

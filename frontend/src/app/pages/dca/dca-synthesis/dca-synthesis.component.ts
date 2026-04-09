@@ -2,7 +2,7 @@ import {Component, computed, input} from '@angular/core';
 import {DecimalPipe, NgIf} from '@angular/common';
 import {CardModule} from 'primeng/card';
 import {SparklineComponent} from '../../../widgets/sparkline/sparkline.component';
-import {DcaOrder, DcaStrategy, EquityCurvePoint, MacroProjectionSavings, YieldMetrics} from '../../../core/models';
+import {DcaOrderPayload, DcaStrategyPayload, TradingEquityCurvePointPayload, MacroProjectionSavings, YieldMetrics} from '../../../core/models';
 
 export interface DurationSummary {
     totalWeeks: number;
@@ -42,7 +42,7 @@ export interface YieldAccrualMetrics {
     templateUrl: './dca-synthesis.component.html'
 })
 export class DcaSynthesisComponent {
-    public strategy = input.required<DcaStrategy>();
+    public strategy = input.required<DcaStrategyPayload>();
 
     public readonly deployedAmount = computed<number>(() => this.strategy().total_deployed_amount ?? 0);
     public readonly totalBudget = computed<number>(() => this.strategy().total_allocated_budget ?? 0);
@@ -155,7 +155,7 @@ export class DcaSynthesisComponent {
         };
     });
 
-    private calculateCurrentLivePrice(strategy: DcaStrategy): number {
+    private calculateCurrentLivePrice(strategy: DcaStrategyPayload): number {
         if (strategy.live_market_price > 0) {
             return strategy.live_market_price;
         }
@@ -165,22 +165,22 @@ export class DcaSynthesisComponent {
         }
 
         const executedOrders = strategy.execution_orders
-            .filter((order: DcaOrder) => order.order_status === 'EXECUTED' && order.actual_execution_price != null)
+            .filter((order: DcaOrderPayload) => order.order_status === 'EXECUTED' && order.actual_execution_price != null)
             .sort((orderA, orderB) => new Date(orderB.executed_at!).getTime() - new Date(orderA.executed_at!).getTime());
 
         return executedOrders.length > 0 ? (executedOrders[0].actual_execution_price ?? 0) : 0;
     }
 
-    public readonly purchasePriceSparkline = computed<EquityCurvePoint[]>(() => {
+    public readonly purchasePriceSparkline = computed<TradingEquityCurvePointPayload[]>(() => {
         const strat = this.strategy();
         if (!strat.execution_orders) {
             return [];
         }
 
         return strat.execution_orders
-            .filter((order: DcaOrder) => order.order_status === 'EXECUTED' && order.actual_execution_price != null && order.executed_at != null)
+            .filter((order: DcaOrderPayload) => order.order_status === 'EXECUTED' && order.actual_execution_price != null && order.executed_at != null)
             .sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime())
-            .map((order: DcaOrder) => ({
+            .map((order: DcaOrderPayload) => ({
                 timestamp_milliseconds: new Date(order.executed_at!).getTime(),
                 total_equity_value: order.actual_execution_price as number
             }));

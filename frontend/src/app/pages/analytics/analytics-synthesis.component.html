@@ -1,0 +1,99 @@
+<div class="space-y-6 pb-8">
+    <div class="flex items-center gap-2 mb-2 pt-2">
+        <h2 class="text-lg font-bold text-slate-200">Actionable Zones</h2>
+        <span class="text-[10px] text-slate-500 px-2">Top deciles isolated purely on Win Rate strength (n &ge; 10)</span>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        @for (niche of goldenNiches; track niche.metricLabel) {
+            <div class="p-4 rounded-2xl bg-black/20 border border-emerald-500/20 backdrop-blur-2xl shadow-xl transition-all hover:border-emerald-500/40 hover:-translate-y-1">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-[9px] uppercase font-bold text-emerald-400/80 tracking-widest">{{ niche.metricLabel }}</span>
+                    <i class="fa fa-bullseye text-emerald-400/50"></i>
+                </div>
+                <div class="text-lg font-black text-white tracking-tight mb-2">
+                    {{ niche.rangeLabel }}
+                </div>
+                <div class="flex items-center justify-between mt-3 bg-white/5 rounded-lg p-2 border border-white/5">
+                    <div class="flex flex-col">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold">Win Rate</span>
+                        <span class="text-emerald-400 font-bold text-sm">{{ niche.winRate | number:'1.0-0' }}%</span>
+                    </div>
+                    <div class="flex flex-col border-l border-white/5 pl-3">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold">Med PnL</span>
+                        <span class="text-emerald-400 font-bold text-sm">+{{ niche.medianPnl | number:'1.1-1' }}%</span>
+                    </div>
+                    <div class="flex flex-col border-l border-white/5 pl-3">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold">Trades</span>
+                        <span class="text-slate-300 font-bold text-sm">{{ niche.sampleSize }}</span>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
+        @for (niche of toxicZones; track niche.metricLabel) {
+            <div class="p-4 rounded-2xl bg-black/20 border border-red-500/20 backdrop-blur-2xl shadow-xl transition-all hover:border-red-500/40 hover:-translate-y-1">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-[9px] uppercase font-bold text-red-400/80 tracking-widest">{{ niche.metricLabel }}</span>
+                    <i class="fa fa-radiation text-red-400/50"></i>
+                </div>
+                <div class="text-lg font-black text-red-50 tracking-tight mb-2 opacity-90">
+                    {{ niche.rangeLabel }}
+                </div>
+                <div class="flex items-center justify-between mt-3 bg-red-500/5 rounded-lg p-2 border border-red-500/10">
+                    <div class="flex flex-col">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold">Win Rate</span>
+                        <span class="text-red-400 font-bold text-sm">{{ niche.winRate | number:'1.0-0' }}%</span>
+                    </div>
+                    <div class="flex flex-col border-l border-white/5 pl-3">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold">Med PnL</span>
+                        <span class="text-red-400 font-bold text-sm">{{ niche.medianPnl | number:'1.1-1' }}%</span>
+                    </div>
+                    <div class="flex flex-col border-l border-white/5 pl-3">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold">Trades</span>
+                        <span class="text-slate-300 font-bold text-sm">{{ niche.sampleSize }}</span>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+        <div class="p-5 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-2xl flex flex-col">
+            <div class="flex items-center justify-between mb-2 pb-3 border-b border-white/5">
+                <div class="flex items-center gap-2">
+                    <i class="fa fa-microscope text-purple-400"></i>
+                    <h3 class="text-xs font-bold tracking-widest text-slate-200 uppercase">Anatomy of a Winner</h3>
+                </div>
+                <span class="text-[9px] text-slate-500 uppercase tracking-wider">Average normalized profile</span>
+            </div>
+            <div class="flex-grow flex items-center justify-center -mt-4">
+                 <apx-chart
+                    [series]="deviationSeries" [chart]="deviationChart" [xaxis]="deviationXAxis"
+                    [yaxis]="deviationYAxis" [plotOptions]="deviationPlotOptions"
+                    [tooltip]="deviationTooltip" [dataLabels]="deviationDataLabels" [grid]="deviationGrid"
+                    style="width: 100%; min-height: 500px;"
+                ></apx-chart>
+            </div>
+        </div>
+
+        <div class="p-5 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-2xl flex flex-col">
+            <div class="flex items-center justify-between mb-2 pb-3 border-b border-white/5">
+                <div class="flex items-center gap-2">
+                    <i class="fa fa-sort-amount-down text-blue-400"></i>
+                    <h3 class="text-xs font-bold tracking-widest text-slate-200 uppercase">Metric Power Ranking</h3>
+                </div>
+                <span class="text-[9px] text-slate-500 uppercase tracking-wider">Influence on Win Rate</span>
+            </div>
+            <div class="flex-grow mt-2">
+                <apx-chart
+                    [series]="powerSeries" [chart]="powerChart" [xaxis]="powerXAxis"
+                    [yaxis]="powerYAxis" [grid]="powerGrid" [plotOptions]="powerPlotOptions"
+                    [dataLabels]="powerDataLabels" [tooltip]="powerTooltip"
+                ></apx-chart>
+            </div>
+        </div>
+    </div>
+</div>

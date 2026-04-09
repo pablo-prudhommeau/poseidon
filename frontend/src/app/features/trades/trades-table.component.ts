@@ -18,7 +18,7 @@ import {ApexAxisChartSeries, ApexChart, ApexDataLabels, ApexGrid, ApexLegend, Ap
 import {balhamDarkThemeCompact} from '../../ag-grid.theme';
 import {NumberFormattingService} from '../../core/number-formatting.service';
 import {WebSocketService} from '../../core/websocket.service';
-import {Analytics, Trade} from '../../core/models';
+import {TradingEvaluationPayload, TradingTradePayload} from '../../core/models';
 import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer';
 import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
 import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
@@ -50,20 +50,20 @@ export class TradesTableComponent implements AfterViewInit {
     private readonly webSocketService = inject(WebSocketService);
     private readonly numberFormattingService = inject(NumberFormattingService);
 
-    public readonly tradesRowData = computed<Trade[]>(() => {
+    public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
         const rows = this.webSocketService.trades() ?? [];
-        return Array.isArray(rows) ? [...(rows as Trade[])] : [];
+        return Array.isArray(rows) ? [...(rows as TradingTradePayload[])] : [];
     });
 
-    public columnDefinitions: ColDef<Trade>[] = [];
-    public readonly defaultColumnDefinition: ColDef<Trade> = {resizable: true, sortable: true, filter: true, flex: 1};
+    public columnDefinitions: ColDef<TradingTradePayload>[] = [];
+    public readonly defaultColumnDefinition: ColDef<TradingTradePayload> = {resizable: true, sortable: true, filter: true, flex: 1};
 
     @ViewChild('actionsTemplate', {static: false}) private actionsTemplate?: TemplateRef<unknown>;
     @ViewChild('symbolHeaderTemplate', {static: false}) private symbolHeaderTemplate?: TemplateRef<unknown>;
 
     public readonly detailsVisible = signal<boolean>(false);
-    public readonly selectedTrade = signal<Trade | null>(null);
-    public readonly selectedAnalytics = signal<Analytics | null>(null);
+    public readonly selectedTrade = signal<TradingTradePayload | null>(null);
+    public readonly selectedAnalytics = signal<TradingEvaluationPayload | null>(null);
 
     public scoresSeries: ApexNonAxisChartSeries = [];
     public scoresChart: ApexChart = {type: 'radialBar', height: 240};
@@ -114,10 +114,10 @@ export class TradesTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Date',
-                field: 'created_at' as unknown as keyof Trade,
+                field: 'created_at' as unknown as keyof TradingTradePayload,
                 sortable: true,
                 filter: 'agDateColumnFilter',
-                valueGetter: (p: ValueGetterParams<Trade>) => (p.data as any)?.created_at ?? null,
+                valueGetter: (p: ValueGetterParams<TradingTradePayload>) => (p.data as any)?.created_at ?? null,
                 flex: 1
             },
             {
@@ -125,7 +125,7 @@ export class TradesTableComponent implements AfterViewInit {
                 field: 'trade_side',
                 sortable: true,
                 filter: true,
-                cellRenderer: (p: ValueFormatterParams<Trade>) => {
+                cellRenderer: (p: ValueFormatterParams<TradingTradePayload>) => {
                     const v = String(p.value ?? '');
                     const colorClass = v === 'BUY' ? 'bg-teal-600' : 'bg-indigo-500';
                     return `<span class="${colorClass} saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">${v}</span>`;
@@ -138,7 +138,7 @@ export class TradesTableComponent implements AfterViewInit {
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Trade>) => this.numberFormattingService.formatNumber(p.value, 2, 6),
+                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) => this.numberFormattingService.formatNumber(p.value, 2, 6),
                 cellClass: 'text-right whitespace-nowrap',
                 flex: 1.3
             },
@@ -148,20 +148,20 @@ export class TradesTableComponent implements AfterViewInit {
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Trade>) =>
+                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) =>
                     this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
                 cellClass: 'text-right whitespace-nowrap',
                 flex: 1.1
             },
             {
                 headerName: 'P&L',
-                field: 'realized_profit_and_loss' as unknown as keyof Trade,
+                field: 'realized_profit_and_loss' as unknown as keyof TradingTradePayload,
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Trade>) =>
+                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) =>
                     this.numberFormattingService.formatCurrency(p.value, 'USD', 2, 2),
-                cellClass: (p: ValueFormatterParams<Trade>) => {
+                cellClass: (p: ValueFormatterParams<TradingTradePayload>) => {
                     const n = this.numberFormattingService.toNumberSafe(p.value as number | null);
                     if (n === null) {
                         return 'text-right whitespace-nowrap';
@@ -176,7 +176,7 @@ export class TradesTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Status',
-                field: 'execution_status' as unknown as keyof Trade,
+                field: 'execution_status' as unknown as keyof TradingTradePayload,
                 sortable: true,
                 filter: true,
                 flex: 0.5
@@ -195,7 +195,7 @@ export class TradesTableComponent implements AfterViewInit {
         ];
     }
 
-    public openDetails(row: Trade | null): void {
+    public openDetails(row: TradingTradePayload | null): void {
         this.selectedTrade.set(row ?? null);
         this.detailsVisible.set(true);
         console.info('[UI][TRADES][DETAILS] open', row);
@@ -204,11 +204,11 @@ export class TradesTableComponent implements AfterViewInit {
         this.recomputeCharts();
     }
 
-    private findBestAnalyticsForTrade(trade: Trade | null): Analytics | null {
+    private findBestAnalyticsForTrade(trade: TradingTradePayload | null): TradingEvaluationPayload | null {
         if (!trade) {
             return null;
         }
-        const rows = (this.webSocketService.analytics() ?? []) as Analytics[];
+        const rows = (this.webSocketService.analytics() ?? []) as TradingEvaluationPayload[];
         const candidates = rows.filter(
             (a) =>
                 (a.pair_address && a.pair_address === trade.pair_address) ||
@@ -221,7 +221,7 @@ export class TradesTableComponent implements AfterViewInit {
         return candidates[0] ?? null;
     }
 
-    public analyticsForSelected(): Analytics | null {
+    public analyticsForSelected(): TradingEvaluationPayload | null {
         return this.selectedAnalytics();
     }
 
@@ -237,7 +237,7 @@ export class TradesTableComponent implements AfterViewInit {
         return chain && token ? `https://dexscreener.com/${chain}/${token}` : '';
     }
 
-    public orderNotionalUsd(row: Trade | null): number | null {
+    public orderNotionalUsd(row: TradingTradePayload | null): number | null {
         if (!row) {
             return null;
         }

@@ -197,18 +197,16 @@ def holdings_and_unrealized_from_positions(
 
     for position in position_list:
         token = _to_token_from_position(position)
-        price_usd = next((token_information for token_information in token_information_list if
-                          token_information.pair_address == position.pair_address)).price_usd
+        price_usd = next(
+            (token_information.price_usd for token_information in token_information_list if token_information.pair_address == position.pair_address),
+            None
+        )
         if price_usd is None or price_usd <= 0.0:
             log.debug("[PNL][UNREAL][NOPRICE] token=%s — skipping unrealized valuation", token)
             continue
 
-        try:
-            quantity = float(position.current_quantity)
-            entry_price = float(position.entry_price)
-        except (TypeError, ValueError):
-            log.debug("[PNL][UNREAL][SKIP] token=%s reason=invalid_numeric_fields", token)
-            continue
+        quantity = position.current_quantity or 0.0
+        entry_price = position.entry_price or 0.0
 
         if quantity <= 0.0:
             log.debug("[PNL][UNREAL][SKIP] token=%s reason=non_positive_qty", token)
@@ -227,22 +225,18 @@ def holdings_and_unrealized_from_positions(
     return result
 
 
-async def latest_prices_for_positions(positions: Iterable[object]) -> Dict[str, float]:
+async def latest_prices_for_positions(positions: Iterable['TradingPosition']) -> Dict[str, float]:
     from src.core.structures.structures import Token as CoreToken
     from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
 
     tokens: List[CoreToken] = []
     for position in positions:
-        pair_address = getattr(position, "pairAddress", None)
-        chain = getattr(position, "chain", None)
-        token_address = getattr(position, "tokenAddress", None) or getattr(position, "address", None)
-        symbol = getattr(position, "symbol", "")
+        pair_address = position.pair_address
+        chain = position.blockchain_network
+        token_address = position.token_address
+        symbol = position.token_symbol or ""
 
-        if (
-                isinstance(pair_address, str) and pair_address
-                and isinstance(chain, str) and chain
-                and isinstance(token_address, str) and token_address
-        ):
+        if pair_address and chain and token_address:
             tokens.append(CoreToken(symbol=symbol, chain=chain, token_address=token_address, pair_address=pair_address))
 
     result: Dict[str, float] = {}

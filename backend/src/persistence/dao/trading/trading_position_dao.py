@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.persistence.models import TradingPosition
+from src.persistence.models import TradingPosition, PositionPhase
 
 
 class TradingPositionDao:
@@ -27,3 +27,7 @@ class TradingPositionDao:
         self.database_session.add(trading_position)
         self.database_session.flush()
         return trading_position
+
+    def retrieve_by_phase(self, target_phase: PositionPhase) -> List[TradingPosition]:
+        database_query = select(TradingPosition).where(TradingPosition.position_phase == target_phase)
+        return list(self.database_session.execute(database_query).scalars().all())

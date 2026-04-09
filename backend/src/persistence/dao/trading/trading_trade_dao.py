@@ -16,6 +16,10 @@ class TradingTradeDao:
         database_query = select(TradingTrade).order_by(desc(TradingTrade.created_at))
         return list(self.database_session.execute(database_query).scalars().all())
 
+    def retrieve_recent_trades(self, limit_count: int) -> List[TradingTrade]:
+        database_query = select(TradingTrade).order_by(desc(TradingTrade.created_at)).limit(limit_count)
+        return list(self.database_session.execute(database_query).scalars().all())
+
     def retrieve_paper_trades(self) -> List[TradingTrade]:
         database_query = select(TradingTrade).where(TradingTrade.execution_status == ExecutionStatus.PAPER).order_by(desc(TradingTrade.created_at))
         return list(self.database_session.execute(database_query).scalars().all())

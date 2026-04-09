@@ -1,7 +1,7 @@
 import {Component, computed, input} from '@angular/core';
 import {CardModule} from 'primeng/card';
 import {ApexChart, ApexDataLabels, ApexFill, ApexGrid, ApexPlotOptions, ApexStroke, ApexTheme, ApexXAxis, ApexYAxis, NgApexchartsModule} from 'ng-apexcharts';
-import {DcaBacktestSeriesPoint, DcaOrder, DcaStrategy} from '../../../core/models';
+import {DcaBacktestSeriesPointPayload, DcaOrderPayload, DcaStrategyPayload} from '../../../core/models';
 
 @Component({
     standalone: true,
@@ -10,7 +10,7 @@ import {DcaBacktestSeriesPoint, DcaOrder, DcaStrategy} from '../../../core/model
     templateUrl: './dca-strategy-charts.component.html'
 })
 export class DcaStrategyChartsComponent {
-    public strategy = input.required<DcaStrategy>();
+    public strategy = input.required<DcaStrategyPayload>();
 
     private readonly mappedMarketAndSmartData = computed(() => {
         const strat = this.strategy();
@@ -18,8 +18,8 @@ export class DcaStrategyChartsComponent {
             return null;
         }
 
-        const smartSeries: DcaBacktestSeriesPoint[] = strat.historical_backtest_payload.smart_dca_series;
-        const baselineSeries: DcaBacktestSeriesPoint[] = strat.historical_backtest_payload.dumb_dca_series;
+        const smartSeries: DcaBacktestSeriesPointPayload[] = strat.historical_backtest_payload.smart_dca_series;
+        const baselineSeries: DcaBacktestSeriesPointPayload[] = strat.historical_backtest_payload.dumb_dca_series;
 
         const historicalStartTimestamp = new Date(baselineSeries[0].timestamp_iso).getTime();
         const historicalEndTimestamp = new Date(baselineSeries[baselineSeries.length - 1].timestamp_iso).getTime();
@@ -84,8 +84,8 @@ export class DcaStrategyChartsComponent {
             return [];
         }
         const scatterData = strat.execution_orders
-            .filter((order: DcaOrder) => order.order_status === 'EXECUTED' && order.actual_execution_price !== null)
-            .map((order: DcaOrder) => {
+            .filter((order: DcaOrderPayload) => order.order_status === 'EXECUTED' && order.actual_execution_price !== null)
+            .map((order: DcaOrderPayload) => {
                 const executionDate = new Date(order.executed_at as string);
                 const hourOfDay = executionDate.getHours() + (executionDate.getMinutes() / 60);
                 return [hourOfDay, order.actual_execution_price as number];
@@ -136,11 +136,11 @@ export class DcaStrategyChartsComponent {
         theme: {mode: 'dark'} as ApexTheme
     };
 
-    private calculateCurrentLivePrice(strategy: DcaStrategy): number {
+    private calculateCurrentLivePrice(strategy: DcaStrategyPayload): number {
         if (!strategy.execution_orders) {
             return 0;
         }
-        const executedOrders = strategy.execution_orders.filter((o: DcaOrder) => o.order_status === 'EXECUTED' && o.actual_execution_price !== null);
+        const executedOrders = strategy.execution_orders.filter((o: DcaOrderPayload) => o.order_status === 'EXECUTED' && o.actual_execution_price !== null);
         if (executedOrders.length === 0) {
             return 0;
         }

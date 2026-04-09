@@ -74,7 +74,7 @@ class DcaManager:
         is_conflicting_debt_detected = await self.aave_executor.verify_active_debt(dca_strategy.blockchain_network, dca_strategy.target_asset_address)
         if is_conflicting_debt_detected:
             logger.error("[DCA][MANAGER][DEBT] Conflicting borrow position detected for target asset. Suspending strategy safety first.")
-            dca_strategy.strategy_status = DcaStrategyStatus.PAUSED.value
+            dca_strategy.strategy_status = DcaStrategyStatus.PAUSED
             self.database_session.commit()
             send_alert(
                 f"[{dca_strategy.target_asset_symbol}] Stratégie Suspendue",
@@ -84,7 +84,7 @@ class DcaManager:
             )
             return
 
-        if dca_order.order_status == DcaOrderStatus.PENDING.value:
+        if dca_order.order_status == DcaOrderStatus.PENDING:
             ema_warmup_limit = settings.AAVE_DCA_EMA50_WARMUP_KLINES
             market_data = await fetch_exponential_moving_average_and_price(dca_strategy.binance_trading_pair, "1h", ema_warmup_limit)
 
@@ -117,7 +117,7 @@ class DcaManager:
 
             if not dca_strategy.bypass_security_approval:
                 logger.info("[DCA][MANAGER][APPROVAL] Order identifier %s requires user authorization before proceeding", dca_order.id)
-                dca_order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL.value
+                dca_order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL
                 self.dca_order_dao.save(dca_order)
                 self._send_approval_request(dca_order, dca_strategy)
                 schedule_full_recompute_broadcast()
@@ -131,7 +131,7 @@ class DcaManager:
                     "🛑"
                 )
 
-            dca_order.order_status = DcaOrderStatus.APPROVED.value
+            dca_order.order_status = DcaOrderStatus.APPROVED
             self.dca_order_dao.save(dca_order)
 
         await self.execute_onchain_defi_routing_pipeline(dca_order, dca_strategy)
@@ -146,18 +146,18 @@ class DcaManager:
         if settings.PAPER_MODE:
             logger.info("[DCA][MANAGER][PAPER] Paper Mode active: initiating sequential simulation of technical routing pipeline")
 
-            if dca_order.order_status == DcaOrderStatus.WAITING_USER_APPROVAL.value:
+            if dca_order.order_status == DcaOrderStatus.WAITING_USER_APPROVAL:
                 logger.info("[DCA][MANAGER][APPROVAL] Order identifier %s is still waiting for user approval. Skipping for this cycle.", dca_order.id)
                 return
 
-            if dca_order.order_status == DcaOrderStatus.REJECTED.value:
+            if dca_order.order_status == DcaOrderStatus.REJECTED:
                 logger.warning("[DCA][MANAGER][APPROVAL] Order identifier %s was rejected. Skipping for this cycle.", dca_order.id)
                 return
 
             try:
                 if dca_order.executed_source_asset_amount == 0.0:
                     logger.info("[DCA][MANAGER][PAPER] Execution bypass: Amount is 0 (PRU Protection active). Finalizing accounting only.")
-                    dca_order.order_status = DcaOrderStatus.EXECUTED.value
+                    dca_order.order_status = DcaOrderStatus.EXECUTED
                     dca_order.executed_at = get_current_local_datetime()
                     dca_order.executed_target_asset_amount = 0.0
                     dca_order.transaction_hash = "AVERAGE_PRICE_PROTECTION_BYPASS"
@@ -180,20 +180,20 @@ class DcaManager:
 
                 dca_order.executed_at = get_current_local_datetime()
 
-                if dca_order.order_status == DcaOrderStatus.APPROVED.value:
-                    dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE.value
+                if dca_order.order_status == DcaOrderStatus.APPROVED:
+                    dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
                     self.dca_order_dao.save(dca_order)
                     schedule_full_recompute_broadcast()
                     await asyncio.sleep(2)
 
-                if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE.value:
-                    dca_order.order_status = DcaOrderStatus.SWAPPED.value
+                if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
+                    dca_order.order_status = DcaOrderStatus.SWAPPED
                     self.dca_order_dao.save(dca_order)
                     schedule_full_recompute_broadcast()
                     await asyncio.sleep(2)
 
-                if dca_order.order_status == DcaOrderStatus.SWAPPED.value:
-                    dca_order.order_status = DcaOrderStatus.EXECUTED.value
+                if dca_order.order_status == DcaOrderStatus.SWAPPED:
+                    dca_order.order_status = DcaOrderStatus.EXECUTED
                     if dca_order.executed_source_asset_amount > 0 and dca_order.actual_execution_price > 0:
                         dca_order.executed_target_asset_amount = dca_order.executed_source_asset_amount / dca_order.actual_execution_price
                     else:
@@ -222,7 +222,7 @@ class DcaManager:
                     dca_order.order_status,
                     dca_order.id
                 )
-                dca_order.order_status = DcaOrderStatus.FAILED.value
+                dca_order.order_status = DcaOrderStatus.FAILED
                 self.dca_order_dao.save(dca_order)
                 schedule_full_recompute_broadcast()
                 send_alert(
@@ -237,7 +237,7 @@ class DcaManager:
         try:
             if dca_order.executed_source_asset_amount == 0.0:
                 logger.info("[DCA][MANAGER][PIPELINE] Execution bypass: Amount is 0 (Protection active). Finalizing accounting only.")
-                dca_order.order_status = DcaOrderStatus.EXECUTED.value
+                dca_order.order_status = DcaOrderStatus.EXECUTED
                 dca_order.executed_at = get_current_local_datetime()
                 dca_order.executed_target_asset_amount = 0.0
                 dca_order.transaction_hash = "AVERAGE_PRICE_PROTECTION_BYPASS"
@@ -259,7 +259,7 @@ class DcaManager:
                 if not withdrawal_transaction_hash:
                     raise RuntimeError("Aave withdrawal execution failed at protocol level")
 
-                dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE.value
+                dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
                 self.dca_order_dao.save(dca_order)
                 schedule_full_recompute_broadcast()
                 await asyncio.sleep(5)
@@ -297,7 +297,7 @@ class DcaManager:
                 if not swap_transaction_hash:
                     raise RuntimeError("DeFi routed swap execution failed during transaction submission")
 
-                dca_order.order_status = DcaOrderStatus.SWAPPED.value
+                dca_order.order_status = DcaOrderStatus.SWAPPED
                 self.dca_order_dao.save(dca_order)
                 schedule_full_recompute_broadcast()
                 await asyncio.sleep(6)
@@ -317,7 +317,7 @@ class DcaManager:
                 if not supply_transaction_hash:
                     raise RuntimeError("Aave supply execution failed at protocol level")
 
-                dca_order.order_status = DcaOrderStatus.EXECUTED.value
+                dca_order.order_status = DcaOrderStatus.EXECUTED
                 dca_order.transaction_hash = supply_transaction_hash
                 dca_order.executed_at = get_current_local_datetime()
                 dca_order.executed_target_asset_amount = target_asset_balance_wei / (10 ** 18)
@@ -345,7 +345,7 @@ class DcaManager:
                 dca_order.order_status,
                 exception
             )
-            dca_order.order_status = DcaOrderStatus.FAILED.value
+            dca_order.order_status = DcaOrderStatus.FAILED
             self.dca_order_dao.save(dca_order)
             schedule_full_recompute_broadcast()
             send_alert(
@@ -404,7 +404,7 @@ class DcaManager:
             
             from sqlalchemy import select
             waiting_orders_query = select(DcaOrder).where(
-                DcaOrder.order_status.in_([DcaOrderStatus.WAITING_USER_APPROVAL.value, DcaOrderStatus.REJECTED.value])
+                DcaOrder.order_status.in_([DcaOrderStatus.WAITING_USER_APPROVAL, DcaOrderStatus.REJECTED])
             )
             waiting_orders = session_instance.execute(waiting_orders_query).scalars().all()
 
@@ -412,8 +412,8 @@ class DcaManager:
                 strategy = strategy_dao_instance.retrieve_by_id(order.strategy_id)
                 if strategy:
                     logger.info("[DCA][MANAGER][RESYNC] Re-sending approval request for order identifier %s", order.id)
-                    if order.order_status == DcaOrderStatus.REJECTED.value:
-                        order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL.value
+                    if order.order_status == DcaOrderStatus.REJECTED:
+                        order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL
                         order_dao_instance.save(order)
                         session_instance.commit()
 

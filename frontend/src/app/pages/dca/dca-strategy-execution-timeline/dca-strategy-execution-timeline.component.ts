@@ -2,7 +2,7 @@ import {Component, computed, input} from '@angular/core';
 import {CurrencyPipe, DatePipe, DecimalPipe, NgClass} from '@angular/common';
 import {CardModule} from 'primeng/card';
 import {PopoverModule} from 'primeng/popover';
-import {DcaOrder, DcaStrategy, OrderDueDateMarker, TimelineNode} from '../../../core/models';
+import {DcaOrderPayload, DcaStrategyPayload, OrderDueDateMarker, TimelineNode} from '../../../core/models';
 
 const PROCESSING_STATUS_LIST: string[] = [
     'WAITING_USER_APPROVAL', 'APPROVED', 'WITHDRAWN_FROM_AAVE', 'SWAPPED', 'PROCESSING'
@@ -16,7 +16,7 @@ const PROCESSING_STATUS_LIST: string[] = [
     styleUrls: ['./dca-strategy-execution-timeline.component.css']
 })
 export class DcaStrategyExecutionTimelineComponent {
-    public strategy = input.required<DcaStrategy>();
+    public strategy = input.required<DcaStrategyPayload>();
 
     public readonly lastNonPendingOrderTimestamp = computed<number | null>(() => {
         const strategyEntity = this.strategy();
@@ -59,7 +59,7 @@ export class DcaStrategyExecutionTimelineComponent {
         const rulerNodes = this.generateCalendarRulerNodes(startTimestamp, endTimestamp, totalDuration);
 
         const nodesByIdentifier = new Map<string, TimelineNode>(
-            rulerNodes.map(node => [node.identifier, {...node, orders: [] as DcaOrder[]}])
+            rulerNodes.map(node => [node.identifier, {...node, orders: [] as DcaOrderPayload[]}])
         );
 
         for (const order of allOrders) {
@@ -224,7 +224,7 @@ export class DcaStrategyExecutionTimelineComponent {
         return 'text-slate-400';
     }
 
-    public isProtectedByPurchasePriceGuard(order: DcaOrder): boolean {
+    public isProtectedByPurchasePriceGuard(order: DcaOrderPayload): boolean {
         return order.transaction_hash === 'AVERAGE_PRICE_PROTECTION_BYPASS'
             || (order.allocation_decision_description?.includes('AVERAGE_PRICE_PROTECTION') ?? false);
     }
@@ -360,7 +360,7 @@ export class DcaStrategyExecutionTimelineComponent {
         };
     }
 
-    private calculateSyntheticStatus(orders: DcaOrder[]): string {
+    private calculateSyntheticStatus(orders: DcaOrderPayload[]): string {
         if (orders.some(o => PROCESSING_STATUS_LIST.includes(o.order_status))) {
             return 'PROCESSING';
         }

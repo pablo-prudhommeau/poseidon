@@ -32,6 +32,13 @@ class TradingEvaluationRecorder:
         price_change = token_information.price_change
         transactions = token_information.transactions
 
+        computed_buy_to_sell_ratio = 0.5
+        if transactions and (transactions.h1 or transactions.h24):
+            reference_bucket = transactions.h1 if transactions.h1 else transactions.h24
+            total_transaction_count = reference_bucket.buys + reference_bucket.sells
+            if total_transaction_count > 0:
+                computed_buy_to_sell_ratio = reference_bucket.buys / total_transaction_count
+
         payload = TradingEvaluation(
             token_symbol=base_token.symbol.upper(),
             blockchain_network=str(token_information.chain_id),
@@ -60,6 +67,9 @@ class TradingEvaluationRecorder:
             transaction_count_h1=transactions.h1.total_transactions if transactions and transactions.h1 else 0,
             transaction_count_h6=transactions.h6.total_transactions if transactions and transactions.h6 else 0,
             transaction_count_h24=transactions.h24.total_transactions if transactions and transactions.h24 else 0,
+            buy_to_sell_ratio=computed_buy_to_sell_ratio,
+            market_cap_usd=token_information.market_cap or 0.0,
+            fully_diluted_valuation_usd=token_information.fully_diluted_valuation or 0.0,
             evaluated_at=get_current_local_datetime(),
             execution_decision=decision.upper(),
             execution_decision_reason=reason,

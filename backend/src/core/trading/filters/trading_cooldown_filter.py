@@ -9,7 +9,7 @@ from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.db import _session
-from src.persistence.models import Trade
+from src.persistence.models import TradingTrade
 
 logger = get_application_logger(__name__)
 
@@ -20,9 +20,9 @@ def _recently_traded(address: str, time_window_minutes: int) -> bool:
 
     with _session() as database_session:
         database_query = (
-            select(Trade)
-            .where(Trade.token_address == address)
-            .order_by(Trade.created_at.desc())
+            select(TradingTrade)
+            .where(TradingTrade.token_address == address)
+            .order_by(TradingTrade.created_at.desc())
         )
         trade_record = database_session.execute(database_query).scalars().first()
         if not trade_record:
