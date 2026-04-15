@@ -68,11 +68,11 @@ def _build_solana_route(candidate: TradingCandidate, order_notional_usd: float) 
         return None
 
     try:
-        from src.integrations.blockchain.blockchain_solana_signer import build_default_solana_signer
+        from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
         sol_signer = build_default_solana_signer()
         from_address = sol_signer.address
     except Exception as exception:
-        logger.warning("[TRADING][ORDER][ROUTE] Solana signer unavailable: %s", exception)
+        logger.exception("[TRADING][ORDER][ROUTE] Solana signer unavailable: %s", exception)
         return None
 
     try:
@@ -85,7 +85,7 @@ def _build_solana_route(candidate: TradingCandidate, order_notional_usd: float) 
         )
         return route
     except Exception as exception:
-        logger.warning("[TRADING][ORDER][ROUTE] LI.FI route build failed for %s on solana: %s", token_information.base_token.symbol, exception)
+        logger.exception("[TRADING][ORDER][ROUTE] LI.FI route build failed for %s on solana: %s", token_information.base_token.symbol, exception)
         return None
 
 
@@ -107,11 +107,11 @@ def _build_evm_route(candidate: TradingCandidate, order_notional_usd: float, cha
         return None
 
     try:
-        from src.integrations.blockchain.blockchain_evm_signer import build_default_evm_signer
+        from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer
         evm_signer = build_default_evm_signer()
         evm_address = evm_signer.wallet_address
     except Exception as exception:
-        logger.warning("[TRADING][ORDER][ROUTE] EVM signer unavailable: %s", exception)
+        logger.exception("[TRADING][ORDER][ROUTE] EVM signer unavailable: %s", exception)
         return None
 
     try:
@@ -124,5 +124,5 @@ def _build_evm_route(candidate: TradingCandidate, order_notional_usd: float, cha
         )
         return route
     except Exception as exception:
-        logger.warning("[TRADING][ORDER][ROUTE] LI.FI route build failed for %s on %s: %s", token_information.base_token.symbol, chain_key, exception)
+        logger.exception("[TRADING][ORDER][ROUTE] LI.FI route build failed for %s on %s: %s", token_information.base_token.symbol, chain_key, exception)
         return None

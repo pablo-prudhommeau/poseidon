@@ -129,7 +129,7 @@ class ChartCaptureService:
             return False
 
         except Exception as exception:
-            logger.debug("[AI][CHART][CAPTURE][TOOLBAR] Toolbar interval setting operation failed", exception)
+            logger.exception("[AI][CHART][CAPTURE][TOOLBAR] Toolbar interval setting operation failed", exception)
             return False
 
     def _try_set_tradingview_interval_via_keyboard(self, browser_page: Page, time_interval: str) -> bool:
@@ -154,7 +154,7 @@ class ChartCaptureService:
             logger.debug("[AI][CHART][CAPTURE][KEYBOARD] Keyboard interval sequence successfully dispatched for interval %s", time_interval)
             return True
         except Exception as exception:
-            logger.debug("[AI][CHART][CAPTURE][KEYBOARD] Keyboard interval setting operation failed", exception)
+            logger.exception("[AI][CHART][CAPTURE][KEYBOARD] Keyboard interval setting operation failed", exception)
             return False
 
     @staticmethod
@@ -333,5 +333,5 @@ class ChartCaptureService:
                 file_path=persisted_file_path,
             )
         except Exception as exception:
-            logger.warning("[AI][CHART][CAPTURE][FAILURE] DexScreener chart capture completely failed for token %s on chain %s", pair_address, chain_name, exception)
+            logger.exception("[AI][CHART][CAPTURE][FAILURE] DexScreener chart capture completely failed for token %s on chain %s", pair_address, chain_name, exception)
             raise ChartCaptureError(f"Dexscreener capture failed for {chain_name}/{pair_address}") from exception

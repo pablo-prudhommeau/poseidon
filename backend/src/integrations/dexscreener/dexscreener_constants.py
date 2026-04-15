@@ -6,8 +6,10 @@ BASE_URL: str = settings.DEXSCREENER_BASE_URL.rstrip("/")
 LATEST_TOKENS_ENDPOINT: str = f"{BASE_URL}/latest/dex/tokens"
 LATEST_PAIRS_ENDPOINT: str = f"{BASE_URL}/latest/dex/pairs"
 TOKEN_PROFILES_ENDPOINT: str = f"{BASE_URL}/token-profiles/latest/v1"
+TOKEN_PROFILES_RECENT_UPDATES_ENDPOINT: str = f"{BASE_URL}/token-profiles/recent-updates/v1"
 TOKEN_BOOSTS_LATEST_ENDPOINT: str = f"{BASE_URL}/token-boosts/latest/v1"
 TOKEN_BOOSTS_TOP_ENDPOINT: str = f"{BASE_URL}/token-boosts/top/v1"
+COMMUNITY_TAKEOVERS_ENDPOINT: str = f"{BASE_URL}/community-takeovers/latest/v1"
 
 DEFAULT_MAX_ADDRESSES_PER_CALL: int = settings.DEXSCREENER_MAX_ADDRESSES_PER_CALL
 TOTAL_ADDRESS_HARD_CAP: int = settings.DEXSCREENER_MAX_ADDRESSES

@@ -11,15 +11,17 @@ class Token(BaseModel):
     chain: str
     token_address: str
     pair_address: str
+    dex_id: str = "unknown"
 
     def __str__(self) -> str:
         return (f"[symbol={self.symbol} "
                 f"chain={self.chain} "
+                f"dex_id={self.dex_id} "
                 f"token_address={_tail(self.token_address)} "
                 f"pair_address=…{_tail(self.pair_address)}]")
 
     def __hash__(self) -> int:
-        return hash((self.chain, self.symbol, self.token_address, self.pair_address))
+        return hash((self.chain, self.dex_id, self.symbol, self.token_address, self.pair_address))
 
 
 class Mode(Enum):
@@ -63,8 +65,6 @@ class WebsocketMessageType(str, Enum):
     PORTFOLIO = "portfolio"
     POSITIONS = "positions"
     TRADES = "trades"
-    TRADE = "trade"
-    ANALYTICS = "analytics"
     DCA_STRATEGIES = "dca_strategies"
     PONG = "pong"
     ERROR = "error"

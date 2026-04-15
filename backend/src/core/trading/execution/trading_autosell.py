@@ -5,112 +5,112 @@ from typing import List
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.api.websocket.telemetry import TelemetryService
 from src.configuration.config import settings
 from src.core.structures.structures import Token
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
+from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.dao import trades
-from src.persistence.dao.trades import compute_open_quantity_for_position
-from src.persistence.models import Position, PositionPhase, ExecutionStatus, Trade
+from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
+from src.persistence.models import TradingPosition, TradingTrade, ExecutionStatus, PositionPhase, TradeSide
 
 logger = get_application_logger(__name__)
 
 
+def _execute_sell_operation(
+        database_session: Session,
+        position: TradingPosition,
+        execution_price: float,
+        sell_quantity: float,
+        reason: str,
+) -> TradingTrade:
+    trade_dao = TradingTradeDao(database_session)
+    execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
+    sell_trade = TradingTrade(
+        trade_side=TradeSide.SELL,
+        token_symbol=position.token_symbol,
+        blockchain_network=position.blockchain_network,
+        execution_price=execution_price,
+        execution_quantity=sell_quantity,
+        transaction_fee=0.0,
+        realized_profit_and_loss=0.0,
+        execution_status=execution_status,
+        token_address=position.token_address,
+        pair_address=position.pair_address,
+        dex_id=position.dex_id,
+    )
+    trade_dao.save(sell_trade)
+
+    previous_quantity = position.current_quantity
+    position.current_quantity -= sell_quantity
+
+    exit_notional = sell_quantity * execution_price
+    entry_notional = sell_quantity * position.entry_price
+    trade_pnl_usd = exit_notional - entry_notional
+    sell_trade.realized_profit_and_loss = trade_pnl_usd
+
+    if position.current_quantity <= 0.0:
+        position.position_phase = PositionPhase.CLOSED
+    else:
+        position.position_phase = PositionPhase.PARTIAL
+
+    database_session.flush()
+
+    pnl_percentage = ((execution_price / position.entry_price) - 1) * 100
+
+    current_time = get_current_local_datetime().replace(tzinfo=None)
+    opened_time = position.opened_at.replace(tzinfo=None) if position.opened_at else current_time
+    holding_duration = (current_time - opened_time).total_seconds() / 60.0
+
+    TelemetryService.link_trade_outcome(
+        token_address=position.token_address,
+        trade_id=sell_trade.id,
+        closed_at=get_current_local_datetime(),
+        realized_profit_and_loss_percentage=pnl_percentage,
+        realized_profit_and_loss_usd=trade_pnl_usd,
+        holding_duration_minutes=holding_duration,
+        was_profitable=(trade_pnl_usd > 0),
+        exit_reason=reason,
+        database_session=database_session,
+    )
+
+    return sell_trade
+
+
 def _evaluate_position_thresholds(
         database_session: Session,
-        position: Position,
+        position: TradingPosition,
         last_price_value: float,
-) -> List[Trade]:
-    created_trades: List[Trade] = []
+) -> List[TradingTrade]:
+    created_trades: List[TradingTrade] = []
     position_quantity = position.current_quantity or 0.0
 
     if position_quantity <= 0.0:
-        logger.debug(
-            "[TRADING][AUTOSELL] Ignored because current quantity is zero — token=%s pair=%s",
-            position.token_address, position.pair_address,
-        )
         return created_trades
 
     tp1 = position.take_profit_tier_1_price or 0.0
     tp2 = position.take_profit_tier_2_price or 0.0
     stop = position.stop_loss_price or 0.0
 
-    fee = 0.0
-    status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
-
-    token = Token(
-        symbol=position.token_symbol,
-        chain=position.blockchain_network,
-        token_address=position.token_address,
-        pair_address=position.pair_address,
-    )
-
     if stop > 0.0 and last_price_value <= stop:
-        sell_quantity = compute_open_quantity_for_position(database_session, position)
-        if sell_quantity <= 0.0:
-            logger.debug("[TRADING][AUTOSELL][SL] Ignored because open quantity is zero — token=%s pair=%s", position.token_address, position.pair_address)
-            return created_trades
-
-        trade = trades.sell(database_session, token=token, price=last_price_value, qty=sell_quantity, fee=fee, status=status, phase=PositionPhase.CLOSED)
+        logger.info("[TRADING][AUTOSELL][SL] Triggered for %s @ %.12f (stop=%.12f)", position.token_symbol, last_price_value, stop)
+        trade = _execute_sell_operation(database_session, position, last_price_value, position_quantity, "STOP_LOSS")
         created_trades.append(trade)
-        logger.info("[TRADING][AUTOSELL][SL] %s token=%s pair=%s sold_qty=%.8f price=%.10f", position.token_symbol, position.token_address, position.pair_address, sell_quantity, last_price_value)
         return created_trades
 
-    if tp2 > 0.0 and last_price_value >= tp2 and position_quantity > 0.0:
-        sell_quantity = compute_open_quantity_for_position(database_session, position)
-        if sell_quantity <= 0.0:
-            logger.debug("[TRADING][AUTOSELL][TP2] Ignored because open quantity is zero — token=%s pair=%s", position.token_address, position.pair_address)
-            return created_trades
-
-        trade = trades.sell(database_session, token=token, price=last_price_value, qty=sell_quantity, fee=fee, status=status, phase=PositionPhase.CLOSED)
+    if tp2 > 0.0 and last_price_value >= tp2:
+        logger.info("[TRADING][AUTOSELL][TP2] Triggered for %s @ %.12f (tp2=%.12f)", position.token_symbol, last_price_value, tp2)
+        trade = _execute_sell_operation(database_session, position, last_price_value, position_quantity, "TAKE_PROFIT_2")
         created_trades.append(trade)
-        logger.info("[TRADING][AUTOSELL][TP2] %s token=%s pair=%s sold_qty=%.8f price=%.10f", position.token_symbol, position.token_address, position.pair_address, sell_quantity, last_price_value)
         return created_trades
 
-    if tp1 > 0.0 and last_price_value >= tp1 and position_quantity > 0.0 and position.position_phase == PositionPhase.OPEN:
+    if tp1 > 0.0 and last_price_value >= tp1 and position.position_phase == PositionPhase.OPEN:
         take_profit_fraction = max(0.0, min(1.0, settings.TRADING_TP1_TAKE_PROFIT_FRACTION))
-        partial_quantity = max(0.0, min(position_quantity, position_quantity * take_profit_fraction))
+        partial_quantity = position_quantity * take_profit_fraction
         if partial_quantity > 0.0:
-            trade = trades.sell(database_session, token=token, price=last_price_value, qty=partial_quantity, fee=fee, status=status, phase=PositionPhase.PARTIAL)
+            logger.info("[TRADING][AUTOSELL][TP1] Triggered for %s @ %.12f (tp1=%.12f)", position.token_symbol, last_price_value, tp1)
+            trade = _execute_sell_operation(database_session, position, last_price_value, partial_quantity, "TAKE_PROFIT_1")
             created_trades.append(trade)
 
-            remaining_estimated = (position.open_quantity or 0.0) - partial_quantity
-            logger.info(
-                "[TRADING][AUTOSELL][TP1] %s token=%s pair=%s sold_qty=%.8f price=%.10f remaining_est=%.8f",
-                position.token_symbol, position.token_address, position.pair_address, partial_quantity, last_price_value, remaining_estimated,
-            )
-
-    return created_trades
-
-
-def check_thresholds_and_autosell(database_session: Session, dexscreener_token_information: DexscreenerTokenInformation) -> List[Trade]:
-    created_trades: List[Trade] = []
-    last_price_value = dexscreener_token_information.price_usd or 0.0
-    if last_price_value <= 0.0:
-        return created_trades
-
-    token_address = dexscreener_token_information.base_token.address
-    pair_address = dexscreener_token_information.pair_address
-    chain_id = dexscreener_token_information.chain_id
-
-    positions = (
-        database_session.execute(
-            select(Position).where(
-                Position.token_address == token_address,
-                Position.pair_address == pair_address,
-                Position.blockchain_network == chain_id,
-                Position.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]),
-            )
-        )
-        .scalars()
-        .all()
-    )
-
-    for position in positions:
-        created_trades.extend(_evaluate_position_thresholds(database_session, position, last_price_value))
-
-    if created_trades:
-        database_session.commit()
     return created_trades
 
 
@@ -118,24 +118,19 @@ def check_thresholds_and_autosell_for_token_address(
         database_session: Session,
         token: Token,
         last_price: float,
-) -> List[Trade]:
-    created_trades: List[Trade] = []
+) -> List[TradingTrade]:
+    created_trades: List[TradingTrade] = []
     if not token or last_price <= 0.0:
         return created_trades
 
-    position = (
-        database_session.execute(
-            select(Position).where(
-                Position.blockchain_network == token.chain,
-                Position.token_symbol == token.symbol,
-                Position.token_address == token.token_address,
-                Position.pair_address == token.pair_address,
-                Position.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]),
-            )
-        )
-        .scalars()
-        .first()
+    database_query = select(TradingPosition).where(
+        TradingPosition.blockchain_network == token.chain,
+        TradingPosition.token_address == token.token_address,
+        TradingPosition.pair_address == token.pair_address,
+        TradingPosition.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]),
     )
+    position = database_session.execute(database_query).scalars().first()
+
     if not position:
         return created_trades
 
@@ -143,4 +138,5 @@ def check_thresholds_and_autosell_for_token_address(
 
     if created_trades:
         database_session.commit()
+
     return created_trades

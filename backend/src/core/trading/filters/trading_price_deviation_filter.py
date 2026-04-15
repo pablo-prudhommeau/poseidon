@@ -13,7 +13,7 @@ def apply_price_deviation_filter(
         candidates: list[TradingCandidate],
         token_price_information_list: list[DexscreenerTokenInformation],
 ) -> list[TradingCandidate]:
-    from src.core.trading.analytics.trading_analytics_recorder import TradingAnalyticsRecorder
+    from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
 
     max_deviation = settings.TRADING_MAX_PRICE_DEVIATION_MULTIPLIER
     retained: list[TradingCandidate] = []
@@ -24,7 +24,7 @@ def apply_price_deviation_filter(
 
         if dex_price is None or dex_price <= 0.0:
             logger.debug("[TRADING][FILTER][PRICE] %s — invalid DEX price", symbol)
-            TradingAnalyticsRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, "NO_DEX_PRICE")
+            TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, "NO_DEX_PRICE")
             continue
 
         quoted_price = candidate.dexscreener_token_information.price_usd
@@ -32,7 +32,7 @@ def apply_price_deviation_filter(
             low, high = sorted([dex_price, quoted_price])
             if low > 0.0 and (high / low) > max_deviation:
                 logger.debug("[TRADING][FILTER][PRICE] %s — deviation too high dex=%.10f quoted=%.10f", symbol, dex_price, quoted_price)
-                TradingAnalyticsRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, "PRICE_DEVIATION")
+                TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, "PRICE_DEVIATION")
                 continue
 
         candidate.dex_price = dex_price

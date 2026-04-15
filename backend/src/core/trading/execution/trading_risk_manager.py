@@ -17,7 +17,7 @@ class TradingRiskManager:
         self.stop_loss_fraction_floor = settings.TRADING_STOP_LOSS_FRACTION_FLOOR
         self.stop_loss_fraction_cap = settings.TRADING_STOP_LOSS_FRACTION_CAP
         self.stop_loss_volatility_multiplier = settings.TRADING_RISK_STOP_LOSS_VOLATILITY_MULTIPLIER
-        
+
         self.confidence_multiplier_min = settings.TRADING_RISK_CONFIDENCE_MULTIPLIER_MIN
         self.confidence_multiplier_max = settings.TRADING_RISK_CONFIDENCE_MULTIPLIER_MAX
         self.confidence_momentum_baseline = settings.TRADING_RISK_CONFIDENCE_MOMENTUM_BASELINE
@@ -53,24 +53,24 @@ class TradingRiskManager:
             raise ValueError("entry_price must be > 0")
 
         volatility = self._estimate_atr_like_volatility(candidate) or self.default_volatility_fraction
-        
+
         base_take_profit_one_fraction = self.tp1_exit_fraction_default
         base_take_profit_two_fraction = self.tp2_exit_fraction_default
-        
+
         stop_loss_fraction = min(self.stop_loss_fraction_cap, max(self.stop_loss_fraction_floor, self.stop_loss_volatility_multiplier * volatility))
 
         if candidate.quality_score is None:
             logger.error("[TRADING][RISK] Candidate %s reached Risk Manager without a Quality Score", candidate.dexscreener_token_information.base_token.symbol)
             raise ValueError("Candidate reached execution phase without a computed Quality Score")
-            
+
         momentum_strength = candidate.quality_score
         uncertainty_penalty = max(0.0, volatility - self.target_position_volatility_fraction) * self.uncertainty_penalty_multiplier
-        
+
         momentum_bonus = (momentum_strength - self.confidence_momentum_baseline) / self.confidence_momentum_divisor
         confidence_multiplier = 1.0 + momentum_bonus - uncertainty_penalty
-        
+
         bounded_multiplier = max(self.confidence_multiplier_min, min(self.confidence_multiplier_max, confidence_multiplier))
-        
+
         if bounded_multiplier >= 1.2:
             logger.info("[TRADING][RISK] High pump probability detected (multiplier=%.2fx). Expanding Take Profits.", bounded_multiplier)
         elif bounded_multiplier <= 0.8:

@@ -98,7 +98,7 @@ class SolanaSigner:
         if not hasattr(self.client, "is_blockhash_valid"):
             return None
         try:
-            resp = self.client.is_blockhash_valid(blockhash)  # pylint: disable=no-member
+            resp = self.client.is_blockhash_valid(blockhash)
             try:
                 value = resp.__getattribute__("value")
                 if isinstance(value, bool):
@@ -107,7 +107,7 @@ class SolanaSigner:
                 pass
             return None
         except Exception as exception:
-            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] is_blockhash_valid failed — %s", exception)
+            logger.exception("[BLOCKCHAIN][SOLANA][SIGNER] is_blockhash_valid failed — %s", exception)
             return None
 
     def _sign_versioned_bytes(self, raw_bytes: bytes) -> bytes:
@@ -124,7 +124,7 @@ class SolanaSigner:
             logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Signed using constructor(keypairs)")
             return signed_bytes
         except Exception as exception_constructor_keypair:
-            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] constructor(keypairs) path failed: %s", exception_constructor_keypair)
+            logger.exception("[BLOCKCHAIN][SOLANA][SIGNER] constructor(keypairs) path failed: %s", exception_constructor_keypair)
 
         try:
             manual_signature: Signature = self.keypair.sign_message(bytes(message))
@@ -157,7 +157,7 @@ class SolanaSigner:
             if valid is True:
                 logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Recent blockhash is valid: %s", blockhash_text)
         except Exception as exception_check:
-            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Pre-send blockhash check skipped (%s)", exception_check)
+            logger.exception("[BLOCKCHAIN][SOLANA][SIGNER] Pre-send blockhash check skipped (%s)", exception_check)
 
         signed_payload = self._sign_versioned_bytes(raw_bytes)
 

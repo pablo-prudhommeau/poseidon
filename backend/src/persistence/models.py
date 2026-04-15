@@ -29,7 +29,7 @@ class ExecutionStatus(Enum):
     LIVE = "LIVE"
 
 
-class Position(DatabaseBaseModel):
+class TradingPosition(DatabaseBaseModel):
     __tablename__ = "trading_positions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -37,6 +37,7 @@ class Position(DatabaseBaseModel):
     blockchain_network: Mapped[str] = mapped_column(String(32), nullable=False)
     token_address: Mapped[str] = mapped_column(String(128), nullable=False)
     pair_address: Mapped[str] = mapped_column(String(128), nullable=False)
+    dex_id: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     open_quantity: Mapped[float] = mapped_column(Float, nullable=False)
     current_quantity: Mapped[float] = mapped_column(Float, nullable=False)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
@@ -49,10 +50,10 @@ class Position(DatabaseBaseModel):
     closed_at: Mapped[Optional[datetime]] = mapped_column(default=None, nullable=True)
 
     def __repr__(self) -> str:
-        return f"<Position token_symbol={self.token_symbol} token_address={self.token_address[-6:]} open_quantity={self.open_quantity} position_phase={self.position_phase}>"
+        return f"<TradingPosition token_symbol={self.token_symbol} token_address={self.token_address[-6:]} open_quantity={self.open_quantity} position_phase={self.position_phase}>"
 
 
-class Trade(DatabaseBaseModel):
+class TradingTrade(DatabaseBaseModel):
     __tablename__ = "trading_trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -66,15 +67,16 @@ class Trade(DatabaseBaseModel):
     execution_status: Mapped[ExecutionStatus] = mapped_column(SQLAlchemyEnum(ExecutionStatus), nullable=False)
     token_address: Mapped[str] = mapped_column(String(128), nullable=False)
     pair_address: Mapped[str] = mapped_column(String(128), nullable=False)
+    dex_id: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     transaction_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
 
     def __repr__(self) -> str:
-        return f"<Trade trade_side={self.trade_side} token_symbol={self.token_symbol} execution_quantity={self.execution_quantity} execution_price={self.execution_price}>"
+        return f"<TradingTrade trade_side={self.trade_side} token_symbol={self.token_symbol} execution_quantity={self.execution_quantity} execution_price={self.execution_price}>"
 
 
-class PortfolioSnapshot(DatabaseBaseModel):
-    __tablename__ = "portfolio_snapshots"
+class TradingPortfolioSnapshot(DatabaseBaseModel):
+    __tablename__ = "trading_portfolio_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     total_equity_value: Mapped[float] = mapped_column(Float, nullable=False)
@@ -83,11 +85,11 @@ class PortfolioSnapshot(DatabaseBaseModel):
     created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
 
     def __repr__(self) -> str:
-        return f"<PortfolioSnapshot total_equity_value={self.total_equity_value} available_cash_balance={self.available_cash_balance} active_holdings_value={self.active_holdings_value}>"
+        return f"<TradingPortfolioSnapshot total_equity_value={self.total_equity_value} available_cash_balance={self.available_cash_balance} active_holdings_value={self.active_holdings_value}>"
 
 
-class Analytics(DatabaseBaseModel):
-    __tablename__ = "trading_analytics"
+class TradingEvaluation(DatabaseBaseModel):
+    __tablename__ = "trading_evaluations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
@@ -118,22 +120,34 @@ class Analytics(DatabaseBaseModel):
     transaction_count_h1: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     transaction_count_h6: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     transaction_count_h24: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buy_to_sell_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    market_cap_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    fully_diluted_valuation_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     execution_decision: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
     execution_decision_reason: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     sizing_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     order_notional_value_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     free_cash_before_execution_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     free_cash_after_execution_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    has_trade_outcome: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    outcome_trade_identifier: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    outcome_closed_at: Mapped[datetime] = mapped_column(nullable=False, default=get_current_local_datetime)
-    outcome_holding_duration_minutes: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    outcome_realized_profit_and_loss_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    outcome_realized_profit_and_loss_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    outcome_was_profitable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    outcome_exit_reason: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     raw_dexscreener_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     raw_configuration_settings: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    outcomes: Mapped[list[TradingOutcome]] = relationship("TradingOutcome", back_populates="evaluation", cascade="all, delete-orphan")
+
+
+class TradingOutcome(DatabaseBaseModel):
+    __tablename__ = "trading_outcomes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evaluation_id: Mapped[int] = mapped_column(ForeignKey("trading_evaluations.id"), nullable=False, index=True)
+    trade_id: Mapped[Optional[int]] = mapped_column(ForeignKey("trading_trades.id"), nullable=True)
+    exit_reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    realized_profit_and_loss_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    realized_profit_and_loss_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    holding_duration_minutes: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_profitable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    occurred_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
+    evaluation: Mapped[TradingEvaluation] = relationship("TradingEvaluation", back_populates="outcomes")
+    trade: Mapped[Optional[TradingTrade]] = relationship("TradingTrade")
 
 
 class DcaStrategy(DatabaseBaseModel):

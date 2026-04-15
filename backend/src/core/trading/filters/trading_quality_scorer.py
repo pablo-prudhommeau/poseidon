@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.core.trading.scoring.trading_scoring_engine import blend_momentum_percentages, compute_buy_sell_score
 from src.configuration.config import settings
+from src.core.trading.scoring.trading_scoring_engine import blend_momentum_percentages, compute_buy_sell_score
 from src.core.trading.trading_structures import TradingCandidate, TradingQualityContext, TradingQualityResult
 from src.core.trading.utils.trading_candidate_utils import is_finite_number
 from src.core.utils.format_utils import _tail

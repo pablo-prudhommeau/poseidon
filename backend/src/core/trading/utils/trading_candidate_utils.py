@@ -36,6 +36,7 @@ def candidate_from_dexscreener_token_information(token_information: DexscreenerT
             chain=token_information.chain_id,
             token_address=token_information.base_token.address,
             pair_address=token_information.pair_address,
+            dex_id=token_information.dex_id,
         ),
     )
 
@@ -82,6 +83,7 @@ def preload_best_prices(candidates: list[TradingCandidate]) -> list[DexscreenerT
                 chain=candidate.dexscreener_token_information.chain_id,
                 token_address=candidate.dexscreener_token_information.base_token.address,
                 pair_address=candidate.dexscreener_token_information.pair_address,
+                dex_id=candidate.dexscreener_token_information.dex_id,
             )
         )
 
@@ -104,7 +106,7 @@ def run_awaitable_in_fresh_loop(asynchronous_task: Awaitable[U], debug_label: st
             raise
 
         resolved_label = debug_label or "asynchronous_task"
-        logger.debug("[TRADING][ASYNC] Event loop constraint detected for task %s with message: %s. Re-running in isolated thread.", resolved_label, exception_message)
+        logger.exception("[TRADING][ASYNC] Event loop constraint detected for task %s with message: %s. Re-running in isolated thread.", resolved_label, exception_message)
 
         task_result_container: dict[str, U] = {}
         task_error_container: dict[str, BaseException] = {}

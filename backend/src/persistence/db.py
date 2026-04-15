@@ -95,5 +95,5 @@ def initialize_database() -> None:
         DatabaseBaseModel.metadata.create_all(bind=database_engine)
         logger.info("[DATABASE][INITIALIZATION] Database schema successfully created on target engine")
     except Exception as initialization_exception:
-        logger.critical("[DATABASE][INITIALIZATION] Failed to create database schema due to error: %s", initialization_exception)
+        logger.exception("[DATABASE][INITIALIZATION] Failed to create database schema due to error: %s", initialization_exception)
         raise initialization_exception

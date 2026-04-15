@@ -13,6 +13,8 @@ from src.integrations.dexscreener.dexscreener_constants import (
     TOKEN_BOOSTS_LATEST_ENDPOINT,
     TOKEN_BOOSTS_TOP_ENDPOINT,
     TOKEN_PROFILES_ENDPOINT,
+    TOKEN_PROFILES_RECENT_UPDATES_ENDPOINT,
+    COMMUNITY_TAKEOVERS_ENDPOINT,
 )
 from src.integrations.dexscreener.dexscreener_helpers import (
     _http_get_json,
@@ -214,6 +216,8 @@ async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTok
         TOKEN_BOOSTS_LATEST_ENDPOINT,
         TOKEN_BOOSTS_TOP_ENDPOINT,
         TOKEN_PROFILES_ENDPOINT,
+        TOKEN_PROFILES_RECENT_UPDATES_ENDPOINT,
+        COMMUNITY_TAKEOVERS_ENDPOINT,
     ]
 
     async with httpx.AsyncClient() as client:

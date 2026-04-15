@@ -8,22 +8,24 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import (
-    CreateDcaPayload,
-    HealthPayload,
-    HealthComponentsPayload,
-    HealthComponentPayload,
-    PaperResetPayload,
-    CreateDcaStrategyResponse,
+    DcaStrategyCreatePayload,
+    SystemHealthPayload,
+    SystemHealthComponentsPayload,
+    SystemHealthComponentPayload,
+    TradingPaperResetPayload,
+    DcaStrategyCreateResponse,
     DcaStrategiesResponse,
     DcaOrdersResponse,
-    AnalyticsResponse,
-    PositionsResponse, DcaStrategyPayload,
+    TradingEvaluationsResponse,
+    TradingPositionsResponse,
+    DcaStrategyPayload,
+    AnalyticsAggregatedResponse,
 )
 from src.api.serializers import (
-    serialize_analytics,
+    serialize_trading_evaluation,
     serialize_dca_strategy,
     serialize_dca_order,
-    serialize_position,
+    serialize_trading_position,
 )
 from src.api.websocket.websocket_hub import schedule_full_recompute_broadcast
 from src.configuration.config import settings
@@ -35,10 +37,11 @@ from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
 from src.logging.logger import get_application_logger
 from src.persistence import service
-from src.persistence.dao.analytics import retrieve_recent_analytics
-from src.persistence.dao.dca_dao import DcaDao
-from src.persistence.dao.portfolio_snapshots import ensure_initial_cash
-from src.persistence.dao.positions import retrieve_open_positions
+from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
+from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
+from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
+from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.db import get_database_session
 from src.persistence.models import DcaStrategy
 
@@ -49,70 +52,103 @@ aave_executor_client = AaveExecutor()
 
 
 @router.get("/api/health", tags=["health"])
-async def get_health_status(db: Session = Depends(get_database_session)) -> HealthPayload:
+def get_health_status(database_session: Session = Depends(get_database_session)) -> SystemHealthPayload:
     logger.debug("[HTTP][HEALTH][DB] Initiating health check sequence")
     current_timestamp = get_current_local_datetime().isoformat()
-    is_db_connected = False
+    is_database_connected = False
 
     try:
-        db.execute(text("SELECT 1"))
-        is_db_connected = True
+        database_session.execute(text("SELECT 1"))
+        is_database_connected = True
         logger.info("[HTTP][HEALTH][DB] Database connectivity successfully validated")
     except Exception as exception:
-        logger.exception("[HTTP][HEALTH][DB] Health check database connectivity failed", exception)
+        logger.exception("[HTTP][HEALTH][DB] Health check database connectivity failed: %s", exception)
 
-    return HealthPayload(
-        status="ok" if is_db_connected else "degraded",
+    return SystemHealthPayload(
+        status="ok" if is_database_connected else "degraded",
         timestamp=current_timestamp,
-        components=HealthComponentsPayload(
-            database=HealthComponentPayload(ok=is_db_connected)
+        components=SystemHealthComponentsPayload(
+            database=SystemHealthComponentPayload(ok=is_database_connected)
         ),
     )
 
 
 @router.post("/api/paper/reset", tags=["paper"])
-def reset_paper_mode(db: Session = Depends(get_database_session)) -> PaperResetPayload:
+def reset_paper_mode(database_session: Session = Depends(get_database_session)) -> TradingPaperResetPayload:
     logger.debug("[HTTP][PAPER][RESET] Initiating paper mode reset process")
-    service.reset_paper(db)
-    ensure_initial_cash(db)
+    service.reset_paper(database_session)
+
+    portfolio_dao = TradingPortfolioSnapshotDao(database_session)
+    if not portfolio_dao.retrieve_latest_snapshot():
+        portfolio_dao.create_snapshot(
+            equity=settings.PAPER_STARTING_CASH,
+            cash=settings.PAPER_STARTING_CASH,
+            holdings=0.0
+        )
+
     logger.info("[HTTP][PAPER][RESET] Paper mode has been reset and initial cash properly ensured")
 
     try:
-        loop = asyncio.get_running_loop()
-        if loop.is_running() and not loop.is_closed():
+        event_loop = asyncio.get_running_loop()
+        if event_loop.is_running() and not event_loop.is_closed():
             schedule_full_recompute_broadcast()
             logger.info("[HTTP][PAPER][REBROADCAST] Scheduled immediate recompute broadcast after reset")
         else:
             logger.debug("[HTTP][PAPER][REBROADCAST] No running event loop detected, user interface will refresh on next orchestrator tick")
     except RuntimeError as exception:
-        logger.debug("[HTTP][PAPER][REBROADCAST] Event loop runtime error encountered, user interface will refresh on next orchestrator tick", exception)
+        logger.exception("[HTTP][PAPER][REBROADCAST] Event loop runtime error encountered, user interface will refresh on next orchestrator tick: %s", exception)
 
-    return PaperResetPayload(ok=True)
+    return TradingPaperResetPayload(ok=True)
 
 
 @router.get("/api/analytics", tags=["analytics"])
-async def get_analytics_history(
-        limit: int = Query(5000, ge=1, le=10000),
-        db: Session = Depends(get_database_session),
-) -> AnalyticsResponse:
-    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving recent analytics history with limit %s", limit)
-    analytics_rows = retrieve_recent_analytics(db, maximum_results_limit=limit)
-    serialized_analytics = [serialize_analytics(analytics_row) for analytics_row in analytics_rows]
-    logger.info("[HTTP][ANALYTICS][FETCH] Successfully retrieved %s analytics records", len(serialized_analytics))
-    return AnalyticsResponse(analytics=serialized_analytics)
+def get_analytics_history(
+        limit_results: int = Query(50000, ge=1, le=50000),
+        database_session: Session = Depends(get_database_session),
+) -> TradingEvaluationsResponse:
+    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving recent analytics history with limit %s", limit_results)
+    evaluation_dao = TradingEvaluationDao(database_session)
+    evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
+    serialized_evaluations = [serialize_trading_evaluation(evaluation_row) for evaluation_row in evaluation_rows]
+    logger.info("[HTTP][EVALUATION][FETCH] Successfully retrieved %s evaluation records", len(serialized_evaluations))
+    return TradingEvaluationsResponse(evaluations=serialized_evaluations)
+
+
+@router.get("/api/analytics/aggregated", tags=["analytics"])
+def get_aggregated_analytics(
+        limit_results: int = Query(50000, ge=1, le=50000),
+        database_session: Session = Depends(get_database_session),
+) -> AnalyticsAggregatedResponse:
+    from src.api.http.analytics_aggregation_service import build_aggregated_analytics
+    from src.persistence.models import PositionPhase
+
+    logger.debug("[HTTP][ANALYTICS][AGGREGATED] Retrieving and aggregating analytics with limit %s", limit_results)
+    evaluation_dao = TradingEvaluationDao(database_session)
+    position_dao = TradingPositionDao(database_session)
+
+    evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
+
+    staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
+    staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
+
+    aggregated_response = build_aggregated_analytics(evaluation_rows, staled_token_addresses)
+    logger.info("[HTTP][ANALYTICS][AGGREGATED] Successfully aggregated %s evaluations", len(evaluation_rows))
+    return aggregated_response
 
 
 @router.get("/api/positions", tags=["positions"])
-async def get_open_positions_list(db: Session = Depends(get_database_session)) -> PositionsResponse:
+async def get_open_positions_list(database_session: Session = Depends(get_database_session)) -> TradingPositionsResponse:
     logger.debug("[HTTP][POSITIONS][FETCH] Retrieving currently open positions")
-    open_positions = retrieve_open_positions(db)
+    position_dao = TradingPositionDao(database_session)
+    open_positions = position_dao.retrieve_open_positions()
 
     tokens_list: List[Token] = [
         Token(
             chain=position.blockchain_network,
             symbol=position.token_symbol,
             token_address=position.token_address,
-            pair_address=position.pair_address
+            pair_address=position.pair_address,
+            dex_id=position.dex_id,
         )
         for position in open_positions
     ]
@@ -129,19 +165,21 @@ async def get_open_positions_list(db: Session = Depends(get_database_session)) -
             ),
             None,
         )
-        serialized_positions.append(serialize_position(position, last_price=last_known_price))
+        serialized_positions.append(serialize_trading_position(position, last_price=last_known_price))
 
     logger.info("[HTTP][POSITIONS][FETCH] Successfully retrieved %s open positions", len(serialized_positions))
-    return PositionsResponse(positions=serialized_positions)
+    return TradingPositionsResponse(positions=serialized_positions)
 
 
 @router.post("/api/dca/strategies", tags=["dca"])
 async def create_new_dca_strategy(
-        strategy_payload: CreateDcaPayload,
-        db: Session = Depends(get_database_session),
-) -> CreateDcaStrategyResponse:
+        strategy_payload: DcaStrategyCreatePayload,
+        database_session: Session = Depends(get_database_session),
+) -> DcaStrategyCreateResponse:
     logger.debug("[HTTP][DCA][STRATEGY][CREATE] Initiating DCA strategy creation for symbol %s", strategy_payload.binance_trading_pair)
-    dca_dao = DcaDao(db)
+    dca_strategy_dao = DcaStrategyDao(database_session)
+    dca_order_dao = DcaOrderDao(database_session)
+
     amount_per_order = strategy_payload.total_allocated_budget / strategy_payload.total_planned_executions if strategy_payload.total_planned_executions > 0 else 0.0
 
     backtest_comparative_snapshot = await DcaBacktester.generate_comparative_snapshot(
@@ -176,7 +214,7 @@ async def create_new_dca_strategy(
         aave_estimated_annual_percentage_yield=settings.AAVE_ESTIMATED_APY,
         strategy_start_date=strategy_payload.strategy_start_date,
         strategy_end_date=strategy_payload.strategy_end_date,
-        strategy_status=DcaStrategyStatus.ACTIVE,
+        strategy_status=DcaStrategyStatus.ACTIVE.value,
         bypass_security_approval=strategy_payload.bypass_security_approval,
         available_dry_powder=0.0,
         total_deployed_amount=0.0,
@@ -188,15 +226,15 @@ async def create_new_dca_strategy(
         updated_at=current_local_time,
     )
 
-    saved_dca_strategy = dca_dao.create_strategy(new_dca_strategy)
+    saved_dca_strategy = dca_strategy_dao.save(new_dca_strategy)
     scheduled_orders = DcaScheduler.generate_linear_execution_calendar(saved_dca_strategy)
-    dca_dao.bulk_create_orders(scheduled_orders)
+    dca_order_dao.bulk_save(scheduled_orders)
 
     logger.info("[HTTP][DCA][STRATEGY][CREATE] Successfully created DCA strategy with id %s generating %s orders", saved_dca_strategy.id, len(scheduled_orders))
 
     schedule_full_recompute_broadcast()
 
-    return CreateDcaStrategyResponse(
+    return DcaStrategyCreateResponse(
         message="Strategy successfully created",
         strategy_id=saved_dca_strategy.id,
         orders_count=len(scheduled_orders),
@@ -204,10 +242,10 @@ async def create_new_dca_strategy(
 
 
 @router.get("/api/dca/strategies", tags=["dca"])
-async def get_all_dca_strategies(db: Session = Depends(get_database_session)) -> DcaStrategiesResponse:
+async def get_all_dca_strategies(database_session: Session = Depends(get_database_session)) -> DcaStrategiesResponse:
     logger.debug("[HTTP][DCA][STRATEGIES][FETCH] Retrieving all registered DCA strategies")
-    dca_dao = DcaDao(db)
-    all_dca_strategies = dca_dao.get_all_strategies()
+    dca_strategy_dao = DcaStrategyDao(database_session)
+    all_dca_strategies = dca_strategy_dao.retrieve_all()
     dca_strategy_payloads: List[DcaStrategyPayload] = []
     for registered_strategy in all_dca_strategies:
         live_metrics = await aave_executor_client.get_live_metrics(
@@ -220,11 +258,11 @@ async def get_all_dca_strategies(db: Session = Depends(get_database_session)) ->
     return DcaStrategiesResponse(strategies=dca_strategy_payloads)
 
 
-@router.get("/api/dca/strategies/{strategy_id}/orders", tags=["dca"])
-async def get_dca_strategy_orders(strategy_id: int, db: Session = Depends(get_database_session)) -> DcaOrdersResponse:
-    logger.debug("[HTTP][DCA][ORDERS][FETCH] Retrieving orders mapped to DCA strategy id %s", strategy_id)
-    dca_dao = DcaDao(db)
-    strategy_orders = dca_dao.get_orders_for_strategy(strategy_id)
-    serialized_orders = [serialize_dca_order(order) for order in strategy_orders]
-    logger.info("[HTTP][DCA][ORDERS][FETCH] Successfully retrieved %s orders mapped to DCA strategy id %s", len(serialized_orders), strategy_id)
+@router.get("/api/dca/strategies/{strategy_uid}/orders", tags=["dca"])
+def get_dca_strategy_orders(strategy_uid: int, database_session: Session = Depends(get_database_session)) -> DcaOrdersResponse:
+    logger.debug("[HTTP][DCA][ORDERS][FETCH] Retrieving orders mapped to DCA strategy id %s", strategy_uid)
+    dca_order_dao = DcaOrderDao(database_session)
+    strategy_orders = dca_order_dao.retrieve_by_strategy(strategy_uid)
+    serialized_orders = [serialize_dca_order(execution_order) for execution_order in strategy_orders]
+    logger.info("[HTTP][DCA][ORDERS][FETCH] Successfully retrieved %s orders mapped to DCA strategy id %s", len(serialized_orders), strategy_uid)
     return DcaOrdersResponse(orders=serialized_orders)

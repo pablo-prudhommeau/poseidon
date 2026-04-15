@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.core.trading.scoring.trading_scoring_engine import TradingScoringEngine
 from src.configuration.config import settings
+from src.core.trading.scoring.trading_scoring_engine import TradingScoringEngine
 from src.core.trading.trading_structures import TradingCandidate, TradingPipelineContext
 from src.logging.logger import get_application_logger
 

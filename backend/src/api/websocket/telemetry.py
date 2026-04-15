@@ -3,34 +3,38 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from src.api.http.api_schemas import AnalyticsPayload
-from src.api.serializers import serialize_analytics
-from src.api.websocket.websocket_manager import websocket_manager
-from src.core.structures.structures import WebsocketMessageType
+from sqlalchemy.orm import Session
+
+from src.api.http.api_schemas import TradingEvaluationPayload
+from src.api.serializers import serialize_trading_evaluation
 from src.logging.logger import get_application_logger
-from src.persistence.dao.analytics import insert_analytics_record, attach_trade_outcome_to_analytics
+from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
+from src.persistence.dao.trading.trading_outcome_dao import TradingOutcomeDao
 from src.persistence.db import _session
-from src.persistence.models import Analytics
+from src.persistence.models import TradingEvaluation, TradingOutcome
 
 logger = get_application_logger(__name__)
 
 
 class TelemetryService:
     @staticmethod
-    def record_analytics_event(analytics_record: Analytics) -> AnalyticsPayload:
-        logger.debug("[WEBSOCKET][TELEMETRY][RECORD] Initiating analytics event recording process")
+    def record_analytics_event(evaluation_record: TradingEvaluation, database_session: Optional[Session] = None) -> TradingEvaluationPayload:
+        logger.debug("[TRADING][TELEMETRY][RECORD] Initiating evaluation event recording process")
 
-        with _session() as db:
-            insert_analytics_record(db, analytics_record)
-            serialized_payload = serialize_analytics(analytics_record)
+        def _execute_recording(session_to_use: Session) -> TradingEvaluationPayload:
+            evaluation_dao = TradingEvaluationDao(session_to_use)
+            evaluation_dao.save(evaluation_record)
+            session_to_use.flush()
+            return serialize_trading_evaluation(evaluation_record)
 
-        logger.info("[WEBSOCKET][TELEMETRY][RECORD] Successfully recorded analytics event")
+        if database_session is not None:
+            serialized_payload = _execute_recording(database_session)
+        else:
+            with _session() as session:
+                serialized_payload = _execute_recording(session)
+                session.commit()
 
-        websocket_manager.broadcast_json_payload_threadsafe({
-            "type": WebsocketMessageType.ANALYTICS.value,
-            "payload": serialized_payload.model_dump(mode="json")
-        })
-
+        logger.info("[TRADING][TELEMETRY][RECORD] Successfully recorded evaluation event")
         return serialized_payload
 
     @staticmethod
@@ -38,38 +42,50 @@ class TelemetryService:
             token_address: str,
             trade_id: int,
             closed_at: datetime,
-            profit_and_loss_percentage: float,
-            profit_and_loss_usd: float,
+            realized_profit_and_loss_percentage: float,
+            realized_profit_and_loss_usd: float,
             holding_duration_minutes: float,
             was_profitable: bool,
             exit_reason: Optional[str] = None,
-    ) -> Optional[AnalyticsPayload]:
-        logger.debug("[WEBSOCKET][TELEMETRY][OUTCOME] Initiating trade outcome linkage for trade id %s", trade_id)
+            database_session: Optional[Session] = None,
+    ) -> Optional[TradingEvaluationPayload]:
+        logger.debug("[TRADING][TELEMETRY][OUTCOME] Initiating trade outcome linkage for trade id %s", trade_id)
 
-        with _session() as db:
-            analytics_record = attach_trade_outcome_to_analytics(
-                db,
-                token_address=token_address,
-                closed_at_timestamp=closed_at,
-                trade_identifier=trade_id,
-                profit_and_loss_percentage=profit_and_loss_percentage,
-                profit_and_loss_usd=profit_and_loss_usd,
+        def _execute_linkage(session_to_use: Session) -> Optional[TradingEvaluationPayload]:
+            evaluation_dao = TradingEvaluationDao(session_to_use)
+            outcome_dao = TradingOutcomeDao(session_to_use)
+
+            evaluation = evaluation_dao.retrieve_latest_buy_decision(token_address, closed_at.timestamp())
+
+            if not evaluation:
+                logger.warning("[TRADING][TELEMETRY][OUTCOME] Trade outcome linkage failed, no evaluation record found for token %s", token_address)
+                return None
+
+            outcome_record = TradingOutcome(
+                evaluation_id=evaluation.id,
+                trade_id=trade_id,
+                occurred_at=closed_at,
+                realized_profit_and_loss_percentage=realized_profit_and_loss_percentage,
+                realized_profit_and_loss_usd=realized_profit_and_loss_usd,
                 holding_duration_minutes=holding_duration_minutes,
-                was_profitable=was_profitable,
+                is_profitable=was_profitable,
                 exit_reason=exit_reason,
             )
 
-            if not analytics_record:
-                logger.warning("[WEBSOCKET][TELEMETRY][OUTCOME] Trade outcome linkage failed, no analytics record found for trade id %s", trade_id)
-                return None
+            outcome_dao.save(outcome_record)
+            session_to_use.flush()
 
-            serialized_payload = serialize_analytics(analytics_record)
+            return serialize_trading_evaluation(evaluation)
 
-        logger.info("[WEBSOCKET][TELEMETRY][OUTCOME] Successfully linked outcome for trade id %s", trade_id)
+        if database_session is not None:
+            serialized_payload = _execute_linkage(database_session)
+        else:
+            with _session() as session:
+                serialized_payload = _execute_linkage(session)
+                session.commit()
 
-        websocket_manager.broadcast_json_payload_threadsafe({
-            "type": WebsocketMessageType.ANALYTICS.value,
-            "payload": serialized_payload.model_dump(mode="json")
-        })
+        if serialized_payload:
+            logger.info("[TRADING][TELEMETRY][OUTCOME] Successfully linked outcome for trade id %s", trade_id)
+
 
         return serialized_payload

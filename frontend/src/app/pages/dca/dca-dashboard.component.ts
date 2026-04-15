@@ -4,7 +4,7 @@ import {CardModule} from 'primeng/card';
 import {SelectModule} from 'primeng/select';
 import {ApiService} from '../../api.service';
 import {WebSocketService} from '../../core/websocket.service';
-import {DcaStrategy} from '../../core/models';
+import {DcaStrategyPayload} from '../../core/models';
 import {DcaStrategyPathProjectionComponent} from "./dca-strategy-path-projection/dca-strategy-path-projection.component";
 import {DcaStrategyExecutionTimelineComponent} from "./dca-strategy-execution-timeline/dca-strategy-execution-timeline.component";
 import {DcaSynthesisComponent} from "./dca-synthesis/dca-synthesis.component";
@@ -28,10 +28,10 @@ export class DcaDashboardComponent implements OnInit {
     private readonly websocketService = inject(WebSocketService);
     private readonly apiService = inject(ApiService);
 
-    public readonly dcaStrategies: Signal<DcaStrategy[]> = computed(() => this.websocketService.dcaStrategies());
+    public readonly dcaStrategies: Signal<DcaStrategyPayload[]> = computed(() => this.websocketService.dcaStrategies());
     public readonly selectedStrategyId = signal<number | null>(null);
 
-    public readonly activeStrategy = computed<DcaStrategy | null>(() => {
+    public readonly activeStrategy = computed<DcaStrategyPayload | null>(() => {
         const strategiesList = this.dcaStrategies();
         if (strategiesList.length === 0) {
             return null;
@@ -42,7 +42,7 @@ export class DcaDashboardComponent implements OnInit {
             return strategiesList[0];
         }
 
-        return strategiesList.find((strategy: DcaStrategy) => strategy.id === currentId) ?? strategiesList[0];
+        return strategiesList.find((strategy: DcaStrategyPayload) => strategy.id === currentId) ?? strategiesList[0];
     });
 
     constructor() {
@@ -56,7 +56,7 @@ export class DcaDashboardComponent implements OnInit {
 
     public ngOnInit(): void {
         this.apiService.getDcaStrategies().subscribe({
-            next: (strategies: DcaStrategy[]) => {
+            next: (strategies: DcaStrategyPayload[]) => {
                 if (this.websocketService.dcaStrategies().length === 0) {
                     this.websocketService.dcaStrategies.set(strategies);
                 }

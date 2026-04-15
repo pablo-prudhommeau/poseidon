@@ -18,7 +18,8 @@ from src.integrations.telegram.telegram_structures import (
     TelegramInlineKeyboardMarkup,
 )
 from src.logging.logger import get_application_logger
-from src.persistence.dao.dca_dao import DcaDao
+from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 from src.persistence.models import DcaOrder, DcaStrategy
 
 logger = get_application_logger(__name__)
@@ -27,7 +28,8 @@ logger = get_application_logger(__name__)
 class DcaManager:
     def __init__(self, database_session: Session) -> None:
         self.database_session = database_session
-        self.dca_dao = DcaDao(database_session)
+        self.dca_strategy_dao = DcaStrategyDao(database_session)
+        self.dca_order_dao = DcaOrderDao(database_session)
         self.aave_executor = AaveExecutor()
 
     def _resolve_action_display_title(self, action_description: str) -> str:
@@ -85,8 +87,9 @@ class DcaManager:
             ema_warmup_limit = settings.AAVE_DCA_EMA50_WARMUP_KLINES
             market_data = await fetch_exponential_moving_average_and_price(dca_strategy.binance_trading_pair, "1h", ema_warmup_limit)
 
-            remaining_orders_count = self.dca_dao.get_pending_orders_count(dca_strategy.id)
-            is_final_execution = (remaining_orders_count == 1)
+            pending_orders = self.dca_order_dao.retrieve_pending_by_strategy(dca_strategy.id)
+            remaining_orders_count = len(pending_orders)
+            is_final_execution = (remaining_orders_count <= 1)
 
             allocation_verdict = DcaAllocationEngine.calculate_dynamic_allocation(
                 nominal_investment_amount=dca_order.planned_source_asset_amount,
@@ -101,7 +104,7 @@ class DcaManager:
             dca_order.executed_source_asset_amount = allocation_verdict.spend_amount
             dca_order.actual_execution_price = market_data.latest_closing_price
             dca_order.allocation_decision_description = allocation_verdict.action_description
-            self.dca_dao.update_order(dca_order)
+            self.dca_order_dao.save(dca_order)
 
             logger.info(
                 "[DCA][MANAGER][ALLOCATION] Decision resolved [%s]: Planned=%0.2f, Actual=%0.2f, DryPowder Delta=%0.2f",
@@ -114,7 +117,7 @@ class DcaManager:
             if not dca_strategy.bypass_security_approval:
                 logger.info("[DCA][MANAGER][APPROVAL] Order identifier %s requires user authorization before proceeding", dca_order.id)
                 dca_order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL
-                self.dca_dao.update_order(dca_order)
+                self.dca_order_dao.save(dca_order)
                 self._send_approval_request(dca_order, dca_strategy)
                 schedule_full_recompute_broadcast()
                 return
@@ -128,7 +131,7 @@ class DcaManager:
                 )
 
             dca_order.order_status = DcaOrderStatus.APPROVED
-            self.dca_dao.update_order(dca_order)
+            self.dca_order_dao.save(dca_order)
 
         await self.execute_onchain_defi_routing_pipeline(dca_order, dca_strategy)
 
@@ -159,8 +162,8 @@ class DcaManager:
                     dca_order.transaction_hash = "AVERAGE_PRICE_PROTECTION_BYPASS"
 
                     dca_strategy.available_dry_powder += dry_powder_delta
-                    self.dca_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
-                    self.dca_dao.update_order(dca_order)
+                    self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
+                    self.dca_order_dao.save(dca_order)
                     schedule_full_recompute_broadcast()
 
                     send_alert(
@@ -178,13 +181,15 @@ class DcaManager:
 
                 if dca_order.order_status == DcaOrderStatus.APPROVED:
                     dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
-                    self.dca_dao.update_order(dca_order)
+                    self.dca_order_dao.save(dca_order)
+                    self.database_session.commit()
                     schedule_full_recompute_broadcast()
                     await asyncio.sleep(2)
 
                 if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
                     dca_order.order_status = DcaOrderStatus.SWAPPED
-                    self.dca_dao.update_order(dca_order)
+                    self.dca_order_dao.save(dca_order)
+                    self.database_session.commit()
                     schedule_full_recompute_broadcast()
                     await asyncio.sleep(2)
 
@@ -196,8 +201,9 @@ class DcaManager:
                         dca_order.executed_target_asset_amount = 0.0
 
                     dca_strategy.available_dry_powder += dry_powder_delta
-                    self.dca_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
-                    self.dca_dao.update_order(dca_order)
+                    self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
+                    self.dca_order_dao.save(dca_order)
+                    self.database_session.commit()
                     schedule_full_recompute_broadcast()
 
                 display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
@@ -215,16 +221,16 @@ class DcaManager:
             except Exception as exception:
                 logger.exception(
                     "[DCA][MANAGER][PAPER][ERROR] Pipeline execution failed at status %s for order identifier %s",
-                    dca_order.order_status.name,
+                    dca_order.order_status,
                     dca_order.id
                 )
                 dca_order.order_status = DcaOrderStatus.FAILED
-                self.dca_dao.update_order(dca_order)
+                self.dca_order_dao.save(dca_order)
                 schedule_full_recompute_broadcast()
                 send_alert(
                     f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline (Paper)",
                     f"🆔 Ordre identifier: {dca_order.id}\n"
-                    f"🛑 État Terminal: {dca_order.order_status.name}\n"
+                    f"🛑 État Terminal: {dca_order.order_status}\n"
                     f"⚠️ Erreur: {str(exception)}",
                     "❌"
                 )
@@ -239,13 +245,13 @@ class DcaManager:
                 dca_order.transaction_hash = "AVERAGE_PRICE_PROTECTION_BYPASS"
 
                 dca_strategy.available_dry_powder += dry_powder_delta
-                self.dca_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
-                self.dca_dao.update_order(dca_order)
+                self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
+                self.dca_order_dao.save(dca_order)
                 return
 
             amount_in_base_units = int((dca_order.executed_source_asset_amount or 0) * (10 ** dca_strategy.source_asset_decimals))
 
-            if dca_order.order_status == DcaOrderStatus.APPROVED:
+            if dca_order.order_status == DcaOrderStatus.APPROVED.value:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 1/3: Withdrawing %s liquidity from Aave lending pool", dca_strategy.source_asset_symbol)
                 withdrawal_transaction_hash = await self.aave_executor.execute_withdrawal(
                     dca_strategy.blockchain_network,
@@ -256,11 +262,12 @@ class DcaManager:
                     raise RuntimeError("Aave withdrawal execution failed at protocol level")
 
                 dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
-                self.dca_dao.update_order(dca_order)
+                self.dca_order_dao.save(dca_order)
+                self.database_session.commit()
                 schedule_full_recompute_broadcast()
                 await asyncio.sleep(5)
 
-            if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
+            if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE.value:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 2/3: Fetching LI.FI routing quote for optimal swap path")
                 await self.aave_executor._initialize_provider(dca_strategy.blockchain_network)
                 current_wallet_address = self.aave_executor.get_wallet_address()
@@ -294,11 +301,12 @@ class DcaManager:
                     raise RuntimeError("DeFi routed swap execution failed during transaction submission")
 
                 dca_order.order_status = DcaOrderStatus.SWAPPED
-                self.dca_dao.update_order(dca_order)
+                self.dca_order_dao.save(dca_order)
+                self.database_session.commit()
                 schedule_full_recompute_broadcast()
                 await asyncio.sleep(6)
 
-            if dca_order.order_status == DcaOrderStatus.SWAPPED:
+            if dca_order.order_status == DcaOrderStatus.SWAPPED.value:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 3/3: Supplying newly acquired asset back to Aave lending pool")
                 target_asset_balance_wei = await self.aave_executor.fetch_erc20_balance(dca_strategy.blockchain_network, dca_strategy.target_asset_address)
 
@@ -319,8 +327,8 @@ class DcaManager:
                 dca_order.executed_target_asset_amount = target_asset_balance_wei / (10 ** 18)
 
                 dca_strategy.available_dry_powder += dry_powder_delta
-                self.dca_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
-                self.dca_dao.update_order(dca_order)
+                self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
+                self.dca_order_dao.save(dca_order)
                 schedule_full_recompute_broadcast()
 
                 display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
@@ -338,16 +346,16 @@ class DcaManager:
         except Exception as exception:
             logger.exception(
                 "[DCA][MANAGER][ERROR] Pipeline execution failed at status %s. Halting for manual review.",
-                dca_order.order_status.name,
+                dca_order.order_status,
                 exception
             )
             dca_order.order_status = DcaOrderStatus.FAILED
-            self.dca_dao.update_order(dca_order)
+            self.dca_order_dao.save(dca_order)
             schedule_full_recompute_broadcast()
             send_alert(
                 f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline",
                 f"🆔 Ordre identifier: {dca_order.id}\n"
-                f"🛑 État Terminal: {dca_order.order_status.name}\n"
+                f"🛑 État Terminal: {dca_order.order_status}\n"
                 f"⚠️ Erreur: {str(exception)}",
                 "❌"
             )
@@ -393,20 +401,24 @@ class DcaManager:
     def resync_waiting_approvals(self) -> None:
         logger.info("[DCA][MANAGER][RESYNC] Resynchronizing pending approval requests after startup")
 
-        from src.persistence.db import DatabaseSessionLocal
-        with DatabaseSessionLocal() as session_instance:
-            dao_instance = DcaDao(session_instance)
-            waiting_orders = session_instance.query(DcaOrder).filter(
+        from src.persistence.db import _session
+        with _session() as session_instance:
+            strategy_dao_instance = DcaStrategyDao(session_instance)
+            order_dao_instance = DcaOrderDao(session_instance)
+
+            from sqlalchemy import select
+            waiting_orders_query = select(DcaOrder).where(
                 DcaOrder.order_status.in_([DcaOrderStatus.WAITING_USER_APPROVAL, DcaOrderStatus.REJECTED])
-            ).all()
+            )
+            waiting_orders = session_instance.execute(waiting_orders_query).scalars().all()
 
             for order in waiting_orders:
-                strategy = dao_instance.get_strategy_by_id(order.strategy_id)
+                strategy = strategy_dao_instance.retrieve_by_id(order.strategy_id)
                 if strategy:
                     logger.info("[DCA][MANAGER][RESYNC] Re-sending approval request for order identifier %s", order.id)
                     if order.order_status == DcaOrderStatus.REJECTED:
                         order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL
-                        session_instance.add(order)
+                        order_dao_instance.save(order)
                         session_instance.commit()
 
                     self._send_approval_request(order, strategy)

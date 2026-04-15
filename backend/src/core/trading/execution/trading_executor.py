@@ -1,23 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional
+from typing import Optional
 
-from src.api.serializers import serialize_trade
+from src.api.serializers import serialize_trading_trade
 from src.api.websocket.websocket_hub import recompute_metrics_and_broadcast
 from src.api.websocket.websocket_manager import websocket_manager
-from src.core.structures.structures import Token, WebsocketMessageType
-from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell
-from src.core.trading.execution.trading_risk_manager import TradingRiskManager
 from src.configuration.config import settings
+from src.core.structures.structures import Token, WebsocketMessageType
+from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
+from src.core.trading.execution.trading_risk_manager import TradingRiskManager
 from src.core.trading.trading_structures import TradingOrderPayload, TradingLifiRoute
 from src.integrations.blockchain.blockchain_live_executor import LiveExecutionService
-from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
+from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_position
 from src.logging.logger import get_application_logger
-from src.persistence.dao import trades
+from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
+from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
 from src.persistence.db import _session
-from src.persistence.models import ExecutionStatus
+from src.persistence.models import ExecutionStatus, TradingTrade, TradingPosition, TradeSide, PositionPhase
 
 logger = get_application_logger(__name__)
 
@@ -27,7 +27,7 @@ class TradingExecutor:
         self.paper_mode_enabled: bool = settings.PAPER_MODE
         self._risk_manager = TradingRiskManager()
 
-    def _fetch_dex_price_for_token(self, token: Token) -> Optional[float]:
+    def _fetch_onchain_price_for_token(self, token: Token) -> Optional[float]:
         try:
             try:
                 asyncio.get_running_loop()
@@ -36,20 +36,23 @@ class TradingExecutor:
             except RuntimeError:
                 pass
 
-            token_information_list: List[DexscreenerTokenInformation] = fetch_dexscreener_token_information_list_sync([token])
-            if not token_information_list:
-                logger.debug("[TRADING][EXECUTOR][PRICE] No price returned for %s", token)
-                return None
+            from src.persistence.models import TradingPosition
+            synthetic_position = TradingPosition(
+                token_symbol=token.symbol,
+                blockchain_network=token.chain,
+                token_address=token.token_address,
+                pair_address=token.pair_address,
+                dex_id=token.dex_id,
+            )
+            price_usd = fetch_onchain_price_for_position(synthetic_position)
+            if price_usd is not None and price_usd > 0.0:
+                logger.debug("[TRADING][EXECUTOR][PRICE] On-chain price fetched for %s = %.12f", token, price_usd)
+                return price_usd
 
-            for token_information in token_information_list:
-                if token_information.pair_address == token.pair_address and token_information.price_usd > 0.0:
-                    logger.debug("[TRADING][EXECUTOR][PRICE] Price fetched for %s = %.12f", token, token_information.price_usd)
-                    return token_information.price_usd
-
-            logger.debug("[TRADING][EXECUTOR][PRICE] No valid price for exact pair — %s", token)
+            logger.debug("[TRADING][EXECUTOR][PRICE] No valid on-chain price for %s", token)
             return None
         except Exception as exception:
-            logger.warning("[TRADING][EXECUTOR][PRICE] Dexscreener price fetch failed for %s — %s", token, exception)
+            logger.exception("[TRADING][EXECUTOR][PRICE] On-chain price fetch failed for %s — %s", token, exception)
             return None
 
     def _schedule_portfolio_rebroadcast(self) -> None:
@@ -108,18 +111,41 @@ class TradingExecutor:
                 logger.info("[TRADING][EXECUTOR][LIVE][BUY][SOL] Broadcast successful for %s — sig=%s", token.symbol, signature)
 
             with _session() as database_session:
-                trade_row = trades.buy(
-                    db=database_session,
-                    token=token,
-                    qty=quantity,
-                    price=price_usd,
-                    stop=stop_loss_usd,
-                    tp1=take_profit_tp1_usd,
-                    tp2=take_profit_tp2_usd,
-                    fee=0.0,
-                    status=ExecutionStatus.LIVE,
+                trade_dao = TradingTradeDao(database_session)
+                position_dao = TradingPositionDao(database_session)
+
+                trading_trade = TradingTrade(
+                    trade_side=TradeSide.BUY,
+                    token_symbol=token.symbol,
+                    blockchain_network=network,
+                    execution_price=price_usd,
+                    execution_quantity=quantity,
+                    transaction_fee=0.0,
+                    realized_profit_and_loss=None,
+                    execution_status=ExecutionStatus.LIVE,
+                    token_address=token.token_address,
+                    pair_address=token.pair_address,
+                    dex_id=token.dex_id,
                 )
-                websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trade(trade_row)})
+                trade_dao.save(trading_trade)
+
+                trading_position = TradingPosition(
+                    token_symbol=token.symbol,
+                    blockchain_network=network,
+                    token_address=token.token_address,
+                    pair_address=token.pair_address,
+                    open_quantity=quantity,
+                    current_quantity=quantity,
+                    entry_price=price_usd,
+                    take_profit_tier_1_price=take_profit_tp1_usd,
+                    take_profit_tier_2_price=take_profit_tp2_usd,
+                    stop_loss_price=stop_loss_usd,
+                    position_phase=PositionPhase.OPEN,
+                    dex_id=token.dex_id,
+                )
+                position_dao.save(trading_position)
+
+                database_session.commit()
             return True
         except Exception as exception:
             logger.exception("[TRADING][EXECUTOR][LIVE][BUY] Execution failed for %s (%s) — %s", token.symbol, token.token_address, exception)
@@ -128,7 +154,7 @@ class TradingExecutor:
             try:
                 await execution_service.close()
             except Exception as close_exception:
-                logger.debug("[TRADING][EXECUTOR][LIVE] Execution service close suppressed — %s", close_exception)
+                logger.exception("[TRADING][EXECUTOR][LIVE] Execution service close suppressed — %s", close_exception)
             self._schedule_portfolio_rebroadcast()
 
     def _run_live_buy_blocking(
@@ -173,20 +199,24 @@ class TradingExecutor:
             logger.debug("[TRADING][EXECUTOR][BUY] Skip: missing chain or pair_address — %s", payload.target_token)
             return False
 
-        dex_price_usd = self._fetch_dex_price_for_token(payload.target_token)
-        resolved_price: Optional[float] = dex_price_usd if dex_price_usd is not None else payload.execution_price
-        if resolved_price is None or resolved_price <= 0.0:
-            logger.debug("[TRADING][EXECUTOR][BUY] Skip: no valid price for %s", payload.target_token)
+        onchain_price_usd = self._fetch_onchain_price_for_token(payload.target_token)
+
+        if onchain_price_usd is None or onchain_price_usd <= 0.0:
+            logger.warning(
+                "[TRADING][EXECUTOR][BUY] Skip: CRITICAL FAILURE — On-chain price absolutely required but missing for %s (DEX: %s). Trade aborted for safety.",
+                payload.target_token.symbol, payload.target_token.dex_id,
+            )
             return False
-        price_usd = resolved_price
+
+        price_usd = onchain_price_usd
 
         maximum_price_multiplier = settings.TRADING_MAX_PRICE_DEVIATION_MULTIPLIER
-        if dex_price_usd is not None and payload.execution_price is not None:
-            low_price, high_price = sorted([dex_price_usd, payload.execution_price])
-            if high_price > 0.0 and (high_price / low_price) > maximum_price_multiplier:
+        if payload.execution_price is not None and payload.execution_price > 0.0:
+            low_price, high_price = sorted([onchain_price_usd, payload.execution_price])
+            if (high_price / low_price) > maximum_price_multiplier:
                 logger.warning(
-                    "[TRADING][EXECUTOR][BUY] Skip: price mismatch for %s — dex=%.12f ext=%.12f (>×%.1f)",
-                    payload.target_token, dex_price_usd, payload.execution_price, maximum_price_multiplier,
+                    "[TRADING][EXECUTOR][BUY] Skip: price mismatch for %s — onchain=%.12f pipeline=%.12f (>×%.1f)",
+                    payload.target_token.symbol, onchain_price_usd, payload.execution_price, maximum_price_multiplier,
                 )
                 return False
 
@@ -206,25 +236,40 @@ class TradingExecutor:
         if self.paper_mode_enabled:
             logger.info("[TRADING][EXECUTOR][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.target_token, price_usd, quantity)
             with _session() as database_session:
-                trade_row = trades.buy(
-                    db=database_session,
-                    token=payload.target_token,
-                    qty=quantity,
-                    price=price_usd,
-                    stop=stop_loss,
-                    tp1=take_profit_tp1,
-                    tp2=take_profit_tp2,
-                    fee=0.0,
-                    status=ExecutionStatus.PAPER,
-                )
-                websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trade(trade_row)})
+                trade_dao = TradingTradeDao(database_session)
+                position_dao = TradingPositionDao(database_session)
 
-                auto_trades = check_thresholds_and_autosell(
-                    database_session,
-                    dexscreener_token_information=payload.original_candidate.dexscreener_token_information,
+                trading_trade = TradingTrade(
+                    trade_side=TradeSide.BUY,
+                    token_symbol=payload.target_token.symbol,
+                    blockchain_network=payload.target_token.chain,
+                    execution_price=price_usd,
+                    execution_quantity=quantity,
+                    transaction_fee=0.0,
+                    realized_profit_and_loss=None,
+                    execution_status=ExecutionStatus.PAPER,
+                    token_address=payload.target_token.token_address,
+                    pair_address=payload.target_token.pair_address,
+                    dex_id=payload.target_token.dex_id,
                 )
-                for auto_trade in auto_trades:
-                    websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADE.value, "payload": serialize_trade(auto_trade)})
+                trade_dao.save(trading_trade)
+
+                trading_position = TradingPosition(
+                    token_symbol=payload.target_token.symbol,
+                    blockchain_network=payload.target_token.chain,
+                    token_address=payload.target_token.token_address,
+                    pair_address=payload.target_token.pair_address,
+                    open_quantity=quantity,
+                    current_quantity=quantity,
+                    entry_price=price_usd,
+                    take_profit_tier_1_price=take_profit_tp1,
+                    take_profit_tier_2_price=take_profit_tp2,
+                    stop_loss_price=stop_loss,
+                    position_phase=PositionPhase.OPEN,
+                    dex_id=payload.target_token.dex_id,
+                )
+                position_dao.save(trading_position)
+                database_session.commit()
 
             self._schedule_portfolio_rebroadcast()
             return True

@@ -154,7 +154,7 @@ class DexscreenerConsistencyGuard:
         try:
             return (get_current_local_datetime() - observation_date) > staleness_horizon
         except Exception as date_exception:
-            logger.warning("[DEXSCREENER][CONSISTENCY][STALENESS] Failed to compute staleness duration with error: %s", date_exception)
+            logger.exception("[DEXSCREENER][CONSISTENCY][STALENESS] Failed to compute staleness duration with error: %s", date_exception)
             return False
 
     def _update_state_record(self, state_record: StateRecord, observation: Observation, fingerprint: str) -> None:

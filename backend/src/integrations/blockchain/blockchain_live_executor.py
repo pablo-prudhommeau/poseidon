@@ -7,8 +7,8 @@ import base58
 
 from src.configuration.config import settings
 from src.core.utils.dict_utils import _read_path
-from src.integrations.blockchain.blockchain_evm_signer import build_default_evm_signer, EvmSigner
-from src.integrations.blockchain.blockchain_solana_signer import build_default_solana_signer, SolanaSigner
+from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer, EvmSigner
+from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer, SolanaSigner
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

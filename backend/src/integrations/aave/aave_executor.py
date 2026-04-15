@@ -41,7 +41,7 @@ class AaveExecutor:
             logger.error("[AAVE][EXECUTOR][INIT] Mnemonic configuration is missing")
             raise ValueError("Mnemonic configuration is missing.")
 
-        account: LocalAccount = Account.from_mnemonic(  # pylint: disable=no-value-for-parameter
+        account: LocalAccount = Account.from_mnemonic(
             settings.WALLET_MNEMONIC,
             account_path=f"m/44'/60'/0'/0/{settings.WALLET_DERIVATION_INDEX}"
         )

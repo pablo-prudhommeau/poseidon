@@ -68,7 +68,7 @@ class ChartAiSignalProvider:
                 token_age_hours=token_age_hours
             )
         except ChartCaptureError as exception:
-            logger.warning("[AI][SIGNAL][PROVIDER][CAPTURE] Market chart capture failed for %s", cache_lookup_key, exception)
+            logger.exception("[AI][SIGNAL][PROVIDER][CAPTURE] Market chart capture failed for %s", cache_lookup_key, exception)
             return None
 
         ai_analysis: Optional[ChartAiOutput] = self._openai_client.analyze_chart_vision(

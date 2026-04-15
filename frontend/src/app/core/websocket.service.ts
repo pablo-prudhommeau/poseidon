@@ -1,5 +1,5 @@
 import {Injectable, signal} from '@angular/core';
-import {Analytics, DcaStrategy, Portfolio, Position, Trade, WebsocketMessageType, WebsocketMessageUnion} from './models';
+import {DcaStrategyPayload, TradingEvaluationPayload, TradingPortfolioPayload, TradingPositionPayload, TradingTradePayload, WebsocketMessageType, WebsocketMessageUnion} from './models';
 
 export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 
@@ -8,11 +8,11 @@ export class WebSocketService {
     private socket?: WebSocket;
 
     public readonly status = signal<WebsocketConnectionStatus>('closed');
-    public readonly portfolio = signal<Portfolio | null>(null);
-    public readonly positions = signal<Position[]>([]);
-    public readonly trades = signal<Trade[]>([]);
-    public readonly analytics = signal<Analytics[]>([]);
-    public readonly dcaStrategies = signal<DcaStrategy[]>([]);
+    public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
+    public readonly positions = signal<TradingPositionPayload[]>([]);
+    public readonly trades = signal<TradingTradePayload[]>([]);
+    public readonly analytics = signal<TradingEvaluationPayload[]>([]);
+    public readonly dcaStrategies = signal<DcaStrategyPayload[]>([]);
 
     private defaultWebsocketUrl(): string {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -71,30 +71,6 @@ export class WebSocketService {
             }
             case WebsocketMessageType.TRADES: {
                 this.trades.set(message.payload);
-                break;
-            }
-            case WebsocketMessageType.TRADE: {
-                const incomingTrade = message.payload;
-                this.trades.update((existingTrades) => [incomingTrade, ...existingTrades].slice(0, 200));
-                break;
-            }
-            case WebsocketMessageType.ANALYTICS: {
-                const incomingPayload = message.payload;
-                if (Array.isArray(incomingPayload)) {
-                    const sortedAnalytics = [...incomingPayload].sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
-                    this.analytics.set(sortedAnalytics.slice(0, 5000));
-                } else {
-                    const incomingAnalyticsCycle = incomingPayload;
-                    this.analytics.update((existingAnalytics) => {
-                        const existingRecordIndex = existingAnalytics.findIndex((record) => record.id === incomingAnalyticsCycle.id);
-                        if (existingRecordIndex >= 0) {
-                            const updatedAnalytics = [...existingAnalytics];
-                            updatedAnalytics[existingRecordIndex] = incomingAnalyticsCycle;
-                            return updatedAnalytics;
-                        }
-                        return [incomingAnalyticsCycle, ...existingAnalytics].slice(0, 5000);
-                    });
-                }
                 break;
             }
             case WebsocketMessageType.DCA_STRATEGIES: {

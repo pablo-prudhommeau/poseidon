@@ -33,7 +33,7 @@ class EvmSigner:
         Account.enable_unaudited_hdwallet_features()
 
         derivation_path = f"m/44'/60'/0'/0/{configuration.wallet_derivation_index}"
-        self.local_account: LocalAccount = Account.from_mnemonic(  # pylint: disable=no-value-for-parameter
+        self.local_account: LocalAccount = Account.from_mnemonic(
             mnemonic=configuration.security_mnemonic_phrase,
             account_path=derivation_path
         )
@@ -87,7 +87,7 @@ class EvmSigner:
                 transaction_payload["gas"] = int(estimated_units * 1.1)
             except Exception as exception:
                 logger.warning(
-                    "[BLOCKCHAIN][EVM][GAS] Gas estimation failed, falling back to static limit of 400,000 units",
+                    "[BLOCKCHAIN][EVM][GAS] Gas estimation failed, falling back to static limit of 400,000 units: %s",
                     exception
                 )
                 transaction_payload["gas"] = 400000

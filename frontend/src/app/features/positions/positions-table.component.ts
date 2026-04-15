@@ -33,7 +33,7 @@ import {
 import {balhamDarkThemeCompact} from '../../ag-grid.theme';
 import {NumberFormattingService} from '../../core/number-formatting.service';
 import {WebSocketService} from '../../core/websocket.service';
-import {Analytics, Position, Trade} from '../../core/models';
+import {TradingEvaluationPayload, TradingPositionPayload, TradingTradePayload} from '../../core/models';
 import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer';
 import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
 import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
@@ -65,13 +65,13 @@ export class PositionsTableComponent implements AfterViewInit {
     private readonly webSocketService = inject(WebSocketService);
     private readonly numberFormattingService = inject(NumberFormattingService);
 
-    public readonly positionsRowData = computed<Position[]>(() => {
+    public readonly positionsRowData = computed<TradingPositionPayload[]>(() => {
         const rows = this.webSocketService.positions() ?? [];
-        return Array.isArray(rows) ? [...(rows as Position[])] : [];
+        return Array.isArray(rows) ? [...(rows as TradingPositionPayload[])] : [];
     });
 
-    public columnDefinitions: ColDef<Position>[] = [];
-    public readonly defaultColumnDefinition: ColDef<Position> = {
+    public columnDefinitions: ColDef<TradingPositionPayload>[] = [];
+    public readonly defaultColumnDefinition: ColDef<TradingPositionPayload> = {
         resizable: true,
         sortable: true,
         filter: true,
@@ -83,10 +83,10 @@ export class PositionsTableComponent implements AfterViewInit {
     @ViewChild('symbolHeaderTemplate', {static: false}) private symbolHeaderTemplate?: TemplateRef<unknown>;
 
     public readonly detailsVisible = signal<boolean>(false);
-    public readonly selectedPosition = signal<Position | null>(null);
-    public readonly selectedAnalytics = signal<Analytics | null>(null);
+    public readonly selectedPosition = signal<TradingPositionPayload | null>(null);
+    public readonly selectedAnalytics = signal<TradingEvaluationPayload | null>(null);
 
-    private cachedOriginBuyTrade: Trade | null = null;
+    private cachedOriginBuyTrade: TradingTradePayload | null = null;
 
     public scoresSeries: ApexNonAxisChartSeries = [];
     public scoresChart: ApexChart = {type: 'radialBar', height: 260};
@@ -155,10 +155,10 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Open date',
-                field: 'opened_at' as unknown as keyof Position,
+                field: 'opened_at' as unknown as keyof TradingPositionPayload,
                 sortable: true,
                 filter: 'agDateColumnFilter',
-                valueGetter: (p: ValueGetterParams<Position>) => (p.data as any)?.opened_at ?? null,
+                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) => (p.data as any)?.opened_at ?? null,
                 cellClass: 'whitespace-nowrap',
                 flex: 1.4
             },
@@ -168,7 +168,7 @@ export class PositionsTableComponent implements AfterViewInit {
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Position>) => this.numberFormattingService.formatNumber(p.value, 2, 6),
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) => this.numberFormattingService.formatNumber(p.value, 2, 6),
                 cellClass: 'text-right whitespace-nowrap',
                 flex: 1.3
             },
@@ -178,7 +178,7 @@ export class PositionsTableComponent implements AfterViewInit {
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Position>) =>
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
                 cellClass: 'text-right whitespace-nowrap',
                 flex: 1.1
@@ -189,7 +189,7 @@ export class PositionsTableComponent implements AfterViewInit {
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Position>) =>
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
                 cellClass: 'text-right whitespace-nowrap',
                 flex: 1.1
@@ -200,18 +200,18 @@ export class PositionsTableComponent implements AfterViewInit {
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Position>) =>
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
                 cellClass: 'text-right whitespace-nowrap',
                 flex: 1.1
             },
             {
                 headerName: 'Stop',
-                field: 'stop_loss_price' as unknown as keyof Position,
+                field: 'stop_loss_price' as unknown as keyof TradingPositionPayload,
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<Position>) =>
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
                 cellClass: 'text-right whitespace-nowrap',
                 flex: 1.1
@@ -221,8 +221,8 @@ export class PositionsTableComponent implements AfterViewInit {
                 colId: 'deltaPercent',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueGetter: (p: ValueGetterParams<Position>) => this.computeDeltaPercent(p.data ?? null),
-                valueFormatter: (p: ValueFormatterParams<Position>) =>
+                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) => this.computeDeltaPercent(p.data ?? null),
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     p.value == null ? '—' : `${this.numberFormattingService.formatNumber(p.value, 2, 2)}%`,
                 cellClassRules: {'pct-up': (p) => (p.value ?? 0) > 0, 'pct-down': (p) => (p.value ?? 0) < 0},
                 cellClass: 'text-right whitespace-nowrap',
@@ -230,9 +230,9 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Phase',
-                field: 'position_phase' as unknown as keyof Position,
+                field: 'position_phase' as unknown as keyof TradingPositionPayload,
                 sortable: true,
-                cellRenderer: (p: ValueFormatterParams<Position>) => {
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) => {
                     const sev = this.phaseSeverity(String((p.value as any) ?? ''));
                     const colorClass = sev === 'info' ? 'bg-blue-600' : sev === 'warn' ? 'bg-yellow-600' : 'bg-gray-600';
                     return `<span class="${colorClass} saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">${p.value}</span>`;
@@ -240,15 +240,15 @@ export class PositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'Last price',
-                field: 'last_price' as unknown as keyof Position,
+                field: 'last_price' as unknown as keyof TradingPositionPayload,
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueGetter: (p: ValueGetterParams<Position>) =>
+                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) =>
                     this.numberFormattingService.toNumberSafe((p.data as any)?.last_price as number | null),
-                valueFormatter: (p: ValueFormatterParams<Position>) =>
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     p.value == null ? '—' : this.numberFormattingService.formatNumber(p.value, 4, 8),
-                cellClass: (p: CellClassParams<Position>) => {
+                cellClass: (p: CellClassParams<TradingPositionPayload>) => {
                     const direction = (p.data as any)?._lastDir as 'up' | 'down' | null | undefined;
                     if (direction === 'up') {
                         return 'text-right whitespace-nowrap price-up';
@@ -274,7 +274,7 @@ export class PositionsTableComponent implements AfterViewInit {
         ];
     }
 
-    public openDetails(row: Position | null): void {
+    public openDetails(row: TradingPositionPayload | null): void {
         this.selectedPosition.set(row ?? null);
         this.cachedOriginBuyTrade = null;
         this.detailsVisible.set(true);
@@ -303,7 +303,7 @@ export class PositionsTableComponent implements AfterViewInit {
         return 'secondary';
     }
 
-    private computeDeltaPercent(row: Position | null): number | null {
+    private computeDeltaPercent(row: TradingPositionPayload | null): number | null {
         if (!row) {
             return null;
         }
@@ -319,11 +319,11 @@ export class PositionsTableComponent implements AfterViewInit {
         return ((last - entry) / Math.abs(entry)) * 100;
     }
 
-    public deltaPercent(row: Position | null): number {
+    public deltaPercent(row: TradingPositionPayload | null): number {
         return this.computeDeltaPercent(row) ?? 0;
     }
 
-    public orderNotionalUsd(row: Position | null, priceBasis: 'entry' | 'last'): number | null {
+    public orderNotionalUsd(row: TradingPositionPayload | null, priceBasis: 'entry' | 'last'): number | null {
         if (!row) {
             return null;
         }
@@ -338,11 +338,11 @@ export class PositionsTableComponent implements AfterViewInit {
         return quantity * price;
     }
 
-    private findBestAnalyticsForPosition(position: Position | null): Analytics | null {
+    private findBestAnalyticsForPosition(position: TradingPositionPayload | null): TradingEvaluationPayload | null {
         if (!position) {
             return null;
         }
-        const rows = (this.webSocketService.analytics() ?? []) as Analytics[];
+        const rows = (this.webSocketService.analytics() ?? []) as TradingEvaluationPayload[];
         const candidates = rows.filter(
             (a) =>
                 (a.pair_address && a.pair_address === position.pair_address) ||
@@ -355,7 +355,7 @@ export class PositionsTableComponent implements AfterViewInit {
         return candidates[0] ?? null;
     }
 
-    public analyticsForSelected(): Analytics | null {
+    public analyticsForSelected(): TradingEvaluationPayload | null {
         return this.selectedAnalytics();
     }
 
@@ -384,11 +384,11 @@ export class PositionsTableComponent implements AfterViewInit {
         }
     }
 
-    private findOriginBuyTrade(position: Position | null): Trade | null {
+    private findOriginBuyTrade(position: TradingPositionPayload | null): TradingTradePayload | null {
         if (!position) {
             return null;
         }
-        const trades = (this.webSocketService.trades() ?? []) as Trade[];
+        const trades = (this.webSocketService.trades() ?? []) as TradingTradePayload[];
         const candidates = trades.filter((t) => t.trade_side === 'BUY' && t.pair_address === position.pair_address);
         if (candidates.length === 0) {
             return null;
@@ -404,11 +404,11 @@ export class PositionsTableComponent implements AfterViewInit {
         return candidates[0] ?? null;
     }
 
-    public buyTradeForSelectedPosition(): Trade | null {
+    public buyTradeForSelectedPosition(): TradingTradePayload | null {
         return this.cachedOriginBuyTrade;
     }
 
-    public focusTradeInTable(trade: Trade): void {
+    public focusTradeInTable(trade: TradingTradePayload): void {
         console.info('[UI][POSITIONS][DETAILS] focus BUY trade', trade);
     }
 

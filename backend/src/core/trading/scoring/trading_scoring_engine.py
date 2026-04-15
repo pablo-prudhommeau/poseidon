@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Optional, Final
 
-from src.core.trading.scoring.trading_scoring_scalers import TradingFeatureScalers
 from src.configuration.config import settings
+from src.core.trading.scoring.trading_scoring_scalers import TradingFeatureScalers
 from src.core.trading.trading_structures import TradingCandidate, TradingFeatureValues, TradingScoringWeights
 from src.core.utils.math_utils import _clamp, _squash_positive_percentage
 from src.logging.logger import get_application_logger

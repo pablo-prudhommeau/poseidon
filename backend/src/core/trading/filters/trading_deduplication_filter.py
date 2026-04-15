@@ -1,11 +1,9 @@
-from __future__ import annotations
-
 from typing import Set, Tuple
 
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.utils.trading_candidate_utils import is_address_in_open_positions
 from src.logging.logger import get_application_logger
-from src.persistence.dao.positions import retrieve_open_positions
+from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.db import _session
 
 logger = get_application_logger(__name__)
@@ -13,7 +11,8 @@ logger = get_application_logger(__name__)
 
 def _load_open_position_identifiers() -> Tuple[Set[str], Set[str]]:
     with _session() as database_session:
-        positions = retrieve_open_positions(database_session)
+        position_dao = TradingPositionDao(database_session)
+        positions = position_dao.retrieve_open_positions()
         open_symbols = {(position.token_symbol or "").upper() for position in positions if position.token_symbol}
         open_addresses: Set[str] = {position.token_address for position in positions if position.token_address}
         return open_symbols, open_addresses

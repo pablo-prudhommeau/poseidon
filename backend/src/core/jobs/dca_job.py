@@ -6,8 +6,8 @@ from src.configuration.config import settings
 from src.core.dca.dca_manager import DcaManager
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.dao.dca_dao import DcaDao
-from src.persistence.db import DatabaseSessionLocal
+from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 
 logger = get_application_logger(__name__)
 
@@ -34,23 +34,33 @@ class DcaJob:
         logger.info("[DCA][JOB] Background monitoring stopped.")
 
     async def _process_tick(self) -> None:
-        db_session = DatabaseSessionLocal()
-        try:
-            dao = DcaDao(db_session)
-            manager = DcaManager(db_session)
+        from src.persistence.db import _session
 
+        due_order_ids: list[int] = []
+
+        with _session() as db_session:
+            order_dao = DcaOrderDao(db_session)
             current_time = get_current_local_datetime()
-            due_orders = dao.get_due_pending_orders(current_time)
-
+            due_orders = order_dao.retrieve_due_pending(current_time)
             if due_orders:
-                logger.info("[DCA][JOB] Found %d order(s) eligible for execution.", len(due_orders))
+                due_order_ids = [o.id for o in due_orders]
 
-            for order in due_orders:
-                if order.parent_strategy.strategy_status.value == "ACTIVE":
-                    await manager.process_scheduled_dca_order(order, order.parent_strategy)
+        if due_order_ids:
+            logger.info("[DCA][JOB] Found %d order(s) eligible for execution.", len(due_order_ids))
 
-        finally:
-            db_session.close()
+        for order_id in due_order_ids:
+            with _session() as db_session:
+                order_dao = DcaOrderDao(db_session)
+                strategy_dao = DcaStrategyDao(db_session)
+                manager = DcaManager(db_session)
+
+                order = order_dao.retrieve_by_id(order_id)
+                if not order:
+                    continue
+
+                strategy = strategy_dao.retrieve_by_id(order.strategy_id)
+                if strategy and strategy.strategy_status == "ACTIVE":
+                    await manager.process_scheduled_dca_order(order, strategy)
 
 
 dca_job = DcaJob()
