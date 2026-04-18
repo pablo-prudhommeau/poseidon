@@ -419,7 +419,6 @@ export interface AnalyticsScatterSeriesPayload {
 
 export interface AnalyticsKpiPayload {
     total_evaluations: number;
-    total_buy_evaluations: number;
     total_outcomes: number;
     win_count: number;
     loss_count: number;

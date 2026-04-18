@@ -132,8 +132,9 @@ class EvmSigner:
 
 
 def build_default_evm_signer() -> EvmSigner:
+    from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
     default_configuration = EvmSignerConfiguration(
-        rpc_endpoint_url=settings.EVM_RPC_URL,
+        rpc_endpoint_url=resolve_rpc_url_for_chain("ethereum"),
         security_mnemonic_phrase=settings.WALLET_MNEMONIC,
         wallet_derivation_index=settings.WALLET_DERIVATION_INDEX,
     )

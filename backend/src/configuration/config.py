@@ -140,11 +140,11 @@ class Settings:
     WALLET_MNEMONIC: str = os.getenv("WALLET_MNEMONIC", "")
     WALLET_DERIVATION_INDEX: int = int(os.getenv("WALLET_DERIVATION_INDEX", "0"))
 
-    SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "")
-    EVM_RPC_URL: str = os.getenv("EVM_RPC_URL", "")
-    BSC_RPC_URL: str = os.getenv("BSC_RPC_URL", "https://bsc-dataseed.binance.org/")
-    BASE_RPC_URL: str = os.getenv("BASE_RPC_URL", "")
-    AVALANCHE_RPC_URL: str = os.getenv("AVALANCHE_RPC_URL", "https://api.avax.network/ext/bc/C/rpc")
+    SOLANA_RPC_PREMIUM_URL: str = os.getenv("SOLANA_RPC_PREMIUM_URL", "")
+    ETHEREUM_RPC_PREMIUM_URL: str = os.getenv("ETHEREUM_RPC_PREMIUM_URL", "")
+    BSC_RPC_PREMIUM_URL: str = os.getenv("BSC_RPC_PREMIUM_URL", "")
+    BASE_RPC_PREMIUM_URL: str = os.getenv("BASE_RPC_PREMIUM_URL", "")
+    AVALANCHE_RPC_PREMIUM_URL: str = os.getenv("AVALANCHE_RPC_PREMIUM_URL", "")
 
     WETH_ADDRESS: str = os.getenv("WETH_ADDRESS", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
     LIFI_BASE_URL: str = os.getenv("LIFI_BASE_URL", "https://li.quest")

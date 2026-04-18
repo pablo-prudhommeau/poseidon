@@ -106,7 +106,8 @@ class LiveExecutionService:
         raw_rlp = _read_path(transaction_request, ("rawTransaction",))
         if isinstance(raw_rlp, str) and len(raw_rlp) > 0:
             from web3 import Web3
-            provider = Web3.HTTPProvider(settings.EVM_RPC_URL)
+            from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
+            provider = Web3.HTTPProvider(resolve_rpc_url_for_chain("ethereum"))
             web3 = Web3(provider)
             tx_hash = web3.eth.send_raw_transaction(bytes.fromhex(raw_rlp.removeprefix("0x")))
             hex_hash = tx_hash.hex()

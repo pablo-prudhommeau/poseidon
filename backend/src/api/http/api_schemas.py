@@ -200,7 +200,6 @@ class TradingEvaluationAiPayload(BaseModel):
 
 class TradingEvaluationDecisionPayload(BaseModel):
     execution_decision: str
-    execution_decision_reason: str
     sizing_multiplier: float
     order_notional_value_usd: float
     free_cash_before_execution_usd: float
@@ -307,7 +306,6 @@ class AnalyticsScatterSeriesPayload(BaseModel):
 
 class AnalyticsKpiPayload(BaseModel):
     total_evaluations: int
-    total_buy_evaluations: int
     total_outcomes: int
     win_count: int
     loss_count: int

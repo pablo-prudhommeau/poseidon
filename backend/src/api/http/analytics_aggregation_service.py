@@ -134,8 +134,6 @@ def _aggregate_evaluation_outcomes(evaluation: TradingEvaluation) -> TradingOutc
 
 def compute_kpis(evaluations: list[TradingEvaluation]) -> AnalyticsKpiPayload:
     total_evaluations = len(evaluations)
-    buy_evaluations = [evaluation for evaluation in evaluations if evaluation.execution_decision == "BUY"]
-    total_buy_evaluations = len(buy_evaluations)
 
     all_pnl_percentages: list[float] = []
     all_pnl_usd: list[float] = []
@@ -176,7 +174,6 @@ def compute_kpis(evaluations: list[TradingEvaluation]) -> AnalyticsKpiPayload:
 
     return AnalyticsKpiPayload(
         total_evaluations=total_evaluations,
-        total_buy_evaluations=total_buy_evaluations,
         total_outcomes=total_outcomes,
         win_count=win_count,
         loss_count=loss_count,

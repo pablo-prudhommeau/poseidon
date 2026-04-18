@@ -72,7 +72,6 @@ class TradingEvaluationRecorder:
             fully_diluted_valuation_usd=token_information.fully_diluted_valuation or 0.0,
             evaluated_at=get_current_local_datetime(),
             execution_decision=decision.upper(),
-            execution_decision_reason=reason,
             sizing_multiplier=sizing_multiplier or 0.0,
             order_notional_value_usd=order_notional_usd or 0.0,
             free_cash_before_execution_usd=free_cash_before_usd or 0.0,
@@ -80,7 +79,11 @@ class TradingEvaluationRecorder:
             raw_dexscreener_payload=token_information.model_dump(mode="json"),
             raw_configuration_settings=_to_dict(settings),
         )
-        TelemetryService.record_analytics_event(payload)
+        
+        logger.info("[TRADING][EVALUATION] Token %s sequence evaluated -> Decision: %s | Reason: %s", payload.token_symbol, decision.upper(), reason)
+        
+        if decision.upper() == "BUY":
+            TelemetryService.record_analytics_event(payload)
 
     def persist_and_broadcast_skip(evaluation_candidate: TradingCandidate, sequence_rank: int, exclusion_reason: str) -> None:
         TradingEvaluationRecorder.persist_and_broadcast(evaluation_candidate, rank=sequence_rank, decision="SKIP", reason=exclusion_reason)

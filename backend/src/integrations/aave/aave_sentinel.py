@@ -76,8 +76,8 @@ class AaveSentinelService:
             self._derive_credentials()
 
         if not self._web3_client:
-            rpc_endpoint_url = settings.AVALANCHE_RPC_URL
-            self._web3_client = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_endpoint_url))
+            from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
+            self._web3_client = resolve_async_web3_provider_for_chain("avalanche")
 
             pool_contract_address = AsyncWeb3.to_checksum_address(settings.AAVE_POOL_V3_ADDRESS)
             self._pool_contract = self._web3_client.eth.contract(address=pool_contract_address, abi=AAVE_POOL_ABI)

@@ -171,8 +171,9 @@ class SolanaSigner:
 
 
 def build_default_solana_signer() -> SolanaSigner:
+    from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
     configuration = SolanaSignerConfiguration(
-        rpc_url=settings.SOLANA_RPC_URL,
+        rpc_url=resolve_rpc_url_for_chain("solana"),
         mnemonic=settings.WALLET_MNEMONIC,
         wallet_derivation_index=settings.WALLET_DERIVATION_INDEX
     )

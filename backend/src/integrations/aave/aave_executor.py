@@ -49,7 +49,8 @@ class AaveExecutor:
         self._wallet_address = account.address
 
         if chain == "avalanche":
-            rpc_url = settings.AVALANCHE_RPC_URL
+            from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
+            rpc_url = resolve_rpc_url_for_chain("avalanche")
             pool_address = settings.AAVE_POOL_V3_ADDRESS
         else:
             logger.error("[AAVE][EXECUTOR][INIT] Chain '%s' is not supported", chain)

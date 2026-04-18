@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from web3 import Web3
-
-from src.configuration.config import settings
+from src.integrations.blockchain.blockchain_rpc_registry import (
+    get_supported_evm_chains,
+    resolve_web3_provider_for_chain,
+)
 from src.integrations.blockchain.evm.blockchain_evm_price_reader import read_evm_pair_price_usd
 from src.integrations.blockchain.solana.blockchain_solana_price_reader import read_solana_pool_price_usd
 from src.logging.logger import get_application_logger
@@ -12,53 +13,13 @@ from src.persistence.models import TradingPosition
 
 logger = get_application_logger(__name__)
 
-_web3_provider_cache: dict[str, Web3] = {}
-
-
-def _build_evm_chain_rpc_registry() -> dict[str, str]:
-    registry: dict[str, str] = {}
-    if settings.BSC_RPC_URL:
-        registry["bsc"] = settings.BSC_RPC_URL
-    if settings.BASE_RPC_URL:
-        registry["base"] = settings.BASE_RPC_URL
-    if settings.EVM_RPC_URL:
-        registry["ethereum"] = settings.EVM_RPC_URL
-    if settings.AVALANCHE_RPC_URL:
-        registry["avalanche"] = settings.AVALANCHE_RPC_URL
-    return registry
-
-
-def _get_web3_provider(chain_identifier: str) -> Optional[Web3]:
-    normalized_chain = chain_identifier.lower()
-    cached_provider = _web3_provider_cache.get(normalized_chain)
-    if cached_provider is not None:
-        return cached_provider
-
-    rpc_registry = _build_evm_chain_rpc_registry()
-    rpc_url = rpc_registry.get(normalized_chain)
-    if not rpc_url:
-        return None
-
-    try:
-        provider = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
-        if not provider.is_connected():
-            logger.warning("[BLOCKCHAIN][PRICE][SERVICE] Cannot connect to RPC for chain %s at %s", normalized_chain, rpc_url)
-            return None
-        _web3_provider_cache[normalized_chain] = provider
-        logger.info("[BLOCKCHAIN][PRICE][SERVICE] Connected to RPC for chain %s", normalized_chain)
-        return provider
-    except Exception:
-        logger.exception("[BLOCKCHAIN][PRICE][SERVICE] Failed to initialize Web3 provider for chain %s", normalized_chain)
-        return None
-
 
 def _is_solana_chain(chain_identifier: str) -> bool:
     return chain_identifier.lower() in {"solana", "sol"}
 
 
 def _is_supported_evm_chain(chain_identifier: str) -> bool:
-    rpc_registry = _build_evm_chain_rpc_registry()
-    return chain_identifier.lower() in rpc_registry
+    return chain_identifier.lower() in get_supported_evm_chains()
 
 
 def fetch_onchain_price_for_position(position: TradingPosition) -> Optional[float]:
@@ -74,7 +35,7 @@ def fetch_onchain_price_for_position(position: TradingPosition) -> Optional[floa
         return read_solana_pool_price_usd(pair_address, token_address, position.dex_id)
 
     if _is_supported_evm_chain(chain_identifier):
-        web3_provider = _get_web3_provider(chain_identifier)
+        web3_provider = resolve_web3_provider_for_chain(chain_identifier)
         if web3_provider is None:
             return None
         return read_evm_pair_price_usd(web3_provider, chain_identifier, pair_address, token_address)
@@ -124,9 +85,11 @@ def fetch_onchain_prices_for_positions(positions: List[TradingPosition]) -> Dict
         except Exception:
             logger.exception("[BLOCKCHAIN][PRICE][SERVICE] Unhandled error fetching batched solana prices")
 
+    failed_pair_addresses: set[str] = set()
+
     for position in other_positions:
         pair_address = position.pair_address
-        if pair_address in prices_by_pair_address:
+        if pair_address in prices_by_pair_address or pair_address in failed_pair_addresses:
             continue
 
         try:
@@ -138,11 +101,13 @@ def fetch_onchain_prices_for_positions(positions: List[TradingPosition]) -> Dict
                     position.token_symbol, pair_address[:10], price_usd,
                 )
             else:
+                failed_pair_addresses.add(pair_address)
                 logger.debug(
                     "[BLOCKCHAIN][PRICE][SERVICE] No valid price for %s (%s) on %s",
                     position.token_symbol, pair_address[:10], position.blockchain_network,
                 )
         except Exception:
+            failed_pair_addresses.add(pair_address)
             logger.exception(
                 "[BLOCKCHAIN][PRICE][SERVICE] Unhandled error fetching price for %s (%s)",
                 position.token_symbol, pair_address[:10],

@@ -128,7 +128,6 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
         ),
         decision=TradingEvaluationDecisionPayload(
             execution_decision=row.execution_decision,
-            execution_decision_reason=row.execution_decision_reason,
             sizing_multiplier=row.sizing_multiplier,
             order_notional_value_usd=row.order_notional_value_usd,
             free_cash_before_execution_usd=row.free_cash_before_execution_usd,
