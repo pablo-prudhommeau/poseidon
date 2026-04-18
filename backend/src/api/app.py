@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from src.api.http.http_api import router as http_router
 from src.api.websocket.websocket_hub import router as ws_router
@@ -39,6 +40,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.add_middleware(GZipMiddleware, minimum_size=500)
 
     @app.on_event("startup")
     async def on_startup() -> None:
