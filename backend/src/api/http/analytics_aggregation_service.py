@@ -372,11 +372,10 @@ def compute_timeline(evaluations: list[TradingEvaluation]) -> list[AnalyticsTime
         cumulative_pnl_usd += day_data["pnl_usd"]
         cumulative_pnl_percentage += day_data["pnl_pct"]
 
-        for _ in range(int(day_data["count"])):
-            wins_today = int(day_data["wins"])
-            total_today = int(day_data["count"])
-            for trade_index in range(total_today):
-                recent_outcomes.append(trade_index < wins_today)
+        wins_today = int(day_data["wins"])
+        total_today = int(day_data["count"])
+        for trade_index in range(total_today):
+            recent_outcomes.append(trade_index < wins_today)
 
         if len(recent_outcomes) > ROLLING_WINDOW_SIZE:
             recent_outcomes = recent_outcomes[-ROLLING_WINDOW_SIZE:]
@@ -397,12 +396,20 @@ def compute_timeline(evaluations: list[TradingEvaluation]) -> list[AnalyticsTime
 
 def compute_scatter_series(evaluations: list[TradingEvaluation]) -> list[AnalyticsScatterSeriesPayload]:
     closed_evaluations = [evaluation for evaluation in evaluations if _aggregate_evaluation_outcomes(evaluation) is not None]
+    
+    max_scatter_points = 500
+    if len(closed_evaluations) > max_scatter_points:
+        step = len(closed_evaluations) / max_scatter_points
+        sampled_evaluations = [closed_evaluations[int(i * step)] for i in range(max_scatter_points)]
+    else:
+        sampled_evaluations = closed_evaluations
+        
     scatter_series_list: list[AnalyticsScatterSeriesPayload] = []
 
     for metric_definition in METRIC_DEFINITIONS:
         points: list[AnalyticsScatterPointPayload] = []
 
-        for evaluation in closed_evaluations:
+        for evaluation in sampled_evaluations:
             outcome = _aggregate_evaluation_outcomes(evaluation)
             if outcome is None:
                 continue

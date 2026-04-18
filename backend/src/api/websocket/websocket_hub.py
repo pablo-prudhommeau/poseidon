@@ -65,6 +65,9 @@ def _serialize_positions_sync(
     serialized_positions = []
     for position_record in position_records:
         last_known_price = prices_by_pair_address.get(position_record.pair_address) if position_record.pair_address else None
+        if last_known_price is None or last_known_price <= 0.0:
+            last_known_price = position_record.entry_price
+
         serialized_positions.append(serialize_trading_position(position_record, last_price=last_known_price))
     return serialized_positions
 

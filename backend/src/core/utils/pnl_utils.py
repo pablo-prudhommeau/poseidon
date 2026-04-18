@@ -199,12 +199,13 @@ def holdings_and_unrealized_from_positions(
     for position in position_list:
         token = _to_token_from_position(position)
         price_usd = prices_by_pair_address.get(position.pair_address) if position.pair_address else None
+        entry_price = position.entry_price or 0.0
+
         if price_usd is None or price_usd <= 0.0:
-            log.debug("[PNL][UNREAL][NOPRICE] token=%s — skipping unrealized valuation", token)
-            continue
+            log.debug("[PNL][UNREAL][NOPRICE] token=%s — falling back to entry_price for valuation", token)
+            price_usd = entry_price
 
         quantity = position.current_quantity or 0.0
-        entry_price = position.entry_price or 0.0
 
         if quantity <= 0.0:
             log.debug("[PNL][UNREAL][SKIP] token=%s reason=non_positive_qty", token)
