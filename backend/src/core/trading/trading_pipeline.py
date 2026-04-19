@@ -198,10 +198,10 @@ class TradingPipeline:
 
     def _step_execute(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> None:
         from sqlalchemy import select, func
-        from src.persistence.db import _session
+        from src.persistence.db import get_database_session
         from src.persistence.models import TradingPosition, PositionPhase
 
-        with _session() as database_session:
+        with get_database_session() as database_session:
             current_open_count = database_session.execute(
                 select(func.count(TradingPosition.id))
                 .where(TradingPosition.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]))

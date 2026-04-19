@@ -34,12 +34,12 @@ class DcaJob:
         logger.info("[DCA][JOB] Background monitoring stopped.")
 
     async def _process_tick(self) -> None:
-        from src.persistence.db import _session
+        from src.persistence.db import get_database_session
 
         due_order_ids: list[int] = []
 
-        with _session() as db_session:
-            order_dao = DcaOrderDao(db_session)
+        with get_database_session() as database_session:
+            order_dao = DcaOrderDao(database_session)
             current_time = get_current_local_datetime()
             due_orders = order_dao.retrieve_due_pending(current_time)
             if due_orders:
@@ -49,17 +49,17 @@ class DcaJob:
             logger.info("[DCA][JOB] Found %d order(s) eligible for execution.", len(due_order_ids))
 
         for order_id in due_order_ids:
-            with _session() as db_session:
-                order_dao = DcaOrderDao(db_session)
-                strategy_dao = DcaStrategyDao(db_session)
-                manager = DcaManager(db_session)
+            with get_database_session() as database_session:
+                order_dao = DcaOrderDao(database_session)
+                strategy_dao = DcaStrategyDao(database_session)
+                manager = DcaManager(database_session)
 
                 order = order_dao.retrieve_by_id(order_id)
                 if not order:
                     continue
 
                 strategy = strategy_dao.retrieve_by_id(order.strategy_id)
-                if strategy and strategy.strategy_status == "ACTIVE":
+                if strategy and strategy.strategy_status.value == "ACTIVE":
                     await manager.process_scheduled_dca_order(order, strategy)
 
 

@@ -227,9 +227,9 @@ def holdings_and_unrealized_from_positions(
 def compute_portfolio_free_cash() -> float:
     from src.configuration.config import settings
     from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
-    from src.persistence.db import _session
+    from src.persistence.db import get_database_session
 
-    with _session() as database_session:
+    with get_database_session() as database_session:
         trade_dao = TradingTradeDao(database_session)
         all_trades = trade_dao.retrieve_recent_trades(limit_count=100000)
         cash_state = cash_from_trades(settings.PAPER_STARTING_CASH, all_trades)

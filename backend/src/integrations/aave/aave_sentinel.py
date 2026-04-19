@@ -30,7 +30,7 @@ from src.integrations.telegram.telegram_client import edit_message_text
 from src.logging.logger import get_application_logger
 from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
 from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
-from src.persistence.db import DatabaseSessionLocal
+from src.persistence.db import get_database_session
 
 logger = get_application_logger(__name__)
 
@@ -224,7 +224,7 @@ class AaveSentinelService:
 
             logger.info("[AAVE][SENTINEL][CALLBACK] Processing interaction [%s] for order identifier %s", status_display_label, target_order_identifier)
 
-            with DatabaseSessionLocal() as database_session:
+            with get_database_session() as database_session:
                 order_dao = DcaOrderDao(database_session)
                 strategy_dao = DcaStrategyDao(database_session)
 

@@ -252,9 +252,7 @@ export interface TradingEvaluationPayload {
     raw_configuration_settings: Record<string, object>;
 }
 
-export interface TradingEvaluationsResponse {
-    evaluations: TradingEvaluationPayload[];
-}
+
 
 export interface TradingPositionsResponse {
     positions: TradingPositionPayload[];
@@ -432,7 +430,7 @@ export interface AnalyticsKpiPayload {
     expected_value_usd: number;
 }
 
-export interface AnalyticsAggregatedResponse {
+export interface AnalyticsResponse {
     kpis: AnalyticsKpiPayload;
     pnl_drivers_series: AnalyticsHeatmapSeriesPayload[];
     staled_risk_series: AnalyticsHeatmapSeriesPayload[];

@@ -8,7 +8,7 @@ from src.configuration.config import settings
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.db import _session
+from src.persistence.db import get_database_session
 from src.persistence.models import TradingTrade
 
 logger = get_application_logger(__name__)
@@ -18,7 +18,7 @@ def _recently_traded(address: str, time_window_minutes: int) -> bool:
     if not address:
         return False
 
-    with _session() as database_session:
+    with get_database_session() as database_session:
         database_query = (
             select(TradingTrade)
             .where(TradingTrade.token_address == address)

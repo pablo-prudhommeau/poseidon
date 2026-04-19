@@ -79,9 +79,9 @@ class TradingEvaluationRecorder:
             raw_dexscreener_payload=token_information.model_dump(mode="json"),
             raw_configuration_settings=_to_dict(settings),
         )
-        
+
         logger.info("[TRADING][EVALUATION] Token %s sequence evaluated -> Decision: %s | Reason: %s", payload.token_symbol, decision.upper(), reason)
-        
+
         if decision.upper() == "BUY":
             TelemetryService.record_analytics_event(payload)
 

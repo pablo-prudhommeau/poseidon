@@ -41,6 +41,13 @@ class DcaStrategyCreatePayload(BaseModel):
     average_unit_price_elasticity_factor: float
     bear_market_start_date: datetime
     bear_market_end_date: datetime
+    current_cycle_index: int
+    previous_all_time_high_price: float
+    previous_bull_market_amplitude_percentage: float
+    curve_flattening_factor: float
+    bear_market_bottom_multiplier: float
+    minimum_bull_market_multiplier: float
+    aave_estimated_annual_percentage_yield: float
 
 
 class DcaStrategyCreateResponse(BaseModel):
@@ -254,8 +261,7 @@ class TradingEvaluationPayload(BaseModel):
     raw_configuration_settings: dict[str, object]
 
 
-class TradingEvaluationsResponse(BaseModel):
-    evaluations: List[TradingEvaluationPayload]
+
 
 
 class TradingPositionsResponse(BaseModel):
@@ -319,7 +325,7 @@ class AnalyticsKpiPayload(BaseModel):
     expected_value_usd: float
 
 
-class AnalyticsAggregatedResponse(BaseModel):
+class AnalyticsResponse(BaseModel):
     kpis: AnalyticsKpiPayload
     pnl_drivers_series: List[AnalyticsHeatmapSeriesPayload]
     staled_risk_series: List[AnalyticsHeatmapSeriesPayload]

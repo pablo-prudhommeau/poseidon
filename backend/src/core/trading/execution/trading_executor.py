@@ -3,12 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from src.api.serializers import serialize_trading_trade
 from src.api.websocket.websocket_hub import recompute_metrics_and_broadcast
-from src.api.websocket.websocket_manager import websocket_manager
 from src.configuration.config import settings
-from src.core.structures.structures import Token, WebsocketMessageType
-from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
+from src.core.structures.structures import Token
 from src.core.trading.execution.trading_risk_manager import TradingRiskManager
 from src.core.trading.trading_structures import TradingOrderPayload, TradingLifiRoute
 from src.integrations.blockchain.blockchain_live_executor import LiveExecutionService
@@ -16,7 +13,7 @@ from src.integrations.blockchain.blockchain_price_service import fetch_onchain_p
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
-from src.persistence.db import _session
+from src.persistence.db import get_database_session
 from src.persistence.models import ExecutionStatus, TradingTrade, TradingPosition, TradeSide, PositionPhase
 
 logger = get_application_logger(__name__)
@@ -110,7 +107,7 @@ class TradingExecutor:
                 signature = await execution_service.solana_execute_route(lifi_route)
                 logger.info("[TRADING][EXECUTOR][LIVE][BUY][SOL] Broadcast successful for %s — sig=%s", token.symbol, signature)
 
-            with _session() as database_session:
+            with get_database_session() as database_session:
                 trade_dao = TradingTradeDao(database_session)
                 position_dao = TradingPositionDao(database_session)
 
@@ -235,7 +232,7 @@ class TradingExecutor:
 
         if self.paper_mode_enabled:
             logger.info("[TRADING][EXECUTOR][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.target_token, price_usd, quantity)
-            with _session() as database_session:
+            with get_database_session() as database_session:
                 trade_dao = TradingTradeDao(database_session)
                 position_dao = TradingPositionDao(database_session)
 

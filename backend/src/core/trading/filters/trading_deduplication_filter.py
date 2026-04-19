@@ -4,13 +4,13 @@ from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.utils.trading_candidate_utils import is_address_in_open_positions
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.db import _session
+from src.persistence.db import get_database_session
 
 logger = get_application_logger(__name__)
 
 
 def _load_open_position_identifiers() -> Tuple[Set[str], Set[str]]:
-    with _session() as database_session:
+    with get_database_session() as database_session:
         position_dao = TradingPositionDao(database_session)
         positions = position_dao.retrieve_open_positions()
         open_symbols = {(position.token_symbol or "").upper() for position in positions if position.token_symbol}

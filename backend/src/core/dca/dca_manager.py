@@ -251,7 +251,7 @@ class DcaManager:
 
             amount_in_base_units = int((dca_order.executed_source_asset_amount or 0) * (10 ** dca_strategy.source_asset_decimals))
 
-            if dca_order.order_status == DcaOrderStatus.APPROVED.value:
+            if dca_order.order_status == DcaOrderStatus.APPROVED:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 1/3: Withdrawing %s liquidity from Aave lending pool", dca_strategy.source_asset_symbol)
                 withdrawal_transaction_hash = await self.aave_executor.execute_withdrawal(
                     dca_strategy.blockchain_network,
@@ -267,7 +267,7 @@ class DcaManager:
                 schedule_full_recompute_broadcast()
                 await asyncio.sleep(5)
 
-            if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE.value:
+            if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 2/3: Fetching LI.FI routing quote for optimal swap path")
                 await self.aave_executor._initialize_provider(dca_strategy.blockchain_network)
                 current_wallet_address = self.aave_executor.get_wallet_address()
@@ -306,7 +306,7 @@ class DcaManager:
                 schedule_full_recompute_broadcast()
                 await asyncio.sleep(6)
 
-            if dca_order.order_status == DcaOrderStatus.SWAPPED.value:
+            if dca_order.order_status == DcaOrderStatus.SWAPPED:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 3/3: Supplying newly acquired asset back to Aave lending pool")
                 target_asset_balance_wei = await self.aave_executor.fetch_erc20_balance(dca_strategy.blockchain_network, dca_strategy.target_asset_address)
 
@@ -401,8 +401,8 @@ class DcaManager:
     def resync_waiting_approvals(self) -> None:
         logger.info("[DCA][MANAGER][RESYNC] Resynchronizing pending approval requests after startup")
 
-        from src.persistence.db import _session
-        with _session() as session_instance:
+        from src.persistence.db import get_database_session
+        with get_database_session() as session_instance:
             strategy_dao_instance = DcaStrategyDao(session_instance)
             order_dao_instance = DcaOrderDao(session_instance)
 

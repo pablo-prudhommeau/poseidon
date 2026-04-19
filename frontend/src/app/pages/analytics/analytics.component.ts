@@ -5,7 +5,7 @@ import {ApiService} from '../../api.service';
 import {AnalyticsKpiBarComponent} from './analytics-kpi-bar/analytics-kpi-bar.component';
 import {AnalyticsSynthesisComponent} from './analytics-synthesis/analytics-synthesis.component';
 import {AnalyticsExplorationComponent} from './analytics-exploration/analytics-exploration.component';
-import {AnalyticsAggregatedResponse} from "../../core/models";
+import {AnalyticsResponse} from "../../core/models";
 
 @Component({
     selector: 'app-analytics',
@@ -23,29 +23,29 @@ import {AnalyticsAggregatedResponse} from "../../core/models";
 export class AnalyticsComponent implements OnInit {
     private readonly apiService = inject(ApiService);
 
-    readonly aggregatedData = signal<AnalyticsAggregatedResponse | null>(null);
+    readonly analyticsData = signal<AnalyticsResponse | null>(null);
     readonly isLoading = signal<boolean>(true);
     readonly loadingError = signal<string | null>(null);
 
     readonly activeTabValue = signal<string>('0');
 
     ngOnInit(): void {
-        this.loadAggregatedAnalytics();
+        this.loadAnalyticsData();
     }
 
     onTabChange(tabValue: string | number | undefined): void {
         this.activeTabValue.set(String(tabValue ?? '0'));
     }
 
-    private loadAggregatedAnalytics(): void {
+    private loadAnalyticsData(): void {
         this.isLoading.set(true);
         this.loadingError.set(null);
 
-        this.apiService.getAggregatedAnalytics().subscribe({
-            next: (response: AnalyticsAggregatedResponse) => {
-                this.aggregatedData.set(response);
+        this.apiService.getAnalytics().subscribe({
+            next: (response: AnalyticsResponse) => {
+                this.analyticsData.set(response);
                 this.isLoading.set(false);
-                console.info('[ANALYTICS][HTTP][LOAD] Aggregated analytics loaded', {
+                console.info('[ANALYTICS][HTTP][LOAD] Analytics data loaded', {
                     evaluations: response.kpis.total_evaluations,
                     outcomes: response.kpis.total_outcomes,
                     driversSeries: response.pnl_drivers_series.length,
@@ -55,7 +55,7 @@ export class AnalyticsComponent implements OnInit {
             error: (error: unknown) => {
                 this.isLoading.set(false);
                 this.loadingError.set('Failed to load analytics data');
-                console.error('[ANALYTICS][HTTP][LOAD][ERROR] Failed to load aggregated analytics', error);
+                console.error('[ANALYTICS][HTTP][LOAD][ERROR] Failed to load analytics data', error);
             },
         });
     }

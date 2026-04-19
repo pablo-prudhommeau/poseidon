@@ -2,7 +2,7 @@ import {HttpClient} from '@angular/common/http';
 import {inject, Injectable} from '@angular/core';
 import {map, Observable} from 'rxjs';
 import {
-    AnalyticsAggregatedResponse,
+    AnalyticsResponse,
     DcaOrderPayload,
     DcaOrdersResponse,
     DcaStrategiesResponse,
@@ -11,7 +11,6 @@ import {
     DcaStrategyPayload,
     TradeMode,
     TradingEvaluationPayload,
-    TradingEvaluationsResponse,
     TradingPaperResetPayload,
     TradingPositionPayload,
     TradingPositionsResponse
@@ -40,14 +39,8 @@ export class ApiService {
         return this.http.post<TradingPaperResetPayload>('/api/paper/reset', {});
     }
 
-    getAnalytics(): Observable<TradingEvaluationPayload[]> {
-        return this.http
-            .get<TradingEvaluationsResponse>('/api/analytics')
-            .pipe(map(response => response.evaluations));
-    }
-
-    getAggregatedAnalytics(): Observable<AnalyticsAggregatedResponse> {
-        return this.http.get<AnalyticsAggregatedResponse>('/api/analytics/aggregated');
+    getAnalytics(): Observable<AnalyticsResponse> {
+        return this.http.get<AnalyticsResponse>('/api/analytics');
     }
 
     getOpenPositions(): Observable<TradingPositionPayload[]> {

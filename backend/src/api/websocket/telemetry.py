@@ -10,7 +10,7 @@ from src.api.serializers import serialize_trading_evaluation
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading.trading_outcome_dao import TradingOutcomeDao
-from src.persistence.db import _session
+from src.persistence.db import get_database_session
 from src.persistence.models import TradingEvaluation, TradingOutcome
 
 logger = get_application_logger(__name__)
@@ -30,7 +30,7 @@ class TelemetryService:
         if database_session is not None:
             serialized_payload = _execute_recording(database_session)
         else:
-            with _session() as session:
+            with get_database_session() as session:
                 serialized_payload = _execute_recording(session)
                 session.commit()
 
@@ -80,12 +80,11 @@ class TelemetryService:
         if database_session is not None:
             serialized_payload = _execute_linkage(database_session)
         else:
-            with _session() as session:
+            with get_database_session() as session:
                 serialized_payload = _execute_linkage(session)
                 session.commit()
 
         if serialized_payload:
             logger.info("[TRADING][TELEMETRY][OUTCOME] Successfully linked outcome for trade id %s", trade_id)
-
 
         return serialized_payload

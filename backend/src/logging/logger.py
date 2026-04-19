@@ -138,7 +138,7 @@ class PoseidonColorFormatter(logging.Formatter):
         else:
             formatted_line = f"[{complete_timestamp}] {emoji_icon} [{level_name_upper:<8}] [{formatted_logger_name}] → {log_message}"
 
-        if log_record.exc_info is not None:
+        if log_record.exc_info:
             formatted_line = f"{formatted_line}\n{self.formatException(log_record.exc_info)}"
 
         return formatted_line

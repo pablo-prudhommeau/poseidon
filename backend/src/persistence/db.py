@@ -68,7 +68,7 @@ if database_parsed_url.drivername.startswith("sqlite"):
 
 
 @contextmanager
-def _session() -> Generator[Session, None, None]:
+def get_database_session() -> Generator[Session, None, None]:
     database_session = DatabaseSessionLocal()
     try:
         yield database_session
@@ -81,10 +81,15 @@ def _session() -> Generator[Session, None, None]:
         database_session.close()
 
 
-def get_database_session() -> Generator[Session, None, None]:
+def get_fastapi_database_session() -> Generator[Session, None, None]:
     database_session = DatabaseSessionLocal()
     try:
         yield database_session
+        database_session.commit()
+    except Exception as transaction_exception:
+        database_session.rollback()
+        logger.exception("[DATABASE][TRANSACTION][ROLLBACK] FastAPI session rolled back due to error: %s", transaction_exception)
+        raise transaction_exception
     finally:
         database_session.close()
 

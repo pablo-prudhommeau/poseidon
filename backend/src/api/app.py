@@ -15,7 +15,7 @@ from src.core.jobs.dca_job import dca_job as aave_dca
 from src.core.jobs.orchestrator_job import ensure_started, get_status
 from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
 from src.logging.logger import get_application_logger
-from src.persistence.db import initialize_database
+from src.persistence.db import initialize_database, get_database_session
 
 log = get_application_logger(__name__)
 
@@ -49,9 +49,8 @@ def create_app() -> FastAPI:
         websocket_manager.attach_current_event_loop()
         ensure_started()
 
-        from src.persistence.db import DatabaseSessionLocal
         from src.core.dca.dca_manager import DcaManager
-        with DatabaseSessionLocal() as session:
+        with get_database_session() as session:
             manager = DcaManager(session)
             manager.resync_waiting_approvals()
 

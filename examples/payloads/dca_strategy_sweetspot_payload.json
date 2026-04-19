@@ -14,5 +14,12 @@
     "slippage_tolerance": 0.01,
     "average_unit_price_elasticity_factor": 10,
     "bear_market_start_date": "2022-06-06T00:00:00Z",
-    "bear_market_end_date": "2022-12-01T00:00:00Z"
+    "bear_market_end_date": "2022-12-01T00:00:00Z",
+    "current_cycle_index": 5,
+    "previous_all_time_high_price": 125000,
+    "previous_bull_market_amplitude_percentage": 680,
+    "curve_flattening_factor": 3,
+    "bear_market_bottom_multiplier": 0.30,
+    "minimum_bull_market_multiplier": 1.20,
+    "aave_estimated_annual_percentage_yield": 0.05
 }

@@ -44,7 +44,7 @@ class DcaOrderDao:
         logger.debug("[DATABASE][DAO][DCA_ORDER][RETRIEVE] Fetching due pending orders")
         database_query = (
             select(DcaOrder)
-            .where(DcaOrder.order_status == "PENDING")
+            .where(DcaOrder.order_status.in_(["PENDING", "APPROVED"]))
             .where(DcaOrder.planned_execution_date <= current_timestamp)
         )
         return list(self.database_session.execute(database_query).scalars().all())

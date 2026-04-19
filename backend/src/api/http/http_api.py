@@ -16,13 +16,11 @@ from src.api.http.api_schemas import (
     DcaStrategyCreateResponse,
     DcaStrategiesResponse,
     DcaOrdersResponse,
-    TradingEvaluationsResponse,
     TradingPositionsResponse,
     DcaStrategyPayload,
-    AnalyticsAggregatedResponse,
+    AnalyticsResponse,
 )
 from src.api.serializers import (
-    serialize_trading_evaluation,
     serialize_dca_strategy,
     serialize_dca_order,
     serialize_trading_position,
@@ -42,7 +40,7 @@ from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.db import get_database_session
+from src.persistence.db import get_fastapi_database_session
 from src.persistence.models import DcaStrategy
 
 router = APIRouter()
@@ -52,7 +50,7 @@ aave_executor_client = AaveExecutor()
 
 
 @router.get("/api/health", tags=["health"])
-def get_health_status(database_session: Session = Depends(get_database_session)) -> SystemHealthPayload:
+def get_health_status(database_session: Session = Depends(get_fastapi_database_session)) -> SystemHealthPayload:
     logger.debug("[HTTP][HEALTH][DB] Initiating health check sequence")
     current_timestamp = get_current_local_datetime().isoformat()
     is_database_connected = False
@@ -74,7 +72,7 @@ def get_health_status(database_session: Session = Depends(get_database_session))
 
 
 @router.post("/api/paper/reset", tags=["paper"])
-def reset_paper_mode(database_session: Session = Depends(get_database_session)) -> TradingPaperResetPayload:
+def reset_paper_mode(database_session: Session = Depends(get_fastapi_database_session)) -> TradingPaperResetPayload:
     logger.debug("[HTTP][PAPER][RESET] Initiating paper mode reset process")
     service.reset_paper(database_session)
 
@@ -102,27 +100,14 @@ def reset_paper_mode(database_session: Session = Depends(get_database_session)) 
 
 
 @router.get("/api/analytics", tags=["analytics"])
-def get_analytics_history(
+def get_analytics(
         limit_results: int = Query(50000, ge=1, le=50000),
-        database_session: Session = Depends(get_database_session),
-) -> TradingEvaluationsResponse:
-    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving recent analytics history with limit %s", limit_results)
-    evaluation_dao = TradingEvaluationDao(database_session)
-    evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
-    serialized_evaluations = [serialize_trading_evaluation(evaluation_row) for evaluation_row in evaluation_rows]
-    logger.info("[HTTP][EVALUATION][FETCH] Successfully retrieved %s evaluation records", len(serialized_evaluations))
-    return TradingEvaluationsResponse(evaluations=serialized_evaluations)
-
-
-@router.get("/api/analytics/aggregated", tags=["analytics"])
-def get_aggregated_analytics(
-        limit_results: int = Query(50000, ge=1, le=50000),
-        database_session: Session = Depends(get_database_session),
-) -> AnalyticsAggregatedResponse:
-    from src.api.http.analytics_aggregation_service import build_aggregated_analytics
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> AnalyticsResponse:
+    from src.api.http.analytics_aggregation_service import build_analytics_response
     from src.persistence.models import PositionPhase
 
-    logger.debug("[HTTP][ANALYTICS][AGGREGATED] Retrieving and aggregating analytics with limit %s", limit_results)
+    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving and processing analytics with limit %s", limit_results)
     evaluation_dao = TradingEvaluationDao(database_session)
     position_dao = TradingPositionDao(database_session)
 
@@ -131,13 +116,13 @@ def get_aggregated_analytics(
     staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
     staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
 
-    aggregated_response = build_aggregated_analytics(evaluation_rows, staled_token_addresses)
-    logger.info("[HTTP][ANALYTICS][AGGREGATED] Successfully aggregated %s evaluations", len(evaluation_rows))
-    return aggregated_response
+    analytics_response = build_analytics_response(evaluation_rows, staled_token_addresses)
+    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed %s evaluations", len(evaluation_rows))
+    return analytics_response
 
 
 @router.get("/api/positions", tags=["positions"])
-async def get_open_positions_list(database_session: Session = Depends(get_database_session)) -> TradingPositionsResponse:
+async def get_open_positions_list(database_session: Session = Depends(get_fastapi_database_session)) -> TradingPositionsResponse:
     logger.debug("[HTTP][POSITIONS][FETCH] Retrieving currently open positions")
     position_dao = TradingPositionDao(database_session)
     open_positions = position_dao.retrieve_open_positions()
@@ -174,7 +159,7 @@ async def get_open_positions_list(database_session: Session = Depends(get_databa
 @router.post("/api/dca/strategies", tags=["dca"])
 async def create_new_dca_strategy(
         strategy_payload: DcaStrategyCreatePayload,
-        database_session: Session = Depends(get_database_session),
+        database_session: Session = Depends(get_fastapi_database_session),
 ) -> DcaStrategyCreateResponse:
     logger.debug("[HTTP][DCA][STRATEGY][CREATE] Initiating DCA strategy creation for symbol %s", strategy_payload.binance_trading_pair)
     dca_strategy_dao = DcaStrategyDao(database_session)
@@ -205,13 +190,13 @@ async def create_new_dca_strategy(
         amount_per_execution_order=amount_per_order,
         slippage_tolerance=strategy_payload.slippage_tolerance,
         average_unit_price_elasticity_factor=strategy_payload.average_unit_price_elasticity_factor,
-        current_cycle_index=settings.MACRO_CURRENT_CYCLE_INDEX,
-        previous_all_time_high_price=settings.MACRO_PREVIOUS_ATH,
-        previous_bull_market_amplitude_percentage=settings.MACRO_PREVIOUS_BULL_AMPLITUDE_PCT,
-        curve_flattening_factor=settings.MACRO_FLATTENING_FACTOR,
-        bear_market_bottom_multiplier=settings.MACRO_BEAR_BOTTOM_MULTIPLIER,
-        minimum_bull_market_multiplier=settings.MACRO_MINIMUM_BULL_MULTIPLIER,
-        aave_estimated_annual_percentage_yield=settings.AAVE_ESTIMATED_APY,
+        current_cycle_index=strategy_payload.current_cycle_index,
+        previous_all_time_high_price=strategy_payload.previous_all_time_high_price,
+        previous_bull_market_amplitude_percentage=strategy_payload.previous_bull_market_amplitude_percentage,
+        curve_flattening_factor=strategy_payload.curve_flattening_factor,
+        bear_market_bottom_multiplier=strategy_payload.bear_market_bottom_multiplier,
+        minimum_bull_market_multiplier=strategy_payload.minimum_bull_market_multiplier,
+        aave_estimated_annual_percentage_yield=strategy_payload.aave_estimated_annual_percentage_yield,
         strategy_start_date=strategy_payload.strategy_start_date,
         strategy_end_date=strategy_payload.strategy_end_date,
         strategy_status=DcaStrategyStatus.ACTIVE.value,
@@ -242,7 +227,7 @@ async def create_new_dca_strategy(
 
 
 @router.get("/api/dca/strategies", tags=["dca"])
-async def get_all_dca_strategies(database_session: Session = Depends(get_database_session)) -> DcaStrategiesResponse:
+async def get_all_dca_strategies(database_session: Session = Depends(get_fastapi_database_session)) -> DcaStrategiesResponse:
     logger.debug("[HTTP][DCA][STRATEGIES][FETCH] Retrieving all registered DCA strategies")
     dca_strategy_dao = DcaStrategyDao(database_session)
     all_dca_strategies = dca_strategy_dao.retrieve_all()
@@ -259,7 +244,7 @@ async def get_all_dca_strategies(database_session: Session = Depends(get_databas
 
 
 @router.get("/api/dca/strategies/{strategy_uid}/orders", tags=["dca"])
-def get_dca_strategy_orders(strategy_uid: int, database_session: Session = Depends(get_database_session)) -> DcaOrdersResponse:
+def get_dca_strategy_orders(strategy_uid: int, database_session: Session = Depends(get_fastapi_database_session)) -> DcaOrdersResponse:
     logger.debug("[HTTP][DCA][ORDERS][FETCH] Retrieving orders mapped to DCA strategy id %s", strategy_uid)
     dca_order_dao = DcaOrderDao(database_session)
     strategy_orders = dca_order_dao.retrieve_by_strategy(strategy_uid)

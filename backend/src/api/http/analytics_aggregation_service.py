@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Callable
 
 from src.api.http.api_schemas import (
-    AnalyticsAggregatedResponse,
+    AnalyticsResponse,
     AnalyticsHeatmapCellPayload,
     AnalyticsHeatmapSeriesPayload,
     AnalyticsKpiPayload,
@@ -393,14 +393,14 @@ def compute_timeline(evaluations: list[TradingEvaluation]) -> list[AnalyticsTime
 
 def compute_scatter_series(evaluations: list[TradingEvaluation]) -> list[AnalyticsScatterSeriesPayload]:
     closed_evaluations = [evaluation for evaluation in evaluations if _aggregate_evaluation_outcomes(evaluation) is not None]
-    
+
     max_scatter_points = 500
     if len(closed_evaluations) > max_scatter_points:
         step = len(closed_evaluations) / max_scatter_points
         sampled_evaluations = [closed_evaluations[int(i * step)] for i in range(max_scatter_points)]
     else:
         sampled_evaluations = closed_evaluations
-        
+
     scatter_series_list: list[AnalyticsScatterSeriesPayload] = []
 
     for metric_definition in METRIC_DEFINITIONS:
@@ -430,10 +430,10 @@ def compute_scatter_series(evaluations: list[TradingEvaluation]) -> list[Analyti
     return scatter_series_list
 
 
-def build_aggregated_analytics(
+def build_analytics_response(
         evaluations: list[TradingEvaluation],
         staled_token_addresses: set[str],
-) -> AnalyticsAggregatedResponse:
+) -> AnalyticsResponse:
     logger.info("[ANALYTICS][AGGREGATION] Starting aggregation for %d evaluations", len(evaluations))
 
     kpis = compute_kpis(evaluations)
@@ -443,7 +443,7 @@ def build_aggregated_analytics(
     scatter_series = compute_scatter_series(evaluations)
 
     logger.info("[ANALYTICS][AGGREGATION] Aggregation complete")
-    return AnalyticsAggregatedResponse(
+    return AnalyticsResponse(
         kpis=kpis,
         pnl_drivers_series=pnl_drivers_series,
         staled_risk_series=staled_risk_series,

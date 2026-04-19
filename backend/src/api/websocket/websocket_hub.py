@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -45,7 +45,7 @@ from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
-from src.persistence.db import get_database_session, _session
+from src.persistence.db import get_database_session
 from src.persistence.models import (
     TradingPortfolioSnapshot,
     TradingPosition,
@@ -113,7 +113,7 @@ async def compute_dca_strategies_payload(database_session: Session) -> List[DcaS
 
 
 def _fetch_portfolio_sync_data(websocket_connection_id: int) -> Optional[dict]:
-    with _session() as database_session:
+    with get_database_session() as database_session:
         portfolio_dao = TradingPortfolioSnapshotDao(database_session)
         position_dao = TradingPositionDao(database_session)
         trade_dao = TradingTradeDao(database_session)
@@ -160,7 +160,7 @@ async def sync_portfolio_state_async(websocket_connection: WebSocket) -> None:
 
 
 def _fetch_positions_sync_data() -> dict:
-    with _session() as database_session:
+    with get_database_session() as database_session:
         position_dao = TradingPositionDao(database_session)
         open_position_records = position_dao.retrieve_open_positions()
 
@@ -190,7 +190,7 @@ async def sync_positions_state_async(websocket_connection: WebSocket) -> None:
 
 
 def _fetch_trades_sync_data() -> dict:
-    with _session() as database_session:
+    with get_database_session() as database_session:
         trade_dao = TradingTradeDao(database_session)
         recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
         trades_payload = _serialize_trades_sync(recent_trade_records)
@@ -213,7 +213,7 @@ async def sync_trades_state_async(websocket_connection: WebSocket) -> None:
 
 async def sync_dca_strategies_state_async(websocket_connection: WebSocket) -> None:
     try:
-        with _session() as database_session:
+        with get_database_session() as database_session:
             dca_strategies_payload = await compute_dca_strategies_payload(database_session)
 
         await websocket_connection.send_json({"type": WebsocketMessageType.DCA_STRATEGIES.value, "payload": jsonable_encoder(dca_strategies_payload)})
@@ -269,7 +269,7 @@ class _TransientPosition:
 
 
 def _read_transient_positions() -> List[_TransientPosition]:
-    with _session() as database_session:
+    with get_database_session() as database_session:
         position_dao = TradingPositionDao(database_session)
         open_position_records = position_dao.retrieve_open_positions()
         return [
@@ -289,7 +289,7 @@ def _execute_autosell_and_build_broadcast_payloads(
 ) -> dict:
     from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
 
-    with _session() as database_session:
+    with get_database_session() as database_session:
         database_session.expire_on_commit = False
 
         position_dao = TradingPositionDao(database_session)
@@ -377,7 +377,7 @@ async def recompute_metrics_and_broadcast() -> None:
 
     dca_strategies_payload: List[DcaStrategyPayload] = []
     try:
-        with _session() as database_session:
+        with get_database_session() as database_session:
             dca_strategies_payload = await compute_dca_strategies_payload(database_session)
     except Exception as exception:
         logger.exception("[WEBSOCKET][HUB][RECOMPUTE][DCA] DCA strategies payload computation failed: %s", exception)
@@ -391,7 +391,7 @@ async def recompute_metrics_and_broadcast() -> None:
 
 
 @router.websocket("/ws")
-async def handle_websocket_connection(websocket_connection: WebSocket, database_session: Session = Depends(get_database_session)) -> None:
+async def handle_websocket_connection(websocket_connection: WebSocket) -> None:
     await websocket_connection.accept()
     websocket_manager.register_client_connection(websocket_connection)
     logger.info("[WEBSOCKET][HUB][CONNECTION] New client successfully connected")

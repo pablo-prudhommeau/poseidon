@@ -5,7 +5,6 @@ from typing import Optional
 
 import base58
 
-from src.configuration.config import settings
 from src.core.utils.dict_utils import _read_path
 from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer, EvmSigner
 from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer, SolanaSigner

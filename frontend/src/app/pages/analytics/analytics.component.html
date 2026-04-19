@@ -9,7 +9,7 @@
 			<i class="pi pi-exclamation-triangle" style="margin-right: 8px;"></i>
 			{{ loadingError() }}
 		</div>
-	} @else if (aggregatedData(); as data) {
+	} @else if (analyticsData(); as data) {
 		<app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>
 
 		<p-tabs [value]="activeTabValue()" (valueChange)="onTabChange($event)">
