@@ -15,6 +15,7 @@ from src.api.http.api_schemas import (
     TradingPositionPayload,
     TradingPortfolioPayload,
     DcaStrategyPayload,
+    ShadowIntelligenceStatusPayload,
 )
 from src.api.serializers import (
     serialize_trading_trade,
@@ -33,6 +34,8 @@ from src.core.structures.structures import (
     WebsocketInboundMessage,
     WebsocketMessageType,
 )
+from src.core.trading.shadowing.shadow_analytics_intelligence import compute_shadow_intelligence_snapshot
+from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot
 from src.core.utils.pnl_utils import (
     fifo_realized_pnl,
     holdings_and_unrealized_from_positions,
@@ -83,12 +86,40 @@ def _serialize_portfolio_sync(
     holdings_and_unrealized_profit_and_loss_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(
         position_records, prices_by_pair_address
     )
+
+    shadow_snapshot = compute_shadow_intelligence_snapshot()
+    shadow_status = _map_shadow_status(shadow_snapshot)
+
     return serialize_trading_portfolio_snapshot(
         portfolio_snapshot,
         equity_curve=equity_curve_data,
         realized_total=realized_profit_and_loss_data.total_realized_profit_and_loss,
         realized_24h=realized_profit_and_loss_data.recent_realized_profit_and_loss,
         unrealized=holdings_and_unrealized_profit_and_loss_data.total_unrealized_profit_and_loss,
+        shadow_status=shadow_status,
+    )
+
+
+def _map_shadow_status(snapshot: ShadowIntelligenceSnapshot) -> ShadowIntelligenceStatusPayload:
+    required_outcomes = settings.TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION
+    required_hours = settings.TRADING_SHADOWING_MIN_HOURS_FOR_ACTIVATION
+
+    outcome_progress = (snapshot.resolved_outcome_count / required_outcomes * 100.0) if required_outcomes > 0 else 100.0
+    hours_progress = (snapshot.elapsed_hours / required_hours * 100.0) if required_hours > 0 else 100.0
+
+    phase = "ACTIVE" if snapshot.is_activated else "LEARNING"
+    if not settings.TRADING_SHADOWING_ENABLED:
+        phase = "DISABLED"
+
+    return ShadowIntelligenceStatusPayload(
+        is_enabled=settings.TRADING_SHADOWING_ENABLED,
+        phase=phase,
+        resolved_outcome_count=snapshot.resolved_outcome_count,
+        required_outcome_count=required_outcomes,
+        elapsed_hours=snapshot.elapsed_hours,
+        required_hours=required_hours,
+        outcome_progress_percentage=min(100.0, outcome_progress),
+        hours_progress_percentage=min(100.0, hours_progress),
     )
 
 

@@ -15,8 +15,16 @@
 </ng-template>
 
 <ng-template #actionsTemplate let-row="row">
-	<div class="flex items-center justify-center">
-		<p-button severity="help" rounded="true" icon="fas fa-up-right-from-square" size="small" (click)="openDetails(row)"/>
+	<div class="flex items-center justify-center gap-1.5 h-full">
+		<button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400"
+		        title="View details" (click)="openDetails(row)">
+			<i class="fas fa-expand"></i>
+		</button>
+		<a [href]="dexUrlForPair(row)" target="_blank" rel="noopener"
+		   class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400"
+		   title="Open on DexScreener">
+			<i class="fas fa-arrow-up-right-from-square"></i>
+		</a>
 	</div>
 </ng-template>
 
@@ -27,249 +35,368 @@
 		[modal]="true"
 		[draggable]="false"
 		[dismissableMask]="true"
+		appendTo="body"
 		[breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }"
-		[style]="{ width: '64rem' }">
+		[style]="{ width: '64rem' }"
+		styleClass="positions-table-dialog"
+		[contentStyle]="{ padding: '0' }">
 
 	<ng-template pTemplate="header">
-		<div class="flex items-center gap-3">
-			<span class="font-semibold text-lg">{{ selectedPosition()?.token_symbol }}</span>
+		<div class="flex items-center gap-3 w-full">
+			<span class="text-xl font-black text-white tracking-tight">{{ selectedPosition()?.token_symbol }}</span>
 			@if (selectedPosition()?.blockchain_network) {
-				<p-tag [value]="selectedPosition()?.blockchain_network" severity="info"></p-tag>
+				<span class="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">
+					{{ selectedPosition()?.blockchain_network }}
+				</span>
 			}
 			@if (selectedPosition()?.position_phase) {
-				<p-tag [value]="selectedPosition()?.position_phase" [severity]="phaseSeverity(selectedPosition()?.position_phase ?? '')"></p-tag>
+				<span class="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full border"
+				      [ngClass]="{
+				          'bg-blue-500/10 border-blue-500/20 text-blue-400': selectedPosition()?.position_phase === 'OPEN',
+				          'bg-yellow-500/10 border-yellow-500/20 text-yellow-400': selectedPosition()?.position_phase === 'PARTIAL',
+				          'bg-slate-500/10 text-slate-400': selectedPosition()?.position_phase !== 'OPEN' && selectedPosition()?.position_phase !== 'PARTIAL'
+				      }">
+					{{ selectedPosition()?.position_phase }}
+				</span>
 			}
+			<a [href]="dexUrlForPair(selectedPosition())" target="_blank" rel="noopener"
+			   class="ml-auto cursor-pointer inline-flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-widest text-slate-500 hover:text-blue-400 transition-colors">
+				<i class="fas fa-arrow-up-right-from-square text-xs"></i>
+				DexScreener
+			</a>
 		</div>
 	</ng-template>
 
-	<p-tabs [value]="0">
+	<p-tabs value="overview">
 		<p-tablist>
-			<p-tab [value]="0">Overview</p-tab>
-			<p-tab [value]="1">Analytics</p-tab>
-			<p-tab [value]="2">Raw</p-tab>
+			<p-tab value="overview"><i class="fa fa-info-circle mr-2 text-blue-400/60"></i>Position Details</p-tab>
+			<p-tab value="shadows">
+				<div class="flex items-center gap-2">
+					<i class="fa fa-ghost text-purple-400/60"></i>
+					<span>Shadow Intelligence</span>
+				</div>
+			</p-tab>
 		</p-tablist>
-
 		<p-tabpanels>
-			<p-tabpanel [value]="0">
-				<div class="grid grid-cols-12 gap-4 text-sm">
-					<div class="col-span-12 md:col-span-6">
-						<div class="opacity-70">Token</div>
-						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedPosition()?.token_address }}
-							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy token address"
-							        (click)="copyToClipboard(selectedPosition()?.token_address)"></button>
+			<p-tabpanel value="overview">
+				<div class="space-y-3">
+					<div class="grid grid-cols-3 gap-3">
+						<div class="p-3 rounded-xl bg-black/20 border border-white/5 flex flex-col gap-1">
+							<span class="text-[9px] uppercase font-bold text-slate-500 tracking-widest">Live P&L</span>
+							<span class="text-lg font-black"
+							      [class.text-emerald-400]="deltaPercent(selectedPosition()) > 0"
+							      [class.text-red-400]="deltaPercent(selectedPosition()) < 0"
+							      [class.text-slate-400]="deltaPercent(selectedPosition()) === 0">
+					{{ deltaPercent(selectedPosition()) > 0 ? '+' : '' }}{{ formatPercent(deltaPercent(selectedPosition())) }}
+				</span>
+						</div>
+						<div class="p-3 rounded-xl bg-black/20 border border-white/5 flex flex-col gap-1">
+							<span class="text-[9px] uppercase font-bold text-slate-500 tracking-widest">Notional (Entry)</span>
+							<span class="text-lg font-black text-white">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'entry'), 'USD', 2, 2) }}</span>
+						</div>
+						<div class="p-3 rounded-xl bg-black/20 border border-white/5 flex flex-col gap-1">
+							<span class="text-[9px] uppercase font-bold text-slate-500 tracking-widest">Notional (Live)</span>
+							<span class="text-lg font-black text-white">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'last'), 'USD', 2, 2) }}</span>
 						</div>
 					</div>
 
-					<div class="col-span-12 md:col-span-6">
-						<div class="opacity-70">Pair</div>
-						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedPosition()?.pair_address }}
-							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy pair address"
-							        (click)="copyToClipboard(selectedPosition()?.pair_address)"></button>
+					<div class="p-4 rounded-xl bg-black/20 border border-white/5">
+						<div class="flex items-center gap-2 mb-4">
+							<i class="fa fa-crosshairs text-blue-400/60 text-sm"></i>
+							<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Price Range</span>
 						</div>
-					</div>
 
-					<div class="col-span-6">
-						<div class="opacity-70">Quantity</div>
-						<div class="font-semibold">{{ formatNumber(selectedPosition()?.open_quantity, 2, 6) }}</div>
-					</div>
-					<div class="col-span-6">
-						<div class="opacity-70">Entry</div>
-						<div class="font-semibold">{{ formatCurrency(selectedPosition()?.entry_price, 'USD', 4, 8) }}</div>
-					</div>
-
-					<div class="col-span-6">
-						<div class="opacity-70">TP1 / TP2</div>
-						<div class="font-semibold">
-							{{ formatCurrency(selectedPosition()?.take_profit_tier_1_price, 'USD', 4, 8) }}
-							({{ formatPercent(((selectedPosition()?.take_profit_tier_1_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }})
-							/
-							{{ formatCurrency(selectedPosition()?.take_profit_tier_2_price, 'USD', 4, 8) }}
-							({{ formatPercent(((selectedPosition()?.take_profit_tier_2_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }})
-						</div>
-					</div>
-					<div class="col-span-6">
-						<div class="opacity-70">Stop</div>
-						<div class="font-semibold">
-							{{ formatCurrency(selectedPosition()?.stop_loss_price, 'USD', 4, 8) }}
-							({{ formatPercent(((selectedPosition()?.stop_loss_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }})
-						</div>
-					</div>
-
-					<div class="col-span-6">
-						<div class="opacity-70">Opened at</div>
-						<div class="font-semibold">{{ selectedPosition()?.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</div>
-					</div>
-					<div class="col-span-6">
-						<div class="opacity-70">Last price</div>
-						<div class="font-semibold">{{ formatNumber(selectedPosition()?.last_price, 4, 8) }}</div>
-					</div>
-
-					<p-divider class="col-span-12"></p-divider>
-
-					<div class="col-span-4">
-						<p-card class="h-full">
-							<div class="opacity-70 text-xs">Δ since entry</div>
-							<div [ngClass]="deltaPercent(selectedPosition()) >= 0 ? 'text-green-400' : 'text-red-400'" class="font-semibold text-lg">
-								{{ formatPercent(deltaPercent(selectedPosition())) }}
+						<div class="grid grid-cols-4 gap-3 text-center">
+							<div class="flex flex-col gap-1">
+								<span class="text-[9px] uppercase font-bold text-red-400/70 tracking-widest">Stop Loss</span>
+								<span class="text-sm font-bold text-red-300">{{ formatNumber(selectedPosition()?.stop_loss_price, 4, 8) }}</span>
+								<span class="text-[10px] text-red-500/60 font-bold">{{ formatPercent(((selectedPosition()?.stop_loss_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
 							</div>
-						</p-card>
-					</div>
-					<div class="col-span-4">
-						<p-card class="h-full">
-							<div class="opacity-70 text-xs">Order notional (entry)</div>
-							<div class="font-semibold text-lg">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'entry'), 'USD', 2, 2) }}</div>
-						</p-card>
-					</div>
-					<div class="col-span-4">
-						<p-card class="h-full">
-							<div class="opacity-70 text-xs">Order notional (last)</div>
-							<div class="font-semibold text-lg">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'last'), 'USD', 2, 2) }}</div>
-						</p-card>
-					</div>
+							<div class="flex flex-col gap-1">
+								<span class="text-[9px] uppercase font-bold text-blue-400/70 tracking-widest">Entry</span>
+								<span class="text-sm font-bold text-blue-200">{{ formatNumber(selectedPosition()?.entry_price, 4, 8) }}</span>
+								<span class="text-[10px] text-slate-500 font-bold">baseline</span>
+							</div>
+							<div class="flex flex-col gap-1">
+								<span class="text-[9px] uppercase font-bold text-emerald-400/70 tracking-widest">TP1</span>
+								<span class="text-sm font-bold text-emerald-300">{{ formatNumber(selectedPosition()?.take_profit_tier_1_price, 4, 8) }}</span>
+								<span class="text-[10px] text-emerald-500/60 font-bold">{{ formatPercent(((selectedPosition()?.take_profit_tier_1_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
+							</div>
+							<div class="flex flex-col gap-1">
+								<span class="text-[9px] uppercase font-bold text-emerald-400 tracking-widest">TP2</span>
+								<span class="text-sm font-bold text-emerald-200">{{ formatNumber(selectedPosition()?.take_profit_tier_2_price, 4, 8) }}</span>
+								<span class="text-[10px] text-emerald-500/60 font-bold">{{ formatPercent(((selectedPosition()?.take_profit_tier_2_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
+							</div>
+						</div>
 
-					<p-divider class="col-span-12"></p-divider>
+						<div class="mt-4">
+							<div class="relative h-10 flex items-center w-full">
+								<div class="w-full rounded-full h-2 overflow-hidden relative bg-slate-500/10">
+									<div class="absolute h-full left-0 bg-gradient-to-r from-red-500/80 to-red-500/30" [style.width.%]="entryPositionPercentage(selectedPosition())"></div>
+									<div class="absolute h-full bg-gradient-to-r from-emerald-500/10 to-emerald-500/30" [style.left.%]="entryPositionPercentage(selectedPosition())" [style.width.%]="tp1PositionPercentage(selectedPosition()) - entryPositionPercentage(selectedPosition())"></div>
+									<div class="absolute h-full bg-gradient-to-r from-emerald-500/30 to-emerald-500/80" [style.left.%]="tp1PositionPercentage(selectedPosition())" [style.width.%]="100 - tp1PositionPercentage(selectedPosition())"></div>
+								</div>
 
-					<div class="col-span-12">
-						<div class="opacity-70">Links</div>
-						<div class="flex flex-wrap gap-2 mt-1">
-							<a pButton label="Dexscreener (Pair)" icon="fas fa-arrow-up-right-from-square"
-							   [href]="dexUrlForPair(selectedPosition())" target="_blank"></a>
-							<a pButton label="Dexscreener (Token)" icon="fas fa-arrow-up-right-from-square"
-							   [href]="dexUrlForToken(selectedPosition())" target="_blank"></a>
+								<div class="absolute top-1/2 -translate-y-1/2 w-[2px] h-[10px] rounded bg-red-500" style="left: 0%"></div>
+								<div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[2px] h-[10px] rounded bg-slate-400" [style.left.%]="entryPositionPercentage(selectedPosition())"></div>
+								<div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[2px] h-[10px] rounded bg-emerald-500" [style.left.%]="tp1PositionPercentage(selectedPosition())"></div>
+								<div class="absolute top-1/2 -translate-y-1/2 w-[2px] h-[10px] rounded bg-emerald-500" style="right: 0%"></div>
+
+								<div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-500 z-10"
+								     [style.left.%]="pricePositionPercentage(selectedPosition())">
+									<div class="relative w-4 h-4">
+										<div class="w-4 h-4 rounded-full border-2 shadow-lg"
+										     [ngClass]="{
+							         'bg-emerald-400 border-emerald-300 shadow-emerald-500/50': deltaPercent(selectedPosition()) > 0,
+							         'bg-red-400 border-red-300 shadow-red-500/50': deltaPercent(selectedPosition()) < 0,
+							         'bg-slate-400 border-slate-300': deltaPercent(selectedPosition()) === 0
+							     }">
+										</div>
+										<div class="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap">
+								<span class="text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-lg backdrop-blur-sm border"
+								      [ngClass]="{
+								          'bg-emerald-500/20 text-emerald-300 border-emerald-500/30': deltaPercent(selectedPosition()) > 0,
+								          'bg-red-500/20 text-red-300 border-red-500/30': deltaPercent(selectedPosition()) < 0,
+								          'bg-slate-500/20 text-slate-300 border-white/5': deltaPercent(selectedPosition()) === 0
+								      }">
+									{{ formatNumber(selectedPosition()?.last_price, 4, 8) }}
+								</span>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="relative w-full h-4 text-[8px] uppercase font-bold tracking-widest text-slate-600">
+								<span class="absolute left-0">SL</span>
+								<span class="absolute -translate-x-1/2" [style.left.%]="entryPositionPercentage(selectedPosition())">Entry</span>
+								<span class="absolute -translate-x-1/2" [style.left.%]="tp1PositionPercentage(selectedPosition())">TP1</span>
+								<span class="absolute right-0 translate-x-1/2">TP2</span>
+							</div>
 						</div>
 					</div>
 
-					@if (buyTradeForSelectedPosition(); as buy) {
-						<div class="col-span-12">
-							<p-divider></p-divider>
-							<p-card>
+					<div class="grid grid-cols-2 gap-3">
+						<div class="p-4 rounded-xl bg-black/20 border border-white/5">
+							<div class="flex items-center gap-2 mb-3">
+								<i class="fa fa-clock text-slate-500 text-sm"></i>
+								<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Position Details</span>
+							</div>
+							<div class="space-y-2">
 								<div class="flex items-center justify-between">
-									<div class="font-semibold">Origin BUY trade</div>
-									<p-tag value="BUY" severity="success"></p-tag>
+									<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Quantity</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatNumber(selectedPosition()?.open_quantity, 2, 6) }}</span>
 								</div>
-								<div class="grid grid-cols-12 gap-3 mt-3 text-sm">
-									<div class="col-span-4">
-										<div class="opacity-70">Date</div>
-										<div class="font-semibold">{{ buy.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</div>
-									</div>
-									<div class="col-span-4">
-										<div class="opacity-70">Quantity</div>
-										<div class="font-semibold">{{ formatNumber(buy.execution_quantity, 2, 6) }}</div>
-									</div>
-									<div class="col-span-4">
-										<div class="opacity-70">Price</div>
-										<div class="font-semibold">{{ formatCurrency(buy.execution_price, 'USD', 4, 8) }}</div>
-									</div>
+								<div class="flex items-center justify-between">
+									<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Opened</span>
+									<span class="text-xs font-bold text-slate-200">{{ selectedPosition()?.opened_at | date: 'yyyy-MM-dd HH:mm' }}</span>
 								</div>
-								<div class="mt-3 flex gap-2">
-									<p-button label="Open in trades list" icon="fas fa-table" (click)="focusTradeInTable(buy)"></p-button>
-									<a pButton label="Dexscreener (Pair)" icon="fas fa-arrow-up-right-from-square"
-									   [href]="dexUrlForPair(buy)" target="_blank"></a>
+								<div class="flex items-center justify-between">
+									<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Updated</span>
+									<span class="text-xs font-bold text-slate-200">{{ selectedPosition()?.updated_at | date: 'yyyy-MM-dd HH:mm' }}</span>
 								</div>
-							</p-card>
+							</div>
+						</div>
+
+						<div class="p-4 rounded-xl bg-black/20 border border-white/5">
+							<div class="flex items-center gap-2 mb-3">
+								<i class="fa fa-brain text-purple-400/60 text-sm"></i>
+								<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">AI Intelligence</span>
+							</div>
+							@if (analyticsForSelected(); as analytics) {
+								@if (analytics.ai.ai_probability_take_profit_before_stop_loss > 0) {
+									<div class="space-y-2">
+										<div class="flex items-center justify-between">
+											<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Adjusted Quality</span>
+											<span class="text-xs font-bold text-emerald-400">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</span>
+										</div>
+										<div class="flex items-center justify-between">
+											<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">AI Probability TP</span>
+											<span class="text-xs font-bold text-blue-400">{{ formatPercent(analytics.ai.ai_probability_take_profit_before_stop_loss * 100) }}</span>
+										</div>
+										<div class="flex items-center justify-between">
+											<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">AI Δ Score</span>
+											<span class="text-xs font-bold" [class.text-emerald-400]="analytics.ai.ai_quality_score_delta > 0" [class.text-red-400]="analytics.ai.ai_quality_score_delta < 0" [class.text-slate-400]="analytics.ai.ai_quality_score_delta === 0">
+									{{ analytics.ai.ai_quality_score_delta > 0 ? '+' : '' }}{{ formatPercent(analytics.ai.ai_quality_score_delta) }}
+								</span>
+										</div>
+									</div>
+								} @else {
+									<div class="flex items-center justify-center h-16 text-[10px] text-slate-600 uppercase font-bold">No AI chartist analysis available</div>
+								}
+							} @else {
+								<div class="flex items-center justify-center h-16 text-[10px] text-slate-600 uppercase font-bold">No AI chartist analysis available</div>
+							}
+						</div>
+					</div>
+
+					@if (analyticsForSelected(); as analytics) {
+						<div class="p-4 rounded-xl bg-black/20 border border-white/5">
+							<div class="flex items-center gap-2 mb-3">
+								<i class="fa fa-chart-bar text-emerald-400/60 text-sm"></i>
+								<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Market Snapshot at Entry</span>
+							</div>
+							<div class="grid grid-cols-4 gap-3">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Liquidity</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Volume 1h</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Volume 24h</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Market Cap</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</span>
+								</div>
+							</div>
+							<div class="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-white/5">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 5m</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_m5 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}
+						</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 1h</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_h1 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}
+						</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 6h</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_h6 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}
+						</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 24h</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_h24 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}
+						</span>
+								</div>
+							</div>
+							<div class="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-white/5">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Buy/Sell Ratio</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatNumber(analytics.fundamentals.buy_to_sell_ratio, 2, 2) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Transactions 1h</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatNumber(analytics.fundamentals.transaction_count_h1, 0, 0) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Token Age</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatNumber(analytics.fundamentals.token_age_hours, 0, 0) }}h</span>
+								</div>
+							</div>
+						</div>
+
+
+					}
+
+					<div class="p-3 rounded-xl bg-black/10 border border-white/5">
+						<div class="grid grid-cols-2 gap-3 text-[10px]">
+							<div class="flex flex-col gap-1">
+								<span class="uppercase font-bold text-slate-600 tracking-widest">Token Address</span>
+								<div class="flex items-center gap-1.5">
+									<span class="font-mono text-slate-400 truncate">{{ selectedPosition()?.token_address }}</span>
+									<button class="cursor-pointer text-slate-600 hover:text-slate-300 transition-colors" (click)="copyToClipboard(selectedPosition()?.token_address)">
+										<i class="far fa-copy text-[10px]"></i>
+									</button>
+								</div>
+							</div>
+							<div class="flex flex-col gap-1">
+								<span class="uppercase font-bold text-slate-600 tracking-widest">Pair Address</span>
+								<div class="flex items-center gap-1.5">
+									<span class="font-mono text-slate-400 truncate">{{ selectedPosition()?.pair_address }}</span>
+									<button class="cursor-pointer text-slate-600 hover:text-slate-300 transition-colors" (click)="copyToClipboard(selectedPosition()?.pair_address)">
+										<i class="far fa-copy text-[10px]"></i>
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</p-tabpanel>
+			<p-tabpanel value="shadows">
+				<div class="space-y-3">
+					@if (selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot; as snapshot) {
+						<div class="space-y-6">
+							@if (sortedShadowMetrics(snapshot); as metrics) {
+								@if (metrics.length) {
+									<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+										@for (metric of metrics; track metric.metric_key) {
+											<div class="p-3 rounded-xl bg-black/20 border transition-all"
+											     [ngClass]="metric.is_golden ? 'border-emerald-500/20 hover:border-emerald-500/40' : (metric.is_toxic ? 'border-red-500/20 hover:border-red-500/40' : 'border-white/5')">
+												<div class="flex justify-between items-start mb-1.5">
+                                                    <span class="text-[9px] uppercase font-bold tracking-widest truncate"
+                                                          [ngClass]="metric.is_golden ? 'text-emerald-400/80' : (metric.is_toxic ? 'text-red-400/80' : 'text-slate-500')">
+                                                        {{ formatMetricLabel(metric.metric_key) }}
+                                                    </span>
+													@if (metric.is_golden) {
+														<i class="fa fa-bullseye text-[10px] text-emerald-400/50"></i>
+													} @else if (metric.is_toxic) {
+														<i class="fa fa-radiation text-[10px] text-red-400/50"></i>
+													} @else {
+														<i class="fa fa-check text-[10px] text-slate-500/50"></i>
+													}
+												</div>
+												<div class="text-sm font-black tracking-tight mb-2"
+												     [ngClass]="metric.is_golden ? 'text-white' : (metric.is_toxic ? 'text-red-50' : 'text-slate-300')">
+													{{ metric.candidate_value | number:'1.0-4' }}
+												</div>
+												<div class="flex items-center justify-between mt-2 bg-black/30 rounded-md p-1.5 border"
+												     [ngClass]="metric.is_golden ? 'border-emerald-500/10' : (metric.is_toxic ? 'border-red-500/10' : 'border-white/5')">
+													<div class="flex flex-col flex-1">
+														<span class="text-[8px] text-slate-500 uppercase font-bold">Win Rate</span>
+														<span class="font-bold text-[10px]"
+														      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
+                                                            {{ metric.decile_win_rate * 100 | number:'1.0-0' }}%
+                                                        </span>
+													</div>
+													<div class="flex flex-col flex-1 border-l pl-1.5"
+													     [ngClass]="metric.is_golden ? 'border-emerald-500/10' : (metric.is_toxic ? 'border-red-500/10' : 'border-white/5')">
+														<span class="text-[8px] text-slate-500 uppercase font-bold">Med PnL</span>
+														<span class="font-bold text-[10px]"
+														      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
+                                                            {{ metric.decile_median_pnl > 0 ? '+' : '' }}{{ metric.decile_median_pnl | number:'1.1-1' }}%
+                                                        </span>
+													</div>
+													<div class="flex flex-col items-end flex-1 border-l pl-1.5"
+													     [ngClass]="metric.is_golden ? 'border-emerald-500/10' : (metric.is_toxic ? 'border-red-500/10' : 'border-white/5')">
+														<span class="text-[8px] text-slate-500 uppercase font-bold">Decile</span>
+														<span class="text-slate-500 font-bold text-[10px]">#{{ metric.decile_index }}</span>
+													</div>
+												</div>
+											</div>
+										}
+									</div>
+								}
+							}
+						</div>
+					} @else {
+						<div class="flex flex-col items-center justify-center p-12 text-slate-500 gap-3 border border-dashed border-white/5 rounded-xl">
+							<i class="fa fa-ghost text-2xl opacity-20"></i>
+							<span class="text-[10px] uppercase font-bold tracking-widest">No intelligence snapshot available</span>
 						</div>
 					}
 				</div>
-			</p-tabpanel>
-
-			<p-tabpanel [value]="1">
-				<div class="grid grid-cols-12 gap-4">
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">Scores</div>
-						@if (scoresSeries.length > 0) {
-							<apx-chart
-									[series]="scoresSeries"
-									[chart]="scoresChart"
-									[labels]="scoresLabels"
-									[plotOptions]="scoresPlot"
-									[legend]="scoresLegend"
-									[grid]="grid"
-									[states]="states"
-									[tooltip]="tooltip">
-							</apx-chart>
-						} @else {
-							<div class="opacity-60 text-xs">No score available.</div>
-						}
-					</p-card>
-
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">AI — Probability TP1 before SL</div>
-						@if (probSeries.length > 0) {
-							<apx-chart
-									[series]="probSeries"
-									[chart]="probChart"
-									[plotOptions]="probPlot"
-									[labels]="probLabels"
-									[grid]="grid"
-									[states]="states">
-							</apx-chart>
-						} @else {
-							<div class="opacity-60 text-xs">No AI probability available.</div>
-						}
-					</p-card>
-
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">Δ (5m / 1h / 24h)</div>
-						<apx-chart
-								[series]="deltaSeries"
-								[chart]="deltaChart"
-								[xaxis]="deltaXaxis"
-								[plotOptions]="deltaPlot"
-								[colors]="deltaColors"
-								[dataLabels]="deltaDataLabels"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-					</p-card>
-
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">Liquidity vs Volume (24h)</div>
-						<apx-chart
-								[series]="liqVolSeries"
-								[chart]="liqVolChart"
-								[labels]="liqVolLabels"
-								[responsive]="liqVolResponsive"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-					</p-card>
-
-					<p-card class="col-span-12">
-						<div class="opacity-70 text-xs mb-2">Order Notional — Entry vs Last</div>
-						<apx-chart
-								[series]="notionalSeries"
-								[chart]="notionalChart"
-								[plotOptions]="notionalPlot"
-								[xaxis]="notionalXaxis"
-								[dataLabels]="notionalDataLabels"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-					</p-card>
-				</div>
-			</p-tabpanel>
-
-			<p-tabpanel [value]="2">
-				<p-panel header="Show raw JSON (lazy)" [toggleable]="true">
-					<p-scrollPanel [style]="{height: '24rem'}">
-						<pre class="text-xs">{{ selectedPosition() | json }}</pre>
-					</p-scrollPanel>
-				</p-panel>
 			</p-tabpanel>
 		</p-tabpanels>
 	</p-tabs>
 
 	<ng-template pTemplate="footer">
 		<div class="flex items-center justify-between w-full">
-			<div class="opacity-60 text-xs">
-				<i class="fas fa-circle-info mr-1"></i>Press <kbd>Esc</kbd> to close
-			</div>
-			<button pButton type="button" label="Close" class="p-button-text" (click)="detailsVisible.set(false)"></button>
+			<a [href]="dexUrlForPair(selectedPosition())" target="_blank" rel="noopener"
+			   class="cursor-pointer inline-flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-widest text-slate-500 hover:text-blue-400 transition-colors">
+				<i class="fas fa-arrow-up-right-from-square"></i>
+				DexScreener
+			</a>
+			<button pButton type="button" label="Close" class="p-button-text p-button-sm" (click)="detailsVisible.set(false)"></button>
 		</div>
 	</ng-template>
 </p-dialog>

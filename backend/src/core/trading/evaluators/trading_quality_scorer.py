@@ -1,13 +1,54 @@
 from __future__ import annotations
 
+from typing import Optional, Final
+
 from src.configuration.config import settings
-from src.core.trading.scoring.trading_scoring_engine import blend_momentum_percentages, compute_buy_sell_score
 from src.core.trading.trading_structures import TradingCandidate, TradingQualityContext, TradingQualityResult
 from src.core.trading.utils.trading_candidate_utils import is_finite_number
 from src.core.utils.format_utils import _tail
+from src.core.utils.math_utils import _squash_positive_percentage
+from src.integrations.dexscreener.dexscreener_structures import DexscreenerTransactionActivity
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
+
+_MOMENTUM_WEIGHT_5M: Final[float] = 0.6
+_MOMENTUM_WEIGHT_1H: Final[float] = 0.4
+_MOMENTUM_WEIGHT_6H: Final[float] = 0.25
+_MOMENTUM_WEIGHT_24H: Final[float] = 0.1
+_MOMENTUM_TOTAL_WEIGHT: Final[float] = _MOMENTUM_WEIGHT_5M + _MOMENTUM_WEIGHT_1H + _MOMENTUM_WEIGHT_6H + _MOMENTUM_WEIGHT_24H
+
+
+def compute_buy_sell_score(transaction_activity: Optional[DexscreenerTransactionActivity]) -> float:
+    if not transaction_activity:
+        return 0.5
+
+    activity_bucket = transaction_activity.h1 if transaction_activity.h1 else transaction_activity.h24
+    if not activity_bucket:
+        return 0.5
+
+    buys = activity_bucket.buys
+    sells = activity_bucket.sells
+    total_transactions = buys + sells
+
+    if total_transactions <= 0:
+        return 0.5
+    return buys / total_transactions
+
+
+def blend_momentum_percentages(percent_m5: float, percent_h1: float, percent_h6: float, percent_h24: float) -> float:
+    squashed_percent_m5 = _squash_positive_percentage(percent_m5)
+    squashed_percent_h1 = _squash_positive_percentage(percent_h1)
+    squashed_percent_h6 = _squash_positive_percentage(percent_h6)
+    squashed_percent_h24 = _squash_positive_percentage(percent_h24)
+
+    weighted_sum = (
+            _MOMENTUM_WEIGHT_5M * squashed_percent_m5
+            + _MOMENTUM_WEIGHT_1H * squashed_percent_h1
+            + _MOMENTUM_WEIGHT_6H * squashed_percent_h6
+            + _MOMENTUM_WEIGHT_24H * squashed_percent_h24
+    )
+    return weighted_sum / _MOMENTUM_TOTAL_WEIGHT
 
 
 def _evaluate_quality(candidate: TradingCandidate) -> TradingQualityResult:
@@ -52,11 +93,11 @@ def _evaluate_quality(candidate: TradingCandidate) -> TradingQualityResult:
     )
 
     if liquidity_usd < minimum_liquidity_usd:
-        logger.debug("[TRADING][FILTER][QUALITY] %s rejected — insufficient liquidity %.0f < %.0f", base_token.symbol, liquidity_usd, minimum_liquidity_usd)
+        logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — insufficient liquidity %.0f < %.0f", base_token.symbol, liquidity_usd, minimum_liquidity_usd)
         return TradingQualityResult(is_admissible=False, score=0.0, rejection_reason="insufficient_liquidity", context=quality_context)
 
     if volume_h24_usd < minimum_volume_h24_usd:
-        logger.debug("[TRADING][FILTER][QUALITY] %s rejected — insufficient volume_24h %.0f < %.0f", base_token.symbol, volume_h24_usd, minimum_volume_h24_usd)
+        logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — insufficient volume_24h %.0f < %.0f", base_token.symbol, volume_h24_usd, minimum_volume_h24_usd)
         return TradingQualityResult(is_admissible=False, score=0.0, rejection_reason="insufficient_volume", context=quality_context)
 
     momentum_score = blend_momentum_percentages(percent_m5, percent_h1, percent_h6, percent_h24)
@@ -102,7 +143,7 @@ def _has_valid_intraday_bars(candidate: TradingCandidate) -> bool:
 
 def apply_quality_scorer(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
     if not candidates:
-        logger.info("[TRADING][FILTER][QUALITY] Empty candidate list, skipping")
+        logger.info("[TRADING][EVALUATOR][QUALITY] Empty candidate list, skipping")
         return []
 
     minimum_quality_score = settings.TRADING_SCORE_MIN_QUALITY
@@ -117,21 +158,21 @@ def apply_quality_scorer(candidates: list[TradingCandidate]) -> list[TradingCand
 
         if quality_result.is_admissible and quality_result.score >= minimum_quality_score:
             if not _has_valid_intraday_bars(candidate):
-                logger.debug("[TRADING][FILTER][QUALITY] %s rejected — missing intraday bars", base_token.symbol)
+                logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — missing intraday bars", base_token.symbol)
                 continue
 
             retained.append(candidate)
-            logger.debug("[TRADING][FILTER][QUALITY] %s (%s) passed with score %.1f", base_token.symbol, short_address, quality_result.score)
+            logger.debug("[TRADING][EVALUATOR][QUALITY] %s (%s) passed with score %.1f", base_token.symbol, short_address, quality_result.score)
         else:
             reason = quality_result.rejection_reason if not quality_result.is_admissible else "insufficient_score"
             logger.debug(
-                "[TRADING][FILTER][QUALITY] %s (%s) rejected — score %.1f < %.1f, reason: %s",
+                "[TRADING][EVALUATOR][QUALITY] %s (%s) rejected — score %.1f < %.1f, reason: %s",
                 base_token.symbol, short_address, quality_result.score, minimum_quality_score, reason,
             )
 
     if not retained:
-        logger.info("[TRADING][FILTER][QUALITY] Zero candidates passed the quality gate")
+        logger.info("[TRADING][EVALUATOR][QUALITY] Zero candidates passed the quality gate")
     else:
-        logger.info("[TRADING][FILTER][QUALITY] Retained %d / %d candidates", len(retained), len(candidates))
+        logger.info("[TRADING][EVALUATOR][QUALITY] Retained %d / %d candidates", len(retained), len(candidates))
 
     return retained

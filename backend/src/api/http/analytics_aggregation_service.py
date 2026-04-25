@@ -14,7 +14,7 @@ from src.api.http.api_schemas import (
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso
 from src.logging.logger import get_application_logger
-from src.persistence.models import TradingEvaluation, TradingOutcome
+from src.persistence.models import TradingEvaluation, TradingOutcome, TradingShadowingProbe
 
 logger = get_application_logger(__name__)
 
@@ -24,7 +24,7 @@ ROLLING_WINDOW_SIZE = 50
 
 
 class MetricDefinition:
-    def __init__(self, key: str, label: str, accessor: Callable[[TradingEvaluation], float], unit: str) -> None:
+    def __init__(self, key: str, label: str, accessor: Callable[[TradingEvaluation | TradingShadowingProbe], float], unit: str) -> None:
         self.key = key
         self.label = label
         self.accessor = accessor
@@ -32,27 +32,26 @@ class MetricDefinition:
 
 
 METRIC_DEFINITIONS: list[MetricDefinition] = [
-    MetricDefinition("final_score", "Final score", lambda evaluation: evaluation.final_score, "score"),
-    MetricDefinition("quality_score", "Quality score", lambda evaluation: evaluation.quality_score, "score"),
-    MetricDefinition("statistics_score", "Statistics score", lambda evaluation: evaluation.statistics_score, "score"),
-    MetricDefinition("entry_score", "Entry score", lambda evaluation: evaluation.entry_score, "score"),
-    MetricDefinition("liquidity_usd", "Liquidity ($)", lambda evaluation: evaluation.liquidity_usd, "usd"),
-    MetricDefinition("market_cap_usd", "Market cap ($)", lambda evaluation: evaluation.market_cap_usd, "usd"),
-    MetricDefinition("volume_m5_usd", "Volume 5m ($)", lambda evaluation: evaluation.volume_m5_usd, "usd"),
-    MetricDefinition("volume_h1_usd", "Volume 1h ($)", lambda evaluation: evaluation.volume_h1_usd, "usd"),
-    MetricDefinition("volume_h6_usd", "Volume 6h ($)", lambda evaluation: evaluation.volume_h6_usd, "usd"),
-    MetricDefinition("volume_h24_usd", "Volume 24h ($)", lambda evaluation: evaluation.volume_h24_usd, "usd"),
-    MetricDefinition("price_change_m5", "Δ5m (%)", lambda evaluation: evaluation.price_change_percentage_m5, "percent"),
-    MetricDefinition("price_change_h1", "Δ1h (%)", lambda evaluation: evaluation.price_change_percentage_h1, "percent"),
-    MetricDefinition("price_change_h6", "Δ6h (%)", lambda evaluation: evaluation.price_change_percentage_h6, "percent"),
-    MetricDefinition("price_change_h24", "Δ24h (%)", lambda evaluation: evaluation.price_change_percentage_h24, "percent"),
-    MetricDefinition("token_age_hours", "Token age (h)", lambda evaluation: evaluation.token_age_hours, "hours"),
-    MetricDefinition("transaction_count_m5", "Transactions 5m", lambda evaluation: evaluation.transaction_count_m5, "count"),
-    MetricDefinition("transaction_count_h1", "Transactions 1h", lambda evaluation: evaluation.transaction_count_h1, "count"),
-    MetricDefinition("transaction_count_h6", "Transactions 6h", lambda evaluation: evaluation.transaction_count_h6, "count"),
-    MetricDefinition("transaction_count_h24", "Transactions 24h", lambda evaluation: evaluation.transaction_count_h24, "count"),
-    MetricDefinition("buy_to_sell_ratio", "Buy/Sell ratio", lambda evaluation: evaluation.buy_to_sell_ratio, "ratio"),
-    MetricDefinition("fully_diluted_valuation_usd", "FDV ($)", lambda evaluation: evaluation.fully_diluted_valuation_usd, "usd"),
+    MetricDefinition("quality_score", "Quality score", lambda record: record.quality_score, "score"),
+    MetricDefinition("ai_adjusted_quality_score", "AI adjusted quality score", lambda record: getattr(record, "ai_adjusted_quality_score", record.quality_score), "score"),
+    MetricDefinition("liquidity_usd", "Liquidity ($)", lambda record: record.liquidity_usd, "usd"),
+    MetricDefinition("market_cap_usd", "Market cap ($)", lambda record: record.market_cap_usd, "usd"),
+    MetricDefinition("volume_m5_usd", "Volume 5m ($)", lambda record: record.volume_m5_usd, "usd"),
+    MetricDefinition("volume_h1_usd", "Volume 1h ($)", lambda record: record.volume_h1_usd, "usd"),
+    MetricDefinition("volume_h6_usd", "Volume 6h ($)", lambda record: record.volume_h6_usd, "usd"),
+    MetricDefinition("volume_h24_usd", "Volume 24h ($)", lambda record: record.volume_h24_usd, "usd"),
+    MetricDefinition("price_change_m5", "Δ5m (%)", lambda record: record.price_change_percentage_m5, "percent"),
+    MetricDefinition("price_change_h1", "Δ1h (%)", lambda record: record.price_change_percentage_h1, "percent"),
+    MetricDefinition("price_change_h6", "Δ6h (%)", lambda record: record.price_change_percentage_h6, "percent"),
+    MetricDefinition("price_change_h24", "Δ24h (%)", lambda record: record.price_change_percentage_h24, "percent"),
+    MetricDefinition("token_age_hours", "Token age (h)", lambda record: record.token_age_hours, "hours"),
+    MetricDefinition("transaction_count_m5", "Transactions 5m", lambda record: record.transaction_count_m5, "count"),
+    MetricDefinition("transaction_count_h1", "Transactions 1h", lambda record: record.transaction_count_h1, "count"),
+    MetricDefinition("transaction_count_h6", "Transactions 6h", lambda record: record.transaction_count_h6, "count"),
+    MetricDefinition("transaction_count_h24", "Transactions 24h", lambda record: record.transaction_count_h24, "count"),
+    MetricDefinition("buy_to_sell_ratio", "Buy/Sell ratio", lambda record: record.buy_to_sell_ratio, "ratio"),
+    MetricDefinition("fully_diluted_valuation_usd", "FDV ($)", lambda record: record.fully_diluted_valuation_usd, "usd"),
+    MetricDefinition("dexscreener_boost", "Dexscreener Boost", lambda record: record.dexscreener_boost, "count"),
 ]
 
 
@@ -68,15 +67,21 @@ def _quantile(sorted_values: list[float], quantile_fraction: float) -> float:
     return lower_value + (upper_value - lower_value) * remainder
 
 
-def _compute_decile_edges(values: list[float]) -> list[float]:
-    sorted_values = sorted(values)
+def _compute_decile_edges(values: list[float | None]) -> list[float]:
+    valid_values = [v for v in values if v is not None]
+    if not valid_values:
+        return [0.0] * (DECILE_COUNT + 1)
+
+    sorted_values = sorted(valid_values)
     edges: list[float] = []
     for decile_index in range(DECILE_COUNT + 1):
         edges.append(_quantile(sorted_values, decile_index / DECILE_COUNT))
     return edges
 
 
-def _assign_bucket_index(value: float, edges: list[float]) -> int:
+def _assign_bucket_index(value: float | None, edges: list[float]) -> int:
+    if value is None:
+        return -1
     last_valid_bucket = len(edges) - 2
     for edge_index in range(len(edges) - 1):
         if edges[edge_index] <= value <= edges[edge_index + 1]:
@@ -216,6 +221,8 @@ def compute_pnl_drivers_heatmap(evaluations: list[TradingEvaluation]) -> list[An
 
         for index in range(len(metric_values)):
             bucket_index = _assign_bucket_index(metric_values[index], edges)
+            if bucket_index == -1:
+                continue
             buckets[bucket_index].append(pnl_values[index])
             counts[bucket_index] += 1
             if is_profitable_flags[index]:
@@ -297,6 +304,8 @@ def compute_staled_risk_heatmap(
 
         for index in range(len(metric_values)):
             bucket_index = _assign_bucket_index(metric_values[index], edges)
+            if bucket_index == -1:
+                continue
             counts[bucket_index] += 1
             if is_staled_flags[index]:
                 staled_counts[bucket_index] += 1
@@ -412,6 +421,9 @@ def compute_scatter_series(evaluations: list[TradingEvaluation]) -> list[Analyti
                 continue
 
             metric_value = metric_definition.accessor(evaluation)
+            if metric_value is None:
+                continue
+
             points.append(AnalyticsScatterPointPayload(
                 metric_value=metric_value,
                 pnl_percentage=outcome.realized_profit_and_loss_percentage,

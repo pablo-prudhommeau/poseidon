@@ -15,8 +15,16 @@
 </ng-template>
 
 <ng-template #actionsTemplate let-row="row">
-	<div class="flex items-center justify-center">
-		<p-button severity="help" rounded="true" icon="fas fa-up-right-from-square" size="small" (click)="openDetails(row)"/>
+	<div class="flex items-center justify-center gap-1.5 h-full">
+		<button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400"
+		        title="View details" (click)="openDetails(row)">
+			<i class="fas fa-expand"></i>
+		</button>
+		<a [href]="dexUrlForPair(row)" target="_blank" rel="noopener"
+		   class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400"
+		   title="Open on DexScreener">
+			<i class="fas fa-arrow-up-right-from-square"></i>
+		</a>
 	</div>
 </ng-template>
 
@@ -27,164 +35,267 @@
 		[modal]="true"
 		[draggable]="false"
 		[dismissableMask]="true"
+		appendTo="body"
 		[breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }"
-		[style]="{ width: '64rem' }">
+		[style]="{ width: '56rem' }"
+		styleClass="trades-table-dialog"
+		[contentStyle]="{ padding: '0' }">
 
 	<ng-template pTemplate="header">
 		<div class="flex items-center gap-3">
-			<span class="font-semibold text-lg">{{ selectedTrade()?.token_symbol }}</span>
+			<span class="text-xl font-black text-white tracking-tight">{{ selectedTrade()?.token_symbol }}</span>
 			@if (selectedTrade()?.blockchain_network) {
-				<p-tag [value]="selectedTrade()?.blockchain_network" severity="info"></p-tag>
+				<span class="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">
+					{{ selectedTrade()?.blockchain_network }}
+				</span>
 			}
 			@if (selectedTrade()?.trade_side) {
-				<p-tag [value]="selectedTrade()?.trade_side" [severity]="selectedTrade()?.trade_side === 'BUY' ? 'success' : 'warn'"></p-tag>
+				<span class="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full border"
+				      [ngClass]="{
+				          'bg-emerald-500/10 border-emerald-500/20 text-emerald-400': selectedTrade()?.trade_side === 'BUY',
+				          'bg-amber-500/10 border-amber-500/20 text-amber-400': selectedTrade()?.trade_side === 'SELL'
+				      }">
+					{{ selectedTrade()?.trade_side }}
+				</span>
 			}
+			<a [href]="dexUrlForPair(selectedTrade())" target="_blank" rel="noopener"
+			   class="ml-auto text-slate-500 hover:text-blue-400 transition-colors" title="Open on DexScreener">
+				<i class="fas fa-arrow-up-right-from-square text-sm"></i>
+			</a>
 		</div>
 	</ng-template>
 
-	<p-tabs [value]="0">
+	<p-tabs value="overview">
 		<p-tablist>
-			<p-tab [value]="0">Overview</p-tab>
-			<p-tab [value]="1">Analytics</p-tab>
-			<p-tab [value]="2">Raw</p-tab>
+			<p-tab value="overview"><i class="fa fa-info-circle mr-2 text-blue-400/60"></i>Trade Details</p-tab>
+			<p-tab value="shadows">
+				<div class="flex items-center gap-2">
+					<i class="fa fa-ghost text-purple-400/60"></i>
+					<span>Shadow Intelligence</span>
+				</div>
+			</p-tab>
 		</p-tablist>
 
 		<p-tabpanels>
-			<p-tabpanel [value]="0">
-				<div class="grid grid-cols-12 gap-4 text-sm">
-					<div class="col-span-12 md:col-span-6">
-						<div class="opacity-70">Token</div>
-						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedTrade()?.token_address }}
-							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy token address"
-							        (click)="copyToClipboard(selectedTrade()?.token_address)"></button>
+			<p-tabpanel value="overview">
+				<div class="space-y-3">
+					<div class="grid grid-cols-3 gap-3">
+						<div class="p-3 rounded-xl bg-black/20 border border-white/5 flex flex-col gap-1">
+							<span class="text-[9px] uppercase font-bold text-slate-500 tracking-widest">Execution Price</span>
+							<span class="text-lg font-black text-white">{{ formatCurrency(selectedTrade()?.execution_price, 'USD', 4, 8) }}</span>
+						</div>
+						<div class="p-3 rounded-xl bg-black/20 border border-white/5 flex flex-col gap-1">
+							<span class="text-[9px] uppercase font-bold text-slate-500 tracking-widest">Quantity</span>
+							<span class="text-lg font-black text-white">{{ formatNumber(selectedTrade()?.execution_quantity, 2, 6) }}</span>
+						</div>
+						<div class="p-3 rounded-xl bg-black/20 border border-white/5 flex flex-col gap-1">
+							<span class="text-[9px] uppercase font-bold text-slate-500 tracking-widest">Order Notional</span>
+							<span class="text-lg font-black text-white">{{ formatCurrency(orderNotionalUsd(selectedTrade()), 'USD', 2, 2) }}</span>
 						</div>
 					</div>
 
-					<div class="col-span-12 md:col-span-6">
-						<div class="opacity-70">Pair</div>
-						<div class="font-mono break-all flex items-center gap-2">
-							{{ selectedTrade()?.pair_address }}
-							<button pButton icon="far fa-copy" class="p-button-text p-button-sm" pTooltip="Copy pair address"
-							        (click)="copyToClipboard(selectedTrade()?.pair_address)"></button>
+					@if (selectedTrade()?.realized_profit_and_loss != null) {
+						<div class="p-3 rounded-xl border flex items-center justify-between"
+						     [ngClass]="{
+			         'bg-emerald-500/5 border-emerald-500/20': (selectedTrade()?.realized_profit_and_loss ?? 0) > 0,
+			         'bg-red-500/5 border-red-500/20': (selectedTrade()?.realized_profit_and_loss ?? 0) < 0,
+			         'bg-black/20 border-white/5': (selectedTrade()?.realized_profit_and_loss ?? 0) === 0
+			     }">
+							<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Realized P&L</span>
+							<span class="text-lg font-black"
+							      [class.text-emerald-400]="(selectedTrade()?.realized_profit_and_loss ?? 0) > 0"
+							      [class.text-red-400]="(selectedTrade()?.realized_profit_and_loss ?? 0) < 0"
+							      [class.text-slate-400]="(selectedTrade()?.realized_profit_and_loss ?? 0) === 0">
+					{{ (selectedTrade()?.realized_profit_and_loss ?? 0) > 0 ? '+' : '' }}{{ formatCurrency(selectedTrade()?.realized_profit_and_loss, 'USD', 2, 2) }}
+				</span>
+						</div>
+					}
+
+					<div class="p-4 rounded-xl bg-black/20 border border-white/5">
+						<div class="flex items-center gap-2 mb-3">
+							<i class="fa fa-clock text-slate-500 text-sm"></i>
+							<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Trade Details</span>
+						</div>
+						<div class="space-y-2">
+							<div class="flex items-center justify-between">
+								<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Executed</span>
+								<span class="text-xs font-bold text-slate-200">{{ selectedTrade()?.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Status</span>
+								<span class="text-xs font-bold text-slate-200">{{ selectedTrade()?.execution_status }}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Fee</span>
+								<span class="text-xs font-bold text-slate-200">{{ formatCurrency(selectedTrade()?.transaction_fee, 'USD', 4, 6) }}</span>
+							</div>
+							@if (selectedTrade()?.transaction_hash) {
+								<div class="flex items-center justify-between">
+									<span class="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Transaction Hash</span>
+									<div class="flex items-center gap-1.5">
+										<span class="text-xs font-mono text-slate-400 truncate max-w-[200px]">{{ selectedTrade()?.transaction_hash }}</span>
+										<button class="text-slate-600 hover:text-slate-300 transition-colors" (click)="copyToClipboard(selectedTrade()?.transaction_hash)">
+											<i class="far fa-copy text-[10px]"></i>
+										</button>
+									</div>
+								</div>
+							}
 						</div>
 					</div>
 
-					<div class="col-span-4">
-						<div class="opacity-70">Quantity</div>
-						<div class="font-semibold">{{ formatNumber(selectedTrade()?.execution_quantity, 2, 6) }}</div>
-					</div>
-					<div class="col-span-4">
-						<div class="opacity-70">Price</div>
-						<div class="font-semibold">{{ formatCurrency(selectedTrade()?.execution_price, 'USD', 4, 8) }}</div>
-					</div>
-					<div class="col-span-4">
-						<div class="opacity-70">Order notional</div>
-						<div class="font-semibold">{{ formatCurrency(orderNotionalUsd(selectedTrade()), 'USD', 2, 2) }}</div>
-					</div>
+					@if (analyticsForSelected(); as analytics) {
+						<div class="p-4 rounded-xl bg-black/20 border border-white/5">
+							<div class="flex items-center gap-2 mb-3">
+								<i class="fa fa-chart-bar text-emerald-400/60 text-sm"></i>
+								<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Market Snapshot at Entry</span>
+							</div>
+							<div class="grid grid-cols-4 gap-3">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Liquidity</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Volume 1h</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Volume 24h</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Market Cap</span>
+									<span class="text-xs font-bold text-slate-200">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</span>
+								</div>
+							</div>
+							<div class="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-white/5">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 5m</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_m5 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}
+						</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 1h</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_h1 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}
+						</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 6h</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_h6 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}
+						</span>
+								</div>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-[9px] uppercase font-bold text-slate-600 tracking-widest">Δ 24h</span>
+									<span class="text-xs font-bold" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0" [class.text-slate-400]="analytics.fundamentals.price_change_percentage_h24 === 0">
+							{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}
+						</span>
+								</div>
+							</div>
+						</div>
+					}
 
-					<div class="col-span-6">
-						<div class="opacity-70">Date</div>
-						<div class="font-semibold">{{ selectedTrade()?.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</div>
-					</div>
-					<div class="col-span-6">
-						<div class="opacity-70">Status</div>
-						<div class="font-semibold">{{ selectedTrade()?.execution_status }}</div>
-					</div>
-
-					<p-divider class="col-span-12"></p-divider>
-
-					<div class="col-span-12">
-						<div class="opacity-70">Links</div>
-						<div class="flex flex-wrap gap-2 mt-1">
-							<a pButton label="Dexscreener (Pair)" icon="fas fa-arrow-up-right-from-square"
-							   [href]="dexUrlForPair(selectedTrade())" target="_blank"></a>
-							<a pButton label="Dexscreener (Token)" icon="fas fa-arrow-up-right-from-square"
-							   [href]="dexUrlForToken(selectedTrade())" target="_blank"></a>
+					<div class="p-3 rounded-xl bg-black/10 border border-white/5">
+						<div class="grid grid-cols-2 gap-3 text-[10px]">
+							<div class="flex flex-col gap-1">
+								<span class="uppercase font-bold text-slate-600 tracking-widest">Token Address</span>
+								<div class="flex items-center gap-1.5">
+									<span class="font-mono text-slate-400 truncate">{{ selectedTrade()?.token_address }}</span>
+									<button class="text-slate-600 hover:text-slate-300 transition-colors" (click)="copyToClipboard(selectedTrade()?.token_address)">
+										<i class="far fa-copy text-[10px]"></i>
+									</button>
+								</div>
+							</div>
+							<div class="flex flex-col gap-1">
+								<span class="uppercase font-bold text-slate-600 tracking-widest">Pair Address</span>
+								<div class="flex items-center gap-1.5">
+									<span class="font-mono text-slate-400 truncate">{{ selectedTrade()?.pair_address }}</span>
+									<button class="text-slate-600 hover:text-slate-300 transition-colors" (click)="copyToClipboard(selectedTrade()?.pair_address)">
+										<i class="far fa-copy text-[10px]"></i>
+									</button>
+								</div>
+							</div>
 						</div>
 					</div>
 				</div>
 			</p-tabpanel>
-
-			<p-tabpanel [value]="1">
-				<div class="grid grid-cols-12 gap-4">
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">Scores</div>
-						@if (scoresSeries.length > 0) {
-							<apx-chart
-									[series]="scoresSeries"
-									[chart]="scoresChart"
-									[labels]="scoresLabels"
-									[plotOptions]="scoresPlot"
-									[legend]="scoresLegend"
-									[grid]="grid"
-									[states]="states"
-									[tooltip]="tooltip">
-							</apx-chart>
-						} @else {
-							<div class="opacity-60 text-xs">No score available.</div>
-						}
-					</p-card>
-
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">Δ (5m / 1h / 24h)</div>
-						<apx-chart
-								[series]="deltaSeries"
-								[chart]="deltaChart"
-								[xaxis]="deltaXaxis"
-								[plotOptions]="deltaPlot"
-								[colors]="deltaColors"
-								[dataLabels]="deltaDataLabels"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-					</p-card>
-
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">Liquidity vs Volume (24h)</div>
-						<apx-chart
-								[series]="liqVolSeries"
-								[chart]="liqVolChart"
-								[labels]="liqVolLabels"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-					</p-card>
-
-					<p-card class="col-span-12 md:col-span-6">
-						<div class="opacity-70 text-xs mb-2">Order notional</div>
-						<apx-chart
-								[series]="notionalSeries"
-								[chart]="notionalChart"
-								[plotOptions]="notionalPlot"
-								[xaxis]="notionalXaxis"
-								[dataLabels]="notionalDataLabels"
-								[grid]="grid"
-								[states]="states"
-								[tooltip]="tooltip">
-						</apx-chart>
-					</p-card>
+			<p-tabpanel value="shadows">
+				<div class="space-y-3">
+					@if (selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot; as snapshot) {
+						<div class="space-y-6">
+							@if (sortedShadowMetrics(snapshot); as metrics) {
+								@if (metrics.length) {
+									<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+										@for (metric of metrics; track metric.metric_key) {
+											<div class="p-3 rounded-xl bg-black/20 border transition-all"
+											     [ngClass]="metric.is_golden ? 'border-emerald-500/20 hover:border-emerald-500/40' : (metric.is_toxic ? 'border-red-500/20 hover:border-red-500/40' : 'border-white/5')">
+												<div class="flex justify-between items-start mb-1.5">
+                                                    <span class="text-[9px] uppercase font-bold tracking-widest truncate"
+                                                          [ngClass]="metric.is_golden ? 'text-emerald-400/80' : (metric.is_toxic ? 'text-red-400/80' : 'text-slate-500')">
+                                                        {{ formatMetricLabel(metric.metric_key) }}
+                                                    </span>
+													@if (metric.is_golden) {
+														<i class="fa fa-bullseye text-[10px] text-emerald-400/50"></i>
+													} @else if (metric.is_toxic) {
+														<i class="fa fa-radiation text-[10px] text-red-400/50"></i>
+													} @else {
+														<i class="fa fa-check text-[10px] text-slate-500/50"></i>
+													}
+												</div>
+												<div class="text-sm font-black tracking-tight mb-2"
+												     [ngClass]="metric.is_golden ? 'text-white' : (metric.is_toxic ? 'text-red-50' : 'text-slate-300')">
+													{{ metric.candidate_value | number:'1.0-4' }}
+												</div>
+												<div class="flex items-center justify-between mt-2 bg-black/30 rounded-md p-1.5 border"
+												     [ngClass]="metric.is_golden ? 'border-emerald-500/10' : (metric.is_toxic ? 'border-red-500/10' : 'border-white/5')">
+													<div class="flex flex-col flex-1">
+														<span class="text-[8px] text-slate-500 uppercase font-bold">Win Rate</span>
+														<span class="font-bold text-[10px]"
+														      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
+                                                            {{ metric.decile_win_rate * 100 | number:'1.0-0' }}%
+                                                        </span>
+													</div>
+													<div class="flex flex-col flex-1 border-l pl-1.5"
+													     [ngClass]="metric.is_golden ? 'border-emerald-500/10' : (metric.is_toxic ? 'border-red-500/10' : 'border-white/5')">
+														<span class="text-[8px] text-slate-500 uppercase font-bold">Med PnL</span>
+														<span class="font-bold text-[10px]"
+														      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
+                                                            {{ metric.decile_median_pnl > 0 ? '+' : '' }}{{ metric.decile_median_pnl | number:'1.1-1' }}%
+                                                        </span>
+													</div>
+													<div class="flex flex-col items-end flex-1 border-l pl-1.5"
+													     [ngClass]="metric.is_golden ? 'border-emerald-500/10' : (metric.is_toxic ? 'border-red-500/10' : 'border-white/5')">
+														<span class="text-[8px] text-slate-500 uppercase font-bold">Decile</span>
+														<span class="text-slate-500 font-bold text-[10px]">#{{ metric.decile_index }}</span>
+													</div>
+												</div>
+											</div>
+										}
+									</div>
+								}
+							}
+						</div>
+					} @else {
+						<div class="flex flex-col items-center justify-center p-12 text-slate-500 gap-3 border border-dashed border-white/5 rounded-xl">
+							<i class="fa fa-ghost text-2xl opacity-20"></i>
+							<span class="text-[10px] uppercase font-bold tracking-widest">No intelligence snapshot available</span>
+						</div>
+					}
 				</div>
-			</p-tabpanel>
-
-			<p-tabpanel [value]="2">
-				<p-panel header="Show raw JSON (lazy)" [toggleable]="true">
-					<p-scrollPanel [style]="{height: '24rem'}">
-						<pre class="text-xs">{{ selectedTrade() | json }}</pre>
-					</p-scrollPanel>
-				</p-panel>
 			</p-tabpanel>
 		</p-tabpanels>
 	</p-tabs>
-
 	<ng-template pTemplate="footer">
 		<div class="flex items-center justify-between w-full">
-			<div class="opacity-60 text-xs">
-				<i class="fas fa-circle-info mr-1"></i>Press <kbd>Esc</kbd> to close
+			<div class="flex items-center gap-2">
+				<a [href]="dexUrlForPair(selectedTrade())" target="_blank" rel="noopener"
+				   class="inline-flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-widest text-slate-500 hover:text-blue-400 transition-colors">
+					<i class="fas fa-arrow-up-right-from-square"></i>
+					DexScreener
+				</a>
 			</div>
-			<button pButton type="button" label="Close" class="p-button-text" (click)="detailsVisible.set(false)"></button>
+			<button pButton type="button" label="Close" class="p-button-text p-button-sm" (click)="detailsVisible.set(false)"></button>
 		</div>
 	</ng-template>
 </p-dialog>

@@ -39,8 +39,16 @@ export class ApiService {
         return this.http.post<TradingPaperResetPayload>('/api/paper/reset', {});
     }
 
-    getAnalytics(): Observable<AnalyticsResponse> {
-        return this.http.get<AnalyticsResponse>('/api/analytics');
+    getAnalytics(realm: 'qualified' | 'shadow' = 'qualified'): Observable<AnalyticsResponse> {
+        return this.http.get<AnalyticsResponse>(`/api/analytics?realm=${realm}`);
+    }
+
+    getEvaluationById(evaluationId: number): Observable<TradingEvaluationPayload | null> {
+        return this.http.get<TradingEvaluationPayload | null>(`/api/analytics/evaluation/${evaluationId}`);
+    }
+
+    getShadowTradesForPair(pairAddress: string): Observable<TradingEvaluationPayload[]> {
+        return this.http.get<TradingEvaluationPayload[]>(`/api/analytics/shadow/${pairAddress}`);
     }
 
     getOpenPositions(): Observable<TradingPositionPayload[]> {

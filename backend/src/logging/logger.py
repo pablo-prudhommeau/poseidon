@@ -25,8 +25,8 @@ level_to_emoji_mapping = {
     "DEBUG": "⚙️",
     "INFO": "ℹ️",
     "WARNING": "⚠️",
-    "ERROR": "❌",
-    "CRITICAL": "🛑",
+    "ERROR": "❌ ",
+    "CRITICAL": "🛑 ",
 }
 
 level_to_color_mapping = {

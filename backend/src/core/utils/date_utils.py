@@ -6,6 +6,14 @@ def get_current_local_datetime() -> datetime:
     return datetime.now().astimezone()
 
 
+def ensure_timezone_aware(target_datetime: Optional[datetime]) -> Optional[datetime]:
+    if target_datetime is None:
+        return None
+    if target_datetime.tzinfo is None:
+        return target_datetime.astimezone()
+    return target_datetime
+
+
 def format_datetime_to_local_iso(target_datetime: Optional[datetime]) -> Optional[str]:
     if target_datetime is None:
         return None

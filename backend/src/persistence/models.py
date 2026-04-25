@@ -33,6 +33,7 @@ class TradingPosition(DatabaseBaseModel):
     __tablename__ = "trading_positions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evaluation_id: Mapped[int] = mapped_column(ForeignKey("trading_evaluations.id"), nullable=False)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
     blockchain_network: Mapped[str] = mapped_column(String(32), nullable=False)
     token_address: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -57,6 +58,7 @@ class TradingTrade(DatabaseBaseModel):
     __tablename__ = "trading_trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evaluation_id: Mapped[int] = mapped_column(ForeignKey("trading_evaluations.id"), nullable=False)
     trade_side: Mapped[TradeSide] = mapped_column(SQLAlchemyEnum(TradeSide), index=True)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True)
     blockchain_network: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -101,9 +103,7 @@ class TradingEvaluation(DatabaseBaseModel):
     evaluated_at: Mapped[datetime] = mapped_column(nullable=False)
     candidate_rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    statistics_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    entry_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    final_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    ai_adjusted_quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     ai_probability_take_profit_before_stop_loss: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     ai_quality_score_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     token_age_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -123,14 +123,78 @@ class TradingEvaluation(DatabaseBaseModel):
     buy_to_sell_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     market_cap_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     fully_diluted_valuation_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    dexscreener_boost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     execution_decision: Mapped[str] = mapped_column(String(16), nullable=False, default="BUY")
     sizing_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     order_notional_value_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     free_cash_before_execution_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     free_cash_after_execution_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    shadow_intelligence_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     raw_dexscreener_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     raw_configuration_settings: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     outcomes: Mapped[list[TradingOutcome]] = relationship("TradingOutcome", back_populates="evaluation", cascade="all, delete-orphan")
+
+
+class TradingShadowingProbe(DatabaseBaseModel):
+    __tablename__ = "trading_shadowing_probes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token_symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
+    blockchain_network: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_address: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    pair_address: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    entry_price_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    candidate_rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    token_age_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume_m5_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume_h1_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume_h6_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume_h24_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    liquidity_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    price_change_percentage_m5: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    price_change_percentage_h1: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    price_change_percentage_h6: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    price_change_percentage_h24: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    transaction_count_m5: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transaction_count_h1: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transaction_count_h6: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transaction_count_h24: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buy_to_sell_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    market_cap_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    fully_diluted_valuation_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    dexscreener_boost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    order_notional_value_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    probed_at: Mapped[datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
+    verdict: Mapped[Optional[TradingShadowingVerdict]] = relationship("TradingShadowingVerdict", back_populates="probe", uselist=False, cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<TradingShadowingProbe token_symbol={self.token_symbol} token_address={self.token_address[-6:]} entry_price_usd={self.entry_price_usd}>"
+
+
+class TradingShadowingVerdict(DatabaseBaseModel):
+    __tablename__ = "trading_shadowing_verdicts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    probe_id: Mapped[int] = mapped_column(ForeignKey("trading_shadowing_probes.id"), nullable=False, unique=True, index=True)
+    take_profit_tier_1_price: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit_tier_2_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss_price: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit_tier_1_hit_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    take_profit_tier_2_hit_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    stop_loss_hit_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    exit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    realized_pnl_percentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    realized_pnl_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    holding_duration_minutes: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    is_profitable: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
+    probe: Mapped[TradingShadowingProbe] = relationship("TradingShadowingProbe", back_populates="verdict")
+
+    def __repr__(self) -> str:
+        return f"<TradingShadowingVerdict probe_id={self.probe_id} exit_reason={self.exit_reason} is_profitable={self.is_profitable}>"
 
 
 class TradingOutcome(DatabaseBaseModel):
@@ -138,15 +202,15 @@ class TradingOutcome(DatabaseBaseModel):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     evaluation_id: Mapped[int] = mapped_column(ForeignKey("trading_evaluations.id"), nullable=False, index=True)
-    trade_id: Mapped[Optional[int]] = mapped_column(ForeignKey("trading_trades.id"), nullable=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("trading_trades.id"), nullable=False)
     exit_reason: Mapped[str] = mapped_column(String(64), nullable=False)
     realized_profit_and_loss_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     realized_profit_and_loss_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     holding_duration_minutes: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_profitable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     occurred_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
+    trade: Mapped[TradingTrade] = relationship("TradingTrade")
     evaluation: Mapped[TradingEvaluation] = relationship("TradingEvaluation", back_populates="outcomes")
-    trade: Mapped[Optional[TradingTrade]] = relationship("TradingTrade")
 
 
 class DcaStrategy(DatabaseBaseModel):

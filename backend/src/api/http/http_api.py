@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
@@ -18,7 +18,7 @@ from src.api.http.api_schemas import (
     DcaOrdersResponse,
     TradingPositionsResponse,
     DcaStrategyPayload,
-    AnalyticsResponse,
+    AnalyticsResponse, TradingEvaluationPayload,
 )
 from src.api.serializers import (
     serialize_dca_strategy,
@@ -101,24 +101,142 @@ def reset_paper_mode(database_session: Session = Depends(get_fastapi_database_se
 
 @router.get("/api/analytics", tags=["analytics"])
 def get_analytics(
+        realm: str = Query("qualified", regex="^(qualified|shadow)$"),
         limit_results: int = Query(50000, ge=1, le=50000),
         database_session: Session = Depends(get_fastapi_database_session),
 ) -> AnalyticsResponse:
     from src.api.http.analytics_aggregation_service import build_analytics_response
-    from src.persistence.models import PositionPhase
+    from src.persistence.models import PositionPhase, TradingEvaluation, TradingOutcome
 
-    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving and processing analytics with limit %s", limit_results)
-    evaluation_dao = TradingEvaluationDao(database_session)
-    position_dao = TradingPositionDao(database_session)
+    if realm == "qualified":
+        logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving live analytics with limit %s", limit_results)
+        evaluation_dao = TradingEvaluationDao(database_session)
+        position_dao = TradingPositionDao(database_session)
 
-    evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
+        evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
+        staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
+        staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
 
-    staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
-    staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
+        analytics_response = build_analytics_response(evaluation_rows, staled_token_addresses)
+    else:
+        logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving shadow analytics with limit %s", limit_results)
+        from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
+        verdict_dao = TradingShadowingVerdictDao(database_session)
+        resolved_verdicts = verdict_dao.retrieve_recent_resolved(limit_count=limit_results)
 
-    analytics_response = build_analytics_response(evaluation_rows, staled_token_addresses)
-    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed %s evaluations", len(evaluation_rows))
+        mock_evaluations = []
+        for verdict in resolved_verdicts:
+            probe = verdict.probe
+            mock_eval = TradingEvaluation(
+                token_symbol=probe.token_symbol,
+                token_address=probe.token_address,
+                quality_score=probe.quality_score,
+                liquidity_usd=probe.liquidity_usd,
+                market_cap_usd=probe.market_cap_usd,
+                volume_m5_usd=probe.volume_m5_usd,
+                volume_h1_usd=probe.volume_h1_usd,
+                volume_h6_usd=probe.volume_h6_usd,
+                volume_h24_usd=probe.volume_h24_usd,
+                price_change_percentage_m5=probe.price_change_percentage_m5,
+                price_change_percentage_h1=probe.price_change_percentage_h1,
+                price_change_percentage_h6=probe.price_change_percentage_h6,
+                price_change_percentage_h24=probe.price_change_percentage_h24,
+                token_age_hours=probe.token_age_hours,
+                transaction_count_m5=probe.transaction_count_m5,
+                transaction_count_h1=probe.transaction_count_h1,
+                transaction_count_h6=probe.transaction_count_h6,
+                transaction_count_h24=probe.transaction_count_h24,
+                buy_to_sell_ratio=probe.buy_to_sell_ratio,
+                fully_diluted_valuation_usd=probe.fully_diluted_valuation_usd,
+                dexscreener_boost=probe.dexscreener_boost,
+                order_notional_value_usd=probe.order_notional_value_usd
+            )
+            mock_outcome = TradingOutcome(
+                realized_profit_and_loss_usd=verdict.realized_pnl_usd or 0.0,
+                realized_profit_and_loss_percentage=verdict.realized_pnl_percentage or 0.0,
+                holding_duration_minutes=verdict.holding_duration_minutes or 0.0,
+                is_profitable=verdict.is_profitable or False,
+                exit_reason=verdict.exit_reason,
+                occurred_at=verdict.resolved_at
+            )
+            mock_eval.outcomes = [mock_outcome]
+            mock_evaluations.append(mock_eval)
+
+        analytics_response = build_analytics_response(mock_evaluations, set())
+
+    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed analytics for realm %s", realm)
     return analytics_response
+
+
+@router.get("/api/analytics/evaluation/{evaluation_id}", tags=["analytics"])
+def get_evaluation_by_id(
+        evaluation_id: int,
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> Optional[TradingEvaluationPayload]:
+    from src.api.serializers import serialize_trading_evaluation
+
+    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving evaluation by id %s", evaluation_id)
+    evaluation_dao = TradingEvaluationDao(database_session)
+    evaluation = evaluation_dao.retrieve_by_id(evaluation_id)
+
+    if not evaluation:
+        return None
+
+    return serialize_trading_evaluation(evaluation)
+
+
+@router.get("/api/analytics/shadow/{pair_address}", tags=["analytics"])
+def get_shadow_trades_for_pair(
+        pair_address: str,
+        database_session: Session = Depends(get_fastapi_database_session)
+) -> List[TradingEvaluationPayload]:
+    from src.api.serializers import serialize_trading_evaluation
+    from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
+    from src.persistence.models import TradingEvaluation
+
+    logger.debug("[HTTP][ANALYTICS][SHADOW] Retrieving shadow verdicts for pair %s", pair_address)
+    verdict_dao = TradingShadowingVerdictDao(database_session)
+    verdicts = verdict_dao.retrieve_resolved_for_pair(pair_address, limit_count=100)
+
+    # Mocking evaluations for serialization to the existing frontend model
+    results = []
+    for v in verdicts:
+        p = v.probe
+        mock_eval = TradingEvaluation(
+            id=v.id,
+            token_symbol=p.token_symbol,
+            blockchain_network=p.blockchain_network,
+            token_address=p.token_address,
+            pair_address=p.pair_address,
+            price_usd=p.entry_price_usd,
+            candidate_rank=p.candidate_rank,
+            quality_score=p.quality_score,
+            token_age_hours=p.token_age_hours,
+            volume_m5_usd=p.volume_m5_usd,
+            volume_h1_usd=p.volume_h1_usd,
+            volume_h6_usd=p.volume_h6_usd,
+            volume_h24_usd=p.volume_h24_usd,
+            liquidity_usd=p.liquidity_usd,
+            price_change_percentage_m5=p.price_change_percentage_m5,
+            price_change_percentage_h1=p.price_change_percentage_h1,
+            price_change_percentage_h6=p.price_change_percentage_h6,
+            price_change_percentage_h24=p.price_change_percentage_h24,
+            transaction_count_m5=p.transaction_count_m5,
+            transaction_count_h1=p.transaction_count_h1,
+            transaction_count_h6=p.transaction_count_h6,
+            transaction_count_h24=p.transaction_count_h24,
+            buy_to_sell_ratio=p.buy_to_sell_ratio,
+            market_cap_usd=p.market_cap_usd,
+            fully_diluted_valuation_usd=p.fully_diluted_valuation_usd,
+            dexscreener_boost=p.dexscreener_boost,
+            evaluated_at=p.probed_at,
+            execution_decision="SHADOW_BUY",
+            sizing_multiplier=1.0,
+            order_notional_value_usd=p.order_notional_value_usd,
+        )
+        results.append(serialize_trading_evaluation(mock_eval))
+
+    return results
 
 
 @router.get("/api/positions", tags=["positions"])

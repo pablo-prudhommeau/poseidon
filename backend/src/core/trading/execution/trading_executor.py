@@ -94,6 +94,7 @@ class TradingExecutor:
             take_profit_tp1_usd: float,
             take_profit_tp2_usd: float,
             lifi_route: TradingLifiRoute,
+            origin_evaluation_id: int,
     ) -> bool:
         execution_service = LiveExecutionService()
         try:
@@ -112,6 +113,7 @@ class TradingExecutor:
                 position_dao = TradingPositionDao(database_session)
 
                 trading_trade = TradingTrade(
+                    evaluation_id=origin_evaluation_id,
                     trade_side=TradeSide.BUY,
                     token_symbol=token.symbol,
                     blockchain_network=network,
@@ -127,6 +129,7 @@ class TradingExecutor:
                 trade_dao.save(trading_trade)
 
                 trading_position = TradingPosition(
+                    evaluation_id=origin_evaluation_id,
                     token_symbol=token.symbol,
                     blockchain_network=network,
                     token_address=token.token_address,
@@ -163,6 +166,7 @@ class TradingExecutor:
             take_profit_tp1_usd: float,
             take_profit_tp2_usd: float,
             lifi_route: TradingLifiRoute,
+            origin_evaluation_id: int,
     ) -> bool:
         coroutine = self._execute_live_buy(
             token=token,
@@ -172,6 +176,7 @@ class TradingExecutor:
             take_profit_tp1_usd=take_profit_tp1_usd,
             take_profit_tp2_usd=take_profit_tp2_usd,
             lifi_route=lifi_route,
+            origin_evaluation_id=origin_evaluation_id,
         )
 
         try:
@@ -225,7 +230,7 @@ class TradingExecutor:
         logger.debug("[TRADING][EXECUTOR][BUY] Sized order — notional=%.4f price=%.12f quantity=%.12f", payload.order_notional, price_usd, quantity)
 
         risk_manager = self._risk_manager
-        thresholds = risk_manager.compute_thresholds(price_usd, payload.original_candidate)
+        thresholds = risk_manager.compute_thresholds(price_usd, payload.original_candidate, shadow_tp_multiplier=payload.original_candidate.shadow_tp_multiplier)
         stop_loss = thresholds.stop_loss_price
         take_profit_tp1 = thresholds.take_profit_tier_1_price
         take_profit_tp2 = thresholds.take_profit_tier_2_price
@@ -237,6 +242,7 @@ class TradingExecutor:
                 position_dao = TradingPositionDao(database_session)
 
                 trading_trade = TradingTrade(
+                    evaluation_id=payload.origin_evaluation_id,
                     trade_side=TradeSide.BUY,
                     token_symbol=payload.target_token.symbol,
                     blockchain_network=payload.target_token.chain,
@@ -252,6 +258,7 @@ class TradingExecutor:
                 trade_dao.save(trading_trade)
 
                 trading_position = TradingPosition(
+                    evaluation_id=payload.origin_evaluation_id,
                     token_symbol=payload.target_token.symbol,
                     blockchain_network=payload.target_token.chain,
                     token_address=payload.target_token.token_address,
@@ -283,4 +290,5 @@ class TradingExecutor:
             take_profit_tp1_usd=take_profit_tp1,
             take_profit_tp2_usd=take_profit_tp2,
             lifi_route=payload.lifi_routing_path,
+            origin_evaluation_id=payload.origin_evaluation_id,
         )

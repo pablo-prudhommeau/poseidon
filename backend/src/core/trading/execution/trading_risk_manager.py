@@ -17,12 +17,6 @@ class TradingRiskManager:
         self.stop_loss_fraction_floor = settings.TRADING_STOP_LOSS_FRACTION_FLOOR
         self.stop_loss_fraction_cap = settings.TRADING_STOP_LOSS_FRACTION_CAP
         self.stop_loss_volatility_multiplier = settings.TRADING_RISK_STOP_LOSS_VOLATILITY_MULTIPLIER
-
-        self.confidence_multiplier_min = settings.TRADING_RISK_CONFIDENCE_MULTIPLIER_MIN
-        self.confidence_multiplier_max = settings.TRADING_RISK_CONFIDENCE_MULTIPLIER_MAX
-        self.confidence_momentum_baseline = settings.TRADING_RISK_CONFIDENCE_MOMENTUM_BASELINE
-        self.confidence_momentum_divisor = settings.TRADING_RISK_CONFIDENCE_MOMENTUM_DIVISOR
-        self.uncertainty_penalty_multiplier = settings.TRADING_RISK_UNCERTAINTY_PENALTY_MULTIPLIER
         self.default_volatility_fraction: float = 0.08
         self.target_position_volatility_fraction: float = 0.10
 
@@ -48,36 +42,21 @@ class TradingRiskManager:
 
         return max(0.01, min(0.30, statistics.fmean(window)))
 
-    def compute_thresholds(self, entry_price: float, candidate: TradingCandidate) -> TradingThresholds:
+    def compute_thresholds(self, entry_price: float, candidate: TradingCandidate, shadow_tp_multiplier: float = 1.0) -> TradingThresholds:
         if entry_price is None or entry_price <= 0.0:
             raise ValueError("entry_price must be > 0")
 
         volatility = self._estimate_atr_like_volatility(candidate) or self.default_volatility_fraction
 
-        base_take_profit_one_fraction = self.tp1_exit_fraction_default
-        base_take_profit_two_fraction = self.tp2_exit_fraction_default
+        take_profit_one_fraction = self.tp1_exit_fraction_default * shadow_tp_multiplier
+        take_profit_two_fraction = self.tp2_exit_fraction_default * shadow_tp_multiplier
 
         stop_loss_fraction = min(self.stop_loss_fraction_cap, max(self.stop_loss_fraction_floor, self.stop_loss_volatility_multiplier * volatility))
 
-        if candidate.quality_score is None:
-            logger.error("[TRADING][RISK] Candidate %s reached Risk Manager without a Quality Score", candidate.dexscreener_token_information.base_token.symbol)
-            raise ValueError("Candidate reached execution phase without a computed Quality Score")
-
-        momentum_strength = candidate.quality_score
-        uncertainty_penalty = max(0.0, volatility - self.target_position_volatility_fraction) * self.uncertainty_penalty_multiplier
-
-        momentum_bonus = (momentum_strength - self.confidence_momentum_baseline) / self.confidence_momentum_divisor
-        confidence_multiplier = 1.0 + momentum_bonus - uncertainty_penalty
-
-        bounded_multiplier = max(self.confidence_multiplier_min, min(self.confidence_multiplier_max, confidence_multiplier))
-
-        if bounded_multiplier >= 1.2:
-            logger.info("[TRADING][RISK] High pump probability detected (multiplier=%.2fx). Expanding Take Profits.", bounded_multiplier)
-        elif bounded_multiplier <= 0.8:
-            logger.info("[TRADING][RISK] High uncertainty detected (multiplier=%.2fx). Tightening Take Profits.", bounded_multiplier)
-
-        take_profit_one_fraction = base_take_profit_one_fraction * bounded_multiplier
-        take_profit_two_fraction = base_take_profit_two_fraction * bounded_multiplier
+        if shadow_tp_multiplier >= 1.2:
+            logger.info("[TRADING][RISK] Shadow TP multiplier %.2fx detected — expanding Take Profits", shadow_tp_multiplier)
+        elif shadow_tp_multiplier <= 0.8:
+            logger.info("[TRADING][RISK] Shadow TP multiplier %.2fx detected — tightening Take Profits", shadow_tp_multiplier)
 
         tp1 = entry_price * (1.0 + take_profit_one_fraction)
         tp2 = entry_price * (1.0 + take_profit_two_fraction)
@@ -85,8 +64,8 @@ class TradingRiskManager:
 
         logger.info("[TRADING][RISK][THRESHOLDS] entry=%.10f vol≈%.3f tp1=%.6f tp2=%.6f stop=%.6f", entry_price, volatility, tp1, tp2, stop)
         logger.debug(
-            "[TRADING][RISK][THRESHOLDS] stop_frac=%.3f tp1_frac=%.3f tp2_frac=%.3f (confidence_mult=%.2f)",
-            stop_loss_fraction, take_profit_one_fraction, take_profit_two_fraction, bounded_multiplier,
+            "[TRADING][RISK][THRESHOLDS] stop_frac=%.3f tp1_frac=%.3f tp2_frac=%.3f (shadow_tp_mult=%.2f)",
+            stop_loss_fraction, take_profit_one_fraction, take_profit_two_fraction, shadow_tp_multiplier,
         )
         return TradingThresholds(take_profit_tier_1_price=tp1, take_profit_tier_2_price=tp2, stop_loss_price=stop)
 

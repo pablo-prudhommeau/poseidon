@@ -29,6 +29,12 @@ const EXPLORATION_CATEGORIES: MetricCategory[] = [
         label: 'Network Activity',
         icon: 'fa-network-wired',
         metricKeys: ['transaction_count_m5', 'transaction_count_h1', 'transaction_count_h6', 'token_age_hours']
+    },
+    {
+        id: 'quality',
+        label: 'Quality',
+        icon: 'fa-diamond',
+        metricKeys: ['quality_score', 'dexscreener_boost']
     }
 ];
 

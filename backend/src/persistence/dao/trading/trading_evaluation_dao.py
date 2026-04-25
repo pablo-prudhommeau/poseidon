@@ -23,11 +23,28 @@ class TradingEvaluationDao:
         return trading_evaluation
 
     def retrieve_by_id(self, evaluation_id: int) -> Optional[TradingEvaluation]:
-        return self.database_session.get(TradingEvaluation, evaluation_id)
+        from sqlalchemy.orm import joinedload
+        database_query = (
+            select(TradingEvaluation)
+            .options(joinedload(TradingEvaluation.outcomes))
+            .where(TradingEvaluation.id == evaluation_id)
+        )
+        return self.database_session.execute(database_query).unique().scalars().first()
+
+    def retrieve_latest_evaluation_by_pair(self, pair_address: str) -> Optional[TradingEvaluation]:
+        from sqlalchemy.orm import joinedload
+        database_query = (
+            select(TradingEvaluation)
+            .options(joinedload(TradingEvaluation.outcomes))
+            .where(TradingEvaluation.pair_address == pair_address)
+            .order_by(desc(TradingEvaluation.evaluated_at), desc(TradingEvaluation.id))
+            .limit(1)
+        )
+        return self.database_session.execute(database_query).unique().scalars().first()
 
     def retrieve_recent_evaluations(self, limit_count: int = 1000) -> List[TradingEvaluation]:
         from sqlalchemy.orm import joinedload
-        logger.debug("[DATABASE][DAO][TRADING_EVALUATION][RETRIEVE] Fetching up to %d recent evaluation records", limit_count)
+        logger.debug("[DATABASE][DAO][TRADING_EVALUATION][RETRIEVE] Fetching up to %d recent evaluations", limit_count)
         database_query = (
             select(TradingEvaluation)
             .options(joinedload(TradingEvaluation.outcomes))

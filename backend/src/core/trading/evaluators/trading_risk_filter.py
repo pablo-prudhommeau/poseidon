@@ -84,7 +84,7 @@ def apply_risk_filter(candidates: list[TradingCandidate]) -> list[TradingCandida
     from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
 
     retained: list[TradingCandidate] = []
-    for candidate in sorted(candidates, key=lambda candidate_item: candidate_item.statistics_score, reverse=True):
+    for candidate in sorted(candidates, key=lambda candidate_item: candidate_item.quality_score, reverse=True):
         pre_decision = evaluate_pre_entry_decision(candidate)
 
         if pre_decision.is_valid_for_entry:

@@ -26,6 +26,7 @@ def _execute_sell_operation(
     trade_dao = TradingTradeDao(database_session)
     execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
     sell_trade = TradingTrade(
+        evaluation_id=position.evaluation_id,
         trade_side=TradeSide.SELL,
         token_symbol=position.token_symbol,
         blockchain_network=position.blockchain_network,

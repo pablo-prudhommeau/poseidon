@@ -88,13 +88,13 @@ class DexscreenerTransactionActivity(_DexscreenerBaseModel):
 
 
 class DexscreenerWebsite(_DexscreenerBaseModel):
-    label: str
-    url: str
+    label: Optional[str] = None
+    url: Optional[str] = None
 
 
 class DexscreenerSocial(_DexscreenerBaseModel):
-    type: str
-    url: str
+    type: Optional[str] = None
+    url: Optional[str] = None
 
 
 class DexscreenerInformation(_DexscreenerBaseModel):

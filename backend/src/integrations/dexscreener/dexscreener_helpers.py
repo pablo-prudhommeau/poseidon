@@ -71,7 +71,7 @@ def _extract_addresses(payload: Union[Dict[str, JSON], List[JSON], None]) -> Lis
                     candidate = base_address
         if isinstance(candidate, str):
             trimmed = candidate.strip()
-            if trimmed:
+            if trimmed and trimmed.isalnum() and len(trimmed) >= 20:
                 addresses.append(trimmed)
 
     if payload is None:

@@ -35,12 +35,3 @@
     color: #ef4444;
     font-size: 0.9rem;
 }
-
-:host ::ng-deep .p-tabs-nav {
-    border-bottom: 1px solid rgba(124, 92, 255, 0.2);
-}
-
-:host ::ng-deep .p-tab {
-    font-size: 0.9rem;
-    padding: 0.6rem 1.2rem;
-}

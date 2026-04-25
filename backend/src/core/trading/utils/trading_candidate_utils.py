@@ -25,9 +25,7 @@ def is_finite_number(value: object) -> bool:
 def candidate_from_dexscreener_token_information(token_information: DexscreenerTokenInformation) -> TradingCandidate:
     return TradingCandidate(
         quality_score=0.0,
-        statistics_score=0.0,
-        entry_score=0.0,
-        final_computed_score=0.0,
+        ai_adjusted_quality_score=0.0,
         ai_quality_delta=0.0,
         ai_buy_probability=0.0,
         dexscreener_token_information=token_information,

@@ -12,9 +12,9 @@ from src.api.http.api_schemas import (
     TradingEvaluationAiPayload,
     TradingEvaluationFundamentalsPayload,
     TradingEvaluationDecisionPayload,
-    TradingEvaluationOutcomePayload,
     DcaOrderPayload,
     DcaStrategyPayload,
+    ShadowIntelligenceStatusPayload, TradingEvaluationShadowDiagnosticsPayload,
 )
 from src.core.structures.structures import EquityCurve
 from src.core.utils.date_utils import format_datetime_to_local_iso
@@ -29,6 +29,7 @@ logger = get_application_logger(__name__)
 def serialize_trading_trade(trading_trade: TradingTrade) -> TradingTradePayload:
     return TradingTradePayload(
         id=trading_trade.id,
+        evaluation_id=trading_trade.evaluation_id,
         trade_side=trading_trade.trade_side.value,
         token_symbol=trading_trade.token_symbol,
         blockchain_network=trading_trade.blockchain_network,
@@ -48,6 +49,7 @@ def serialize_trading_trade(trading_trade: TradingTrade) -> TradingTradePayload:
 def serialize_trading_position(trading_position: TradingPosition, last_price: Optional[float]) -> TradingPositionPayload:
     return TradingPositionPayload(
         id=trading_position.id,
+        evaluation_id=trading_position.evaluation_id,
         token_symbol=trading_position.token_symbol,
         token_address=trading_position.token_address,
         pair_address=trading_position.pair_address,
@@ -72,6 +74,7 @@ def serialize_trading_portfolio_snapshot(
         realized_total: float,
         realized_24h: float,
         unrealized: float,
+        shadow_status: ShadowIntelligenceStatusPayload,
 ) -> TradingPortfolioPayload:
     return TradingPortfolioPayload(
         total_equity_value=snapshot.total_equity_value,
@@ -85,6 +88,7 @@ def serialize_trading_portfolio_snapshot(
         unrealized_profit_and_loss=unrealized,
         realized_profit_and_loss_total=realized_total,
         realized_profit_and_loss_24h=realized_24h,
+        shadow_intelligence_status=shadow_status,
     )
 
 
@@ -99,9 +103,7 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
         candidate_rank=row.candidate_rank,
         scores=TradingEvaluationScoresPayload(
             quality_score=row.quality_score,
-            statistics_score=row.statistics_score,
-            entry_score=row.entry_score,
-            final_score=row.final_score,
+            ai_adjusted_quality_score=row.ai_adjusted_quality_score,
         ),
         ai=TradingEvaluationAiPayload(
             ai_probability_take_profit_before_stop_loss=row.ai_probability_take_profit_before_stop_loss,
@@ -133,19 +135,9 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
             free_cash_before_execution_usd=row.free_cash_before_execution_usd,
             free_cash_after_execution_usd=row.free_cash_after_execution_usd,
         ),
-        outcomes=[
-            TradingEvaluationOutcomePayload(
-                id=outcome.id,
-                trade_id=outcome.trade_id,
-                exit_reason=outcome.exit_reason,
-                realized_profit_and_loss_percentage=outcome.realized_profit_and_loss_percentage,
-                realized_profit_and_loss_usd=outcome.realized_profit_and_loss_usd,
-                holding_duration_minutes=outcome.holding_duration_minutes,
-                is_profitable=outcome.is_profitable,
-                occurred_at=format_datetime_to_local_iso(outcome.occurred_at),
-            )
-            for outcome in (row.outcomes or [])
-        ],
+        shadow_diagnostics=TradingEvaluationShadowDiagnosticsPayload(
+            intelligence_snapshot=row.shadow_intelligence_snapshot,
+        ),
         raw_dexscreener_payload=row.raw_dexscreener_payload,
         raw_configuration_settings=row.raw_configuration_settings,
     )

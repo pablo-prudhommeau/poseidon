@@ -2,22 +2,25 @@ from __future__ import annotations
 
 from src.configuration.config import settings
 from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
+from src.core.trading.evaluators.trading_age_filter import apply_age_filter
+from src.core.trading.evaluators.trading_ai_scorer import apply_ai_scorer
+from src.core.trading.evaluators.trading_contradictions_filter import apply_contradictions_filter
+from src.core.trading.evaluators.trading_cooldown_filter import apply_cooldown_filter
+from src.core.trading.evaluators.trading_deduplication_filter import apply_deduplication_filter
+from src.core.trading.evaluators.trading_fundamentals_filter import apply_fundamentals_filter
+from src.core.trading.evaluators.trading_liquidity_filter import apply_liquidity_filter
+from src.core.trading.evaluators.trading_momentum_filter import apply_momentum_filter
+from src.core.trading.evaluators.trading_price_deviation_filter import apply_price_deviation_filter
+from src.core.trading.evaluators.trading_quality_scorer import apply_quality_scorer
+from src.core.trading.evaluators.trading_risk_filter import apply_risk_filter
+from src.core.trading.evaluators.trading_shadowing_decile_toxicity_filter import apply_shadowing_decile_toxicity_filter
+from src.core.trading.evaluators.trading_shadowing_notional_booster import apply_shadowing_notional_boost
+from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
+from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
 from src.core.trading.execution.trading_executor import TradingExecutor
 from src.core.trading.execution.trading_order_builder import build_lifi_route_for_live_execution
 from src.core.trading.execution.trading_risk_manager import TradingRiskManager
-from src.core.trading.filters.trading_age_filter import apply_age_filter
-from src.core.trading.filters.trading_ai_scorer import apply_ai_scorer
-from src.core.trading.filters.trading_contradictions_filter import apply_contradictions_filter
-from src.core.trading.filters.trading_cooldown_filter import apply_cooldown_filter
-from src.core.trading.filters.trading_deduplication_filter import apply_deduplication_filter
-from src.core.trading.filters.trading_fundamentals_filter import apply_fundamentals_filter
-from src.core.trading.filters.trading_liquidity_filter import apply_liquidity_filter
-from src.core.trading.filters.trading_momentum_filter import apply_momentum_filter
-from src.core.trading.filters.trading_price_deviation_filter import apply_price_deviation_filter
-from src.core.trading.filters.trading_quality_scorer import apply_quality_scorer
-from src.core.trading.filters.trading_risk_filter import apply_risk_filter
-from src.core.trading.filters.trading_statistics_scorer import apply_statistics_scorer
-from src.core.trading.filters.trading_volume_filter import apply_volume_filter
+from src.core.trading.shadowing.shadow_analytics_intelligence import compute_shadow_intelligence_snapshot
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload, TradingPipelineContext
 from src.core.trading.utils.trading_candidate_utils import (
     fetch_trading_candidates_sync,
@@ -83,10 +86,6 @@ class TradingPipeline:
         if not candidates:
             return
 
-        candidates = self._step_truncate_to_trending_top(candidates)
-        if not candidates:
-            return
-
         candidates = self._step_deduplication(candidates)
         if not candidates:
             return
@@ -95,10 +94,6 @@ class TradingPipeline:
         pipeline_context.token_price_information_list = token_price_information_list
 
         candidates = self._step_contradictions(candidates, token_price_information_list)
-        if not candidates:
-            return
-
-        candidates = self._step_statistics_scorer(candidates, pipeline_context)
         if not candidates:
             return
 
@@ -117,6 +112,25 @@ class TradingPipeline:
         candidates = self._step_ai_scorer(candidates, pipeline_context)
         if not candidates:
             return
+
+        shadow_snapshot = self._step_load_shadow_intelligence()
+        pipeline_context.shadow_intelligence_snapshot = shadow_snapshot
+
+        if not shadow_snapshot.is_activated:
+            logger.info("[TRADING][PIPELINE][GATE] Shadow intelligence in LEARNING phase — blocking live execution")
+            for rank, candidate in enumerate(candidates, start=1):
+                TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "LEARNING_PHASE")
+            return
+
+        candidates = self._step_shadowing_decile_toxicity_filter(candidates, shadow_snapshot)
+        if not candidates:
+            return
+
+        candidates = self._step_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
+        if not candidates:
+            return
+
+        self._step_shadowing_notional_boost(candidates, shadow_snapshot)
 
         self._step_execute(candidates, pipeline_context)
 
@@ -166,23 +180,11 @@ class TradingPipeline:
     def _step_score_quality(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_quality_scorer(candidates)
 
-    def _step_truncate_to_trending_top(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-        max_results = settings.TRADING_MAX_RESULTS
-
-        if len(candidates) > max_results:
-            candidates = candidates[:max_results]
-            logger.info("[TRADING][PIPELINE][TRUNCATE] Truncated to top %d native trending candidates", max_results)
-
-        return candidates
-
     def _step_deduplication(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_deduplication_filter(candidates)
 
     def _step_contradictions(self, candidates: list[TradingCandidate], token_price_information_list: list) -> list[TradingCandidate]:
         return apply_contradictions_filter(candidates, token_price_information_list)
-
-    def _step_statistics_scorer(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> list[TradingCandidate]:
-        return apply_statistics_scorer(candidates, pipeline_context)
 
     def _step_risk_filter(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_risk_filter(candidates)
@@ -195,6 +197,28 @@ class TradingPipeline:
 
     def _step_ai_scorer(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> list[TradingCandidate]:
         return apply_ai_scorer(candidates, pipeline_context)
+
+    def _step_load_shadow_intelligence(self):
+        from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot
+        try:
+            snapshot = compute_shadow_intelligence_snapshot()
+            logger.info(
+                "[TRADING][PIPELINE][SHADOW] Shadow intelligence loaded — activated=%s, outcomes=%d",
+                snapshot.is_activated, snapshot.total_outcomes_analyzed,
+            )
+            return snapshot
+        except Exception:
+            logger.exception("[TRADING][PIPELINE][SHADOW] Failed to load shadow intelligence, using empty snapshot")
+            return ShadowIntelligenceSnapshot(metric_snapshots=[], total_outcomes_analyzed=0, is_activated=False)
+
+    def _step_shadowing_decile_toxicity_filter(self, candidates: list[TradingCandidate], shadow_snapshot) -> list[TradingCandidate]:
+        return apply_shadowing_decile_toxicity_filter(candidates, shadow_snapshot)
+
+    def _step_shadowing_toxic_exposure_filter(self, candidates: list[TradingCandidate], shadow_snapshot) -> list[TradingCandidate]:
+        return apply_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
+
+    def _step_shadowing_notional_boost(self, candidates: list[TradingCandidate], shadow_snapshot) -> None:
+        apply_shadowing_notional_boost(candidates, shadow_snapshot)
 
     def _step_execute(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> None:
         from sqlalchemy import select, func
@@ -233,23 +257,22 @@ class TradingPipeline:
                 TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
                 continue
 
-            sizing_multiplier = self._risk_manager.size_multiplier(candidate)
-            order_notional = free_cash_usd * per_buy_fraction * sizing_multiplier
+            base_sizing_multiplier = self._risk_manager.size_multiplier(candidate)
+            effective_sizing_multiplier = base_sizing_multiplier * candidate.shadow_notional_multiplier
+            order_notional = free_cash_usd * per_buy_fraction * effective_sizing_multiplier
             dex_price = candidate.dex_price or candidate.dexscreener_token_information.price_usd or 0.0
 
             lifi_route = build_lifi_route_for_live_execution(candidate, order_notional)
 
-            candidate.final_computed_score = candidate.entry_score
-
             free_cash_before = free_cash_usd
             free_cash_after = free_cash_usd - order_notional
 
-            TradingEvaluationRecorder.persist_and_broadcast(
+            evaluation_id = TradingEvaluationRecorder.persist_and_broadcast(
                 candidate,
                 rank=rank,
                 decision="BUY",
                 reason="EXECUTION",
-                sizing_multiplier=sizing_multiplier,
+                sizing_multiplier=effective_sizing_multiplier,
                 order_notional_usd=order_notional,
                 free_cash_before_usd=free_cash_before,
                 free_cash_after_usd=free_cash_after,
@@ -260,12 +283,13 @@ class TradingPipeline:
                 execution_price=dex_price,
                 order_notional=order_notional,
                 original_candidate=candidate,
+                origin_evaluation_id=evaluation_id,
                 lifi_routing_path=lifi_route,
             )
 
             logger.info(
-                "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f entry=%.2f",
-                rank, candidate.token.symbol, _tail(candidate.token.token_address), order_notional, candidate.entry_score,
+                "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f quality=%.2f shadow_mult=%.2f",
+                rank, candidate.token.symbol, _tail(candidate.token.token_address), order_notional, candidate.ai_adjusted_quality_score, candidate.shadow_notional_multiplier,
             )
 
             buy_succeeded = self._executor.buy(order_payload)

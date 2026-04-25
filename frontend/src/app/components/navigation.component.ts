@@ -23,8 +23,7 @@ export class NavigationComponent implements OnInit {
     private webSocketService = inject(WebSocketService);
 
     public readonly items: ReadonlyArray<NavigationItem> = [
-        {label: 'Home', route: '/', icon: 'home', exact: true},
-        {label: 'Analytics', route: '/analytics', icon: 'chart-area', exact: false},
+        {label: 'Trading', route: '/trading', icon: 'chart-line', exact: false},
         {label: 'Smart DCA', route: '/dca', icon: 'robot', exact: false}
     ];
 

@@ -1,0 +1,173 @@
+<div class="space-y-6">
+	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+		<div class="p-4 rounded-2xl bg-black/20 border border-blue-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-all hover:border-blue-500/30">
+			<div class="flex justify-between items-center mb-3">
+				<span class="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Portfolio Equity</span>
+				<i class="fa fa-wallet text-blue-500/50"></i>
+			</div>
+			<div class="text-3xl font-black text-white tracking-tight">
+				$ {{ equity() | number:'1.2-2' }}
+			</div>
+			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+				Total Value
+			</div>
+			@if (equitySpark().length > 1) {
+				<div class="mt-3 -mx-1 h-10">
+					<sparkline [points]="equitySpark()"></sparkline>
+				</div>
+			}
+			<div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
+				<div class="flex flex-col">
+					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Holdings</span>
+					<span class="text-slate-300 font-bold text-xs">$ {{ holdings() | number:'1.2-2' }}</span>
+				</div>
+				<div class="flex flex-col border-l border-white/5 pl-4">
+					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Positions</span>
+					<span class="text-slate-300 font-bold text-xs">{{ openPositionCount() }}</span>
+				</div>
+			</div>
+		</div>
+
+		<div class="p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-all border"
+		     [ngClass]="{
+		         'border-emerald-500/20 hover:border-emerald-500/30': realizedTotal() >= 0,
+		         'border-red-500/20 hover:border-red-500/30': realizedTotal() < 0
+		     }">
+			<div class="flex justify-between items-center mb-3">
+				<span class="text-[10px] uppercase font-bold tracking-widest"
+				      [ngClass]="realizedTotal() >= 0 ? 'text-emerald-400' : 'text-red-400'">Realized P&L</span>
+				<i class="fa fa-chart-pie" [ngClass]="realizedTotal() >= 0 ? 'text-emerald-500/50' : 'text-red-500/50'"></i>
+			</div>
+			<div class="flex items-center gap-2">
+				<pnl-badge [value]="realizedTotal() || 0"></pnl-badge>
+			</div>
+			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+				Cumulative Return
+			</div>
+
+			<div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
+				<div class="flex flex-col">
+					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">24h</span>
+					<pnl-badge [value]="realized24h() || 0"></pnl-badge>
+				</div>
+			</div>
+		</div>
+
+		<div class="p-4 rounded-2xl bg-black/20 border border-purple-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-all hover:border-purple-500/30">
+			<div class="flex justify-between items-center mb-3">
+				<span class="text-[10px] uppercase font-bold text-purple-400 tracking-widest">Unrealized P&L</span>
+				<i class="fa fa-bolt text-purple-500/50"></i>
+			</div>
+			<div class="flex items-center gap-2">
+				<pnl-badge [value]="unrealized() || 0"></pnl-badge>
+			</div>
+			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+				Open Positions Value
+			</div>
+
+			<div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
+				<div class="flex flex-col">
+					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Best</span>
+					<span class="text-xs font-bold" [class.text-emerald-400]="bestPositionPnlPercentage() > 0" [class.text-red-400]="bestPositionPnlPercentage() < 0" [class.text-slate-400]="bestPositionPnlPercentage() === 0">
+						{{ formatPnlSign(bestPositionPnlPercentage()) }}{{ bestPositionPnlPercentage() | number:'1.1-1' }}%
+					</span>
+				</div>
+				<div class="flex flex-col border-l border-white/5 pl-4">
+					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Worst</span>
+					<span class="text-xs font-bold" [class.text-emerald-400]="worstPositionPnlPercentage() > 0" [class.text-red-400]="worstPositionPnlPercentage() < 0" [class.text-slate-400]="worstPositionPnlPercentage() === 0">
+						{{ formatPnlSign(worstPositionPnlPercentage()) }}{{ worstPositionPnlPercentage() | number:'1.1-1' }}%
+					</span>
+				</div>
+				<div class="flex flex-col border-l border-white/5 pl-4">
+					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Open</span>
+					<span class="text-slate-300 font-bold text-xs">{{ openPositionCount() }}</span>
+				</div>
+			</div>
+		</div>
+
+		<div class="p-4 rounded-2xl bg-black/20 border border-slate-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-all hover:border-slate-500/30">
+			<div class="flex justify-between items-center mb-3">
+				<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Cash & Capacity</span>
+				<i class="fa fa-coins text-slate-600"></i>
+			</div>
+			<div class="text-3xl font-black text-white tracking-tight">
+				$ {{ cash() | number:'1.2-2' }}
+			</div>
+			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+				Free Cash
+			</div>
+
+			<div class="mt-4 pt-3 border-t border-white/5 space-y-4">
+				<div>
+					<div class="flex items-center justify-between text-[9px] text-slate-500 mb-1">
+						<span class="uppercase font-black tracking-widest">Deployed</span>
+						<span class="font-bold text-slate-300">{{ deployedPercentage() | number:'1.0-0' }}%</span>
+					</div>
+					<div class="w-full bg-slate-700/50 rounded-full h-1 overflow-hidden">
+						<div class="bg-blue-400 h-1.5 rounded-full transition-all duration-500" [style.width.%]="deployedPercentage()"></div>
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<div class="flex items-center justify-between">
+						<span class="text-[9px] text-slate-500 uppercase font-black tracking-widest">Shadow IQ</span>
+						<span class="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest"
+						      [ngClass]="{
+						          'bg-amber-500/10 text-amber-400': shadowPhase() === 'LEARNING',
+						          'bg-emerald-500/10 text-emerald-400': shadowPhase() === 'ACTIVE',
+						          'bg-slate-500/10 text-slate-400': shadowPhase() === 'DISABLED'
+						      }">
+							{{ shadowPhase() }}
+						</span>
+					</div>
+
+					@if (shadowPhase() === 'LEARNING') {
+						<div class="space-y-2">
+							<div>
+								<div class="flex items-center justify-between text-[8px] text-slate-600 mb-1">
+									<span class="uppercase font-black tracking-widest">Outcomes</span>
+									<span class="font-bold text-slate-400">{{ shadowResolvedCount() }}/{{ shadowRequiredCount() }}</span>
+								</div>
+								<div class="w-full bg-slate-700/50 rounded-full h-1 overflow-hidden">
+									<div class="bg-amber-400/80 h-1 rounded-full transition-all duration-700" [style.width.%]="shadowOutcomeProgress()"></div>
+								</div>
+							</div>
+							<div>
+								<div class="flex items-center justify-between text-[8px] text-slate-600 mb-1">
+									<span class="uppercase font-black tracking-widest">Training</span>
+									<span class="font-bold text-slate-400">{{ shadowElapsedHours() | number:'1.1-1' }}h/{{ shadowRequiredHours() }}h</span>
+								</div>
+								<div class="w-full bg-slate-700/50 rounded-full h-1 overflow-hidden">
+									<div class="bg-amber-400/80 h-1 rounded-full transition-all duration-700" [style.width.%]="shadowHoursProgress()"></div>
+								</div>
+							</div>
+						</div>
+					} @else if (shadowPhase() === 'ACTIVE') {
+						<div class="flex items-center gap-2 py-1 px-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+							<i class="fa fa-brain text-emerald-500/50 text-[10px]"></i>
+							<span class="text-[9px] text-emerald-400/80 font-bold tracking-tight">Shadow intelligence activated</span>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-5">
+		<div class="flex items-center gap-2 mb-4">
+			<i class="fa fa-layer-group text-blue-400/60 text-sm"></i>
+			<span class="text-[11px] uppercase font-bold text-slate-400 tracking-widest">Open Positions</span>
+		</div>
+		<positions-table></positions-table>
+	</div>
+
+	<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-5">
+		<div class="flex items-center gap-2 mb-4">
+			<i class="fa fa-exchange-alt text-purple-400/60 text-sm"></i>
+			<span class="text-[11px] uppercase font-bold text-slate-400 tracking-widest">Recent Trades</span>
+		</div>
+		<trades-table></trades-table>
+	</div>
+</div>

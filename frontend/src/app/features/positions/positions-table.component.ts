@@ -1,4 +1,4 @@
-import {CommonModule, DatePipe, JsonPipe} from '@angular/common';
+import {CommonModule, DatePipe} from '@angular/common';
 import {AfterViewInit, Component, computed, inject, signal, TemplateRef, ViewChild} from '@angular/core';
 import {AgGridAngular} from 'ag-grid-angular';
 import {CellClassParams, ColDef, ValueFormatterParams, ValueGetterParams} from 'ag-grid-community';
@@ -37,6 +37,7 @@ import {TradingEvaluationPayload, TradingPositionPayload, TradingTradePayload} f
 import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer';
 import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
 import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
+import {ApiService} from '../../api.service';
 
 @Component({
     standalone: true,
@@ -44,7 +45,6 @@ import {TemplateHeaderRendererComponent} from '../../renderers/template-header.r
     imports: [
         CommonModule,
         DatePipe,
-        JsonPipe,
         AgGridAngular,
         DialogModule,
         ButtonModule,
@@ -57,13 +57,15 @@ import {TemplateHeaderRendererComponent} from '../../renderers/template-header.r
         PanelModule,
         NgApexchartsModule
     ],
-    templateUrl: './positions-table.component.html'
+    templateUrl: './positions-table.component.html',
+    styleUrl: './positions-table.component.css'
 })
 export class PositionsTableComponent implements AfterViewInit {
     public readonly agGridTheme = balhamDarkThemeCompact;
 
     private readonly webSocketService = inject(WebSocketService);
     private readonly numberFormattingService = inject(NumberFormattingService);
+    private readonly apiService = inject(ApiService);
 
     public readonly positionsRowData = computed<TradingPositionPayload[]>(() => {
         const rows = this.webSocketService.positions() ?? [];
@@ -157,6 +159,7 @@ export class PositionsTableComponent implements AfterViewInit {
                 headerName: 'Open date',
                 field: 'opened_at' as unknown as keyof TradingPositionPayload,
                 sortable: true,
+                sort: 'desc',
                 filter: 'agDateColumnFilter',
                 valueGetter: (p: ValueGetterParams<TradingPositionPayload>) => (p.data as any)?.opened_at ?? null,
                 cellClass: 'whitespace-nowrap',
@@ -264,7 +267,7 @@ export class PositionsTableComponent implements AfterViewInit {
                 headerName: 'Actions',
                 colId: 'actions',
                 pinned: 'right',
-                width: 80,
+                width: 100,
                 suppressHeaderMenuButton: true,
                 sortable: false,
                 filter: false,
@@ -277,13 +280,25 @@ export class PositionsTableComponent implements AfterViewInit {
     public openDetails(row: TradingPositionPayload | null): void {
         this.selectedPosition.set(row ?? null);
         this.cachedOriginBuyTrade = null;
+        this.selectedAnalytics.set(null);
         this.detailsVisible.set(true);
 
         console.info('[UI][POSITIONS][DETAILS] open', row);
         console.debug('[UI][POSITIONS][DETAILS][VERBOSE] resolving origin BUY trade & analytics…');
 
+        if (row && row.evaluation_id) {
+            this.apiService.getEvaluationById(row.evaluation_id).subscribe({
+                next: (evalData) => {
+                    this.selectedAnalytics.set(evalData);
+                    this.recomputeCharts();
+                },
+                error: (error) => {
+                    console.error('[UI][POSITIONS][DETAILS] Failed to load analytics for pair', error);
+                }
+            });
+        }
+
         this.cachedOriginBuyTrade = this.findOriginBuyTrade(row);
-        this.selectedAnalytics.set(this.findBestAnalyticsForPosition(row));
         this.recomputeCharts();
     }
 
@@ -323,6 +338,28 @@ export class PositionsTableComponent implements AfterViewInit {
         return this.computeDeltaPercent(row) ?? 0;
     }
 
+    public pricePositionPercentage(row: TradingPositionPayload | null, targetPrice?: number | null): number {
+        if (!row) {
+            return 50;
+        }
+        const lastPrice = targetPrice !== undefined ? targetPrice : this.numberFormattingService.toNumberSafe((row as any).last_price as number | null);
+        const stopLossPrice = this.numberFormattingService.toNumberSafe((row as any).stop_loss_price);
+        const takeProfitTier2Price = this.numberFormattingService.toNumberSafe((row as any).take_profit_tier_2_price);
+        if (lastPrice === null || stopLossPrice === null || takeProfitTier2Price === null || takeProfitTier2Price === stopLossPrice) {
+            return 50;
+        }
+        const rawPercentage = ((lastPrice - stopLossPrice) / (takeProfitTier2Price - stopLossPrice)) * 100;
+        return Math.max(0, Math.min(100, rawPercentage));
+    }
+
+    public entryPositionPercentage(row: TradingPositionPayload | null): number {
+        return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe((row as any)?.entry_price));
+    }
+
+    public tp1PositionPercentage(row: TradingPositionPayload | null): number {
+        return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe((row as any)?.take_profit_tier_1_price));
+    }
+
     public orderNotionalUsd(row: TradingPositionPayload | null, priceBasis: 'entry' | 'last'): number | null {
         if (!row) {
             return null;
@@ -336,23 +373,6 @@ export class PositionsTableComponent implements AfterViewInit {
             return null;
         }
         return quantity * price;
-    }
-
-    private findBestAnalyticsForPosition(position: TradingPositionPayload | null): TradingEvaluationPayload | null {
-        if (!position) {
-            return null;
-        }
-        const rows = (this.webSocketService.analytics() ?? []) as TradingEvaluationPayload[];
-        const candidates = rows.filter(
-            (a) =>
-                (a.pair_address && a.pair_address === position.pair_address) ||
-                (a.token_address && a.token_address === position.token_address)
-        );
-        if (candidates.length === 0) {
-            return null;
-        }
-        candidates.sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
-        return candidates[0] ?? null;
     }
 
     public analyticsForSelected(): TradingEvaluationPayload | null {
@@ -425,6 +445,23 @@ export class PositionsTableComponent implements AfterViewInit {
             return '—';
         }
         return `${this.numberFormattingService.formatNumber(value, 2, 2)}%`;
+    }
+
+    public formatMetricLabel(key: string): string {
+        return key.toUpperCase()
+            .replace(/_USD$/, ' ($)')
+            .replace(/_H24$/, ' 24H')
+            .replace(/_H6$/, ' 6H')
+            .replace(/_H1$/, ' 1H')
+            .replace(/_M5$/, ' 5M')
+            .replace(/_/g, ' ');
+    }
+
+    public sortedShadowMetrics(snapshot: any): any[] {
+        if (!snapshot || !snapshot.evaluated_metrics) {
+            return [];
+        }
+        return [...snapshot.evaluated_metrics].sort((a, b) => (b.decile_win_rate || 0) - (a.decile_win_rate || 0));
     }
 
     private recomputeCharts(): void {

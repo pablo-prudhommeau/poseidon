@@ -143,6 +143,7 @@ class DcaOrdersResponse(BaseModel):
 
 class TradingTradePayload(BaseModel):
     id: int
+    evaluation_id: int
     trade_side: str
     token_symbol: str
     blockchain_network: str
@@ -160,6 +161,7 @@ class TradingTradePayload(BaseModel):
 
 class TradingPositionPayload(BaseModel):
     id: int
+    evaluation_id: int
     token_symbol: str
     token_address: str
     pair_address: str
@@ -191,13 +193,12 @@ class TradingPortfolioPayload(BaseModel):
     unrealized_profit_and_loss: float
     realized_profit_and_loss_24h: float
     realized_profit_and_loss_total: float
+    shadow_intelligence_status: ShadowIntelligenceStatusPayload
 
 
 class TradingEvaluationScoresPayload(BaseModel):
     quality_score: float
-    statistics_score: float
-    entry_score: float
-    final_score: float
+    ai_adjusted_quality_score: float
 
 
 class TradingEvaluationAiPayload(BaseModel):
@@ -213,35 +214,74 @@ class TradingEvaluationDecisionPayload(BaseModel):
     free_cash_after_execution_usd: float
 
 
-class TradingEvaluationOutcomePayload(BaseModel):
+class TradingEvaluationShadowIntelligenceSnapshotMetricPayload(BaseModel):
+    metric_key: str
+    candidate_value: Optional[float] = None
+    decile_index: int
+    decile_win_rate: float
+    decile_median_pnl: float
+    is_toxic: bool
+    is_golden: bool
+    normalized_influence: float
+
+
+from pydantic import BaseModel, Field
+
+
+class TradingEvaluationShadowIntelligenceSnapshotPayload(BaseModel):
+    evaluated_metrics: List[TradingEvaluationShadowIntelligenceSnapshotMetricPayload] = Field(default_factory=list)
+
+
+class TradingEvaluationShadowDiagnosticsPayload(BaseModel):
+    intelligence_snapshot: TradingEvaluationShadowIntelligenceSnapshotPayload
+
+
+class TradingEvaluationShadowSimulationPayload(BaseModel):
     id: int
-    trade_id: Optional[int]
-    exit_reason: str
-    realized_profit_and_loss_percentage: float
-    realized_profit_and_loss_usd: float
-    holding_duration_minutes: float
-    is_profitable: bool
-    occurred_at: str
+    take_profit_tier_1_price: float
+    take_profit_tier_2_price: float
+    stop_loss_price: float
+    take_profit_tier_1_hit_at: Optional[str] = None
+    take_profit_tier_2_hit_at: Optional[str] = None
+    stop_loss_hit_at: Optional[str] = None
+    exit_reason: Optional[str] = None
+    realized_pnl_percentage: Optional[float] = None
+    realized_pnl_usd: Optional[float] = None
+    holding_duration_minutes: Optional[float] = None
+    is_profitable: Optional[bool] = None
+    resolved_at: Optional[str] = None
+
+
+class ShadowIntelligenceStatusPayload(BaseModel):
+    is_enabled: bool
+    phase: str
+    resolved_outcome_count: int
+    required_outcome_count: int
+    elapsed_hours: float
+    required_hours: float
+    outcome_progress_percentage: float
+    hours_progress_percentage: float
 
 
 class TradingEvaluationFundamentalsPayload(BaseModel):
-    token_age_hours: float
-    volume_m5_usd: float
-    volume_h1_usd: float
-    volume_h6_usd: float
-    volume_h24_usd: float
-    liquidity_usd: float
-    price_change_percentage_m5: float
-    price_change_percentage_h1: float
-    price_change_percentage_h6: float
-    price_change_percentage_h24: float
-    transaction_count_m5: int
-    transaction_count_h1: int
-    transaction_count_h6: int
-    transaction_count_h24: int
-    buy_to_sell_ratio: float
-    market_cap_usd: float
-    fully_diluted_valuation_usd: float
+    token_age_hours: Optional[float] = None
+    volume_m5_usd: Optional[float] = None
+    volume_h1_usd: Optional[float] = None
+    volume_h6_usd: Optional[float] = None
+    volume_h24_usd: Optional[float] = None
+    liquidity_usd: Optional[float] = None
+    price_change_percentage_m5: Optional[float] = None
+    price_change_percentage_h1: Optional[float] = None
+    price_change_percentage_h6: Optional[float] = None
+    price_change_percentage_h24: Optional[float] = None
+    transaction_count_m5: Optional[int] = None
+    transaction_count_h1: Optional[int] = None
+    transaction_count_h6: Optional[int] = None
+    transaction_count_h24: Optional[int] = None
+    buy_to_sell_ratio: Optional[float] = None
+    market_cap_usd: Optional[float] = None
+    fully_diluted_valuation_usd: Optional[float] = None
+    dexscreener_boost: Optional[float] = None
 
 
 class TradingEvaluationPayload(BaseModel):
@@ -256,12 +296,9 @@ class TradingEvaluationPayload(BaseModel):
     ai: TradingEvaluationAiPayload
     fundamentals: TradingEvaluationFundamentalsPayload
     decision: TradingEvaluationDecisionPayload
-    outcomes: List[TradingEvaluationOutcomePayload]
+    shadow_diagnostics: TradingEvaluationShadowDiagnosticsPayload
     raw_dexscreener_payload: dict[str, object]
     raw_configuration_settings: dict[str, object]
-
-
-
 
 
 class TradingPositionsResponse(BaseModel):

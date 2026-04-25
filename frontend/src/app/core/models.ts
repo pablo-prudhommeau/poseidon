@@ -135,6 +135,7 @@ export interface DcaOrdersResponse {
 
 export interface TradingTradePayload {
     id: number;
+    evaluation_id: number;
     trade_side: TradeSide;
     token_symbol: string;
     blockchain_network: string;
@@ -151,6 +152,7 @@ export interface TradingTradePayload {
 
 export interface TradingPositionPayload {
     id: number;
+    evaluation_id: number;
     token_symbol: string;
     token_address: string;
     pair_address: string;
@@ -172,6 +174,17 @@ export interface TradingEquityCurvePointPayload {
     total_equity_value: number;
 }
 
+export interface ShadowIntelligenceStatusPayload {
+    is_enabled: boolean;
+    phase: string;
+    resolved_outcome_count: number;
+    required_outcome_count: number;
+    elapsed_hours: number;
+    required_hours: number;
+    outcome_progress_percentage: number;
+    hours_progress_percentage: number;
+}
+
 export interface TradingPortfolioPayload {
     total_equity_value: number;
     available_cash_balance: number;
@@ -181,13 +194,12 @@ export interface TradingPortfolioPayload {
     unrealized_profit_and_loss: number;
     realized_profit_and_loss_24h: number;
     realized_profit_and_loss_total: number;
+    shadow_intelligence_status: ShadowIntelligenceStatusPayload;
 }
 
 export interface TradingEvaluationScoresPayload {
     quality_score: number;
-    statistics_score: number;
-    entry_score: number;
-    final_score: number;
+    ai_adjusted_quality_score: number;
 }
 
 export interface TradingEvaluationAiPayload {
@@ -204,15 +216,39 @@ export interface TradingEvaluationDecisionPayload {
     free_cash_after_execution_usd: number;
 }
 
-export interface TradingEvaluationOutcomePayload {
+export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
+    metric_key: string;
+    candidate_value: number;
+    decile_index: number;
+    decile_win_rate: number;
+    decile_median_pnl: number;
+    is_toxic: boolean;
+    is_golden: boolean;
+    normalized_influence: number;
+}
+
+export interface TradingEvaluationShadowIntelligenceSnapshotPayload {
+    evaluated_metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[];
+}
+
+export interface TradingEvaluationShadowDiagnosticsPayload {
+    intelligence_snapshot: TradingEvaluationShadowIntelligenceSnapshotPayload;
+}
+
+export interface TradingEvaluationShadowSimulationPayload {
     id: number;
-    trade_id?: number | null;
-    exit_reason: string;
-    realized_profit_and_loss_percentage: number;
-    realized_profit_and_loss_usd: number;
-    holding_duration_minutes: number;
-    is_profitable: boolean;
-    occurred_at: string;
+    take_profit_tier_1_price: number;
+    take_profit_tier_2_price: number;
+    stop_loss_price: number;
+    take_profit_tier_1_hit_at?: string | null;
+    take_profit_tier_2_hit_at?: string | null;
+    stop_loss_hit_at?: string | null;
+    exit_reason?: string | null;
+    realized_profit_and_loss_percentage?: number | null;
+    realized_profit_and_loss_usd?: number | null;
+    holding_duration_minutes?: number | null;
+    is_profitable?: boolean | null;
+    resolved_at?: string | null;
 }
 
 export interface TradingEvaluationFundamentalsPayload {
@@ -247,12 +283,11 @@ export interface TradingEvaluationPayload {
     ai: TradingEvaluationAiPayload;
     fundamentals: TradingEvaluationFundamentalsPayload;
     decision: TradingEvaluationDecisionPayload;
-    outcomes: TradingEvaluationOutcomePayload[];
+    shadow_diagnostics: TradingEvaluationShadowDiagnosticsPayload;
+    shadow_simulation?: TradingEvaluationShadowSimulationPayload | null;
     raw_dexscreener_payload: Record<string, object>;
     raw_configuration_settings: Record<string, object>;
 }
-
-
 
 export interface TradingPositionsResponse {
     positions: TradingPositionPayload[];

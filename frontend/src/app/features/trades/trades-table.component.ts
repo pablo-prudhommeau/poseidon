@@ -1,4 +1,4 @@
-import {CommonModule, DatePipe, JsonPipe} from '@angular/common';
+import {CommonModule, DatePipe} from '@angular/common';
 import {AfterViewInit, Component, computed, inject, signal, TemplateRef, ViewChild} from '@angular/core';
 import {AgGridAngular} from 'ag-grid-angular';
 import {ColDef, ValueFormatterParams, ValueGetterParams} from 'ag-grid-community';
@@ -22,6 +22,7 @@ import {TradingEvaluationPayload, TradingTradePayload} from '../../core/models';
 import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer';
 import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
 import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
+import {ApiService} from '../../api.service';
 
 @Component({
     standalone: true,
@@ -29,7 +30,6 @@ import {TemplateHeaderRendererComponent} from '../../renderers/template-header.r
     imports: [
         CommonModule,
         DatePipe,
-        JsonPipe,
         AgGridAngular,
         DialogModule,
         ButtonModule,
@@ -49,6 +49,7 @@ export class TradesTableComponent implements AfterViewInit {
 
     private readonly webSocketService = inject(WebSocketService);
     private readonly numberFormattingService = inject(NumberFormattingService);
+    private readonly apiService = inject(ApiService);
 
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
         const rows = this.webSocketService.trades() ?? [];
@@ -185,7 +186,7 @@ export class TradesTableComponent implements AfterViewInit {
                 headerName: 'Actions',
                 colId: 'actions',
                 pinned: 'right',
-                width: 80,
+                width: 100,
                 suppressHeaderMenuButton: true,
                 sortable: false,
                 filter: false,
@@ -197,28 +198,23 @@ export class TradesTableComponent implements AfterViewInit {
 
     public openDetails(row: TradingTradePayload | null): void {
         this.selectedTrade.set(row ?? null);
+        this.selectedAnalytics.set(null);
         this.detailsVisible.set(true);
         console.info('[UI][TRADES][DETAILS] open', row);
         console.debug('[UI][TRADES][DETAILS][VERBOSE] resolving analytics & charts…');
-        this.selectedAnalytics.set(this.findBestAnalyticsForTrade(row));
-        this.recomputeCharts();
-    }
 
-    private findBestAnalyticsForTrade(trade: TradingTradePayload | null): TradingEvaluationPayload | null {
-        if (!trade) {
-            return null;
+        if (row && row.evaluation_id) {
+            this.apiService.getEvaluationById(row.evaluation_id).subscribe({
+                next: (evalData) => {
+                    this.selectedAnalytics.set(evalData);
+                    this.recomputeCharts();
+                },
+                error: (error) => {
+                    console.error('[UI][TRADES][DETAILS] Failed to load analytics for pair', error);
+                }
+            });
         }
-        const rows = (this.webSocketService.analytics() ?? []) as TradingEvaluationPayload[];
-        const candidates = rows.filter(
-            (a) =>
-                (a.pair_address && a.pair_address === trade.pair_address) ||
-                (a.token_address && a.token_address === trade.token_address)
-        );
-        if (candidates.length === 0) {
-            return null;
-        }
-        candidates.sort((a, b) => (b.evaluated_at || '').localeCompare(a.evaluated_at || ''));
-        return candidates[0] ?? null;
+        this.recomputeCharts();
     }
 
     public analyticsForSelected(): TradingEvaluationPayload | null {
@@ -275,6 +271,23 @@ export class TradesTableComponent implements AfterViewInit {
             return '—';
         }
         return `${this.numberFormattingService.formatNumber(value, 2, 2)}%`;
+    }
+
+    public formatMetricLabel(key: string): string {
+        return key.toUpperCase()
+            .replace(/_USD$/, ' ($)')
+            .replace(/_H24$/, ' 24H')
+            .replace(/_H6$/, ' 6H')
+            .replace(/_H1$/, ' 1H')
+            .replace(/_M5$/, ' 5M')
+            .replace(/_/g, ' ');
+    }
+
+    public sortedShadowMetrics(snapshot: any): any[] {
+        if (!snapshot || !snapshot.evaluated_metrics) {
+            return [];
+        }
+        return [...snapshot.evaluated_metrics].sort((a, b) => (b.decile_win_rate || 0) - (a.decile_win_rate || 0));
     }
 
     private recomputeCharts(): void {

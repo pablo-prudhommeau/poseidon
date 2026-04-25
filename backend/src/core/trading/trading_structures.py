@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshotPayload
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 
 
@@ -13,14 +14,25 @@ class TradingFilterVerdict(BaseModel):
     rejection_reasons: List[str]
 
 
+class ShadowDiagnostics(BaseModel):
+    toxic_metric_count: int = 0
+    total_metrics_evaluated: int = 0
+    toxic_metric_keys: list[str] = []
+    golden_metric_keys: list[str] = []
+    notional_boost_factor: float = 1.0
+    take_profit_boost_factor: float = 1.0
+    intelligence_snapshot: ShadowIntelligenceSnapshotPayload = Field(default_factory=ShadowIntelligenceSnapshotPayload)
+
+
 class TradingCandidate(BaseModel):
     token: "Token"
     quality_score: float
-    statistics_score: float
-    entry_score: float
-    final_computed_score: float
+    ai_adjusted_quality_score: float
     ai_quality_delta: float
     ai_buy_probability: float
+    shadow_notional_multiplier: float = 1.0
+    shadow_tp_multiplier: float = 1.0
+    shadow_diagnostics: ShadowDiagnostics = ShadowDiagnostics()
     dexscreener_token_information: DexscreenerTokenInformation
     pair_address: Optional[str] = None
     dex_price: Optional[float] = None
@@ -83,6 +95,7 @@ class TradingOrderPayload(BaseModel):
     execution_price: float
     order_notional: float
     original_candidate: TradingCandidate
+    origin_evaluation_id: int
     lifi_routing_path: Optional[TradingLifiRoute] = None
 
 
@@ -95,43 +108,6 @@ class TradingEvmTransactionRequest(BaseModel):
 
 class TradingSolanaSerializedTransaction(BaseModel):
     serialized_payload_bytes: bytes
-
-
-class TradingFeatureValues(BaseModel):
-    liquidity_usd: float
-    volume_24h_usd: float
-    age_hours: float
-    momentum_score: float
-    order_flow_score: float
-
-
-class TradingScoringWeights(BaseModel):
-    liquidity_weight: float
-    volume_weight: float
-    age_weight: float
-    momentum_weight: float
-    order_flow_weight: float
-
-    @classmethod
-    def load_from_configuration(cls) -> TradingScoringWeights:
-        from src.configuration.config import settings
-        return cls(
-            liquidity_weight=settings.TRADING_SCORE_WEIGHT_LIQUIDITY,
-            volume_weight=settings.TRADING_SCORE_WEIGHT_VOLUME,
-            age_weight=settings.TRADING_SCORE_WEIGHT_AGE,
-            momentum_weight=settings.TRADING_SCORE_WEIGHT_MOMENTUM,
-            order_flow_weight=settings.TRADING_SCORE_WEIGHT_ORDER_FLOW,
-        )
-
-    @property
-    def total_weight(self) -> float:
-        return (
-                self.liquidity_weight
-                + self.volume_weight
-                + self.age_weight
-                + self.momentum_weight
-                + self.order_flow_weight
-        )
 
 
 class TradingQualityContext(BaseModel):
@@ -166,7 +142,7 @@ class TradingExecutionResult:
 
 class TradingPipelineContext(BaseModel):
     token_price_information_list: list[DexscreenerTokenInformation] = []
-    scoring_engine: Optional[object] = None
+    shadow_intelligence_snapshot: Optional[object] = None
     free_cash_usd: float = 0.0
     per_order_budget_usd: float = 0.0
     executed_buy_count: int = 0

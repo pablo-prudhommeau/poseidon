@@ -21,9 +21,7 @@ class TradingEvaluationRecorder:
             order_notional_usd: float = 0.0,
             free_cash_before_usd: float = 0.0,
             free_cash_after_usd: float = 0.0,
-    ) -> None:
-        final_score = candidate.entry_score if candidate.final_computed_score <= 0 else candidate.final_computed_score
-
+    ) -> Optional[int]:
         token_information = candidate.dexscreener_token_information
         base_token = token_information.base_token
 
@@ -48,9 +46,7 @@ class TradingEvaluationRecorder:
             price_native=token_information.price_native or 0.0,
             candidate_rank=rank,
             quality_score=candidate.quality_score,
-            statistics_score=candidate.statistics_score,
-            entry_score=candidate.entry_score,
-            final_score=final_score,
+            ai_adjusted_quality_score=candidate.ai_adjusted_quality_score,
             ai_probability_take_profit_before_stop_loss=candidate.ai_buy_probability,
             ai_quality_score_delta=candidate.ai_quality_delta,
             token_age_hours=token_information.age_hours,
@@ -70,20 +66,26 @@ class TradingEvaluationRecorder:
             buy_to_sell_ratio=computed_buy_to_sell_ratio,
             market_cap_usd=token_information.market_cap or 0.0,
             fully_diluted_valuation_usd=token_information.fully_diluted_valuation or 0.0,
+            dexscreener_boost=token_information.boost or 0.0,
             evaluated_at=get_current_local_datetime(),
             execution_decision=decision.upper(),
             sizing_multiplier=sizing_multiplier or 0.0,
             order_notional_value_usd=order_notional_usd or 0.0,
             free_cash_before_execution_usd=free_cash_before_usd or 0.0,
             free_cash_after_execution_usd=free_cash_after_usd or 0.0,
-            raw_dexscreener_payload=token_information.model_dump(mode="json"),
+            shadow_intelligence_snapshot=candidate.shadow_diagnostics.intelligence_snapshot.model_dump(mode="json"),
+            raw_dexscreener_payload=candidate.dexscreener_token_information.model_dump(mode="json"),
             raw_configuration_settings=_to_dict(settings),
         )
 
-        logger.info("[TRADING][EVALUATION] Token %s sequence evaluated -> Decision: %s | Reason: %s", payload.token_symbol, decision.upper(), reason)
+        logger.info("[TRADING][EVALUATION] Token %s evaluated -> Decision: %s | Reason: %s", payload.token_symbol, decision.upper(), reason)
 
         if decision.upper() == "BUY":
-            TelemetryService.record_analytics_event(payload)
+            serialized_evaluation = TelemetryService.record_analytics_event(payload)
+            return serialized_evaluation.id
 
+        return None
+
+    @staticmethod
     def persist_and_broadcast_skip(evaluation_candidate: TradingCandidate, sequence_rank: int, exclusion_reason: str) -> None:
         TradingEvaluationRecorder.persist_and_broadcast(evaluation_candidate, rank=sequence_rank, decision="SKIP", reason=exclusion_reason)

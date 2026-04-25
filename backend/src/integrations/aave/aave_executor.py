@@ -35,12 +35,12 @@ class AaveExecutor:
     def __init__(self) -> None:
         if self.is_initialized:
             return
-            
+
         self.web3_clients: dict[str, AsyncWeb3] = {}
         self.pool_contracts: dict[str, AsyncContract] = {}
         self.wallet_address: str = ""
         self.private_key: str = ""
-        
+
         self.is_initialized = True
 
     def get_wallet_address(self) -> str:

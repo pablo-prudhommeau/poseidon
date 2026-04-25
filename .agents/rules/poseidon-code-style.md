@@ -26,6 +26,8 @@ Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un 
 
 * N'affecte pas de manière hasardeuse des valeurs par défaut `0`, `""`, utilise proprement `Optional` ou throw des exceptions
 
-* L'ensemble des dates gérées dans l'application doivent utiliser la timezone locale système (et non UTC)
+* L'ensemble des dates gérées dans l'application doivent utiliser la timezone locale système (et non UTC). 
+
+* Assure-toi systématiquement que les comparaisons et soustractions de dates tiennent compte des pertes potentielles d'offset (offset-naive) souvent causées par SQLite, en garantissant que les dates réhydratées soient explicitement converties en offset-aware local via un utilitaire adéquat.
 
 * Lorsque tu `except` une exception, tu dois utiliser logger.exception pour pouvoir afficher la stacktrace
