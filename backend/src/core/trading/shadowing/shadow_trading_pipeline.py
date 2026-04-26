@@ -4,7 +4,6 @@ from datetime import datetime
 
 from src.configuration.config import settings
 from src.core.trading.evaluators.trading_quality_scorer import _evaluate_quality
-from src.core.trading.execution.trading_risk_manager import TradingRiskManager
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.utils.trading_candidate_utils import fetch_trading_candidates_sync
 from src.core.utils.date_utils import get_current_local_datetime
@@ -17,8 +16,7 @@ logger = get_application_logger(__name__)
 
 class ShadowTradingPipeline:
     def __init__(self) -> None:
-        self._risk_manager = TradingRiskManager()
-        self._token_cooldown_registry: dict[str, datetime] = {}
+        pass
 
     def run_once(self) -> None:
         if not settings.TRADING_SHADOWING_ENABLED:
@@ -43,16 +41,26 @@ class ShadowTradingPipeline:
             return
 
         current_time = get_current_local_datetime()
-        self._purge_expired_cooldowns(current_time)
 
         fixed_notional = settings.TRADING_SHADOWING_FIXED_NOTIONAL_USD
         cooldown_minutes = settings.TRADING_SHADOWING_TOKEN_COOLDOWN_MINUTES
         shadow_probe_count = 0
         cooldown_skip_count = 0
 
+        from datetime import timedelta
+        from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
+
+        cooldown_threshold = current_time - timedelta(minutes=cooldown_minutes)
+        token_addresses = [c.dexscreener_token_information.base_token.address for c in candidates]
+
+        with get_database_session() as database_session:
+            probe_dao = TradingShadowingProbeDao(database_session)
+            recent_probes = probe_dao.retrieve_recent_probes_by_tokens(token_addresses, cooldown_threshold)
+            cooldown_addresses = {probe.token_address for probe in recent_probes}
+
         for rank, candidate in enumerate(candidates, start=1):
             token_address = candidate.dexscreener_token_information.base_token.address
-            if self._is_token_on_cooldown(token_address, current_time, cooldown_minutes):
+            if token_address in cooldown_addresses:
                 cooldown_skip_count += 1
                 continue
 
@@ -67,40 +75,26 @@ class ShadowTradingPipeline:
             if not entry_price or entry_price <= 0.0:
                 continue
 
-            thresholds = self._risk_manager.compute_thresholds(entry_price, candidate)
+            tp1_price = entry_price * (1.0 + settings.TRADING_TP1_EXIT_FRACTION)
+            tp2_price = entry_price * (1.0 + settings.TRADING_TP2_EXIT_FRACTION)
+            stop_loss_price = entry_price * (1.0 - settings.TRADING_STOP_LOSS_FRACTION_CAP)
 
             self._persist_shadow_probe(
                 candidate=candidate,
                 rank=rank,
                 notional=fixed_notional,
-                tp1_price=thresholds.take_profit_tier_1_price,
-                tp2_price=thresholds.take_profit_tier_2_price,
-                stop_loss_price=thresholds.stop_loss_price,
+                tp1_price=tp1_price,
+                tp2_price=tp2_price,
+                stop_loss_price=stop_loss_price,
                 current_time=current_time,
             )
-            self._token_cooldown_registry[token_address] = current_time
+            cooldown_addresses.add(token_address)
             shadow_probe_count += 1
 
         logger.info(
             "[TRADING][SHADOW][PIPELINE] Recorded %d shadow probes from %d candidates (%d skipped by cooldown)",
             shadow_probe_count, len(candidates), cooldown_skip_count,
         )
-
-    def _is_token_on_cooldown(self, token_address: str, current_time: datetime, cooldown_minutes: int) -> bool:
-        last_probed_at = self._token_cooldown_registry.get(token_address)
-        if last_probed_at is None:
-            return False
-        elapsed_minutes = (current_time - last_probed_at).total_seconds() / 60.0
-        return elapsed_minutes < cooldown_minutes
-
-    def _purge_expired_cooldowns(self, current_time: datetime) -> None:
-        cooldown_minutes = settings.TRADING_SHADOWING_TOKEN_COOLDOWN_MINUTES
-        expired_addresses = [
-            address for address, last_probed_at in self._token_cooldown_registry.items()
-            if (current_time - last_probed_at).total_seconds() / 60.0 >= cooldown_minutes * 2
-        ]
-        for address in expired_addresses:
-            del self._token_cooldown_registry[address]
 
     def _filter_allowed_chains(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         allowed_chains = set(settings.TRADING_ALLOWED_CHAINS)

@@ -39,6 +39,18 @@
 					</div>
 				} @else if (qualifiedAnalytics(); as data) {
 					<div class="space-y-5">
+						<div class="flex items-center justify-between mb-2">
+							<div class="flex items-center gap-2">
+								<div class="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">
+									<i class="fa fa-crosshairs text-blue-400 text-xs"></i>
+									<span class="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Qualified Realm</span>
+								</div>
+								<span class="text-[10px] text-slate-500">Only candidates that successfully passed the evaluation pipeline</span>
+							</div>
+							<button pButton icon="fa fa-refresh" label="Refresh"
+							        class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs"
+							        (click)="refreshQualifiedAnalytics()"></button>
+						</div>
 						<app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>
 
 						<p-tabs [value]="qualifiedAnalyticsSubTab()" (valueChange)="onQualifiedSubTabChange($event)">
@@ -78,12 +90,17 @@
 					</div>
 				} @else if (shadowAnalytics(); as data) {
 					<div class="space-y-5">
-						<div class="flex items-center gap-2 mb-2">
-							<div class="flex items-center gap-1.5 bg-purple-500/10 border border-purple-500/20 rounded-full px-3 py-1">
-								<i class="fa fa-ghost text-purple-400 text-xs"></i>
-								<span class="text-[10px] uppercase font-bold text-purple-400 tracking-widest">Shadow Realm</span>
+						<div class="flex items-center justify-between mb-2">
+							<div class="flex items-center gap-2">
+								<div class="flex items-center gap-1.5 bg-purple-500/10 border border-purple-500/20 rounded-full px-3 py-1">
+									<i class="fa fa-ghost text-purple-400 text-xs"></i>
+									<span class="text-[10px] uppercase font-bold text-purple-400 tracking-widest">Shadow Realm</span>
+								</div>
+								<span class="text-[10px] text-slate-500">All candidates evaluated without filters — statistical exhaustivity</span>
 							</div>
-							<span class="text-[10px] text-slate-500">All candidates evaluated without filters — statistical exhaustivity</span>
+							<button pButton icon="fa fa-refresh" label="Refresh"
+							        class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs"
+							        (click)="refreshShadowAnalytics()"></button>
 						</div>
 
 						<app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>

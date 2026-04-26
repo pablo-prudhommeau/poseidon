@@ -365,7 +365,6 @@ class AnalyticsKpiPayload(BaseModel):
 class AnalyticsResponse(BaseModel):
     kpis: AnalyticsKpiPayload
     pnl_drivers_series: List[AnalyticsHeatmapSeriesPayload]
-    staled_risk_series: List[AnalyticsHeatmapSeriesPayload]
     timeline: List[AnalyticsTimelinePointPayload]
     scatter_series: List[AnalyticsScatterSeriesPayload]
 

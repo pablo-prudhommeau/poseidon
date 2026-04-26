@@ -1,4 +1,4 @@
-<div class="space-y-6 pb-8">
+﻿<div class="space-y-6 pb-8">
 	<div class="flex items-center gap-2 mb-2 pt-2">
 		<h2 class="text-lg font-bold text-slate-200">Actionable Zones</h2>
 		<span class="text-[10px] text-slate-500 px-2">Top deciles isolated purely on Win Rate strength (n &ge; 10)</span>
@@ -29,6 +29,11 @@
 					</div>
 				</div>
 			</div>
+		} @empty {
+			<div class="col-span-full p-8 border border-dashed border-emerald-500/10 rounded-2xl flex flex-col items-center justify-center text-slate-500 gap-3">
+				<i class="fa fa-bullseye opacity-20 text-2xl"></i>
+				<span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">No golden zones identified yet</span>
+			</div>
 		}
 	</div>
 
@@ -57,42 +62,54 @@
 					</div>
 				</div>
 			</div>
+		} @empty {
+			<div class="col-span-full p-8 border border-dashed border-red-500/10 rounded-2xl flex flex-col items-center justify-center text-slate-500 gap-3">
+				<i class="fa fa-radiation opacity-20 text-2xl"></i>
+				<span class="text-[10px] uppercase font-bold tracking-widest text-slate-400">No toxic zones identified yet</span>
+			</div>
 		}
 	</div>
 
-	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
-		<div class="p-5 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-2xl flex flex-col">
-			<div class="flex items-center justify-between mb-2 pb-3 border-b border-white/5">
-				<div class="flex items-center gap-2">
-					<i class="fa fa-microscope text-purple-400"></i>
-					<h3 class="text-xs font-bold tracking-widest text-slate-200 uppercase">Anatomy of a Winner</h3>
-				</div>
-				<span class="text-[9px] text-slate-500 uppercase tracking-wider">Average normalized profile</span>
-			</div>
-			<div class="flex-grow flex items-center justify-center -mt-4">
-				<apx-chart
-						[series]="deviationSeries" [chart]="deviationChart" [xaxis]="deviationXAxis"
-						[yaxis]="deviationYAxis" [plotOptions]="deviationPlotOptions"
-						[tooltip]="deviationTooltip" [dataLabels]="deviationDataLabels" [grid]="deviationGrid"
-						style="width: 100%; min-height: 500px;"
-				></apx-chart>
-			</div>
+	<div class="mt-10 pt-8 border-t border-white/5">
+		<div class="flex items-center gap-2 mb-4">
+			<h2 class="text-lg font-bold text-slate-200">Global Profiling</h2>
+			<span class="text-[10px] text-slate-500 px-2">Aggregated macro dynamics and influence</span>
 		</div>
 
-		<div class="p-5 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-2xl flex flex-col">
-			<div class="flex items-center justify-between mb-2 pb-3 border-b border-white/5">
-				<div class="flex items-center gap-2">
-					<i class="fa fa-sort-amount-down text-blue-400"></i>
-					<h3 class="text-xs font-bold tracking-widest text-slate-200 uppercase">Metric Power Ranking</h3>
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+			<div class="p-5 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-2xl flex flex-col">
+				<div class="flex items-center justify-between mb-2 pb-3 border-b border-white/5">
+					<div class="flex items-center gap-2">
+						<i class="fa fa-microscope text-purple-400"></i>
+						<h3 class="text-xs font-bold tracking-widest text-slate-200 uppercase">Anatomy of a Winner</h3>
+					</div>
+					<span class="text-[9px] text-slate-500 uppercase tracking-wider">Average normalized profile</span>
 				</div>
-				<span class="text-[9px] text-slate-500 uppercase tracking-wider">Influence on Win Rate</span>
+				<div class="flex-grow flex items-center justify-center -mt-4">
+					<apx-chart
+							[series]="deviationSeries" [chart]="deviationChart" [xaxis]="deviationXAxis"
+							[yaxis]="deviationYAxis" [plotOptions]="deviationPlotOptions"
+							[tooltip]="deviationTooltip" [dataLabels]="deviationDataLabels" [grid]="deviationGrid"
+							style="width: 100%; min-height: 500px;"
+					></apx-chart>
+				</div>
 			</div>
-			<div class="flex-grow mt-2">
-				<apx-chart
-						[series]="powerSeries" [chart]="powerChart" [xaxis]="powerXAxis"
-						[yaxis]="powerYAxis" [grid]="powerGrid" [plotOptions]="powerPlotOptions"
-						[dataLabels]="powerDataLabels" [tooltip]="powerTooltip"
-				></apx-chart>
+
+			<div class="p-5 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-2xl flex flex-col">
+				<div class="flex items-center justify-between mb-2 pb-3 border-b border-white/5">
+					<div class="flex items-center gap-2">
+						<i class="fa fa-sort-amount-down text-blue-400"></i>
+						<h3 class="text-xs font-bold tracking-widest text-slate-200 uppercase">Metric Power Ranking</h3>
+					</div>
+					<span class="text-[9px] text-slate-500 uppercase tracking-wider">Influence on Win Rate</span>
+				</div>
+				<div class="flex-grow mt-2">
+					<apx-chart
+							[series]="powerSeries" [chart]="powerChart" [xaxis]="powerXAxis"
+							[yaxis]="powerYAxis" [grid]="powerGrid" [plotOptions]="powerPlotOptions"
+							[dataLabels]="powerDataLabels" [tooltip]="powerTooltip"
+					></apx-chart>
+				</div>
 			</div>
 		</div>
 	</div>

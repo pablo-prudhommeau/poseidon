@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from src.configuration.config import settings
-from src.core.trading.evaluators.trading_shadowing_decile_toxicity_filter import _extract_metric_value_from_candidate
-from src.core.trading.shadowing.shadow_analytics_intelligence import find_decile_index_for_value
+from src.core.trading.shadowing.shadow_analytics_intelligence import find_decile_index_for_value, extract_metric_value_from_candidate
 from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot
 from src.core.trading.trading_structures import TradingCandidate
 from src.logging.logger import get_application_logger
@@ -42,7 +41,7 @@ def apply_shadowing_notional_boost(
 
         for metric_snapshot in influential_metrics:
             try:
-                candidate_value = _extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
+                candidate_value = extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
             except Exception:
                 continue
 

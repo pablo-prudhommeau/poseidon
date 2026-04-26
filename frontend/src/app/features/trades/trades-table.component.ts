@@ -19,6 +19,8 @@ import {balhamDarkThemeCompact} from '../../ag-grid.theme';
 import {NumberFormattingService} from '../../core/number-formatting.service';
 import {WebSocketService} from '../../core/websocket.service';
 import {TradingEvaluationPayload, TradingTradePayload} from '../../core/models';
+import {MetricsFormattingService} from '../../core/metrics-formatting.service';
+
 import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer';
 import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
 import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
@@ -49,6 +51,7 @@ export class TradesTableComponent implements AfterViewInit {
 
     private readonly webSocketService = inject(WebSocketService);
     private readonly numberFormattingService = inject(NumberFormattingService);
+    private readonly metricsFormattingService = inject(MetricsFormattingService);
     private readonly apiService = inject(ApiService);
 
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
@@ -274,13 +277,11 @@ export class TradesTableComponent implements AfterViewInit {
     }
 
     public formatMetricLabel(key: string): string {
-        return key.toUpperCase()
-            .replace(/_USD$/, ' ($)')
-            .replace(/_H24$/, ' 24H')
-            .replace(/_H6$/, ' 6H')
-            .replace(/_H1$/, ' 1H')
-            .replace(/_M5$/, ' 5M')
-            .replace(/_/g, ' ');
+        return this.metricsFormattingService.formatMetricLabel(key);
+    }
+
+    public formatMetricValue(key: string, value: number | null | undefined): string {
+        return this.metricsFormattingService.formatMetricValue(key, value);
     }
 
     public sortedShadowMetrics(snapshot: any): any[] {

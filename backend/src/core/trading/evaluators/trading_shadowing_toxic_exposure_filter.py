@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from src.configuration.config import settings
-from src.core.trading.evaluators.trading_shadowing_decile_toxicity_filter import _extract_metric_value_from_candidate
-from src.core.trading.shadowing.shadow_analytics_intelligence import find_decile_index_for_value
+from src.core.trading.shadowing.shadow_analytics_intelligence import find_decile_index_for_value, extract_metric_value_from_candidate
 from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot, \
     ShadowIntelligenceSnapshotMetricPayload
 from src.core.trading.trading_structures import TradingCandidate
@@ -32,7 +31,7 @@ def apply_shadowing_toxic_exposure_filter(
 
         for metric_snapshot in snapshot.metric_snapshots:
             try:
-                candidate_value = _extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
+                candidate_value = extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
             except Exception:
                 continue
 

@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Optional
 
 import httpx
 
+from src.configuration.config import settings
 from src.core.structures.structures import Token
 from src.integrations.dexscreener.dexscreener_constants import (
     LATEST_PAIRS_ENDPOINT,
@@ -208,7 +209,7 @@ async def fetch_token_information_by_token_addresses(token_addresses: Iterable[s
     return result
 
 
-async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTokenInformation]:
+async def fetch_trending_candidates() -> List[DexscreenerTokenInformation]:
     logger.info("[DEX][TREND] Collecting trending candidates from public endpoints.")
 
     collected_addresses: List[str] = []
@@ -259,6 +260,6 @@ async def fetch_trending_candidates(page_size: int = 100) -> List[DexscreenerTok
         return volume_h24, liquidity_usd
 
     token_information.sort(key=_calculate_trending_rank_score, reverse=True)
-    limited_rows = token_information[: max(1, int(page_size or 1))]
+    limited_rows = token_information[:settings.DEXSCREENER_TRENDING_PAGE_SIZE]
     logger.info("[DEX][TREND] Returning %d trending candidates.", len(limited_rows))
     return limited_rows

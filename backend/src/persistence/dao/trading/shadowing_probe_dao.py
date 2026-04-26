@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
@@ -43,4 +45,27 @@ class TradingShadowingProbeDao:
             ).scalar_one_or_none() or 0
         except Exception as error:
             logger.exception("[DAO][SHADOWING_PROBE] Failed to count probes — %s", error)
+            raise
+
+    def retrieve_recent_probes_by_tokens(self, token_addresses: list[str], since: datetime) -> list[TradingShadowingProbe]:
+        try:
+            return self.database_session.execute(
+                select(TradingShadowingProbe).where(
+                    TradingShadowingProbe.token_address.in_(token_addresses),
+                    TradingShadowingProbe.probed_at >= since
+                )
+            ).scalars().all()
+        except Exception as error:
+            logger.exception("[DAO][SHADOWING_PROBE] Failed to retrieve recent probes by tokens — %s", error)
+            raise
+
+    def retrieve_recent_probes(self, limit_count: int) -> list[TradingShadowingProbe]:
+        try:
+            return self.database_session.execute(
+                select(TradingShadowingProbe)
+                .order_by(TradingShadowingProbe.probed_at.desc())
+                .limit(limit_count)
+            ).scalars().all()
+        except Exception as error:
+            logger.exception("[DAO][SHADOWING_PROBE] Failed to retrieve recent probes — %s", error)
             raise

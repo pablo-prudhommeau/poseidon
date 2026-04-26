@@ -1,6 +1,7 @@
 import {Component, inject, OnInit, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {TabsModule} from 'primeng/tabs';
+import {ButtonModule} from 'primeng/button';
 import {ApiService} from '../../api.service';
 import {AnalyticsResponse} from '../../core/models';
 import {TradingOverviewComponent} from './trading-overview/trading-overview.component';
@@ -14,6 +15,7 @@ import {AnalyticsExplorationComponent} from '../analytics/analytics-exploration/
     imports: [
         CommonModule,
         TabsModule,
+        ButtonModule,
         TradingOverviewComponent,
         AnalyticsKpiBarComponent,
         AnalyticsSynthesisComponent,
@@ -39,19 +41,18 @@ export class TradingDashboardComponent implements OnInit {
     readonly shadowAnalyticsSubTab = signal<string>('synthesis');
 
     ngOnInit(): void {
-        this.loadQualifiedAnalytics();
     }
 
     onTabChange(tabValue: string | number | undefined): void {
         const newTab = String(tabValue ?? 'overview');
         this.activeTabValue.set(newTab);
 
-        if (newTab === 'analytics-qualified' && !this.qualifiedAnalytics() && !this.qualifiedLoading()) {
-            this.loadQualifiedAnalytics();
+        if (newTab === 'analytics-qualified' && !this.qualifiedLoading()) {
+            this.refreshQualifiedAnalytics();
         }
 
-        if (newTab === 'analytics-shadow' && !this.shadowAnalytics() && !this.shadowLoading()) {
-            this.loadShadowAnalytics();
+        if (newTab === 'analytics-shadow' && !this.shadowLoading()) {
+            this.refreshShadowAnalytics();
         }
     }
 
@@ -63,7 +64,7 @@ export class TradingDashboardComponent implements OnInit {
         this.shadowAnalyticsSubTab.set(String(tabValue ?? 'synthesis'));
     }
 
-    private loadQualifiedAnalytics(): void {
+    public refreshQualifiedAnalytics(): void {
         this.qualifiedLoading.set(true);
         this.qualifiedError.set(null);
 
@@ -80,7 +81,7 @@ export class TradingDashboardComponent implements OnInit {
         });
     }
 
-    private loadShadowAnalytics(): void {
+    public refreshShadowAnalytics(): void {
         this.shadowLoading.set(true);
         this.shadowError.set(null);
 

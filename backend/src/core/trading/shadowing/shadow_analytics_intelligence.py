@@ -3,8 +3,9 @@ from __future__ import annotations
 import statistics
 from typing import Optional
 
-from src.api.http.analytics_aggregation_service import METRIC_DEFINITIONS, MetricDefinition
 from src.configuration.config import settings
+from src.core.trading.analytics.trading_analytics_helpers import DECILE_COUNT
+from src.core.trading.analytics.trading_analytics_service import METRIC_DEFINITIONS, MetricDefinition
 from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceMetricSnapshot, ShadowIntelligenceSnapshot
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
@@ -13,8 +14,6 @@ from src.persistence.db import get_database_session
 from src.persistence.models import TradingShadowingVerdict
 
 logger = get_application_logger(__name__)
-
-DECILE_COUNT = 10
 
 
 def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
@@ -139,11 +138,6 @@ def _compute_metric_snapshot(
     standard_deviation = statistics.stdev(metric_values) if len(metric_values) > 1 else 1.0
     winner_deviation = ((winner_mean - global_mean) / standard_deviation) if standard_deviation > 0.0 else 0.0
 
-    logger.debug(
-        "[TRADING][SHADOW][INTELLIGENCE] Metric %s — influence=%.1f, win_rate_range=[%.2f, %.2f], winner_deviation=%.2f",
-        metric_definition.key, influence_score, min_win_rate, max_win_rate, winner_deviation,
-    )
-
     return ShadowIntelligenceMetricSnapshot(
         metric_key=metric_definition.key,
         decile_edges=decile_edges,
@@ -159,3 +153,48 @@ def find_decile_index_for_value(value: float, decile_edges: list[float]) -> int:
         if value <= edge_value:
             return edge_index
     return len(decile_edges)
+
+
+def extract_metric_value_from_candidate(candidate: "TradingCandidate", metric_key: str) -> float | None:
+    token_information = candidate.dexscreener_token_information
+    extraction_map = {
+        "quality_score": lambda: candidate.quality_score,
+        "ai_adjusted_quality_score": lambda: candidate.ai_adjusted_quality_score,
+        "liquidity_usd": lambda: token_information.liquidity.usd if token_information.liquidity else None,
+        "market_cap_usd": lambda: token_information.market_cap,
+        "volume_m5_usd": lambda: token_information.volume.m5 if token_information.volume else None,
+        "volume_h1_usd": lambda: token_information.volume.h1 if token_information.volume else None,
+        "volume_h6_usd": lambda: token_information.volume.h6 if token_information.volume else None,
+        "volume_h24_usd": lambda: token_information.volume.h24 if token_information.volume else None,
+        "price_change_m5": lambda: token_information.price_change.m5 if token_information.price_change else None,
+        "price_change_h1": lambda: token_information.price_change.h1 if token_information.price_change else None,
+        "price_change_h6": lambda: token_information.price_change.h6 if token_information.price_change else None,
+        "price_change_h24": lambda: token_information.price_change.h24 if token_information.price_change else None,
+        "token_age_hours": lambda: token_information.age_hours,
+        "transaction_count_m5": lambda: token_information.transactions.m5.total_transactions if token_information.transactions and token_information.transactions.m5 else None,
+        "transaction_count_h1": lambda: token_information.transactions.h1.total_transactions if token_information.transactions and token_information.transactions.h1 else None,
+        "transaction_count_h6": lambda: token_information.transactions.h6.total_transactions if token_information.transactions and token_information.transactions.h6 else None,
+        "transaction_count_h24": lambda: token_information.transactions.h24.total_transactions if token_information.transactions and token_information.transactions.h24 else None,
+        "buy_to_sell_ratio": lambda: _compute_buy_to_sell_ratio(token_information),
+        "fully_diluted_valuation_usd": lambda: token_information.fully_diluted_valuation,
+        "dexscreener_boost": lambda: token_information.boost,
+    }
+
+    extractor = extraction_map.get(metric_key)
+    if extractor is None:
+        return None
+
+    return extractor()
+
+
+def _compute_buy_to_sell_ratio(token_information) -> float | None:
+    transactions = token_information.transactions
+    if not transactions:
+        return None
+    reference_bucket = transactions.h1 if transactions.h1 else transactions.h24
+    if not reference_bucket:
+        return None
+    total = reference_bucket.buys + reference_bucket.sells
+    if total <= 0:
+        return None
+    return reference_bucket.buys / total

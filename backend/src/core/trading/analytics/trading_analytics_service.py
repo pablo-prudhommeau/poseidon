@@ -3,6 +3,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Callable
 
+from src.core.trading.analytics.trading_analytics_helpers import compute_decile_edges, assign_bucket_index, quantile, format_metric_value, MINIMUM_POINTS_PER_BUCKET, ROLLING_WINDOW_SIZE
+from src.logging.logger import get_application_logger
+
+logger = get_application_logger(__name__)
+
+from src.core.trading.analytics.trading_analytics_structures import AnalyticsOutcomeRecord
 from src.api.http.api_schemas import (
     AnalyticsResponse,
     AnalyticsHeatmapCellPayload,
@@ -13,18 +19,10 @@ from src.api.http.api_schemas import (
     AnalyticsTimelinePointPayload,
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso
-from src.logging.logger import get_application_logger
-from src.persistence.models import TradingEvaluation, TradingOutcome, TradingShadowingProbe
-
-logger = get_application_logger(__name__)
-
-MINIMUM_POINTS_PER_BUCKET = 3
-DECILE_COUNT = 10
-ROLLING_WINDOW_SIZE = 50
 
 
 class MetricDefinition:
-    def __init__(self, key: str, label: str, accessor: Callable[[TradingEvaluation | TradingShadowingProbe], float], unit: str) -> None:
+    def __init__(self, key: str, label: str, accessor: Callable[[AnalyticsOutcomeRecord], float], unit: str) -> None:
         self.key = key
         self.label = label
         self.accessor = accessor
@@ -33,7 +31,7 @@ class MetricDefinition:
 
 METRIC_DEFINITIONS: list[MetricDefinition] = [
     MetricDefinition("quality_score", "Quality score", lambda record: record.quality_score, "score"),
-    MetricDefinition("ai_adjusted_quality_score", "AI adjusted quality score", lambda record: getattr(record, "ai_adjusted_quality_score", record.quality_score), "score"),
+    MetricDefinition("ai_adjusted_quality_score", "AI adjusted quality score", lambda record: record.ai_adjusted_quality_score, "score"),
     MetricDefinition("liquidity_usd", "Liquidity ($)", lambda record: record.liquidity_usd, "usd"),
     MetricDefinition("market_cap_usd", "Market cap ($)", lambda record: record.market_cap_usd, "usd"),
     MetricDefinition("volume_m5_usd", "Volume 5m ($)", lambda record: record.volume_m5_usd, "usd"),
@@ -55,90 +53,8 @@ METRIC_DEFINITIONS: list[MetricDefinition] = [
 ]
 
 
-def _quantile(sorted_values: list[float], quantile_fraction: float) -> float:
-    length = len(sorted_values)
-    if length == 0:
-        return 0.0
-    position = (length - 1) * quantile_fraction
-    base_index = int(position)
-    remainder = position - base_index
-    lower_value = sorted_values[base_index]
-    upper_value = sorted_values[min(base_index + 1, length - 1)]
-    return lower_value + (upper_value - lower_value) * remainder
-
-
-def _compute_decile_edges(values: list[float | None]) -> list[float]:
-    valid_values = [v for v in values if v is not None]
-    if not valid_values:
-        return [0.0] * (DECILE_COUNT + 1)
-
-    sorted_values = sorted(valid_values)
-    edges: list[float] = []
-    for decile_index in range(DECILE_COUNT + 1):
-        edges.append(_quantile(sorted_values, decile_index / DECILE_COUNT))
-    return edges
-
-
-def _assign_bucket_index(value: float | None, edges: list[float]) -> int:
-    if value is None:
-        return -1
-    last_valid_bucket = len(edges) - 2
-    for edge_index in range(len(edges) - 1):
-        if edges[edge_index] <= value <= edges[edge_index + 1]:
-            return min(edge_index, last_valid_bucket)
-    return last_valid_bucket
-
-
-def _format_metric_value(value: float, unit: str) -> str:
-    if unit == "percent":
-        return f"{value:.1f}%"
-    if unit in ("usd", "count"):
-        absolute_value = abs(value)
-        if absolute_value >= 1_000_000:
-            return f"{value / 1_000_000:.1f}M"
-        if absolute_value >= 1_000:
-            return f"{value / 1_000:.1f}K"
-        return f"{value:.0f}"
-    if unit == "hours":
-        return f"{value:.0f}h"
-    if unit == "ratio":
-        return f"{value:.2f}"
-    if unit == "score":
-        return f"{value:.0f}"
-    return f"{value:.1f}"
-
-
-def _aggregate_evaluation_outcomes(evaluation: TradingEvaluation) -> TradingOutcome | None:
-    if not evaluation.outcomes:
-        return None
-
-    if len(evaluation.outcomes) == 1:
-        return evaluation.outcomes[0]
-
-    total_profit_and_loss_usd = sum(outcome.realized_profit_and_loss_usd for outcome in evaluation.outcomes)
-    average_holding_duration_minutes = sum(outcome.holding_duration_minutes for outcome in evaluation.outcomes) / len(evaluation.outcomes)
-    is_profitable = total_profit_and_loss_usd > 0
-
-    cost_basis = evaluation.order_notional_value_usd
-    if cost_basis and cost_basis > 0:
-        total_profit_and_loss_percentage = (total_profit_and_loss_usd / cost_basis) * 100.0
-    else:
-        total_profit_and_loss_percentage = sum(outcome.realized_profit_and_loss_percentage for outcome in evaluation.outcomes) / len(evaluation.outcomes)
-
-    last_outcome = evaluation.outcomes[-1]
-
-    return TradingOutcome(
-        realized_profit_and_loss_usd=total_profit_and_loss_usd,
-        realized_profit_and_loss_percentage=total_profit_and_loss_percentage,
-        holding_duration_minutes=average_holding_duration_minutes,
-        is_profitable=is_profitable,
-        exit_reason=last_outcome.exit_reason,
-        occurred_at=last_outcome.occurred_at
-    )
-
-
-def compute_kpis(evaluations: list[TradingEvaluation]) -> AnalyticsKpiPayload:
-    total_evaluations = len(evaluations)
+def compute_kpis(records: list[AnalyticsOutcomeRecord]) -> AnalyticsKpiPayload:
+    total_evaluations = len(records)
 
     all_pnl_percentages: list[float] = []
     all_pnl_usd: list[float] = []
@@ -148,16 +64,15 @@ def compute_kpis(evaluations: list[TradingEvaluation]) -> AnalyticsKpiPayload:
     gross_profit = 0.0
     gross_loss = 0.0
 
-    for evaluation in evaluations:
-        outcome = _aggregate_evaluation_outcomes(evaluation)
-        if outcome is None:
+    for record in records:
+        if not record.has_outcome:
             continue
 
-        trade_pnl_usd = outcome.realized_profit_and_loss_usd
-        all_pnl_percentages.append(outcome.realized_profit_and_loss_percentage)
+        trade_pnl_usd = record.realized_profit_and_loss_usd
+        all_pnl_percentages.append(record.realized_profit_and_loss_percentage)
         all_pnl_usd.append(trade_pnl_usd)
-        all_holding_durations.append(outcome.holding_duration_minutes)
-        if outcome.is_profitable:
+        all_holding_durations.append(record.holding_duration_minutes)
+        if record.is_profitable:
             win_count += 1
             gross_profit += trade_pnl_usd
         else:
@@ -193,8 +108,8 @@ def compute_kpis(evaluations: list[TradingEvaluation]) -> AnalyticsKpiPayload:
     )
 
 
-def compute_pnl_drivers_heatmap(evaluations: list[TradingEvaluation]) -> list[AnalyticsHeatmapSeriesPayload]:
-    closed_evaluations = [evaluation for evaluation in evaluations if _aggregate_evaluation_outcomes(evaluation) is not None]
+def compute_pnl_drivers_heatmap(records: list[AnalyticsOutcomeRecord]) -> list[AnalyticsHeatmapSeriesPayload]:
+    closed_records = [record for record in records if record.has_outcome]
     series_list: list[AnalyticsHeatmapSeriesPayload] = []
 
     for metric_definition in METRIC_DEFINITIONS:
@@ -202,25 +117,23 @@ def compute_pnl_drivers_heatmap(evaluations: list[TradingEvaluation]) -> list[An
         pnl_values: list[float] = []
         is_profitable_flags: list[bool] = []
 
-        for evaluation in closed_evaluations:
-            metric_value = metric_definition.accessor(evaluation)
-            outcome = _aggregate_evaluation_outcomes(evaluation)
-            if outcome is not None:
-                metric_values.append(metric_value)
-                pnl_values.append(outcome.realized_profit_and_loss_percentage)
-                is_profitable_flags.append(outcome.is_profitable)
+        for record in closed_records:
+            metric_value = metric_definition.accessor(record)
+            metric_values.append(metric_value)
+            pnl_values.append(record.realized_profit_and_loss_percentage)
+            is_profitable_flags.append(record.is_profitable)
 
         if len(metric_values) < MINIMUM_POINTS_PER_BUCKET:
             series_list.append(AnalyticsHeatmapSeriesPayload(metric_key=metric_definition.key, metric_label=metric_definition.label, cells=[]))
             continue
 
-        edges = _compute_decile_edges(metric_values)
+        edges = compute_decile_edges(metric_values)
         buckets: list[list[float]] = [[] for _ in range(len(edges) - 1)]
         counts: list[int] = [0 for _ in range(len(edges) - 1)]
         win_counts: list[int] = [0 for _ in range(len(edges) - 1)]
 
         for index in range(len(metric_values)):
-            bucket_index = _assign_bucket_index(metric_values[index], edges)
+            bucket_index = assign_bucket_index(metric_values[index], edges)
             if bucket_index == -1:
                 continue
             buckets[bucket_index].append(pnl_values[index])
@@ -234,15 +147,15 @@ def compute_pnl_drivers_heatmap(evaluations: list[TradingEvaluation]) -> list[An
         for bucket_index in range(len(buckets)):
             left_edge = edges[bucket_index]
             right_edge = edges[bucket_index + 1]
-            range_label = f"{_format_metric_value(left_edge, metric_definition.unit)}–{_format_metric_value(right_edge, metric_definition.unit)}"
+            range_label = f"{format_metric_value(left_edge, metric_definition.unit)} to {format_metric_value(right_edge, metric_definition.unit)}"
 
             bucket_data = buckets[bucket_index]
             if len(bucket_data) >= MINIMUM_POINTS_PER_BUCKET:
                 sorted_data = sorted(bucket_data)
-                median_value = _quantile(sorted_data, 0.5)
+                median_value = quantile(sorted_data, 0.5)
                 mean_value = sum(sorted_data) / len(sorted_data)
-                quartile_1_value = _quantile(sorted_data, 0.25)
-                quartile_3_value = _quantile(sorted_data, 0.75)
+                quartile_1_value = quantile(sorted_data, 0.25)
+                quartile_3_value = quantile(sorted_data, 0.75)
             else:
                 median_value = 0.0
                 mean_value = 0.0
@@ -279,83 +192,14 @@ def compute_pnl_drivers_heatmap(evaluations: list[TradingEvaluation]) -> list[An
     return series_list
 
 
-def compute_staled_risk_heatmap(
-        evaluations: list[TradingEvaluation],
-        staled_token_addresses: set[str],
-) -> list[AnalyticsHeatmapSeriesPayload]:
-    series_list: list[AnalyticsHeatmapSeriesPayload] = []
-
-    for metric_definition in METRIC_DEFINITIONS:
-        metric_values: list[float] = []
-        is_staled_flags: list[bool] = []
-
-        for evaluation in evaluations:
-            metric_value = metric_definition.accessor(evaluation)
-            metric_values.append(metric_value)
-            is_staled_flags.append(evaluation.token_address in staled_token_addresses)
-
-        if len(metric_values) < MINIMUM_POINTS_PER_BUCKET:
-            series_list.append(AnalyticsHeatmapSeriesPayload(metric_key=metric_definition.key, metric_label=metric_definition.label, cells=[]))
-            continue
-
-        edges = _compute_decile_edges(metric_values)
-        counts: list[int] = [0 for _ in range(len(edges) - 1)]
-        staled_counts: list[int] = [0 for _ in range(len(edges) - 1)]
-
-        for index in range(len(metric_values)):
-            bucket_index = _assign_bucket_index(metric_values[index], edges)
-            if bucket_index == -1:
-                continue
-            counts[bucket_index] += 1
-            if is_staled_flags[index]:
-                staled_counts[bucket_index] += 1
-
-        cells: list[AnalyticsHeatmapCellPayload] = []
-        staled_rates: list[float] = []
-
-        for bucket_index in range(len(counts)):
-            left_edge = edges[bucket_index]
-            right_edge = edges[bucket_index + 1]
-            range_label = f"{_format_metric_value(left_edge, metric_definition.unit)}–{_format_metric_value(right_edge, metric_definition.unit)}"
-            staled_rate = (staled_counts[bucket_index] / counts[bucket_index] * 100.0) if counts[bucket_index] > 0 else 0.0
-            staled_rates.append(staled_rate)
-
-            cells.append(AnalyticsHeatmapCellPayload(
-                range_label=range_label,
-                range_min=left_edge,
-                range_max=right_edge,
-                median_pnl=staled_rate,
-                mean_pnl=staled_rate,
-                quartile_1_pnl=0.0,
-                quartile_3_pnl=0.0,
-                sample_count=counts[bucket_index],
-                win_count=0,
-                win_rate_percentage=0.0,
-                is_optimal=False,
-            ))
-
-        if staled_rates:
-            maximum_rate = max(staled_rates)
-            worst_threshold = maximum_rate * 0.9
-            for cell_index, cell in enumerate(cells):
-                if staled_rates[cell_index] >= worst_threshold and counts[cell_index] >= MINIMUM_POINTS_PER_BUCKET:
-                    cell.is_optimal = True
-
-        series_list.append(AnalyticsHeatmapSeriesPayload(metric_key=metric_definition.key, metric_label=metric_definition.label, cells=cells))
-
-    logger.info("[ANALYTICS][AGGREGATION][HEATMAP][STALED_RISK] Computed %d metric series for staled risk", len(series_list))
-    return series_list
-
-
-def compute_timeline(evaluations: list[TradingEvaluation]) -> list[AnalyticsTimelinePointPayload]:
+def compute_timeline(records: list[AnalyticsOutcomeRecord]) -> list[AnalyticsTimelinePointPayload]:
     outcome_events: list[tuple[str, float, float, bool]] = []
 
-    for evaluation in evaluations:
-        outcome = _aggregate_evaluation_outcomes(evaluation)
-        if outcome is None:
+    for record in records:
+        if not record.has_outcome or not record.occurred_at:
             continue
-        date_key = format_datetime_to_local_iso(outcome.occurred_at)[:10]
-        outcome_events.append((date_key, outcome.realized_profit_and_loss_usd, outcome.realized_profit_and_loss_percentage, outcome.is_profitable))
+        date_key = format_datetime_to_local_iso(record.occurred_at)[:10]
+        outcome_events.append((date_key, record.realized_profit_and_loss_usd, record.realized_profit_and_loss_percentage, record.is_profitable))
 
     outcome_events.sort(key=lambda event: event[0])
 
@@ -400,36 +244,32 @@ def compute_timeline(evaluations: list[TradingEvaluation]) -> list[AnalyticsTime
     return timeline_points
 
 
-def compute_scatter_series(evaluations: list[TradingEvaluation]) -> list[AnalyticsScatterSeriesPayload]:
-    closed_evaluations = [evaluation for evaluation in evaluations if _aggregate_evaluation_outcomes(evaluation) is not None]
+def compute_scatter_series(records: list[AnalyticsOutcomeRecord]) -> list[AnalyticsScatterSeriesPayload]:
+    closed_records = [record for record in records if record.has_outcome]
 
     max_scatter_points = 500
-    if len(closed_evaluations) > max_scatter_points:
-        step = len(closed_evaluations) / max_scatter_points
-        sampled_evaluations = [closed_evaluations[int(i * step)] for i in range(max_scatter_points)]
+    if len(closed_records) > max_scatter_points:
+        step = len(closed_records) / max_scatter_points
+        sampled_records = [closed_records[int(i * step)] for i in range(max_scatter_points)]
     else:
-        sampled_evaluations = closed_evaluations
+        sampled_records = closed_records
 
     scatter_series_list: list[AnalyticsScatterSeriesPayload] = []
 
     for metric_definition in METRIC_DEFINITIONS:
         points: list[AnalyticsScatterPointPayload] = []
 
-        for evaluation in sampled_evaluations:
-            outcome = _aggregate_evaluation_outcomes(evaluation)
-            if outcome is None:
-                continue
-
-            metric_value = metric_definition.accessor(evaluation)
+        for record in sampled_records:
+            metric_value = metric_definition.accessor(record)
             if metric_value is None:
                 continue
 
             points.append(AnalyticsScatterPointPayload(
                 metric_value=metric_value,
-                pnl_percentage=outcome.realized_profit_and_loss_percentage,
-                pnl_usd=outcome.realized_profit_and_loss_usd,
-                token_symbol=evaluation.token_symbol,
-                exit_reason=outcome.exit_reason,
+                pnl_percentage=record.realized_profit_and_loss_percentage,
+                pnl_usd=record.realized_profit_and_loss_usd,
+                token_symbol=record.token_symbol,
+                exit_reason=record.exit_reason,
             ))
 
         scatter_series_list.append(AnalyticsScatterSeriesPayload(
@@ -438,27 +278,25 @@ def compute_scatter_series(evaluations: list[TradingEvaluation]) -> list[Analyti
             points=points,
         ))
 
-    logger.info("[ANALYTICS][AGGREGATION][SCATTER] Computed scatter series for %d metrics with %d closed evaluations", len(scatter_series_list), len(closed_evaluations))
+    logger.info("[ANALYTICS][AGGREGATION][SCATTER] Computed scatter series for %d metrics with %d closed evaluations", len(scatter_series_list), len(closed_records))
     return scatter_series_list
 
 
 def build_analytics_response(
-        evaluations: list[TradingEvaluation],
+        records: list[AnalyticsOutcomeRecord],
         staled_token_addresses: set[str],
 ) -> AnalyticsResponse:
-    logger.info("[ANALYTICS][AGGREGATION] Starting aggregation for %d evaluations", len(evaluations))
+    logger.info("[ANALYTICS][AGGREGATION] Starting aggregation for %d records", len(records))
 
-    kpis = compute_kpis(evaluations)
-    pnl_drivers_series = compute_pnl_drivers_heatmap(evaluations)
-    staled_risk_series = compute_staled_risk_heatmap(evaluations, staled_token_addresses)
-    timeline = compute_timeline(evaluations)
-    scatter_series = compute_scatter_series(evaluations)
+    kpis = compute_kpis(records)
+    pnl_drivers_series = compute_pnl_drivers_heatmap(records)
+    timeline = compute_timeline(records)
+    scatter_series = compute_scatter_series(records)
 
     logger.info("[ANALYTICS][AGGREGATION] Aggregation complete")
     return AnalyticsResponse(
         kpis=kpis,
         pnl_drivers_series=pnl_drivers_series,
-        staled_risk_series=staled_risk_series,
         timeline=timeline,
         scatter_series=scatter_series,
     )

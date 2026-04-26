@@ -30,6 +30,7 @@ from src.configuration.config import settings
 from src.core.dca.dca_backtester import DcaBacktester
 from src.core.dca.dca_scheduler import DcaScheduler
 from src.core.structures.structures import Token, DcaStrategyStatus
+from src.core.trading.analytics.trading_analytics_helpers import map_trading_shadowing_probe, map_trading_evaluation
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
@@ -101,70 +102,44 @@ def reset_paper_mode(database_session: Session = Depends(get_fastapi_database_se
 
 @router.get("/api/analytics", tags=["analytics"])
 def get_analytics(
-        realm: str = Query("qualified", regex="^(qualified|shadow)$"),
         limit_results: int = Query(50000, ge=1, le=50000),
         database_session: Session = Depends(get_fastapi_database_session),
 ) -> AnalyticsResponse:
-    from src.api.http.analytics_aggregation_service import build_analytics_response
-    from src.persistence.models import PositionPhase, TradingEvaluation, TradingOutcome
+    from src.core.trading.analytics.trading_analytics_service import build_analytics_response
+    from src.persistence.models import PositionPhase
 
-    if realm == "qualified":
-        logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving live analytics with limit %s", limit_results)
-        evaluation_dao = TradingEvaluationDao(database_session)
-        position_dao = TradingPositionDao(database_session)
+    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving live analytics with limit %s", limit_results)
+    evaluation_dao = TradingEvaluationDao(database_session)
+    position_dao = TradingPositionDao(database_session)
 
-        evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
-        staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
-        staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
+    evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
+    staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
+    staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
 
-        analytics_response = build_analytics_response(evaluation_rows, staled_token_addresses)
-    else:
-        logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving shadow analytics with limit %s", limit_results)
-        from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
-        verdict_dao = TradingShadowingVerdictDao(database_session)
-        resolved_verdicts = verdict_dao.retrieve_recent_resolved(limit_count=limit_results)
+    analytics_records = [map_trading_evaluation(row) for row in evaluation_rows]
+    analytics_response = build_analytics_response(analytics_records, staled_token_addresses)
 
-        mock_evaluations = []
-        for verdict in resolved_verdicts:
-            probe = verdict.probe
-            mock_eval = TradingEvaluation(
-                token_symbol=probe.token_symbol,
-                token_address=probe.token_address,
-                quality_score=probe.quality_score,
-                liquidity_usd=probe.liquidity_usd,
-                market_cap_usd=probe.market_cap_usd,
-                volume_m5_usd=probe.volume_m5_usd,
-                volume_h1_usd=probe.volume_h1_usd,
-                volume_h6_usd=probe.volume_h6_usd,
-                volume_h24_usd=probe.volume_h24_usd,
-                price_change_percentage_m5=probe.price_change_percentage_m5,
-                price_change_percentage_h1=probe.price_change_percentage_h1,
-                price_change_percentage_h6=probe.price_change_percentage_h6,
-                price_change_percentage_h24=probe.price_change_percentage_h24,
-                token_age_hours=probe.token_age_hours,
-                transaction_count_m5=probe.transaction_count_m5,
-                transaction_count_h1=probe.transaction_count_h1,
-                transaction_count_h6=probe.transaction_count_h6,
-                transaction_count_h24=probe.transaction_count_h24,
-                buy_to_sell_ratio=probe.buy_to_sell_ratio,
-                fully_diluted_valuation_usd=probe.fully_diluted_valuation_usd,
-                dexscreener_boost=probe.dexscreener_boost,
-                order_notional_value_usd=probe.order_notional_value_usd
-            )
-            mock_outcome = TradingOutcome(
-                realized_profit_and_loss_usd=verdict.realized_pnl_usd or 0.0,
-                realized_profit_and_loss_percentage=verdict.realized_pnl_percentage or 0.0,
-                holding_duration_minutes=verdict.holding_duration_minutes or 0.0,
-                is_profitable=verdict.is_profitable or False,
-                exit_reason=verdict.exit_reason,
-                occurred_at=verdict.resolved_at
-            )
-            mock_eval.outcomes = [mock_outcome]
-            mock_evaluations.append(mock_eval)
+    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed live analytics")
+    return analytics_response
 
-        analytics_response = build_analytics_response(mock_evaluations, set())
 
-    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed analytics for realm %s", realm)
+@router.get("/api/analytics/shadow", tags=["analytics"])
+def get_shadow_analytics(
+        limit_results: int = Query(50000, ge=1, le=50000),
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> AnalyticsResponse:
+    from src.core.trading.analytics.trading_analytics_service import build_analytics_response
+    from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
+
+    logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving shadow analytics with limit %s", limit_results)
+    probe_dao = TradingShadowingProbeDao(database_session)
+
+    recent_probes = probe_dao.retrieve_recent_probes(limit_count=limit_results)
+    analytics_records = [map_trading_shadowing_probe(probe) for probe in recent_probes]
+
+    analytics_response = build_analytics_response(analytics_records, set())
+
+    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed shadow analytics")
     return analytics_response
 
 
@@ -198,7 +173,6 @@ def get_shadow_trades_for_pair(
     verdict_dao = TradingShadowingVerdictDao(database_session)
     verdicts = verdict_dao.retrieve_resolved_for_pair(pair_address, limit_count=100)
 
-    # Mocking evaluations for serialization to the existing frontend model
     results = []
     for v in verdicts:
         p = v.probe

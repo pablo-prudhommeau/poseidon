@@ -92,14 +92,6 @@ def _evaluate_quality(candidate: TradingCandidate) -> TradingQualityResult:
         order_flow_score=order_flow_score,
     )
 
-    if liquidity_usd < minimum_liquidity_usd:
-        logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — insufficient liquidity %.0f < %.0f", base_token.symbol, liquidity_usd, minimum_liquidity_usd)
-        return TradingQualityResult(is_admissible=False, score=0.0, rejection_reason="insufficient_liquidity", context=quality_context)
-
-    if volume_h24_usd < minimum_volume_h24_usd:
-        logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — insufficient volume_24h %.0f < %.0f", base_token.symbol, volume_h24_usd, minimum_volume_h24_usd)
-        return TradingQualityResult(is_admissible=False, score=0.0, rejection_reason="insufficient_volume", context=quality_context)
-
     momentum_score = blend_momentum_percentages(percent_m5, percent_h1, percent_h6, percent_h24)
     liquidity_component_score = min(1.0, liquidity_usd / (minimum_liquidity_usd * 4.0))
 

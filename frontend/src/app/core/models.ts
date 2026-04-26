@@ -468,7 +468,6 @@ export interface AnalyticsKpiPayload {
 export interface AnalyticsResponse {
     kpis: AnalyticsKpiPayload;
     pnl_drivers_series: AnalyticsHeatmapSeriesPayload[];
-    staled_risk_series: AnalyticsHeatmapSeriesPayload[];
     timeline: AnalyticsTimelinePointPayload[];
     scatter_series: AnalyticsScatterSeriesPayload[];
 }

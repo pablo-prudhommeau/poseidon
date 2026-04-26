@@ -40,7 +40,10 @@ export class ApiService {
     }
 
     getAnalytics(realm: 'qualified' | 'shadow' = 'qualified'): Observable<AnalyticsResponse> {
-        return this.http.get<AnalyticsResponse>(`/api/analytics?realm=${realm}`);
+        if (realm === 'shadow') {
+            return this.http.get<AnalyticsResponse>('/api/analytics/shadow');
+        }
+        return this.http.get<AnalyticsResponse>('/api/analytics');
     }
 
     getEvaluationById(evaluationId: number): Observable<TradingEvaluationPayload | null> {

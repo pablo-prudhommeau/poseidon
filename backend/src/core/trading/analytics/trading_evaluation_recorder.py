@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from src.api.websocket.telemetry import TelemetryService
 from src.configuration.config import _to_dict, settings
 from src.core.trading.trading_structures import TradingCandidate

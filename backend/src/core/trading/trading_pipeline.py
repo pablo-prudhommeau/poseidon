@@ -13,7 +13,6 @@ from src.core.trading.evaluators.trading_momentum_filter import apply_momentum_f
 from src.core.trading.evaluators.trading_price_deviation_filter import apply_price_deviation_filter
 from src.core.trading.evaluators.trading_quality_scorer import apply_quality_scorer
 from src.core.trading.evaluators.trading_risk_filter import apply_risk_filter
-from src.core.trading.evaluators.trading_shadowing_decile_toxicity_filter import apply_shadowing_decile_toxicity_filter
 from src.core.trading.evaluators.trading_shadowing_notional_booster import apply_shadowing_notional_boost
 from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
@@ -62,33 +61,44 @@ class TradingPipeline:
         if not candidates:
             return
 
-        candidates = self._step_filter_volume(candidates)
-        if not candidates:
-            return
-
-        candidates = self._step_filter_liquidity(candidates)
-        if not candidates:
-            return
-
-        candidates = self._step_filter_fundamentals(candidates)
-        if not candidates:
-            return
-
-        candidates = self._step_filter_momentum(candidates)
-        if not candidates:
-            return
-
-        candidates = self._step_filter_age(candidates)
-        if not candidates:
-            return
-
-        candidates = self._step_score_quality(candidates)
-        if not candidates:
-            return
-
         candidates = self._step_deduplication(candidates)
         if not candidates:
             return
+
+        shadow_snapshot = None
+        if settings.TRADING_SHADOWING_ENABLED:
+            shadow_snapshot = self._step_load_shadow_intelligence()
+            pipeline_context.shadow_intelligence_snapshot = shadow_snapshot
+            if not shadow_snapshot.is_activated:
+                logger.info("[TRADING][PIPELINE][GATE] Shadow intelligence in LEARNING phase — live trading is paused until sufficient data is collected.")
+                return
+
+        shadow_active = shadow_snapshot is not None and shadow_snapshot.is_activated
+
+        if not shadow_active:
+            candidates = self._step_filter_volume(candidates)
+            if not candidates:
+                return
+
+            candidates = self._step_filter_liquidity(candidates)
+            if not candidates:
+                return
+
+            candidates = self._step_filter_fundamentals(candidates)
+            if not candidates:
+                return
+
+            candidates = self._step_filter_momentum(candidates)
+            if not candidates:
+                return
+
+            candidates = self._step_filter_age(candidates)
+            if not candidates:
+                return
+
+            candidates = self._step_score_quality(candidates)
+            if not candidates:
+                return
 
         token_price_information_list = preload_best_prices(candidates)
         pipeline_context.token_price_information_list = token_price_information_list
@@ -97,40 +107,28 @@ class TradingPipeline:
         if not candidates:
             return
 
-        candidates = self._step_risk_filter(candidates)
-        if not candidates:
-            return
+        if not shadow_active:
+            candidates = self._step_risk_filter(candidates)
+            if not candidates:
+                return
 
-        candidates = self._step_cooldown(candidates)
-        if not candidates:
-            return
+            candidates = self._step_cooldown(candidates)
+            if not candidates:
+                return
 
-        candidates = self._step_price_deviation(candidates, token_price_information_list)
-        if not candidates:
-            return
+            candidates = self._step_price_deviation(candidates, token_price_information_list)
+            if not candidates:
+                return
 
-        candidates = self._step_ai_scorer(candidates, pipeline_context)
-        if not candidates:
-            return
+            candidates = self._step_ai_scorer(candidates, pipeline_context)
+            if not candidates:
+                return
 
-        shadow_snapshot = self._step_load_shadow_intelligence()
-        pipeline_context.shadow_intelligence_snapshot = shadow_snapshot
-
-        if not shadow_snapshot.is_activated:
-            logger.info("[TRADING][PIPELINE][GATE] Shadow intelligence in LEARNING phase — blocking live execution")
-            for rank, candidate in enumerate(candidates, start=1):
-                TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "LEARNING_PHASE")
-            return
-
-        candidates = self._step_shadowing_decile_toxicity_filter(candidates, shadow_snapshot)
-        if not candidates:
-            return
-
-        candidates = self._step_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
-        if not candidates:
-            return
-
-        self._step_shadowing_notional_boost(candidates, shadow_snapshot)
+        if shadow_active:
+            candidates = self._step_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
+            if not candidates:
+                return
+            self._step_shadowing_notional_boost(candidates, shadow_snapshot)
 
         self._step_execute(candidates, pipeline_context)
 
@@ -210,9 +208,6 @@ class TradingPipeline:
         except Exception:
             logger.exception("[TRADING][PIPELINE][SHADOW] Failed to load shadow intelligence, using empty snapshot")
             return ShadowIntelligenceSnapshot(metric_snapshots=[], total_outcomes_analyzed=0, is_activated=False)
-
-    def _step_shadowing_decile_toxicity_filter(self, candidates: list[TradingCandidate], shadow_snapshot) -> list[TradingCandidate]:
-        return apply_shadowing_decile_toxicity_filter(candidates, shadow_snapshot)
 
     def _step_shadowing_toxic_exposure_filter(self, candidates: list[TradingCandidate], shadow_snapshot) -> list[TradingCandidate]:
         return apply_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
