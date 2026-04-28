@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from src.api.websocket.websocket_hub import recompute_metrics_and_broadcast
+from src.api.websocket.websocket_hub import notify_trading_state_changed
 from src.configuration.config import settings
 from src.core.structures.structures import Token
 from src.core.trading.execution.trading_risk_manager import TradingRiskManager
@@ -54,15 +54,11 @@ class TradingExecutor:
 
     def _schedule_portfolio_rebroadcast(self) -> None:
         try:
-            loop = asyncio.get_running_loop()
-            if not loop.is_running() or loop.is_closed():
-                logger.debug("[TRADING][EXECUTOR][PORTFOLIO] Skip schedule (loop closing)")
-                return
-            loop.call_soon_threadsafe(lambda: loop.create_task(recompute_metrics_and_broadcast()))
-            logger.debug("[TRADING][EXECUTOR][PORTFOLIO] Scheduled recomputation on running loop")
-        except RuntimeError:
-            logger.debug("[TRADING][EXECUTOR][PORTFOLIO] Skip schedule (no running loop)")
-            return
+            notify_trading_state_changed()
+            logger.debug("[TRADING][EXECUTOR][PORTFOLIO] Notified state change to trigger broadcast")
+        except Exception as e:
+            logger.exception("[TRADING][EXECUTOR][PORTFOLIO] Skip notification — %s", e)
+
 
     @staticmethod
     def _infer_route_network(route: TradingLifiRoute, hint_chain: Optional[str] = None) -> str:

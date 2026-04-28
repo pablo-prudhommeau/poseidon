@@ -133,13 +133,10 @@ def _has_valid_intraday_bars(candidate: TradingCandidate) -> bool:
     )
 
 
-def apply_quality_scorer(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+def compute_quality_scores(candidates: list[TradingCandidate]) -> None:
     if not candidates:
-        logger.info("[TRADING][EVALUATOR][QUALITY] Empty candidate list, skipping")
-        return []
-
-    minimum_quality_score = settings.TRADING_SCORE_MIN_QUALITY
-    retained: list[TradingCandidate] = []
+        logger.info("[TRADING][EVALUATOR][QUALITY] Empty candidate list, skipping score computation")
+        return
 
     for candidate in candidates:
         quality_result = _evaluate_quality(candidate=candidate)
@@ -148,18 +145,32 @@ def apply_quality_scorer(candidates: list[TradingCandidate]) -> list[TradingCand
         base_token = candidate.dexscreener_token_information.base_token
         short_address = _tail(base_token.address)
 
-        if quality_result.is_admissible and quality_result.score >= minimum_quality_score:
+    logger.info("[TRADING][EVALUATOR][QUALITY] Computed quality scores for %d candidates", len(candidates))
+
+
+def apply_quality_gate(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+    if not candidates:
+        logger.info("[TRADING][EVALUATOR][QUALITY] Empty candidate list, skipping quality gate")
+        return []
+
+    minimum_quality_score = settings.TRADING_SCORE_MIN_QUALITY
+    retained: list[TradingCandidate] = []
+
+    for candidate in candidates:
+        base_token = candidate.dexscreener_token_information.base_token
+        short_address = _tail(base_token.address)
+
+        if candidate.quality_score >= minimum_quality_score:
             if not _has_valid_intraday_bars(candidate):
                 logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — missing intraday bars", base_token.symbol)
                 continue
 
             retained.append(candidate)
-            logger.debug("[TRADING][EVALUATOR][QUALITY] %s (%s) passed with score %.1f", base_token.symbol, short_address, quality_result.score)
+            logger.debug("[TRADING][EVALUATOR][QUALITY] %s (%s) passed quality gate with score %.1f", base_token.symbol, short_address, candidate.quality_score)
         else:
-            reason = quality_result.rejection_reason if not quality_result.is_admissible else "insufficient_score"
             logger.debug(
-                "[TRADING][EVALUATOR][QUALITY] %s (%s) rejected — score %.1f < %.1f, reason: %s",
-                base_token.symbol, short_address, quality_result.score, minimum_quality_score, reason,
+                "[TRADING][EVALUATOR][QUALITY] %s (%s) rejected — score %.1f < %.1f",
+                base_token.symbol, short_address, candidate.quality_score, minimum_quality_score,
             )
 
     if not retained:

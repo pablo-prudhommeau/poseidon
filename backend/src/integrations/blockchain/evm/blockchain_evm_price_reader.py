@@ -119,6 +119,9 @@ def _fetch_token_decimals(web3_provider: Web3, token_address: str) -> int:
     if cached_value is not None:
         return cached_value
 
+    if not Web3.is_address(token_address):
+        return 18
+
     checksum_address = Web3.to_checksum_address(token_address)
     token_contract = web3_provider.eth.contract(address=checksum_address, abi=ERC20_DECIMALS_ABI)
     decimals_value = token_contract.functions.decimals().call()
@@ -133,6 +136,10 @@ def _fetch_pool_price_in_quote(
         pair_address: str,
         target_token_address: str,
 ) -> tuple[Optional[float], Optional[str]]:
+    if not Web3.is_address(pair_address) or not Web3.is_address(target_token_address):
+        logger.debug("[BLOCKCHAIN][PRICE][EVM] Invalid address format for pair=%s token=%s on %s", pair_address[:10], target_token_address[:10], chain_identifier)
+        return None, None
+
     checksum_pair = Web3.to_checksum_address(pair_address)
     pair_contract = web3_provider.eth.contract(address=checksum_pair, abi=UNISWAP_V2_PAIR_ABI)
 

@@ -4,7 +4,7 @@ import asyncio
 
 from sqlalchemy.orm import Session
 
-from src.api.websocket.websocket_hub import schedule_full_recompute_broadcast
+from src.api.websocket.websocket_hub import notify_dca_state_changed
 from src.configuration.config import settings
 from src.core.dca.dca_allocation_engine import DcaAllocationEngine
 from src.core.structures.structures import DcaOrderStatus, DcaStrategyStatus
@@ -119,7 +119,7 @@ class DcaManager:
                 dca_order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL
                 self.dca_order_dao.save(dca_order)
                 self._send_approval_request(dca_order, dca_strategy)
-                schedule_full_recompute_broadcast()
+                notify_dca_state_changed()
                 return
 
             if "AVERAGE_PRICE_PROTECTION" in allocation_verdict.action_description:
@@ -164,7 +164,7 @@ class DcaManager:
                     dca_strategy.available_dry_powder += dry_powder_delta
                     self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
                     self.dca_order_dao.save(dca_order)
-                    schedule_full_recompute_broadcast()
+                    notify_dca_state_changed()
 
                     send_alert(
                         f"[{dca_strategy.target_asset_symbol}] : PRU Protection",
@@ -183,14 +183,14 @@ class DcaManager:
                     dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
-                    schedule_full_recompute_broadcast()
+                    notify_dca_state_changed()
                     await asyncio.sleep(2)
 
                 if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
                     dca_order.order_status = DcaOrderStatus.SWAPPED
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
-                    schedule_full_recompute_broadcast()
+                    notify_dca_state_changed()
                     await asyncio.sleep(2)
 
                 if dca_order.order_status == DcaOrderStatus.SWAPPED:
@@ -204,7 +204,7 @@ class DcaManager:
                     self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
-                    schedule_full_recompute_broadcast()
+                    notify_dca_state_changed()
 
                 display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
                 send_alert(
@@ -226,7 +226,7 @@ class DcaManager:
                 )
                 dca_order.order_status = DcaOrderStatus.FAILED
                 self.dca_order_dao.save(dca_order)
-                schedule_full_recompute_broadcast()
+                notify_dca_state_changed()
                 send_alert(
                     f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline (Paper)",
                     f"🆔 Ordre identifier: {dca_order.id}\n"
@@ -264,7 +264,7 @@ class DcaManager:
                 dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
                 self.dca_order_dao.save(dca_order)
                 self.database_session.commit()
-                schedule_full_recompute_broadcast()
+                notify_dca_state_changed()
                 await asyncio.sleep(5)
 
             if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
@@ -303,7 +303,7 @@ class DcaManager:
                 dca_order.order_status = DcaOrderStatus.SWAPPED
                 self.dca_order_dao.save(dca_order)
                 self.database_session.commit()
-                schedule_full_recompute_broadcast()
+                notify_dca_state_changed()
                 await asyncio.sleep(6)
 
             if dca_order.order_status == DcaOrderStatus.SWAPPED:
@@ -329,7 +329,7 @@ class DcaManager:
                 dca_strategy.available_dry_powder += dry_powder_delta
                 self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
                 self.dca_order_dao.save(dca_order)
-                schedule_full_recompute_broadcast()
+                notify_dca_state_changed()
 
                 display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
                 send_alert(
@@ -351,7 +351,7 @@ class DcaManager:
             )
             dca_order.order_status = DcaOrderStatus.FAILED
             self.dca_order_dao.save(dca_order)
-            schedule_full_recompute_broadcast()
+            notify_dca_state_changed()
             send_alert(
                 f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline",
                 f"🆔 Ordre identifier: {dca_order.id}\n"

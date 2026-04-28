@@ -43,7 +43,7 @@ def apply_shadowing_toxic_exposure_filter(
 
             if decile_index < len(metric_snapshot.decile_win_rates):
                 decile_win_rate = metric_snapshot.decile_win_rates[decile_index]
-                decile_median_pnl = metric_snapshot.decile_median_pnl[decile_index] if decile_index < len(metric_snapshot.decile_median_pnl) else 0.0
+                decile_average_pnl = metric_snapshot.decile_average_pnl[decile_index] if decile_index < len(metric_snapshot.decile_average_pnl) else 0.0
                 is_toxic = False
 
                 if decile_win_rate < toxic_win_rate_threshold:
@@ -56,7 +56,7 @@ def apply_shadowing_toxic_exposure_filter(
                     candidate_value=candidate_value,
                     decile_index=decile_index,
                     decile_win_rate=decile_win_rate,
-                    decile_median_pnl=decile_median_pnl,
+                    decile_average_pnl=decile_average_pnl,
                     is_toxic=is_toxic
                 ))
 
@@ -65,7 +65,7 @@ def apply_shadowing_toxic_exposure_filter(
         candidate.shadow_diagnostics.toxic_metric_count = toxic_metric_count
         candidate.shadow_diagnostics.total_metrics_evaluated = total_metrics_evaluated
 
-        if toxic_metric_count >= maximum_toxic_exposure:
+        if toxic_metric_count > maximum_toxic_exposure:
             logger.debug(
                 "[TRADING][EVALUATOR][SHADOW_EXPOSURE] %s rejected — toxic on %d / %d metrics (threshold: %d)",
                 candidate.token.symbol, toxic_metric_count, total_metrics_evaluated, maximum_toxic_exposure,

@@ -70,3 +70,16 @@ class TradingShadowingVerdictDao:
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts for pair %s — %s", pair_address, error)
             raise
+
+    def retrieve_shadow_intelligence_status_summary(self) -> "ShadowIntelligenceStatusSummary":
+        from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceStatusSummary
+        from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
+
+        resolved_outcome_count = self.count_resolved()
+        probe_dao = TradingShadowingProbeDao(self.database_session)
+        elapsed_hours = probe_dao.retrieve_oldest_probe_timestamp()
+
+        return ShadowIntelligenceStatusSummary(
+            resolved_outcome_count=resolved_outcome_count,
+            elapsed_hours=elapsed_hours,
+        )

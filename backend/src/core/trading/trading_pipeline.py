@@ -11,7 +11,7 @@ from src.core.trading.evaluators.trading_fundamentals_filter import apply_fundam
 from src.core.trading.evaluators.trading_liquidity_filter import apply_liquidity_filter
 from src.core.trading.evaluators.trading_momentum_filter import apply_momentum_filter
 from src.core.trading.evaluators.trading_price_deviation_filter import apply_price_deviation_filter
-from src.core.trading.evaluators.trading_quality_scorer import apply_quality_scorer
+from src.core.trading.evaluators.trading_quality_scorer import compute_quality_scores, apply_quality_gate
 from src.core.trading.evaluators.trading_risk_filter import apply_risk_filter
 from src.core.trading.evaluators.trading_shadowing_notional_booster import apply_shadowing_notional_boost
 from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
@@ -96,7 +96,10 @@ class TradingPipeline:
             if not candidates:
                 return
 
-            candidates = self._step_score_quality(candidates)
+        self._step_compute_quality_scores(candidates)
+
+        if not shadow_active:
+            candidates = self._step_apply_quality_gate(candidates)
             if not candidates:
                 return
 
@@ -175,8 +178,11 @@ class TradingPipeline:
     def _step_filter_age(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_age_filter(candidates)
 
-    def _step_score_quality(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-        return apply_quality_scorer(candidates)
+    def _step_compute_quality_scores(self, candidates: list[TradingCandidate]) -> None:
+        compute_quality_scores(candidates)
+
+    def _step_apply_quality_gate(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        return apply_quality_gate(candidates)
 
     def _step_deduplication(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_deduplication_filter(candidates)

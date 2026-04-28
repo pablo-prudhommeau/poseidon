@@ -219,7 +219,7 @@ class TradingEvaluationShadowIntelligenceSnapshotMetricPayload(BaseModel):
     candidate_value: Optional[float] = None
     decile_index: int
     decile_win_rate: float
-    decile_median_pnl: float
+    decile_average_pnl: float
     is_toxic: bool
     is_golden: bool
     normalized_influence: float
@@ -309,8 +309,7 @@ class AnalyticsHeatmapCellPayload(BaseModel):
     range_label: str
     range_min: float
     range_max: float
-    median_pnl: float
-    mean_pnl: float
+    average_pnl: float
     quartile_1_pnl: float
     quartile_3_pnl: float
     sample_count: int

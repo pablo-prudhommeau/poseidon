@@ -41,7 +41,6 @@ class DcaOrderDao:
         return list(self.database_session.execute(database_query).scalars().all())
 
     def retrieve_due_pending(self, current_timestamp: datetime) -> List[DcaOrder]:
-        logger.debug("[DATABASE][DAO][DCA_ORDER][RETRIEVE] Fetching due pending orders")
         database_query = (
             select(DcaOrder)
             .where(DcaOrder.order_status.in_(["PENDING", "APPROVED"]))

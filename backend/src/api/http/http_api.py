@@ -25,7 +25,7 @@ from src.api.serializers import (
     serialize_dca_order,
     serialize_trading_position,
 )
-from src.api.websocket.websocket_hub import schedule_full_recompute_broadcast
+from src.api.websocket.websocket_hub import notify_trading_state_changed, notify_dca_state_changed
 from src.configuration.config import settings
 from src.core.dca.dca_backtester import DcaBacktester
 from src.core.dca.dca_scheduler import DcaScheduler
@@ -87,15 +87,8 @@ def reset_paper_mode(database_session: Session = Depends(get_fastapi_database_se
 
     logger.info("[HTTP][PAPER][RESET] Paper mode has been reset and initial cash properly ensured")
 
-    try:
-        event_loop = asyncio.get_running_loop()
-        if event_loop.is_running() and not event_loop.is_closed():
-            schedule_full_recompute_broadcast()
-            logger.info("[HTTP][PAPER][REBROADCAST] Scheduled immediate recompute broadcast after reset")
-        else:
-            logger.debug("[HTTP][PAPER][REBROADCAST] No running event loop detected, user interface will refresh on next orchestrator tick")
-    except RuntimeError as exception:
-        logger.exception("[HTTP][PAPER][REBROADCAST] Event loop runtime error encountered, user interface will refresh on next orchestrator tick: %s", exception)
+    notify_trading_state_changed()
+    logger.info("[HTTP][PAPER][REBROADCAST] Scheduled immediate recompute broadcast after reset")
 
     return TradingPaperResetPayload(ok=True)
 
@@ -309,7 +302,7 @@ async def create_new_dca_strategy(
 
     logger.info("[HTTP][DCA][STRATEGY][CREATE] Successfully created DCA strategy with id %s generating %s orders", saved_dca_strategy.id, len(scheduled_orders))
 
-    schedule_full_recompute_broadcast()
+    notify_dca_state_changed()
 
     return DcaStrategyCreateResponse(
         message="Strategy successfully created",

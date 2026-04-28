@@ -221,7 +221,7 @@ export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
     candidate_value: number;
     decile_index: number;
     decile_win_rate: number;
-    decile_median_pnl: number;
+    decile_average_pnl: number;
     is_toxic: boolean;
     is_golden: boolean;
     normalized_influence: number;
@@ -412,8 +412,7 @@ export interface AnalyticsHeatmapCellPayload {
     range_label: string;
     range_min: number;
     range_max: number;
-    median_pnl: number;
-    mean_pnl: number;
+    average_pnl: number;
     quartile_1_pnl: number;
     quartile_3_pnl: number;
     sample_count: number;

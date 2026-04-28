@@ -9,7 +9,7 @@ export interface ActionableNiche {
     rangeLabel: string;
     winRate: number;
     sampleSize: number;
-    medianPnl: number;
+    averagePnl: number;
     type: 'GOLDEN' | 'TOXIC';
 }
 
@@ -82,7 +82,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
                         rangeLabel: cell.range_label,
                         winRate: cell.win_rate_percentage,
                         sampleSize: cell.sample_count,
-                        medianPnl: cell.median_pnl,
+                        averagePnl: cell.average_pnl,
                         type: 'GOLDEN'
                     });
                 }
@@ -93,7 +93,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
             if (b.winRate !== a.winRate) {
                 return b.winRate - a.winRate;
             }
-            return b.medianPnl - a.medianPnl;
+            return b.averagePnl - a.averagePnl;
         });
 
         this.goldenNiches = [];
@@ -112,7 +112,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
             if (a.winRate !== b.winRate) {
                 return a.winRate - b.winRate;
             }
-            return a.medianPnl - b.medianPnl;
+            return a.averagePnl - b.averagePnl;
         });
 
         this.toxicZones = [];

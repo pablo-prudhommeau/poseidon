@@ -13,7 +13,7 @@ from web3 import AsyncWeb3
 from web3.contract import AsyncContract
 from web3.types import TxParams
 
-from src.api.websocket.websocket_hub import schedule_full_recompute_broadcast
+from src.api.websocket.websocket_hub import notify_trading_state_changed
 from src.configuration.config import settings
 from src.core.structures.structures import DcaOrderStatus
 from src.core.utils.format_utils import format_currency, format_percent
@@ -253,7 +253,7 @@ class AaveSentinelService:
                             text=f"✅ Ordre #{target_order_identifier} {status_display_label} avec succès."
                         )
 
-                    schedule_full_recompute_broadcast()
+                    notify_trading_state_changed()
                     logger.info("[AAVE][SENTINEL][CALLBACK] Order identifier %s successfully transitioned to status %s", target_order_identifier, resolved_order_status.name)
                 else:
                     logger.error("[AAVE][SENTINEL][CALLBACK] Target order identifier %s not found in persistence layer", target_order_identifier)

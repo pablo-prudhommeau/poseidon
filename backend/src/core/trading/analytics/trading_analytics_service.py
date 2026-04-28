@@ -142,7 +142,7 @@ def compute_pnl_drivers_heatmap(records: list[AnalyticsOutcomeRecord]) -> list[A
                 win_counts[bucket_index] += 1
 
         cells: list[AnalyticsHeatmapCellPayload] = []
-        medians: list[float] = []
+        averages: list[float] = []
 
         for bucket_index in range(len(buckets)):
             left_edge = edges[bucket_index]
@@ -152,24 +152,21 @@ def compute_pnl_drivers_heatmap(records: list[AnalyticsOutcomeRecord]) -> list[A
             bucket_data = buckets[bucket_index]
             if len(bucket_data) >= MINIMUM_POINTS_PER_BUCKET:
                 sorted_data = sorted(bucket_data)
-                median_value = quantile(sorted_data, 0.5)
-                mean_value = sum(sorted_data) / len(sorted_data)
+                average_value = sum(sorted_data) / len(sorted_data)
                 quartile_1_value = quantile(sorted_data, 0.25)
                 quartile_3_value = quantile(sorted_data, 0.75)
             else:
-                median_value = 0.0
-                mean_value = 0.0
+                average_value = 0.0
                 quartile_1_value = 0.0
                 quartile_3_value = 0.0
 
-            medians.append(median_value if len(bucket_data) >= MINIMUM_POINTS_PER_BUCKET else float("-inf"))
+            averages.append(average_value if len(bucket_data) >= MINIMUM_POINTS_PER_BUCKET else float("-inf"))
 
             cells.append(AnalyticsHeatmapCellPayload(
                 range_label=range_label,
                 range_min=left_edge,
                 range_max=right_edge,
-                median_pnl=median_value,
-                mean_pnl=mean_value,
+                average_pnl=average_value,
                 quartile_1_pnl=quartile_1_value,
                 quartile_3_pnl=quartile_3_value,
                 sample_count=counts[bucket_index],
@@ -178,12 +175,12 @@ def compute_pnl_drivers_heatmap(records: list[AnalyticsOutcomeRecord]) -> list[A
                 is_optimal=False,
             ))
 
-        valid_medians = [median for median in medians if median != float("-inf")]
-        if valid_medians:
-            maximum_median = max(valid_medians)
-            optimal_threshold = maximum_median - abs(maximum_median) * 0.10
+        valid_averages = [average for average in averages if average != float("-inf")]
+        if valid_averages:
+            maximum_average = max(valid_averages)
+            optimal_threshold = maximum_average - abs(maximum_average) * 0.10
             for cell_index, cell in enumerate(cells):
-                if medians[cell_index] != float("-inf") and medians[cell_index] >= optimal_threshold and counts[cell_index] >= MINIMUM_POINTS_PER_BUCKET:
+                if averages[cell_index] != float("-inf") and averages[cell_index] >= optimal_threshold and counts[cell_index] >= MINIMUM_POINTS_PER_BUCKET:
                     cell.is_optimal = True
 
         series_list.append(AnalyticsHeatmapSeriesPayload(metric_key=metric_definition.key, metric_label=metric_definition.label, cells=cells))

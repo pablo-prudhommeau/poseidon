@@ -12,7 +12,7 @@ from src.api.http.http_api import router as http_router
 from src.api.websocket.websocket_hub import router as ws_router
 from src.api.websocket.websocket_manager import websocket_manager
 from src.core.jobs.dca_job import dca_job as aave_dca
-from src.core.jobs.orchestrator_job import ensure_started, get_status
+from src.core.jobs.job_launcher import ensure_started, get_status
 from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
 from src.logging.logger import get_application_logger
 from src.persistence.db import initialize_database, get_database_session

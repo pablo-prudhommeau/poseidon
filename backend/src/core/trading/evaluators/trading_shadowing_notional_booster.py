@@ -53,7 +53,7 @@ def apply_shadowing_notional_boost(
                 continue
 
             decile_win_rate = metric_snapshot.decile_win_rates[decile_index]
-            decile_median_pnl = metric_snapshot.decile_median_pnl[decile_index] if decile_index < len(metric_snapshot.decile_median_pnl) else 0.0
+            decile_average_pnl = metric_snapshot.decile_average_pnl[decile_index] if decile_index < len(metric_snapshot.decile_average_pnl) else 0.0
             normalized_influence = metric_snapshot.influence_score / total_influence_weight
             evaluated_influence_weight += normalized_influence
 

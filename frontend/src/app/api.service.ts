@@ -19,7 +19,7 @@ import {
 export interface AppStatus {
     mode: TradeMode;
     interval: number;
-    prices_interval: number;
+    display_broadcast_interval: number;
 }
 
 export interface AppStatusResponse {

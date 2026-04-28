@@ -100,7 +100,7 @@ def _compute_metric_snapshot(
         decile_edges.append(sorted_values[min(boundary_position, sample_count - 1)])
 
     decile_win_rates: list[float] = []
-    decile_median_pnl: list[float] = []
+    decile_average_pnl: list[float] = []
 
     for bucket_index in range(DECILE_COUNT):
         lower_bound = decile_edges[bucket_index - 1] if bucket_index > 0 else float("-inf")
@@ -122,27 +122,27 @@ def _compute_metric_snapshot(
                     bucket_wins += 1
 
         win_rate = (bucket_wins / bucket_total) if bucket_total > 0 else 0.0
-        median_pnl = statistics.median(bucket_pnl) if bucket_pnl else 0.0
+        average_pnl = statistics.fmean(bucket_pnl) if bucket_pnl else 0.0
 
         decile_win_rates.append(win_rate)
-        decile_median_pnl.append(median_pnl)
+        decile_average_pnl.append(average_pnl)
 
     max_win_rate = max(decile_win_rates) if decile_win_rates else 0.0
     min_win_rate = min(decile_win_rates) if decile_win_rates else 0.0
     influence_score = (max_win_rate - min_win_rate) * 100.0
 
-    global_mean = statistics.fmean(metric_values) if metric_values else 0.0
+    global_average = statistics.fmean(metric_values) if metric_values else 0.0
     winner_values = [metric_values[index] for index in range(len(metric_values)) if is_winner_flags[index]]
-    winner_mean = statistics.fmean(winner_values) if winner_values else global_mean
+    winner_average = statistics.fmean(winner_values) if winner_values else global_average
 
     standard_deviation = statistics.stdev(metric_values) if len(metric_values) > 1 else 1.0
-    winner_deviation = ((winner_mean - global_mean) / standard_deviation) if standard_deviation > 0.0 else 0.0
+    winner_deviation = ((winner_average - global_average) / standard_deviation) if standard_deviation > 0.0 else 0.0
 
     return ShadowIntelligenceMetricSnapshot(
         metric_key=metric_definition.key,
         decile_edges=decile_edges,
         decile_win_rates=decile_win_rates,
-        decile_median_pnl=decile_median_pnl,
+        decile_average_pnl=decile_average_pnl,
         influence_score=influence_score,
         winner_deviation=winner_deviation,
     )
