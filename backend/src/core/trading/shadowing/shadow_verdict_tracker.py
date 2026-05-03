@@ -63,20 +63,20 @@ class ShadowVerdictTracker:
                         lethargic_candidates.append((verdict, current_price))
 
             if resolving_candidates:
-                from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_positions
-                from src.persistence.models import TradingPosition
-                
-                transient_positions = [
-                    TradingPosition(
-                        token_symbol=v.probe.token_symbol,
-                        blockchain_network=v.probe.blockchain_network,
-                        token_address=v.probe.token_address,
-                        pair_address=v.probe.pair_address,
-                        dex_id=""
-                    ) for v, _ in resolving_candidates
+                from src.core.structures.structures import Token
+                from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
+
+                resolution_tokens = [
+                    Token(
+                        symbol=verdict.probe.token_symbol,
+                        chain=verdict.probe.blockchain_network,
+                        token_address=verdict.probe.token_address,
+                        pair_address=verdict.probe.pair_address,
+                        dex_id=verdict.probe.dex_id,
+                    ) for verdict, _ in resolving_candidates
                 ]
-                
-                onchain_prices = fetch_onchain_prices_for_positions(transient_positions)
+
+                onchain_prices = fetch_onchain_prices_for_tokens(resolution_tokens)
                 maximum_price_multiplier = settings.TRADING_MAX_PRICE_DEVIATION_MULTIPLIER
 
                 for verdict, dex_price in resolving_candidates:
@@ -208,7 +208,7 @@ class ShadowVerdictTracker:
                 chain=probe.blockchain_network,
                 token_address=probe.token_address,
                 pair_address=probe.pair_address,
-                dex_id="",
+                dex_id=probe.dex_id,
             ))
 
         if not unique_tokens:

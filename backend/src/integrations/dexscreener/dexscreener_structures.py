@@ -45,7 +45,7 @@ class DexscreenerToken(_DexscreenerBaseModel):
     symbol: str
 
     @model_validator(mode="after")
-    def _uppercase_symbol(self) -> "DexscreenerToken":
+    def _uppercase_symbol(self) -> DexscreenerToken:
         if self.symbol:
             self.symbol = self.symbol.upper()
         return self

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.configuration.config import settings
-from src.core.trading.shadowing.shadow_analytics_intelligence import find_decile_index_for_value, extract_metric_value_from_candidate
+from src.core.trading.shadowing.shadow_analytics_intelligence import find_bucket_index_for_value, extract_metric_value_from_candidate
 from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot
 from src.core.trading.trading_structures import TradingCandidate
 from src.logging.logger import get_application_logger
@@ -48,22 +48,27 @@ def apply_shadowing_notional_boost(
             if candidate_value is None:
                 continue
 
-            decile_index = find_decile_index_for_value(candidate_value, metric_snapshot.decile_edges)
-            if decile_index >= len(metric_snapshot.decile_win_rates):
+            bucket_index = find_bucket_index_for_value(candidate_value, metric_snapshot.bucket_edges)
+            if bucket_index >= len(metric_snapshot.bucket_win_rates):
                 continue
 
-            decile_win_rate = metric_snapshot.decile_win_rates[decile_index]
-            decile_average_pnl = metric_snapshot.decile_average_pnl[decile_index] if decile_index < len(metric_snapshot.decile_average_pnl) else 0.0
+            bucket_win_rate = metric_snapshot.bucket_win_rates[bucket_index]
+            bucket_capital_velocity = metric_snapshot.bucket_capital_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_capital_velocity) else 0.0
             normalized_influence = metric_snapshot.influence_score / total_influence_weight
             evaluated_influence_weight += normalized_influence
 
-            is_golden = False
-            if decile_win_rate >= golden_win_rate_threshold:
-                golden_strength = (decile_win_rate - golden_win_rate_threshold) / (1.0 - golden_win_rate_threshold)
-                golden_notional_accumulator += normalized_influence * golden_strength
-                golden_tp_accumulator += normalized_influence * golden_strength
-                candidate.shadow_diagnostics.golden_metric_keys.append(metric_snapshot.metric_key)
-                is_golden = True
+            is_golden = metric_snapshot.bucket_is_golden[bucket_index] if bucket_index < len(metric_snapshot.bucket_is_golden) else False
+
+            if is_golden:
+                base_strength = (bucket_win_rate - golden_win_rate_threshold) / (1.0 - golden_win_rate_threshold) if golden_win_rate_threshold < 1.0 else 0.0
+                velocity_multiplier = max(0.0, 1.0 + bucket_capital_velocity)
+                golden_strength = base_strength * velocity_multiplier
+
+                if golden_strength > 0:
+                    golden_notional_accumulator += normalized_influence * golden_strength
+                    golden_tp_accumulator += normalized_influence * golden_strength
+                    candidate.shadow_diagnostics.golden_metric_keys.append(metric_snapshot.metric_key)
+
             for evaluated_metric in candidate.shadow_diagnostics.intelligence_snapshot.evaluated_metrics:
                 if evaluated_metric.metric_key == metric_snapshot.metric_key:
                     evaluated_metric.is_golden = is_golden

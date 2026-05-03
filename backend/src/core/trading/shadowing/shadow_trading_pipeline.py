@@ -128,6 +128,7 @@ class ShadowTradingPipeline:
             blockchain_network=str(token_information.chain_id),
             token_address=str(base_token.address),
             pair_address=str(token_information.pair_address),
+            dex_id=str(token_information.dex_id),
             entry_price_usd=token_information.price_usd or 0.0,
             candidate_rank=rank,
             quality_score=candidate.quality_score,

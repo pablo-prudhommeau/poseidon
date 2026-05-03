@@ -25,6 +25,7 @@ import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer'
 import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
 import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
 import {ApiService} from '../../api.service';
+import {EXPLORATION_CATEGORIES} from '../../core/constants';
 
 @Component({
     standalone: true,
@@ -284,11 +285,18 @@ export class TradesTableComponent implements AfterViewInit {
         return this.metricsFormattingService.formatMetricValue(key, value);
     }
 
-    public sortedShadowMetrics(snapshot: any): any[] {
+    public groupedShadowMetrics(snapshot: any): { category: any, metrics: any[] }[] {
         if (!snapshot || !snapshot.evaluated_metrics) {
             return [];
         }
-        return [...snapshot.evaluated_metrics].sort((a, b) => (b.decile_win_rate || 0) - (a.decile_win_rate || 0));
+        const metricsMap = new Map(snapshot.evaluated_metrics.map((m: any) => [m.metric_key, m]));
+        return EXPLORATION_CATEGORIES.map(category => {
+            const metrics = category.metricKeys
+                .map(key => metricsMap.get(key))
+                .filter(m => !!m)
+                .sort((a: any, b: any) => (b.bucket_win_rate || 0) - (a.bucket_win_rate || 0));
+            return {category, metrics};
+        }).filter(group => group.metrics.length > 0);
     }
 
     private recomputeCharts(): void {

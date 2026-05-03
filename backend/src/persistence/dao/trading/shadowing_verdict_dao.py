@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceStatusSummary
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingShadowingVerdict, TradingShadowingProbe
 
@@ -33,13 +34,16 @@ class TradingShadowingVerdictDao:
             raise
 
     def retrieve_recent_resolved(self, limit_count: int) -> list[TradingShadowingVerdict]:
+        from sqlalchemy.orm import joinedload
         try:
             return list(self.database_session.scalars(
                 select(TradingShadowingVerdict)
+                .options(joinedload(TradingShadowingVerdict.probe))
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
                 .order_by(TradingShadowingVerdict.resolved_at.desc())
                 .limit(limit_count)
-            ).all())
+            ).unique().all())
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve recent resolved verdicts — %s", error)
             raise
@@ -50,6 +54,7 @@ class TradingShadowingVerdictDao:
             return self.database_session.execute(
                 select(func.count(TradingShadowingVerdict.id))
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
             ).scalar_one_or_none() or 0
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to count resolved verdicts — %s", error)
@@ -71,7 +76,7 @@ class TradingShadowingVerdictDao:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts for pair %s — %s", pair_address, error)
             raise
 
-    def retrieve_shadow_intelligence_status_summary(self) -> "ShadowIntelligenceStatusSummary":
+    def retrieve_shadow_intelligence_status_summary(self) -> ShadowIntelligenceStatusSummary:
         from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceStatusSummary
         from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
 

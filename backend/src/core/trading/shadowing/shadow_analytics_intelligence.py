@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-import statistics
 from typing import Optional
 
 from src.configuration.config import settings
-from src.core.trading.analytics.trading_analytics_helpers import DECILE_COUNT
-from src.core.trading.analytics.trading_analytics_service import METRIC_DEFINITIONS, MetricDefinition
+from src.core.trading.analytics.trading_analytics_helpers import map_trading_shadowing_verdict
+from src.core.trading.analytics.trading_analytics_metric_bucket_statistics_engine import (
+    compute_all_metric_bucket_profiles,
+)
+from src.core.trading.analytics.trading_analytics_structures import MetricBucketProfile
 from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceMetricSnapshot, ShadowIntelligenceSnapshot
+from src.core.trading.trading_structures import TradingCandidate
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
 from src.persistence.db import get_database_session
-from src.persistence.models import TradingShadowingVerdict
 
 logger = get_application_logger(__name__)
 
@@ -46,12 +48,14 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
                 elapsed_hours=elapsed_hours,
             )
 
-        metric_snapshots: list[ShadowIntelligenceMetricSnapshot] = []
+        analytics_records = [map_trading_shadowing_verdict(verdict) for verdict in resolved_verdicts]
+        bucket_profiles = compute_all_metric_bucket_profiles(analytics_records)
 
-        for metric_definition in METRIC_DEFINITIONS:
-            metric_snapshot = _compute_metric_snapshot(metric_definition, resolved_verdicts)
-            if metric_snapshot is not None:
-                metric_snapshots.append(metric_snapshot)
+        metric_snapshots: list[ShadowIntelligenceMetricSnapshot] = []
+        for profile in bucket_profiles:
+            snapshot = _convert_bucket_profile_to_metric_snapshot(profile)
+            if snapshot is not None:
+                metric_snapshots.append(snapshot)
 
         logger.info(
             "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence snapshot computed — %d outcomes analyzed, %d metrics profiled",
@@ -67,95 +71,43 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
         )
 
 
-def _compute_metric_snapshot(
-        metric_definition: MetricDefinition,
-        resolved_verdicts: list[TradingShadowingVerdict],
+def _convert_bucket_profile_to_metric_snapshot(
+        profile: MetricBucketProfile,
 ) -> Optional[ShadowIntelligenceMetricSnapshot]:
-    metric_values: list[float] = []
-    pnl_values: list[float] = []
-    is_winner_flags: list[bool] = []
-
-    for verdict in resolved_verdicts:
-        try:
-            metric_value = metric_definition.accessor(verdict.probe)
-        except Exception:
-            continue
-
-        if metric_value is None or not isinstance(metric_value, (int, float)):
-            continue
-
-        metric_values.append(float(metric_value))
-        pnl_values.append(verdict.realized_pnl_percentage or 0.0)
-        is_winner_flags.append(verdict.is_profitable or False)
-
-    if len(metric_values) < DECILE_COUNT * 2:
+    if not profile.bucket_statistics:
         return None
 
-    sorted_values = sorted(metric_values)
-    sample_count = len(sorted_values)
-
-    decile_edges: list[float] = []
-    for decile_index in range(1, DECILE_COUNT):
-        boundary_position = int(sample_count * decile_index / DECILE_COUNT)
-        decile_edges.append(sorted_values[min(boundary_position, sample_count - 1)])
-
-    decile_win_rates: list[float] = []
-    decile_average_pnl: list[float] = []
-
-    for bucket_index in range(DECILE_COUNT):
-        lower_bound = decile_edges[bucket_index - 1] if bucket_index > 0 else float("-inf")
-        upper_bound = decile_edges[bucket_index] if bucket_index < len(decile_edges) else float("inf")
-
-        bucket_pnl: list[float] = []
-        bucket_wins = 0
-        bucket_total = 0
-
-        for value_index in range(len(metric_values)):
-            metric_value = metric_values[value_index]
-            is_in_bucket = (metric_value > lower_bound) if bucket_index > 0 else (metric_value >= lower_bound)
-            is_in_bucket = is_in_bucket and (metric_value <= upper_bound)
-
-            if is_in_bucket:
-                bucket_pnl.append(pnl_values[value_index])
-                bucket_total += 1
-                if is_winner_flags[value_index]:
-                    bucket_wins += 1
-
-        win_rate = (bucket_wins / bucket_total) if bucket_total > 0 else 0.0
-        average_pnl = statistics.fmean(bucket_pnl) if bucket_pnl else 0.0
-
-        decile_win_rates.append(win_rate)
-        decile_average_pnl.append(average_pnl)
-
-    max_win_rate = max(decile_win_rates) if decile_win_rates else 0.0
-    min_win_rate = min(decile_win_rates) if decile_win_rates else 0.0
-    influence_score = (max_win_rate - min_win_rate) * 100.0
-
-    global_average = statistics.fmean(metric_values) if metric_values else 0.0
-    winner_values = [metric_values[index] for index in range(len(metric_values)) if is_winner_flags[index]]
-    winner_average = statistics.fmean(winner_values) if winner_values else global_average
-
-    standard_deviation = statistics.stdev(metric_values) if len(metric_values) > 1 else 1.0
-    winner_deviation = ((winner_average - global_average) / standard_deviation) if standard_deviation > 0.0 else 0.0
-
     return ShadowIntelligenceMetricSnapshot(
-        metric_key=metric_definition.key,
-        decile_edges=decile_edges,
-        decile_win_rates=decile_win_rates,
-        decile_average_pnl=decile_average_pnl,
-        influence_score=influence_score,
-        winner_deviation=winner_deviation,
+        metric_key=profile.metric_key,
+        bucket_edges=profile.bucket_edges,
+        bucket_win_rates=[bucket.win_rate / 100.0 for bucket in profile.bucket_statistics],
+        bucket_average_pnl=[bucket.average_pnl for bucket in profile.bucket_statistics],
+        bucket_average_holding_time=[bucket.average_holding_time_minutes for bucket in profile.bucket_statistics],
+        bucket_capital_velocity=[bucket.capital_velocity for bucket in profile.bucket_statistics],
+        bucket_outlier_hit_rates=[bucket.outlier_hit_rate / 100.0 for bucket in profile.bucket_statistics],
+        bucket_sample_counts=[bucket.sample_count for bucket in profile.bucket_statistics],
+        bucket_is_golden=[bucket.is_golden for bucket in profile.bucket_statistics],
+        bucket_is_toxic=[bucket.is_toxic for bucket in profile.bucket_statistics],
+        influence_score=profile.influence_score,
+        winner_deviation=profile.winner_deviation,
     )
 
 
-def find_decile_index_for_value(value: float, decile_edges: list[float]) -> int:
-    for edge_index, edge_value in enumerate(decile_edges):
-        if value <= edge_value:
-            return edge_index
-    return len(decile_edges)
+def find_bucket_index_for_value(value: float, bucket_edges: list[float]) -> int:
+    if value is None or len(bucket_edges) < 2:
+        return -1
+    last_valid_bucket = len(bucket_edges) - 2
+    for edge_index in range(len(bucket_edges) - 1):
+        if bucket_edges[edge_index] <= value <= bucket_edges[edge_index + 1]:
+            return min(edge_index, last_valid_bucket)
+    if value > bucket_edges[-1]:
+        return last_valid_bucket
+    if value < bucket_edges[0]:
+        return 0
+    return last_valid_bucket
 
 
-def extract_metric_value_from_candidate(candidate: "TradingCandidate", metric_key: str) -> float | None:
+def extract_metric_value_from_candidate(candidate: TradingCandidate, metric_key: str) -> float | None:
     token_information = candidate.dexscreener_token_information
     extraction_map = {
         "quality_score": lambda: candidate.quality_score,
@@ -178,6 +130,8 @@ def extract_metric_value_from_candidate(candidate: "TradingCandidate", metric_ke
         "buy_to_sell_ratio": lambda: _compute_buy_to_sell_ratio(token_information),
         "fully_diluted_valuation_usd": lambda: token_information.fully_diluted_valuation,
         "dexscreener_boost": lambda: token_information.boost,
+        "liquidity_churn_h24": lambda: (token_information.volume.h24 / token_information.liquidity.usd) if token_information.volume and token_information.liquidity and token_information.liquidity.usd and token_information.liquidity.usd > 0 else 0.0,
+        "momentum_acceleration_5m_1h": lambda: (token_information.price_change.m5 / token_information.price_change.h1) if token_information.price_change and token_information.price_change.h1 and token_information.price_change.h1 != 0 else 0.0,
     }
 
     extractor = extraction_map.get(metric_key)

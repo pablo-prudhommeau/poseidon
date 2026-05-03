@@ -61,6 +61,10 @@ class TradingPipeline:
         if not candidates:
             return
 
+        candidates = self._step_filter_supported_dexes(candidates)
+        if not candidates:
+            return
+
         candidates = self._step_deduplication(candidates)
         if not candidates:
             return
@@ -160,6 +164,31 @@ class TradingPipeline:
             logger.info(
                 "[TRADING][PIPELINE][CHAIN_FILTER] Retained %d / %d candidates (allowed chains: %s)",
                 len(retained), len(candidates), ", ".join(sorted(allowed_chains)),
+            )
+        return retained
+
+    def _step_filter_supported_dexes(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        allowed_solana_dexes = set(settings.TRADING_SOLANA_SUPPORTED_DEX_IDS)
+        retained: list[TradingCandidate] = []
+        for candidate in candidates:
+            chain_identifier = (candidate.dexscreener_token_information.chain_id or "").strip().lower()
+            dex_identifier = (candidate.dexscreener_token_information.dex_id or "").strip().lower()
+
+            if chain_identifier == "solana":
+                if dex_identifier in allowed_solana_dexes:
+                    retained.append(candidate)
+                else:
+                    logger.debug(
+                        "[TRADING][PIPELINE][DEX_FILTER] %s rejected — DEX %s not in allowed list %s",
+                        candidate.token.symbol, dex_identifier, allowed_solana_dexes,
+                    )
+            else:
+                retained.append(candidate)
+
+        if len(retained) < len(candidates):
+            logger.info(
+                "[TRADING][PIPELINE][DEX_FILTER] Retained %d / %d candidates (filtered by DEX)",
+                len(retained), len(candidates),
             )
         return retained
 

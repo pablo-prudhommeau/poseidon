@@ -1,7 +1,7 @@
-<div class="space-y-6 pb-8">
+﻿<div class="space-y-6 pb-8">
 	<div class="flex items-center gap-2 mb-2 pt-2">
 		<h2 class="text-lg font-bold text-slate-200">Actionable Zones</h2>
-		<span class="text-[10px] text-slate-500 px-2">Top deciles isolated purely on Win Rate strength (n &ge; 10)</span>
+		<span class="text-[10px] text-slate-500 px-2">Top buckets isolated on bi-dimensional strength (Win Rate &amp; PnL) &mdash; sorted by Capital Velocity</span>
 	</div>
 
 	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -16,12 +16,24 @@
 				</div>
 				<div class="flex items-center justify-between mt-3 bg-white/5 rounded-lg p-2 border border-white/5">
 					<div class="flex flex-col">
-						<span class="text-[9px] text-slate-500 uppercase font-bold">Win Rate</span>
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Win rate</span>
 						<span class="text-emerald-400 font-bold text-sm">{{ niche.winRate | number:'1.0-0' }}%</span>
 					</div>
 					<div class="flex flex-col border-l border-white/5 pl-3">
 						<span class="text-[9px] text-slate-500 uppercase font-bold">Avg PnL</span>
-						<span class="text-emerald-400 font-bold text-sm">{{ niche.averagePnl > 0 ? '+' : '' }}{{ niche.averagePnl | number:'1.1-1' }}%</span>
+						<span class="text-emerald-400 font-bold text-sm">{{ niche.averagePnl | number:'1.1-1' }}%</span>
+					</div>
+					<div class="flex flex-col border-l border-white/5 pl-3">
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Outlier HR</span>
+						<span class="text-emerald-400 font-bold text-sm">{{ niche.outlierHitRatePercentage | number:'1.1-1' }}%</span>
+					</div>
+					<div class="flex flex-col border-l border-white/5 pl-3">
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Holding</span>
+						<span class="text-emerald-400 font-bold text-sm">{{ (niche.averageHoldingTime / 60.0) | number:'1.1-1' }}h</span>
+					</div>
+					<div class="flex flex-col border-l border-white/5 pl-3">
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Velocity</span>
+						<span class="text-emerald-400 font-bold text-sm">{{ niche.capitalVelocity | number:'1.2-2' }}</span>
 					</div>
 					<div class="flex flex-col border-l border-white/5 pl-3">
 						<span class="text-[9px] text-slate-500 uppercase font-bold">Trades</span>
@@ -49,12 +61,24 @@
 				</div>
 				<div class="flex items-center justify-between mt-3 bg-red-500/5 rounded-lg p-2 border border-red-500/10">
 					<div class="flex flex-col">
-						<span class="text-[9px] text-slate-500 uppercase font-bold">Win Rate</span>
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Win rate</span>
 						<span class="text-red-400 font-bold text-sm">{{ niche.winRate | number:'1.0-0' }}%</span>
 					</div>
 					<div class="flex flex-col border-l border-white/5 pl-3">
 						<span class="text-[9px] text-slate-500 uppercase font-bold">Avg PnL</span>
-						<span class="text-red-400 font-bold text-sm">{{ niche.averagePnl > 0 ? '+' : '' }}{{ niche.averagePnl | number:'1.1-1' }}%</span>
+						<span class="text-red-400 font-bold text-sm">{{ niche.averagePnl | number:'1.1-1' }}%</span>
+					</div>
+					<div class="flex flex-col border-l border-white/5 pl-3">
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Outlier HR</span>
+						<span class="text-red-400 font-bold text-sm">{{ niche.outlierHitRatePercentage | number:'1.1-1' }}%</span>
+					</div>
+					<div class="flex flex-col border-l border-white/5 pl-3">
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Holding</span>
+						<span class="text-red-400 font-bold text-sm">{{ (niche.averageHoldingTime / 60.0) | number:'1.1-1' }}h</span>
+					</div>
+					<div class="flex flex-col border-l border-white/5 pl-3">
+						<span class="text-[9px] text-slate-500 uppercase font-bold">Velocity</span>
+						<span class="text-red-400 font-bold text-sm">{{ niche.capitalVelocity | number:'1.2-2' }}</span>
 					</div>
 					<div class="flex flex-col border-l border-white/5 pl-3">
 						<span class="text-[9px] text-slate-500 uppercase font-bold">Trades</span>

@@ -12,6 +12,7 @@ logger = get_application_logger(__name__)
 FREE_RPC_ENDPOINTS: dict[str, list[str]] = {
     "solana": [
         "https://api.mainnet-beta.solana.com",
+        "https://solana-rpc.publicnode.com",
     ],
     "bsc": [
         "https://bsc-dataseed.binance.org/",

@@ -11,7 +11,7 @@ class Token(BaseModel):
     chain: str
     token_address: str
     pair_address: str
-    dex_id: str = "unknown"
+    dex_id: str
 
     def __str__(self) -> str:
         return (f"[symbol={self.symbol} "

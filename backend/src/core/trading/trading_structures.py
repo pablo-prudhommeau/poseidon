@@ -25,7 +25,7 @@ class ShadowDiagnostics(BaseModel):
 
 
 class TradingCandidate(BaseModel):
-    token: "Token"
+    token: Token
     quality_score: float
     ai_adjusted_quality_score: float
     ai_quality_delta: float
@@ -91,7 +91,7 @@ class TradingLifiRoute(BaseModel):
 
 
 class TradingOrderPayload(BaseModel):
-    target_token: "Token"
+    target_token: Token
     execution_price: float
     order_notional: float
     original_candidate: TradingCandidate

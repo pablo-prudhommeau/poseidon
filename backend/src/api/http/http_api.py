@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -30,7 +29,7 @@ from src.configuration.config import settings
 from src.core.dca.dca_backtester import DcaBacktester
 from src.core.dca.dca_scheduler import DcaScheduler
 from src.core.structures.structures import Token, DcaStrategyStatus
-from src.core.trading.analytics.trading_analytics_helpers import map_trading_shadowing_probe, map_trading_evaluation
+from src.core.trading.analytics.trading_analytics_helpers import map_trading_evaluation
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
@@ -106,11 +105,12 @@ def get_analytics(
     position_dao = TradingPositionDao(database_session)
 
     evaluation_rows = evaluation_dao.retrieve_recent_evaluations(limit_count=limit_results)
+    total_evaluations = evaluation_dao.count_total_evaluations()
     staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
     staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
 
     analytics_records = [map_trading_evaluation(row) for row in evaluation_rows]
-    analytics_response = build_analytics_response(analytics_records, staled_token_addresses)
+    analytics_response = build_analytics_response(analytics_records, total_evaluations, staled_token_addresses)
 
     logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed live analytics")
     return analytics_response
@@ -122,17 +122,21 @@ def get_shadow_analytics(
         database_session: Session = Depends(get_fastapi_database_session),
 ) -> AnalyticsResponse:
     from src.core.trading.analytics.trading_analytics_service import build_analytics_response
+    from src.core.trading.analytics.trading_analytics_helpers import map_trading_shadowing_verdict
+    from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
     from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
 
     logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving shadow analytics with limit %s", limit_results)
+    verdict_dao = TradingShadowingVerdictDao(database_session)
     probe_dao = TradingShadowingProbeDao(database_session)
 
-    recent_probes = probe_dao.retrieve_recent_probes(limit_count=limit_results)
-    analytics_records = [map_trading_shadowing_probe(probe) for probe in recent_probes]
+    resolved_verdicts = verdict_dao.retrieve_recent_resolved(limit_count=limit_results)
+    total_evaluations = probe_dao.count_total_probes()
+    analytics_records = [map_trading_shadowing_verdict(verdict) for verdict in resolved_verdicts]
 
-    analytics_response = build_analytics_response(analytics_records, set())
+    analytics_response = build_analytics_response(analytics_records, total_evaluations, set())
 
-    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed shadow analytics")
+    logger.info("[HTTP][ANALYTICS][FETCH] Successfully processed shadow analytics from %d resolved verdicts", len(resolved_verdicts))
     return analytics_response
 
 

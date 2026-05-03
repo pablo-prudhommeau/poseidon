@@ -1,63 +1,31 @@
-from typing import Dict, List, Optional
-
 from pydantic import BaseModel, ConfigDict
 
 
-class JupiterPriceData(BaseModel):
-    usdPrice: float
-    liquidity: Optional[float] = None
-    decimals: Optional[int] = None
-    priceChange24h: Optional[float] = None
+class SolanaPoolPriceResult(BaseModel):
+    price_in_quote_token: float
+    quote_token_mint: str
+    dex_identifier: str
 
     model_config = ConfigDict(extra="ignore")
 
 
-class JupiterQuoteRoutePlanStep(BaseModel):
-    ammKey: str
-    label: Optional[str] = None
-    inputMint: str
-    outputMint: str
-    feeAmount: Optional[str] = None
-    feeMint: Optional[str] = None
+SOLANA_WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112"
 
-    model_config = ConfigDict(extra="ignore")
+SOLANA_KNOWN_STABLECOIN_MINTS: set[str] = {
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+}
 
+SOLANA_DEX_PROGRAM_IDS: dict[str, str] = {
+    "pumpfun": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+    "raydium_amm_v4": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+    "raydium_clmm": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+    "meteora": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    "orca": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+}
 
-class JupiterQuoteRoutePlan(BaseModel):
-    swapInfo: JupiterQuoteRoutePlanStep
-    percent: int
-
-    model_config = ConfigDict(extra="ignore")
-
-
-class JupiterQuoteResponse(BaseModel):
-    inputMint: str
-    inAmount: str
-    outputMint: str
-    outAmount: str
-    otherAmountThreshold: str
-    swapMode: str
-    slippageBps: int
-    priceImpactPct: str
-    routePlan: List[JupiterQuoteRoutePlan]
-
-    model_config = ConfigDict(extra="ignore")
-
-
-class JupiterSwapRequest(BaseModel):
-    quoteResponse: JupiterQuoteResponse
-    userPublicKey: str
-    wrapAndUnwrapSol: bool = True
-    dynamicComputeUnitLimit: bool = True
-    prioritizationFeeLamports: str = "auto"
-
-
-class JupiterSwapResponse(BaseModel):
-    swapTransaction: str
-    lastValidBlockHeight: Optional[int] = None
-    prioritizationFeeLamports: Optional[int] = None
-    computeUnitLimit: Optional[int] = None
-    prioritizationType: Optional[Dict[str, int]] = None
-    dynamicSlippageReport: Optional[Dict[str, str]] = None
-
-    model_config = ConfigDict(extra="ignore")
+SOLANA_SOL_DECIMALS = 9
+SOLANA_PUMPFUN_TOKEN_DECIMALS = 6
+SOLANA_SPL_TOKEN_BALANCE_OFFSET = 64
+SOLANA_SPL_TOKEN_MINT_OFFSET = 0
+SOLANA_SPL_TOKEN_DECIMALS_OFFSET = 44

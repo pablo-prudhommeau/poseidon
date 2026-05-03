@@ -7,9 +7,15 @@ from pydantic import BaseModel, Field
 
 class ShadowIntelligenceMetricSnapshot(BaseModel):
     metric_key: str
-    decile_edges: list[float]
-    decile_win_rates: list[float]
-    decile_average_pnl: list[float]
+    bucket_edges: list[float]
+    bucket_win_rates: list[float]
+    bucket_average_pnl: list[float]
+    bucket_average_holding_time: list[float]
+    bucket_capital_velocity: list[float]
+    bucket_outlier_hit_rates: list[float]
+    bucket_sample_counts: list[int]
+    bucket_is_golden: list[bool]
+    bucket_is_toxic: list[bool]
     influence_score: float
     winner_deviation: float
 
@@ -25,9 +31,13 @@ class ShadowIntelligenceSnapshot(BaseModel):
 class ShadowIntelligenceSnapshotMetricPayload(BaseModel):
     metric_key: str
     candidate_value: Optional[float] = None
-    decile_index: int
-    decile_win_rate: float
-    decile_average_pnl: float
+    bucket_index: int
+    bucket_win_rate: float
+    bucket_average_pnl: float
+    bucket_average_holding_time: float = 0.0
+    bucket_capital_velocity: float = 0.0
+    bucket_outlier_hit_rate: float = 0.0
+    bucket_sample_count: int = 0
     is_toxic: bool = False
     is_golden: bool = False
     normalized_influence: float = 0.0

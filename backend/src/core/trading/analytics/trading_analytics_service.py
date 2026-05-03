@@ -1,14 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable
 
-from src.core.trading.analytics.trading_analytics_helpers import compute_decile_edges, assign_bucket_index, quantile, format_metric_value, MINIMUM_POINTS_PER_BUCKET, ROLLING_WINDOW_SIZE
-from src.logging.logger import get_application_logger
-
-logger = get_application_logger(__name__)
-
-from src.core.trading.analytics.trading_analytics_structures import AnalyticsOutcomeRecord
 from src.api.http.api_schemas import (
     AnalyticsResponse,
     AnalyticsHeatmapCellPayload,
@@ -18,44 +11,29 @@ from src.api.http.api_schemas import (
     AnalyticsScatterSeriesPayload,
     AnalyticsTimelinePointPayload,
 )
+from src.core.trading.analytics.trading_analytics_helpers import MINIMUM_POINTS_PER_BUCKET
+from src.core.trading.analytics.trading_analytics_helpers import format_metric_value, ROLLING_WINDOW_SIZE
+from src.core.trading.analytics.trading_analytics_metric_bucket_statistics_engine import (
+    METRIC_DEFINITIONS,
+    compute_all_metric_bucket_profiles,
+)
+from src.core.trading.analytics.trading_analytics_structures import (
+    AnalyticsOutcomeRecord,
+    AnalyticsTimelineOutcome,
+    AnalyticsDailyAggregation,
+    MetricBucketProfile,
+    MetricDefinition,
+)
 from src.core.utils.date_utils import format_datetime_to_local_iso
+from src.logging.logger import get_application_logger
+
+logger = get_application_logger(__name__)
 
 
-class MetricDefinition:
-    def __init__(self, key: str, label: str, accessor: Callable[[AnalyticsOutcomeRecord], float], unit: str) -> None:
-        self.key = key
-        self.label = label
-        self.accessor = accessor
-        self.unit = unit
-
-
-METRIC_DEFINITIONS: list[MetricDefinition] = [
-    MetricDefinition("quality_score", "Quality score", lambda record: record.quality_score, "score"),
-    MetricDefinition("ai_adjusted_quality_score", "AI adjusted quality score", lambda record: record.ai_adjusted_quality_score, "score"),
-    MetricDefinition("liquidity_usd", "Liquidity ($)", lambda record: record.liquidity_usd, "usd"),
-    MetricDefinition("market_cap_usd", "Market cap ($)", lambda record: record.market_cap_usd, "usd"),
-    MetricDefinition("volume_m5_usd", "Volume 5m ($)", lambda record: record.volume_m5_usd, "usd"),
-    MetricDefinition("volume_h1_usd", "Volume 1h ($)", lambda record: record.volume_h1_usd, "usd"),
-    MetricDefinition("volume_h6_usd", "Volume 6h ($)", lambda record: record.volume_h6_usd, "usd"),
-    MetricDefinition("volume_h24_usd", "Volume 24h ($)", lambda record: record.volume_h24_usd, "usd"),
-    MetricDefinition("price_change_m5", "Δ5m (%)", lambda record: record.price_change_percentage_m5, "percent"),
-    MetricDefinition("price_change_h1", "Δ1h (%)", lambda record: record.price_change_percentage_h1, "percent"),
-    MetricDefinition("price_change_h6", "Δ6h (%)", lambda record: record.price_change_percentage_h6, "percent"),
-    MetricDefinition("price_change_h24", "Δ24h (%)", lambda record: record.price_change_percentage_h24, "percent"),
-    MetricDefinition("token_age_hours", "Token age (h)", lambda record: record.token_age_hours, "hours"),
-    MetricDefinition("transaction_count_m5", "Transactions 5m", lambda record: record.transaction_count_m5, "count"),
-    MetricDefinition("transaction_count_h1", "Transactions 1h", lambda record: record.transaction_count_h1, "count"),
-    MetricDefinition("transaction_count_h6", "Transactions 6h", lambda record: record.transaction_count_h6, "count"),
-    MetricDefinition("transaction_count_h24", "Transactions 24h", lambda record: record.transaction_count_h24, "count"),
-    MetricDefinition("buy_to_sell_ratio", "Buy/Sell ratio", lambda record: record.buy_to_sell_ratio, "ratio"),
-    MetricDefinition("fully_diluted_valuation_usd", "FDV ($)", lambda record: record.fully_diluted_valuation_usd, "usd"),
-    MetricDefinition("dexscreener_boost", "Dexscreener Boost", lambda record: record.dexscreener_boost, "count"),
-]
-
-
-def compute_kpis(records: list[AnalyticsOutcomeRecord]) -> AnalyticsKpiPayload:
-    total_evaluations = len(records)
-
+def compute_kpis(
+        records: list[AnalyticsOutcomeRecord],
+        total_evaluations: int,
+) -> AnalyticsKpiPayload:
     all_pnl_percentages: list[float] = []
     all_pnl_usd: list[float] = []
     all_holding_durations: list[float] = []
@@ -90,7 +68,7 @@ def compute_kpis(records: list[AnalyticsOutcomeRecord]) -> AnalyticsKpiPayload:
     profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
     expected_value_usd = (total_pnl_usd / total_outcomes) if total_outcomes > 0 else 0.0
 
-    logger.info("[ANALYTICS][AGGREGATION][KPIS] Computed KPIs — %d outcomes, win_rate=%.1f%%, PF=%.2f", total_outcomes, win_rate, profit_factor)
+    logger.info("[ANALYTICS][AGGREGATION][KPIS] Computed KPIs — %d outcomes from %d evaluations, win_rate=%.1f%%, PF=%.2f", total_outcomes, total_evaluations, win_rate, profit_factor)
 
     return AnalyticsKpiPayload(
         total_evaluations=total_evaluations,
@@ -108,119 +86,120 @@ def compute_kpis(records: list[AnalyticsOutcomeRecord]) -> AnalyticsKpiPayload:
     )
 
 
+def _find_metric_definition(metric_key: str) -> MetricDefinition | None:
+    for definition in METRIC_DEFINITIONS:
+        if definition.key == metric_key:
+            return definition
+    return None
+
+
+def _convert_bucket_profile_to_heatmap_series(profile: MetricBucketProfile) -> AnalyticsHeatmapSeriesPayload:
+    metric_definition = _find_metric_definition(profile.metric_key)
+    metric_label = metric_definition.label if metric_definition else profile.metric_key
+    metric_unit = metric_definition.unit if metric_definition else "score"
+
+    if not profile.bucket_statistics:
+        return AnalyticsHeatmapSeriesPayload(metric_key=profile.metric_key, metric_label=metric_label, cells=[])
+
+    valid_averages = [bucket.average_pnl for bucket in profile.bucket_statistics if bucket.sample_count >= MINIMUM_POINTS_PER_BUCKET]
+    maximum_average = max(valid_averages) if valid_averages else 0.0
+    optimal_threshold = maximum_average - abs(maximum_average) * 0.10
+
+    cells: list[AnalyticsHeatmapCellPayload] = []
+
+    for bucket in profile.bucket_statistics:
+        range_label = f"{format_metric_value(bucket.range_min, metric_unit)} to {format_metric_value(bucket.range_max, metric_unit)}"
+
+        if bucket.sample_count >= MINIMUM_POINTS_PER_BUCKET:
+            logger.debug(
+                "[ANALYTICS][HEATMAP][GOLDEN_CHECK] %s [%s] — samples=%d, WR=%.1f%%, PnL=%.1f%%, OHR=%.1f%%, Hold=%.1fh, Vel=%.2f → golden=%s",
+                profile.metric_key, range_label, bucket.sample_count,
+                bucket.win_rate, bucket.average_pnl,
+                bucket.outlier_hit_rate,
+                bucket.average_holding_time_minutes / 60.0,
+                bucket.capital_velocity, bucket.is_golden,
+            )
+
+        cells.append(AnalyticsHeatmapCellPayload(
+            range_label=range_label,
+            range_min=bucket.range_min,
+            range_max=bucket.range_max,
+            average_pnl=bucket.average_pnl,
+            average_holding_time_minutes=bucket.average_holding_time_minutes,
+            capital_velocity=bucket.capital_velocity,
+            quartile_1_pnl=bucket.quartile_1_pnl,
+            quartile_3_pnl=bucket.quartile_3_pnl,
+            sample_count=bucket.sample_count,
+            win_count=bucket.win_count,
+            win_rate_percentage=bucket.win_rate,
+            outlier_hit_rate_percentage=bucket.outlier_hit_rate,
+            is_optimal=(bucket.average_pnl > optimal_threshold and bucket.sample_count >= MINIMUM_POINTS_PER_BUCKET),
+            is_golden=bucket.is_golden,
+            is_toxic=bucket.is_toxic,
+        ))
+
+    golden_count = sum(1 for cell in cells if cell.is_golden)
+    toxic_count = sum(1 for cell in cells if cell.is_toxic)
+    if golden_count > 0 or toxic_count > 0:
+        logger.info(
+            "[ANALYTICS][HEATMAP][ZONES] %s — %d golden, %d toxic out of %d buckets",
+            profile.metric_key, golden_count, toxic_count, len(cells),
+        )
+
+    return AnalyticsHeatmapSeriesPayload(metric_key=profile.metric_key, metric_label=metric_label, cells=cells)
+
+
 def compute_pnl_drivers_heatmap(records: list[AnalyticsOutcomeRecord]) -> list[AnalyticsHeatmapSeriesPayload]:
     closed_records = [record for record in records if record.has_outcome]
+    profiles = compute_all_metric_bucket_profiles(closed_records)
+
     series_list: list[AnalyticsHeatmapSeriesPayload] = []
-
-    for metric_definition in METRIC_DEFINITIONS:
-        metric_values: list[float] = []
-        pnl_values: list[float] = []
-        is_profitable_flags: list[bool] = []
-
-        for record in closed_records:
-            metric_value = metric_definition.accessor(record)
-            metric_values.append(metric_value)
-            pnl_values.append(record.realized_profit_and_loss_percentage)
-            is_profitable_flags.append(record.is_profitable)
-
-        if len(metric_values) < MINIMUM_POINTS_PER_BUCKET:
-            series_list.append(AnalyticsHeatmapSeriesPayload(metric_key=metric_definition.key, metric_label=metric_definition.label, cells=[]))
-            continue
-
-        edges = compute_decile_edges(metric_values)
-        buckets: list[list[float]] = [[] for _ in range(len(edges) - 1)]
-        counts: list[int] = [0 for _ in range(len(edges) - 1)]
-        win_counts: list[int] = [0 for _ in range(len(edges) - 1)]
-
-        for index in range(len(metric_values)):
-            bucket_index = assign_bucket_index(metric_values[index], edges)
-            if bucket_index == -1:
-                continue
-            buckets[bucket_index].append(pnl_values[index])
-            counts[bucket_index] += 1
-            if is_profitable_flags[index]:
-                win_counts[bucket_index] += 1
-
-        cells: list[AnalyticsHeatmapCellPayload] = []
-        averages: list[float] = []
-
-        for bucket_index in range(len(buckets)):
-            left_edge = edges[bucket_index]
-            right_edge = edges[bucket_index + 1]
-            range_label = f"{format_metric_value(left_edge, metric_definition.unit)} to {format_metric_value(right_edge, metric_definition.unit)}"
-
-            bucket_data = buckets[bucket_index]
-            if len(bucket_data) >= MINIMUM_POINTS_PER_BUCKET:
-                sorted_data = sorted(bucket_data)
-                average_value = sum(sorted_data) / len(sorted_data)
-                quartile_1_value = quantile(sorted_data, 0.25)
-                quartile_3_value = quantile(sorted_data, 0.75)
-            else:
-                average_value = 0.0
-                quartile_1_value = 0.0
-                quartile_3_value = 0.0
-
-            averages.append(average_value if len(bucket_data) >= MINIMUM_POINTS_PER_BUCKET else float("-inf"))
-
-            cells.append(AnalyticsHeatmapCellPayload(
-                range_label=range_label,
-                range_min=left_edge,
-                range_max=right_edge,
-                average_pnl=average_value,
-                quartile_1_pnl=quartile_1_value,
-                quartile_3_pnl=quartile_3_value,
-                sample_count=counts[bucket_index],
-                win_count=win_counts[bucket_index],
-                win_rate_percentage=(win_counts[bucket_index] / counts[bucket_index] * 100.0) if counts[bucket_index] > 0 else 0.0,
-                is_optimal=False,
-            ))
-
-        valid_averages = [average for average in averages if average != float("-inf")]
-        if valid_averages:
-            maximum_average = max(valid_averages)
-            optimal_threshold = maximum_average - abs(maximum_average) * 0.10
-            for cell_index, cell in enumerate(cells):
-                if averages[cell_index] != float("-inf") and averages[cell_index] >= optimal_threshold and counts[cell_index] >= MINIMUM_POINTS_PER_BUCKET:
-                    cell.is_optimal = True
-
-        series_list.append(AnalyticsHeatmapSeriesPayload(metric_key=metric_definition.key, metric_label=metric_definition.label, cells=cells))
+    for profile in profiles:
+        series = _convert_bucket_profile_to_heatmap_series(profile)
+        series_list.append(series)
 
     logger.info("[ANALYTICS][AGGREGATION][HEATMAP][PNL_DRIVERS] Computed %d metric series for PnL drivers", len(series_list))
     return series_list
 
 
 def compute_timeline(records: list[AnalyticsOutcomeRecord]) -> list[AnalyticsTimelinePointPayload]:
-    outcome_events: list[tuple[str, float, float, bool]] = []
+    outcomes: list[AnalyticsTimelineOutcome] = []
 
     for record in records:
         if not record.has_outcome or not record.occurred_at:
             continue
-        date_key = format_datetime_to_local_iso(record.occurred_at)[:10]
-        outcome_events.append((date_key, record.realized_profit_and_loss_usd, record.realized_profit_and_loss_percentage, record.is_profitable))
+        date_iso = format_datetime_to_local_iso(record.occurred_at)[:10]
+        outcomes.append(AnalyticsTimelineOutcome(
+            date_iso=date_iso,
+            pnl_usd=record.realized_profit_and_loss_usd,
+            pnl_percentage=record.realized_profit_and_loss_percentage,
+            is_profitable=record.is_profitable,
+        ))
 
-    outcome_events.sort(key=lambda event: event[0])
+    outcomes.sort(key=lambda outcome: outcome.date_iso)
 
-    daily_aggregation: dict[str, dict[str, float | int]] = defaultdict(lambda: {"pnl_usd": 0.0, "pnl_pct": 0.0, "count": 0, "wins": 0})
+    daily_aggregations: dict[str, AnalyticsDailyAggregation] = defaultdict(AnalyticsDailyAggregation)
 
-    for date_key, pnl_usd, pnl_pct, is_profitable in outcome_events:
-        daily_aggregation[date_key]["pnl_usd"] += pnl_usd
-        daily_aggregation[date_key]["pnl_pct"] += pnl_pct
-        daily_aggregation[date_key]["count"] += 1
-        if is_profitable:
-            daily_aggregation[date_key]["wins"] += 1
+    for outcome in outcomes:
+        aggregation = daily_aggregations[outcome.date_iso]
+        aggregation.pnl_usd += outcome.pnl_usd
+        aggregation.pnl_percentage += outcome.pnl_percentage
+        aggregation.trade_count += 1
+        if outcome.is_profitable:
+            aggregation.win_count += 1
 
     timeline_points: list[AnalyticsTimelinePointPayload] = []
     cumulative_pnl_usd = 0.0
     cumulative_pnl_percentage = 0.0
     recent_outcomes: list[bool] = []
 
-    for date_key in sorted(daily_aggregation.keys()):
-        day_data = daily_aggregation[date_key]
-        cumulative_pnl_usd += day_data["pnl_usd"]
-        cumulative_pnl_percentage += day_data["pnl_pct"]
+    for date_iso in sorted(daily_aggregations.keys()):
+        aggregation = daily_aggregations[date_iso]
+        cumulative_pnl_usd += aggregation.pnl_usd
+        cumulative_pnl_percentage += aggregation.pnl_percentage
 
-        wins_today = int(day_data["wins"])
-        total_today = int(day_data["count"])
+        wins_today = aggregation.win_count
+        total_today = aggregation.trade_count
         for trade_index in range(total_today):
             recent_outcomes.append(trade_index < wins_today)
 
@@ -230,11 +209,11 @@ def compute_timeline(records: list[AnalyticsOutcomeRecord]) -> list[AnalyticsTim
         rolling_win_rate = (sum(1 for outcome in recent_outcomes if outcome) / len(recent_outcomes) * 100.0) if recent_outcomes else 0.0
 
         timeline_points.append(AnalyticsTimelinePointPayload(
-            date_iso=date_key,
+            date_iso=date_iso,
             cumulative_pnl_usd=cumulative_pnl_usd,
             cumulative_pnl_percentage=cumulative_pnl_percentage,
             rolling_win_rate=rolling_win_rate,
-            trade_count=int(day_data["count"]),
+            trade_count=total_today,
         ))
 
     logger.info("[ANALYTICS][AGGREGATION][TIMELINE] Computed %d timeline points", len(timeline_points))
@@ -281,11 +260,12 @@ def compute_scatter_series(records: list[AnalyticsOutcomeRecord]) -> list[Analyt
 
 def build_analytics_response(
         records: list[AnalyticsOutcomeRecord],
+        total_evaluations: int,
         staled_token_addresses: set[str],
 ) -> AnalyticsResponse:
-    logger.info("[ANALYTICS][AGGREGATION] Starting aggregation for %d records", len(records))
+    logger.info("[ANALYTICS][AGGREGATION] Starting aggregation for %d records out of %d total evaluations", len(records), total_evaluations)
 
-    kpis = compute_kpis(records)
+    kpis = compute_kpis(records, total_evaluations)
     pnl_drivers_series = compute_pnl_drivers_heatmap(records)
     timeline = compute_timeline(records)
     scatter_series = compute_scatter_series(records)

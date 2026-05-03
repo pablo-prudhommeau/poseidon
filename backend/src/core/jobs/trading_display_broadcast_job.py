@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, List
+from typing import List
 
 from fastapi.encoders import jsonable_encoder
 
 from src.api.http.api_schemas import (
     TradingTradePayload,
     TradingPositionPayload,
-    TradingPortfolioPayload,
     DcaStrategyPayload,
     ShadowIntelligenceStatusPayload,
 )
@@ -31,7 +30,7 @@ from src.core.utils.pnl_utils import (
     cash_from_trades,
 )
 from src.integrations.aave.aave_executor import AaveExecutor
-from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_positions
+from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
 from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
@@ -39,7 +38,6 @@ from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPo
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
 from src.persistence.db import get_database_session
-from src.persistence.models import TradingPortfolioSnapshot, TradingPosition, TradingTrade
 
 logger = get_application_logger(__name__)
 
@@ -96,7 +94,17 @@ def _fetch_display_payloads() -> dict:
         recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
 
         try:
-            prices_by_pair_address = fetch_onchain_prices_for_positions(open_position_records)
+            from src.core.structures.structures import Token
+            position_tokens = [
+                Token(
+                    symbol=position.token_symbol,
+                    chain=position.blockchain_network,
+                    token_address=position.token_address,
+                    pair_address=position.pair_address,
+                    dex_id=position.dex_id,
+                ) for position in open_position_records
+            ]
+            prices_by_pair_address = fetch_onchain_prices_for_tokens(position_tokens)
         except Exception as exception:
             logger.exception("[TRADING][DISPLAY_BROADCAST][FETCH] On-chain price fetch failed: %s", exception)
             prices_by_pair_address = {}

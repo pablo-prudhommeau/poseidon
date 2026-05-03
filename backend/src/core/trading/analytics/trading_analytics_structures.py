@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+
+class MetricDefinition(BaseModel):
+    key: str
+    label: str
+    accessor: Callable[[AnalyticsOutcomeRecord], float]
+    unit: str
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class AnalyticsOutcomeRecord(BaseModel):
     token_symbol: str
     token_address: str
     quality_score: float
-    ai_adjusted_quality_score: float
     liquidity_usd: float
     market_cap_usd: float
     volume_m5_usd: float
@@ -29,7 +36,6 @@ class AnalyticsOutcomeRecord(BaseModel):
     buy_to_sell_ratio: float
     fully_diluted_valuation_usd: float
     dexscreener_boost: float
-
     has_outcome: bool
     realized_profit_and_loss_usd: float
     realized_profit_and_loss_percentage: float
@@ -37,3 +43,41 @@ class AnalyticsOutcomeRecord(BaseModel):
     is_profitable: bool
     exit_reason: str
     occurred_at: Optional[datetime] = None
+
+
+class MetricBucketStatistics(BaseModel):
+    range_min: float
+    range_max: float
+    sample_count: int
+    win_count: int
+    win_rate: float
+    average_pnl: float
+    average_holding_time_minutes: float
+    capital_velocity: float
+    outlier_hit_rate: float
+    quartile_1_pnl: float
+    quartile_3_pnl: float
+    is_golden: bool
+    is_toxic: bool
+
+
+class MetricBucketProfile(BaseModel):
+    metric_key: str
+    bucket_edges: list[float]
+    bucket_statistics: list[MetricBucketStatistics]
+    influence_score: float
+    winner_deviation: float
+
+
+class AnalyticsTimelineOutcome(BaseModel):
+    date_iso: str
+    pnl_usd: float
+    pnl_percentage: float
+    is_profitable: bool
+
+
+class AnalyticsDailyAggregation(BaseModel):
+    pnl_usd: float = 0.0
+    pnl_percentage: float = 0.0
+    trade_count: int = 0
+    win_count: int = 0

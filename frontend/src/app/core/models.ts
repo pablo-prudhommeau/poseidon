@@ -219,9 +219,13 @@ export interface TradingEvaluationDecisionPayload {
 export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
     metric_key: string;
     candidate_value: number;
-    decile_index: number;
-    decile_win_rate: number;
-    decile_average_pnl: number;
+    bucket_index: number;
+    bucket_win_rate: number;
+    bucket_average_pnl: number;
+    bucket_average_holding_time: number;
+    bucket_capital_velocity: number;
+    bucket_outlier_hit_rate: number;
+    bucket_sample_count: number;
     is_toxic: boolean;
     is_golden: boolean;
     normalized_influence: number;
@@ -413,12 +417,17 @@ export interface AnalyticsHeatmapCellPayload {
     range_min: number;
     range_max: number;
     average_pnl: number;
+    average_holding_time_minutes: number;
+    capital_velocity: number;
     quartile_1_pnl: number;
     quartile_3_pnl: number;
     sample_count: number;
     win_count: number;
     win_rate_percentage: number;
+    outlier_hit_rate_percentage: number;
     is_optimal: boolean;
+    is_golden: boolean;
+    is_toxic: boolean;
 }
 
 export interface AnalyticsHeatmapSeriesPayload {

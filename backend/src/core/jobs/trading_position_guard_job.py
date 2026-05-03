@@ -7,24 +7,15 @@ from src.configuration.config import settings
 from src.core.structures.structures import Token
 from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
 from src.core.utils.pnl_utils import cash_from_trades, holdings_and_unrealized_from_positions
-from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_positions
+from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
 from src.persistence.db import get_database_session
-from src.persistence.models import TradingPosition, TradingTrade
+from src.persistence.models import TradingTrade
 
 logger = get_application_logger(__name__)
-
-
-class _TransientPosition:
-    def __init__(self, token_symbol: str, blockchain_network: str, token_address: str, pair_address: str, dex_id: str):
-        self.token_symbol = token_symbol
-        self.blockchain_network = blockchain_network
-        self.token_address = token_address
-        self.pair_address = pair_address
-        self.dex_id = dex_id
 
 
 class TradingPositionGuardJob:
@@ -39,28 +30,28 @@ class TradingPositionGuardJob:
             await asyncio.sleep(interval)
 
     async def _execute_guard_cycle(self) -> None:
-        transient_positions = await asyncio.to_thread(self._read_transient_positions)
+        position_tokens = await asyncio.to_thread(self._read_position_tokens)
 
-        if not transient_positions:
+        if not position_tokens:
             return
 
         try:
-            prices_by_pair_address = await asyncio.to_thread(fetch_onchain_prices_for_positions, transient_positions)
+            prices_by_pair_address = await asyncio.to_thread(fetch_onchain_prices_for_tokens, position_tokens)
         except Exception as exception:
             logger.exception("[TRADING][POSITION_GUARD][CYCLE] On-chain price fetch failed: %s", exception)
             return
 
-        await asyncio.to_thread(self._evaluate_thresholds_and_update_equity, transient_positions, prices_by_pair_address)
+        await asyncio.to_thread(self._evaluate_thresholds_and_update_equity, position_tokens, prices_by_pair_address)
 
     @staticmethod
-    def _read_transient_positions() -> List[_TransientPosition]:
+    def _read_position_tokens() -> List[Token]:
         with get_database_session() as database_session:
             position_dao = TradingPositionDao(database_session)
             open_position_records = position_dao.retrieve_open_positions()
             return [
-                _TransientPosition(
-                    token_symbol=position.token_symbol,
-                    blockchain_network=position.blockchain_network,
+                Token(
+                    symbol=position.token_symbol,
+                    chain=position.blockchain_network,
                     token_address=position.token_address,
                     pair_address=position.pair_address,
                     dex_id=position.dex_id,
@@ -69,7 +60,7 @@ class TradingPositionGuardJob:
 
     @staticmethod
     def _evaluate_thresholds_and_update_equity(
-            transient_positions: List[_TransientPosition],
+            position_tokens: List[Token],
             prices_by_pair_address: dict[str, float],
     ) -> None:
         with get_database_session() as database_session:
@@ -77,8 +68,8 @@ class TradingPositionGuardJob:
 
             autosell_trade_records: List[TradingTrade] = []
 
-            for position in transient_positions:
-                pair_address = position.pair_address
+            for token in position_tokens:
+                pair_address = token.pair_address
                 if not pair_address:
                     continue
 
@@ -87,22 +78,15 @@ class TradingPositionGuardJob:
                     continue
 
                 try:
-                    position_token = Token(
-                        symbol=position.token_symbol,
-                        chain=position.blockchain_network,
-                        token_address=position.token_address,
-                        pair_address=position.pair_address,
-                        dex_id=position.dex_id,
-                    )
                     newly_created_trades = check_thresholds_and_autosell_for_token_address(
-                        database_session, position_token, price_usd,
+                        database_session, token, price_usd,
                     )
                     if newly_created_trades:
                         autosell_trade_records.extend(newly_created_trades)
                 except Exception as exception:
                     logger.warning(
                         "[TRADING][POSITION_GUARD][CYCLE] Autosell threshold evaluation failed for position %s: %s",
-                        position.token_symbol,
+                        token.symbol,
                         exception,
                     )
 

@@ -217,9 +217,13 @@ class TradingEvaluationDecisionPayload(BaseModel):
 class TradingEvaluationShadowIntelligenceSnapshotMetricPayload(BaseModel):
     metric_key: str
     candidate_value: Optional[float] = None
-    decile_index: int
-    decile_win_rate: float
-    decile_average_pnl: float
+    bucket_index: int
+    bucket_win_rate: float
+    bucket_average_pnl: float
+    bucket_average_holding_time: float = 0.0
+    bucket_capital_velocity: float = 0.0
+    bucket_outlier_hit_rate: float = 0.0
+    bucket_sample_count: int = 0
     is_toxic: bool
     is_golden: bool
     normalized_influence: float
@@ -310,12 +314,17 @@ class AnalyticsHeatmapCellPayload(BaseModel):
     range_min: float
     range_max: float
     average_pnl: float
+    average_holding_time_minutes: float
+    capital_velocity: float
     quartile_1_pnl: float
     quartile_3_pnl: float
     sample_count: int
     win_count: int
     win_rate_percentage: float
+    outlier_hit_rate_percentage: float
     is_optimal: bool
+    is_golden: bool
+    is_toxic: bool
 
 
 class AnalyticsHeatmapSeriesPayload(BaseModel):

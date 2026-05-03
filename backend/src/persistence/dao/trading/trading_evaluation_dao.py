@@ -67,3 +67,13 @@ class TradingEvaluationDao:
             .limit(1)
         )
         return self.database_session.execute(database_query).scalars().first()
+
+    def count_total_evaluations(self) -> int:
+        from sqlalchemy import func
+        try:
+            return self.database_session.execute(
+                select(func.count(TradingEvaluation.id))
+            ).scalar_one_or_none() or 0
+        except Exception as error:
+            logger.exception("[DAO][TRADING_EVALUATION] Failed to count evaluations — %s", error)
+            raise

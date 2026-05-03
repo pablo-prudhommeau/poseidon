@@ -68,6 +68,7 @@
 								<p-tabpanel value="exploration">
 									<app-analytics-exploration
 											[heatmapData]="data.pnl_drivers_series"
+											[scatterData]="data.scatter_series"
 											[isActive]="qualifiedAnalyticsSubTab() === 'exploration'"
 									></app-analytics-exploration>
 								</p-tabpanel>
@@ -120,6 +121,7 @@
 								<p-tabpanel value="exploration">
 									<app-analytics-exploration
 											[heatmapData]="data.pnl_drivers_series"
+											[scatterData]="data.scatter_series"
 											[isActive]="shadowAnalyticsSubTab() === 'exploration'"
 									></app-analytics-exploration>
 								</p-tabpanel>

@@ -30,4 +30,6 @@ Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un 
 
 * Assure-toi systématiquement que les comparaisons et soustractions de dates tiennent compte des pertes potentielles d'offset (offset-naive) souvent causées par SQLite, en garantissant que les dates réhydratées soient explicitement converties en offset-aware local via un utilitaire adéquat.
 
+* Tu dois proscrire le Title Case dans les wordings côté frontend
+
 * Lorsque tu `except` une exception, tu dois utiliser logger.exception pour pouvoir afficher la stacktrace

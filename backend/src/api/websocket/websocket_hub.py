@@ -37,7 +37,7 @@ from src.core.utils.pnl_utils import (
     holdings_and_unrealized_from_positions,
 )
 from src.integrations.aave.aave_executor import AaveExecutor
-from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_positions
+from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
 from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
@@ -158,7 +158,17 @@ def _fetch_portfolio_sync_data(websocket_connection_id: int) -> Optional[dict]:
         recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
 
         try:
-            prices_by_pair_address = fetch_onchain_prices_for_positions(open_position_records)
+            from src.core.structures.structures import Token
+            position_tokens = [
+                Token(
+                    symbol=pos.token_symbol,
+                    chain=pos.blockchain_network,
+                    token_address=pos.token_address,
+                    pair_address=pos.pair_address,
+                    dex_id=pos.dex_id,
+                ) for pos in open_position_records
+            ]
+            prices_by_pair_address = fetch_onchain_prices_for_tokens(position_tokens)
         except Exception as exception:
             logger.exception("[WEBSOCKET][HUB][SYNC][PORTFOLIO] On-chain price fetch failed: %s", exception)
             prices_by_pair_address = {}
@@ -195,7 +205,17 @@ def _fetch_positions_sync_data() -> dict:
         open_position_records = position_dao.retrieve_open_positions()
 
         try:
-            prices_by_pair_address = fetch_onchain_prices_for_positions(open_position_records)
+            from src.core.structures.structures import Token
+            position_tokens = [
+                Token(
+                    symbol=pos.token_symbol,
+                    chain=pos.blockchain_network,
+                    token_address=pos.token_address,
+                    pair_address=pos.pair_address,
+                    dex_id=pos.dex_id,
+                ) for pos in open_position_records
+            ]
+            prices_by_pair_address = fetch_onchain_prices_for_tokens(position_tokens)
         except Exception as exception:
             logger.exception("[WEBSOCKET][HUB][SYNC][POSITIONS] On-chain price fetch failed: %s", exception)
             prices_by_pair_address = {}

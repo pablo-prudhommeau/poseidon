@@ -9,7 +9,7 @@ from src.core.structures.structures import Token
 from src.core.trading.execution.trading_risk_manager import TradingRiskManager
 from src.core.trading.trading_structures import TradingOrderPayload, TradingLifiRoute
 from src.integrations.blockchain.blockchain_live_executor import LiveExecutionService
-from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_position
+from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
@@ -33,15 +33,7 @@ class TradingExecutor:
             except RuntimeError:
                 pass
 
-            from src.persistence.models import TradingPosition
-            synthetic_position = TradingPosition(
-                token_symbol=token.symbol,
-                blockchain_network=token.chain,
-                token_address=token.token_address,
-                pair_address=token.pair_address,
-                dex_id=token.dex_id,
-            )
-            price_usd = fetch_onchain_price_for_position(synthetic_position)
+            price_usd = fetch_onchain_price_for_token(token)
             if price_usd is not None and price_usd > 0.0:
                 logger.debug("[TRADING][EXECUTOR][PRICE] On-chain price fetched for %s = %.12f", token, price_usd)
                 return price_usd
@@ -58,7 +50,6 @@ class TradingExecutor:
             logger.debug("[TRADING][EXECUTOR][PORTFOLIO] Notified state change to trigger broadcast")
         except Exception as e:
             logger.exception("[TRADING][EXECUTOR][PORTFOLIO] Skip notification — %s", e)
-
 
     @staticmethod
     def _infer_route_network(route: TradingLifiRoute, hint_chain: Optional[str] = None) -> str:

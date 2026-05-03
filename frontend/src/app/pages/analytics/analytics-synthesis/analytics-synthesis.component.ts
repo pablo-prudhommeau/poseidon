@@ -10,6 +10,9 @@ export interface ActionableNiche {
     winRate: number;
     sampleSize: number;
     averagePnl: number;
+    capitalVelocity: number;
+    averageHoldingTime: number;
+    outlierHitRatePercentage: number;
     type: 'GOLDEN' | 'TOXIC';
 }
 
@@ -72,28 +75,47 @@ export class AnalyticsSynthesisComponent implements OnChanges {
     }
 
     private computeNiches(): void {
-        let allValidCells: ActionableNiche[] = [];
+        let allGoldenCells: ActionableNiche[] = [];
+        let allToxicCells: ActionableNiche[] = [];
 
         for (const series of this.pnlDriversSeries) {
             for (const cell of series.cells) {
-                if (cell.sample_count >= 10) {
-                    allValidCells.push({
-                        metricLabel: series.metric_label,
-                        rangeLabel: cell.range_label,
-                        winRate: cell.win_rate_percentage,
-                        sampleSize: cell.sample_count,
-                        averagePnl: cell.average_pnl,
-                        type: 'GOLDEN'
-                    });
+                if (cell.sample_count >= 2) {
+                    if (cell.is_golden) {
+                        allGoldenCells.push({
+                            metricLabel: series.metric_label,
+                            rangeLabel: cell.range_label,
+                            winRate: cell.win_rate_percentage,
+                            sampleSize: cell.sample_count,
+                            averagePnl: cell.average_pnl,
+                            capitalVelocity: cell.capital_velocity,
+                            averageHoldingTime: cell.average_holding_time_minutes,
+                            outlierHitRatePercentage: cell.outlier_hit_rate_percentage,
+                            type: 'GOLDEN'
+                        });
+                    }
+                    if (cell.is_toxic) {
+                        allToxicCells.push({
+                            metricLabel: series.metric_label,
+                            rangeLabel: cell.range_label,
+                            winRate: cell.win_rate_percentage,
+                            sampleSize: cell.sample_count,
+                            averagePnl: cell.average_pnl,
+                            capitalVelocity: cell.capital_velocity,
+                            averageHoldingTime: cell.average_holding_time_minutes,
+                            outlierHitRatePercentage: cell.outlier_hit_rate_percentage,
+                            type: 'TOXIC'
+                        });
+                    }
                 }
             }
         }
 
-        const goldenSorted = [...allValidCells].sort((a, b) => {
-            if (b.winRate !== a.winRate) {
-                return b.winRate - a.winRate;
+        const goldenSorted = [...allGoldenCells].sort((a, b) => {
+            if (b.outlierHitRatePercentage !== a.outlierHitRatePercentage) {
+                return b.outlierHitRatePercentage - a.outlierHitRatePercentage;
             }
-            return b.averagePnl - a.averagePnl;
+            return b.capitalVelocity - a.capitalVelocity;
         });
 
         this.goldenNiches = [];
@@ -108,9 +130,9 @@ export class AnalyticsSynthesisComponent implements OnChanges {
             }
         }
 
-        const toxicSorted = [...allValidCells].sort((a, b) => {
-            if (a.winRate !== b.winRate) {
-                return a.winRate - b.winRate;
+        const toxicSorted = [...allToxicCells].sort((a, b) => {
+            if (a.capitalVelocity !== b.capitalVelocity) {
+                return a.capitalVelocity - b.capitalVelocity;
             }
             return a.averagePnl - b.averagePnl;
         });
@@ -119,8 +141,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
         const seenToxicMetrics = new Set<string>();
         for (const cell of toxicSorted) {
             if (!seenToxicMetrics.has(cell.metricLabel)) {
-                const toxicCell = {...cell, type: 'TOXIC'};
-                this.toxicZones.push(toxicCell as ActionableNiche);
+                this.toxicZones.push(cell);
                 seenToxicMetrics.add(cell.metricLabel);
             }
             if (this.toxicZones.length >= 8) {
@@ -133,24 +154,28 @@ export class AnalyticsSynthesisComponent implements OnChanges {
         const results: { label: string; key: string; deviation: number }[] = [];
 
         for (const series of this.scatterData) {
-            let winSum = 0;
-            let winCount = 0;
-            let lossSum = 0;
-            let lossCount = 0;
+            const winValues: number[] = [];
+            const globalValues: number[] = [];
 
             for (const point of series.points) {
+                globalValues.push(point.metric_value);
                 if (point.pnl_percentage > 0) {
-                    winSum += point.metric_value;
-                    winCount++;
-                } else {
-                    lossSum += point.metric_value;
-                    lossCount++;
+                    winValues.push(point.metric_value);
                 }
             }
 
-            const winAvg = winCount > 0 ? winSum / winCount : 0;
-            const globalAvg = (winSum + lossSum) / ((winCount + lossCount) || 1);
-            const deviationPercentage = globalAvg > 0 ? ((winAvg - globalAvg) / globalAvg) * 100 : 0;
+            const getMedian = (arr: number[]) => {
+                if (arr.length === 0) {
+                    return 0;
+                }
+                arr.sort((a, b) => a - b);
+                const mid = Math.floor(arr.length / 2);
+                return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+            };
+
+            const winMedian = getMedian(winValues);
+            const globalMedian = getMedian(globalValues);
+            const deviationPercentage = globalMedian > 0 ? ((winMedian - globalMedian) / globalMedian) * 100 : 0;
             results.push({label: series.metric_label, key: series.metric_key, deviation: deviationPercentage});
         }
 
@@ -176,7 +201,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
             let hasData = false;
 
             for (const cell of series.cells) {
-                if (cell.sample_count >= 10) {
+                if (cell.sample_count >= 2) {
                     hasData = true;
                     if (cell.win_rate_percentage > maxWinRate) {
                         maxWinRate = cell.win_rate_percentage;
@@ -203,7 +228,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
         this.powerXAxis = {
             categories: orderedRankings.map(r => r.label),
             labels: {style: {colors: '#94a3b8', fontSize: '11px'}},
-            title: {text: 'Win Rate Amplitude between worst and best decile', style: {color: '#64748b', fontSize: '10px'}}
+            title: {text: 'Win Rate Amplitude between worst and best bucket', style: {color: '#64748b', fontSize: '10px'}}
         };
     }
 

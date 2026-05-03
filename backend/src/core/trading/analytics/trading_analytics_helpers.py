@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from src.core.trading.analytics.trading_analytics_structures import AnalyticsOutcomeRecord
-from src.persistence.models import TradingShadowingProbe, TradingEvaluation, TradingOutcome
+from src.persistence.models import TradingShadowingVerdict, TradingEvaluation, TradingOutcome
 
-DECILE_COUNT = 10
-MINIMUM_POINTS_PER_BUCKET = 10
+FRACTIONS = [0.0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95, 0.97, 0.98, 0.99, 0.995, 0.999, 1.0]
+MINIMUM_POINTS_PER_BUCKET = 30
 ROLLING_WINDOW_SIZE = 100
 
 
@@ -20,15 +20,16 @@ def quantile(sorted_values: list[float], quantile_fraction: float) -> float:
     return lower_value + (upper_value - lower_value) * remainder
 
 
-def compute_decile_edges(values: list[float | None]) -> list[float]:
+def compute_bucket_edges(values: list[float | None]) -> list[float]:
     valid_values = [v for v in values if v is not None]
     if not valid_values:
-        return [0.0] * (DECILE_COUNT + 1)
+        return [0.0] * len(FRACTIONS)
 
     sorted_values = sorted(valid_values)
+    fractions = FRACTIONS
     edges: list[float] = []
-    for decile_index in range(DECILE_COUNT + 1):
-        edges.append(quantile(sorted_values, decile_index / DECILE_COUNT))
+    for fraction in fractions:
+        edges.append(quantile(sorted_values, fraction))
     return edges
 
 
@@ -97,7 +98,6 @@ def map_trading_evaluation(evaluation: TradingEvaluation) -> AnalyticsOutcomeRec
         token_symbol=evaluation.token_symbol,
         token_address=evaluation.token_address,
         quality_score=evaluation.quality_score,
-        ai_adjusted_quality_score=evaluation.ai_adjusted_quality_score,
         liquidity_usd=evaluation.liquidity_usd,
         market_cap_usd=evaluation.market_cap_usd,
         volume_m5_usd=evaluation.volume_m5_usd,
@@ -116,7 +116,6 @@ def map_trading_evaluation(evaluation: TradingEvaluation) -> AnalyticsOutcomeRec
         buy_to_sell_ratio=evaluation.buy_to_sell_ratio,
         fully_diluted_valuation_usd=evaluation.fully_diluted_valuation_usd,
         dexscreener_boost=evaluation.dexscreener_boost,
-
         has_outcome=has_outcome,
         realized_profit_and_loss_usd=outcome.realized_profit_and_loss_usd if has_outcome else 0.0,
         realized_profit_and_loss_percentage=outcome.realized_profit_and_loss_percentage if has_outcome else 0.0,
@@ -127,14 +126,12 @@ def map_trading_evaluation(evaluation: TradingEvaluation) -> AnalyticsOutcomeRec
     )
 
 
-def map_trading_shadowing_probe(probe: TradingShadowingProbe) -> AnalyticsOutcomeRecord:
-    verdict = probe.verdict
-    has_outcome = verdict is not None and verdict.resolved_at is not None
+def map_trading_shadowing_verdict(verdict: TradingShadowingVerdict) -> AnalyticsOutcomeRecord:
+    probe = verdict.probe
     return AnalyticsOutcomeRecord(
         token_symbol=probe.token_symbol,
         token_address=probe.token_address,
         quality_score=probe.quality_score,
-        ai_adjusted_quality_score=probe.quality_score,
         liquidity_usd=probe.liquidity_usd,
         market_cap_usd=probe.market_cap_usd,
         volume_m5_usd=probe.volume_m5_usd,
@@ -153,12 +150,11 @@ def map_trading_shadowing_probe(probe: TradingShadowingProbe) -> AnalyticsOutcom
         buy_to_sell_ratio=probe.buy_to_sell_ratio,
         fully_diluted_valuation_usd=probe.fully_diluted_valuation_usd,
         dexscreener_boost=probe.dexscreener_boost,
-
-        has_outcome=has_outcome,
-        realized_profit_and_loss_usd=verdict.realized_pnl_usd if has_outcome else 0.0,
-        realized_profit_and_loss_percentage=verdict.realized_pnl_percentage if has_outcome else 0.0,
-        holding_duration_minutes=verdict.holding_duration_minutes if has_outcome else 0.0,
-        is_profitable=verdict.is_profitable if has_outcome else False,
-        exit_reason=verdict.exit_reason if has_outcome else "",
-        occurred_at=verdict.resolved_at if has_outcome else None,
+        has_outcome=True,
+        realized_profit_and_loss_usd=verdict.realized_pnl_usd,
+        realized_profit_and_loss_percentage=verdict.realized_pnl_percentage,
+        holding_duration_minutes=verdict.holding_duration_minutes,
+        is_profitable=verdict.is_profitable,
+        exit_reason=verdict.exit_reason,
+        occurred_at=verdict.resolved_at,
     )
