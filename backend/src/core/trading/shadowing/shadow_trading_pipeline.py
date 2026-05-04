@@ -77,7 +77,7 @@ class ShadowTradingPipeline:
 
             tp1_price = entry_price * (1.0 + settings.TRADING_TP1_EXIT_FRACTION)
             tp2_price = entry_price * (1.0 + settings.TRADING_TP2_EXIT_FRACTION)
-            stop_loss_price = entry_price * (1.0 - settings.TRADING_STOP_LOSS_FRACTION_CAP)
+            stop_loss_price = entry_price * (1.0 - settings.TRADING_STOP_LOSS_FRACTION)
 
             self._persist_shadow_probe(
                 candidate=candidate,

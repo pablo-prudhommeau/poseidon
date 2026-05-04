@@ -20,7 +20,6 @@ class ShadowDiagnostics(BaseModel):
     toxic_metric_keys: list[str] = []
     golden_metric_keys: list[str] = []
     notional_boost_factor: float = 1.0
-    take_profit_boost_factor: float = 1.0
     intelligence_snapshot: ShadowIntelligenceSnapshotPayload = Field(default_factory=ShadowIntelligenceSnapshotPayload)
 
 
@@ -31,7 +30,6 @@ class TradingCandidate(BaseModel):
     ai_quality_delta: float
     ai_buy_probability: float
     shadow_notional_multiplier: float = 1.0
-    shadow_tp_multiplier: float = 1.0
     shadow_diagnostics: ShadowDiagnostics = ShadowDiagnostics()
     dexscreener_token_information: DexscreenerTokenInformation
     pair_address: Optional[str] = None

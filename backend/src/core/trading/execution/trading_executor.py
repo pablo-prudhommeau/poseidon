@@ -6,7 +6,6 @@ from typing import Optional
 from src.api.websocket.websocket_hub import notify_trading_state_changed
 from src.configuration.config import settings
 from src.core.structures.structures import Token
-from src.core.trading.execution.trading_risk_manager import TradingRiskManager
 from src.core.trading.trading_structures import TradingOrderPayload, TradingLifiRoute
 from src.integrations.blockchain.blockchain_live_executor import LiveExecutionService
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
@@ -22,7 +21,6 @@ logger = get_application_logger(__name__)
 class TradingExecutor:
     def __init__(self) -> None:
         self.paper_mode_enabled: bool = settings.PAPER_MODE
-        self._risk_manager = TradingRiskManager()
 
     def _fetch_onchain_price_for_token(self, token: Token) -> Optional[float]:
         try:
@@ -216,11 +214,18 @@ class TradingExecutor:
         quantity = payload.order_notional / price_usd
         logger.debug("[TRADING][EXECUTOR][BUY] Sized order — notional=%.4f price=%.12f quantity=%.12f", payload.order_notional, price_usd, quantity)
 
-        risk_manager = self._risk_manager
-        thresholds = risk_manager.compute_thresholds(price_usd, payload.original_candidate, shadow_tp_multiplier=payload.original_candidate.shadow_tp_multiplier)
-        stop_loss = thresholds.stop_loss_price
-        take_profit_tp1 = thresholds.take_profit_tier_1_price
-        take_profit_tp2 = thresholds.take_profit_tier_2_price
+        take_profit_one_fraction = settings.TRADING_TP1_EXIT_FRACTION
+        take_profit_two_fraction = settings.TRADING_TP2_EXIT_FRACTION
+        stop_loss_fraction = settings.TRADING_STOP_LOSS_FRACTION
+
+        take_profit_tp1 = price_usd * (1.0 + take_profit_one_fraction)
+        take_profit_tp2 = price_usd * (1.0 + take_profit_two_fraction)
+        stop_loss = price_usd * (1.0 - stop_loss_fraction)
+
+        logger.info(
+            "[TRADING][EXECUTOR][THRESHOLDS] entry=%.10f tp1=%.6f (%.1f%%) tp2=%.6f (%.1f%%) stop=%.6f (%.1f%%)",
+            price_usd, take_profit_tp1, take_profit_one_fraction * 100, take_profit_tp2, take_profit_two_fraction * 100, stop_loss, stop_loss_fraction * 100,
+        )
 
         if self.paper_mode_enabled:
             logger.info("[TRADING][EXECUTOR][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.target_token, price_usd, quantity)

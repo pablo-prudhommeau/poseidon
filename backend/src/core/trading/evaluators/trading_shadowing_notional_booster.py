@@ -18,28 +18,19 @@ def apply_shadowing_notional_boost(
         return
 
     golden_win_rate_threshold = settings.TRADING_SHADOWING_GOLDEN_WIN_RATE_THRESHOLD
-    minimum_metric_influence = settings.TRADING_SHADOWING_MIN_METRIC_INFLUENCE
     maximum_notional_multiplier = settings.TRADING_SHADOWING_MAX_NOTIONAL_MULTIPLIER
-    tp_multiplier_min = settings.TRADING_SHADOWING_TP_MULTIPLIER_MIN
-    tp_multiplier_max = settings.TRADING_SHADOWING_TP_MULTIPLIER_MAX
 
-    influential_metrics = [
-        metric_snapshot for metric_snapshot in snapshot.metric_snapshots
-        if metric_snapshot.influence_score >= minimum_metric_influence
-    ]
-
-    if not influential_metrics:
-        logger.debug("[TRADING][EVALUATOR][SHADOW_BOOST] No influential metrics for boost calculation")
+    if not snapshot.metric_snapshots:
+        logger.debug("[TRADING][EVALUATOR][SHADOW_BOOST] No metrics available for boost calculation")
         return
 
-    total_influence_weight = sum(metric_snapshot.influence_score for metric_snapshot in influential_metrics)
+    total_influence_weight = sum(metric_snapshot.influence_score for metric_snapshot in snapshot.metric_snapshots)
 
     for candidate in candidates:
         golden_notional_accumulator = 0.0
-        golden_tp_accumulator = 0.0
         evaluated_influence_weight = 0.0
 
-        for metric_snapshot in influential_metrics:
+        for metric_snapshot in snapshot.metric_snapshots:
             try:
                 candidate_value = extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
             except Exception:
@@ -66,7 +57,6 @@ def apply_shadowing_notional_boost(
 
                 if golden_strength > 0:
                     golden_notional_accumulator += normalized_influence * golden_strength
-                    golden_tp_accumulator += normalized_influence * golden_strength
                     candidate.shadow_diagnostics.golden_metric_keys.append(metric_snapshot.metric_key)
 
             for evaluated_metric in candidate.shadow_diagnostics.intelligence_snapshot.evaluated_metrics:
@@ -78,18 +68,13 @@ def apply_shadowing_notional_boost(
         notional_multiplier = 1.0 + golden_notional_accumulator * (maximum_notional_multiplier - 1.0)
         notional_multiplier = max(1.0, min(maximum_notional_multiplier, notional_multiplier))
 
-        tp_multiplier = 1.0 + golden_tp_accumulator * (tp_multiplier_max - 1.0)
-        tp_multiplier = max(tp_multiplier_min, min(tp_multiplier_max, tp_multiplier))
-
         candidate.shadow_notional_multiplier = notional_multiplier
-        candidate.shadow_tp_multiplier = tp_multiplier
         candidate.shadow_diagnostics.notional_boost_factor = notional_multiplier
-        candidate.shadow_diagnostics.take_profit_boost_factor = tp_multiplier
 
-        if notional_multiplier > 1.05 or tp_multiplier > 1.05:
+        if notional_multiplier > 1.05:
             logger.debug(
-                "[TRADING][EVALUATOR][SHADOW_BOOST] %s — notional_mult=%.2fx tp_mult=%.2fx (golden_accum=%.3f)",
-                candidate.token.symbol, notional_multiplier, tp_multiplier, golden_notional_accumulator,
+                "[TRADING][EVALUATOR][SHADOW_BOOST] %s — notional_mult=%.2fx (golden_accum=%.3f)",
+                candidate.token.symbol, notional_multiplier, golden_notional_accumulator,
             )
 
     boosted_count = sum(1 for candidate in candidates if candidate.shadow_notional_multiplier > 1.05)

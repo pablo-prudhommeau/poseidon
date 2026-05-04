@@ -18,7 +18,6 @@ from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import 
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
 from src.core.trading.execution.trading_executor import TradingExecutor
 from src.core.trading.execution.trading_order_builder import build_lifi_route_for_live_execution
-from src.core.trading.execution.trading_risk_manager import TradingRiskManager
 from src.core.trading.shadowing.shadow_analytics_intelligence import compute_shadow_intelligence_snapshot
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload, TradingPipelineContext
 from src.core.trading.utils.trading_candidate_utils import (
@@ -35,7 +34,6 @@ logger = get_application_logger(__name__)
 class TradingPipeline:
     def __init__(self) -> None:
         self._executor = TradingExecutor()
-        self._risk_manager = TradingRiskManager()
 
     def run_once(self) -> None:
         logger.info("[TRADING][PIPELINE] Starting new trading cycle")
@@ -254,12 +252,23 @@ class TradingPipeline:
         from sqlalchemy import select, func
         from src.persistence.db import get_database_session
         from src.persistence.models import TradingPosition, PositionPhase
+        from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 
         with get_database_session() as database_session:
             current_open_count = database_session.execute(
                 select(func.count(TradingPosition.id))
                 .where(TradingPosition.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]))
             ).scalar_one_or_none() or 0
+
+            portfolio_dao = TradingPortfolioSnapshotDao(database_session)
+            latest_snapshot = portfolio_dao.retrieve_latest_snapshot()
+            if not latest_snapshot:
+                logger.info("[TRADING][PIPELINE][EXECUTE] No trading portfolio snapshot found")
+                for rank, candidate in enumerate(candidates, start=1):
+                    TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_PORTFOLIO_SNAPSHOT")
+                return
+            else:
+                total_equity_usd = latest_snapshot.total_equity_value
 
         free_cash_usd = compute_portfolio_free_cash()
         per_buy_fraction = settings.TRADING_PER_BUY_FRACTION
@@ -287,9 +296,19 @@ class TradingPipeline:
                 TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
                 continue
 
-            base_sizing_multiplier = self._risk_manager.size_multiplier(candidate)
-            effective_sizing_multiplier = base_sizing_multiplier * candidate.shadow_notional_multiplier
-            order_notional = free_cash_usd * per_buy_fraction * effective_sizing_multiplier
+            available_to_spend = max(0.0, free_cash_usd - min_free_cash)
+            order_notional = total_equity_usd * per_buy_fraction * candidate.shadow_notional_multiplier
+
+            if order_notional > available_to_spend:
+                logger.warning(
+                    "[TRADING][PIPELINE][EXECUTE] Cap notional to respect min cash buffer: %.2f -> %.2f for %s",
+                    order_notional, available_to_spend, candidate.token.symbol
+                )
+                order_notional = available_to_spend
+
+            if order_notional <= 0:
+                TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
+                continue
             dex_price = candidate.dex_price or candidate.dexscreener_token_information.price_usd or 0.0
 
             lifi_route = build_lifi_route_for_live_execution(candidate, order_notional)
@@ -302,7 +321,7 @@ class TradingPipeline:
                 rank=rank,
                 decision="BUY",
                 reason="EXECUTION",
-                sizing_multiplier=effective_sizing_multiplier,
+                sizing_multiplier=candidate.shadow_notional_multiplier,
                 order_notional_usd=order_notional,
                 free_cash_before_usd=free_cash_before,
                 free_cash_after_usd=free_cash_after,
