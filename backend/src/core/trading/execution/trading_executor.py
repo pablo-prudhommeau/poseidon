@@ -197,13 +197,13 @@ class TradingExecutor:
 
         price_usd = onchain_price_usd
 
-        maximum_price_multiplier = settings.TRADING_MAX_PRICE_DEVIATION_MULTIPLIER
+        maximum_slippage = settings.TRADING_MAX_SLIPPAGE
         if payload.execution_price is not None and payload.execution_price > 0.0:
             low_price, high_price = sorted([onchain_price_usd, payload.execution_price])
-            if (high_price / low_price) > maximum_price_multiplier:
+            if (high_price / low_price - 1.0) > maximum_slippage:
                 logger.warning(
-                    "[TRADING][EXECUTOR][BUY] Skip: price mismatch for %s — onchain=%.12f pipeline=%.12f (>×%.1f)",
-                    payload.target_token.symbol, onchain_price_usd, payload.execution_price, maximum_price_multiplier,
+                    "[TRADING][EXECUTOR][BUY] Skip: slippage too high for %s — onchain=%.12f pipeline=%.12f (>%.1f%%)",
+                    payload.target_token.symbol, onchain_price_usd, payload.execution_price, maximum_slippage * 100.0,
                 )
                 return False
 

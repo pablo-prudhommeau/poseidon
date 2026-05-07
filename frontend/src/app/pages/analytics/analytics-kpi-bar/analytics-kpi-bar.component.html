@@ -49,6 +49,13 @@
 					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Expected Val</span>
 					<span class="text-slate-300 font-bold text-xs">{{ formatUsd(kpis.expected_value_usd) }} / trade</span>
 				</div>
+				<div class="flex flex-col border-l border-white/5 pl-4">
+					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Velocity</span>
+					<span class="font-bold text-xs"
+					      [class.text-emerald-400]="kpis.capital_velocity > 0"
+					      [class.text-red-400]="kpis.capital_velocity < 0"
+					      [class.text-slate-400]="kpis.capital_velocity === 0">{{ kpis.capital_velocity | number:'1.2-2' }}</span>
+				</div>
 			</div>
 		</div>
 

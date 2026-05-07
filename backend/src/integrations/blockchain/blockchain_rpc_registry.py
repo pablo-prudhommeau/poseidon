@@ -13,10 +13,12 @@ FREE_RPC_ENDPOINTS: dict[str, list[str]] = {
     "solana": [
         "https://api.mainnet-beta.solana.com",
         "https://solana-rpc.publicnode.com",
+        "https://rpc.ankr.com/solana",
     ],
     "bsc": [
         "https://bsc-dataseed.binance.org/",
         "https://bsc-dataseed1.defibit.io/",
+        "https://bsc-dataseed2.defibit.io/",
     ],
     "base": [
         "https://base.gateway.tenderly.co",
@@ -44,6 +46,17 @@ PREMIUM_RPC_SETTING_BY_CHAIN: dict[str, str] = {
 _resolved_web3_provider_cache: dict[str, Web3] = {}
 _resolved_async_web3_provider_cache: dict[str, AsyncWeb3] = {}
 _resolved_rpc_url_cache: dict[str, str] = {}
+
+
+def invalidate_rpc_cache_for_chain(chain_identifier: str) -> None:
+    normalized_chain = chain_identifier.lower()
+    if normalized_chain == "sol":
+        normalized_chain = "solana"
+    removed_url = _resolved_rpc_url_cache.pop(normalized_chain, None)
+    removed_provider = _resolved_web3_provider_cache.pop(normalized_chain, None)
+    _resolved_async_web3_provider_cache.pop(normalized_chain, None)
+    if removed_url or removed_provider:
+        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Invalidated cached RPC for %s (was %s)", normalized_chain, removed_url)
 
 
 def _get_premium_rpc_url(chain_identifier: str) -> str:
@@ -83,12 +96,23 @@ def _test_solana_rpc_connectivity(rpc_url: str) -> bool:
         import requests
         response = requests.post(
             rpc_url,
-            json={"jsonrpc": "2.0", "id": 1, "method": "getSlot"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getMultipleAccounts",
+                "params": [
+                    ["11111111111111111111111111111111"],
+                    {"encoding": "base64"}
+                ]
+            },
             timeout=5,
             headers={"Content-Type": "application/json"},
         )
         if response.status_code == 429:
             logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Solana RPC rate-limited (HTTP 429) at %s", rpc_url)
+            return False
+        if response.status_code in (403, 413):
+            logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Solana RPC blocked/limited (HTTP %d) at %s", response.status_code, rpc_url)
             return False
         if response.status_code != 200:
             logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Solana RPC returned HTTP %d at %s", response.status_code, rpc_url)
@@ -99,7 +123,7 @@ def _test_solana_rpc_connectivity(rpc_url: str) -> bool:
             logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Solana RPC returned JSON-RPC error at %s: %s", rpc_url, error_message)
             return False
         result_value = response_json.get("result")
-        return isinstance(result_value, int) and result_value > 0
+        return isinstance(result_value, dict) and "value" in result_value
     except Exception:
         return False
 

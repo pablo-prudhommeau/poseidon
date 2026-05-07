@@ -19,6 +19,8 @@ from src.persistence.models import TradingTrade, TradingPosition
 log = get_application_logger(__name__)
 
 
+
+
 @dataclass
 class InventoryLot:
     quantity: float
@@ -202,8 +204,8 @@ def holdings_and_unrealized_from_positions(
         entry_price = position.entry_price or 0.0
 
         if price_usd is None or price_usd <= 0.0:
-            log.debug("[PNL][UNREAL][NOPRICE] token=%s — falling back to entry_price for valuation", token)
-            price_usd = entry_price
+            log.debug("[PNL][UNREAL][SKIP] token=%s reason=missing_onchain_price", token)
+            continue
 
         quantity = position.current_quantity or 0.0
 

@@ -7,7 +7,7 @@ from typing import Optional
 
 import requests
 
-from src.integrations.blockchain.blockchain_rpc_registry import FREE_RPC_ENDPOINTS, PREMIUM_RPC_SETTING_BY_CHAIN
+from src.integrations.blockchain.blockchain_rpc_registry import FREE_RPC_ENDPOINTS, PREMIUM_RPC_SETTING_BY_CHAIN, invalidate_rpc_cache_for_chain
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_KNOWN_STABLECOIN_MINTS,
     SOLANA_SPL_TOKEN_BALANCE_OFFSET,
@@ -38,14 +38,14 @@ def _build_solana_rpc_endpoint_list() -> list[str]:
 
     endpoints: list[str] = []
 
+    free_endpoints = FREE_RPC_ENDPOINTS.get("solana", [])
+    endpoints.extend(free_endpoints)
+
     premium_setting_name = PREMIUM_RPC_SETTING_BY_CHAIN.get("solana", "")
     if premium_setting_name:
         premium_url = getattr(settings, premium_setting_name, "")
         if premium_url:
             endpoints.append(premium_url)
-
-    free_endpoints = FREE_RPC_ENDPOINTS.get("solana", [])
-    endpoints.extend(free_endpoints)
 
     return endpoints
 
@@ -100,7 +100,8 @@ def rpc_get_account_info(rpc_url: str, account_address: str) -> Optional[dict]:
             if result is not None and result.get("value") is not None:
                 return result["value"]
 
-    logger.debug("[BLOCKCHAIN][PRICE][SOL][RPC] getAccountInfo exhausted all endpoints for %s", account_address[:12])
+    logger.warning("[BLOCKCHAIN][PRICE][SOL][RPC] getAccountInfo exhausted all endpoints for %s", account_address[:12])
+    invalidate_rpc_cache_for_chain("solana")
     return None
 
 
@@ -108,31 +109,46 @@ def rpc_get_multiple_accounts(rpc_url: str, account_addresses: list[str]) -> lis
     if not account_addresses:
         return []
 
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getMultipleAccounts",
-        "params": [account_addresses, {"encoding": "base64"}],
-    }
+    MAX_ACCOUNTS_PER_REQUEST = 10
+    all_results = []
 
-    response_json = _rpc_post(rpc_url, payload)
-    if response_json is not None:
-        result = response_json.get("result")
-        if result is not None and result.get("value") is not None:
-            return result["value"]
+    for i in range(0, len(account_addresses), MAX_ACCOUNTS_PER_REQUEST):
+        chunk = account_addresses[i:i + MAX_ACCOUNTS_PER_REQUEST]
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getMultipleAccounts",
+            "params": [chunk, {"encoding": "base64"}],
+        }
 
-    for fallback_url in _build_solana_rpc_endpoint_list():
-        if fallback_url == rpc_url:
-            continue
-        logger.debug("[BLOCKCHAIN][PRICE][SOL][RPC] Fallback getMultipleAccounts for %d accounts via %s", len(account_addresses), fallback_url)
-        response_json = _rpc_post(fallback_url, payload)
+        response_json = _rpc_post(rpc_url, payload)
+        chunk_result = None
+        
         if response_json is not None:
             result = response_json.get("result")
             if result is not None and result.get("value") is not None:
-                return result["value"]
+                chunk_result = result["value"]
 
-    logger.debug("[BLOCKCHAIN][PRICE][SOL][RPC] getMultipleAccounts exhausted all endpoints for %d accounts", len(account_addresses))
-    return [None] * len(account_addresses)
+        if chunk_result is None:
+            for fallback_url in _build_solana_rpc_endpoint_list():
+                if fallback_url == rpc_url:
+                    continue
+                logger.debug("[BLOCKCHAIN][PRICE][SOL][RPC] Fallback getMultipleAccounts for %d accounts via %s", len(chunk), fallback_url)
+                response_json = _rpc_post(fallback_url, payload)
+                if response_json is not None:
+                    result = response_json.get("result")
+                    if result is not None and result.get("value") is not None:
+                        chunk_result = result["value"]
+                        break
+
+        if chunk_result is None:
+            logger.warning("[BLOCKCHAIN][PRICE][SOL][RPC] getMultipleAccounts exhausted all endpoints for chunk of %d accounts", len(chunk))
+            invalidate_rpc_cache_for_chain("solana")
+            chunk_result = [None] * len(chunk)
+
+        all_results.extend(chunk_result)
+
+    return all_results
 
 
 def decode_account_data(account_info: dict) -> Optional[bytes]:

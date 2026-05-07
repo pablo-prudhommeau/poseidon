@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List
+from typing import List, Optional
 
 from fastapi.encoders import jsonable_encoder
 
+from src.api.cache.trading_display_state_cache import trading_display_state_cache
 from src.api.http.api_schemas import (
     TradingTradePayload,
     TradingPositionPayload,
+    TradingPortfolioPayload,
     DcaStrategyPayload,
     ShadowIntelligenceStatusPayload,
 )
@@ -109,46 +111,84 @@ def _fetch_display_payloads() -> dict:
             logger.exception("[TRADING][DISPLAY_BROADCAST][FETCH] On-chain price fetch failed: %s", exception)
             prices_by_pair_address = {}
 
+        cached_state = trading_display_state_cache.get_trading_state()
+        cached_positions = cached_state.positions or []
+        cached_prices_by_pair: dict[str, float] = {}
+        for cached_position in cached_positions:
+            if cached_position.pair_address and cached_position.last_price is not None and cached_position.last_price > 0.0:
+                cached_prices_by_pair[cached_position.pair_address] = cached_position.last_price
+
+        for position_record in open_position_records:
+            if not position_record.pair_address:
+                continue
+            current_price = prices_by_pair_address.get(position_record.pair_address)
+            if current_price is None or current_price <= 0.0:
+                cached_price = cached_prices_by_pair.get(position_record.pair_address)
+                if cached_price is not None and cached_price > 0.0:
+                    prices_by_pair_address[position_record.pair_address] = cached_price
+                    logger.debug("[TRADING][DISPLAY_BROADCAST][FETCH] Recovered missing price from cache for %s", position_record.pair_address)
+
         shadow_status = _build_shadow_intelligence_status()
 
         realized_profit_and_loss_data: RealizedProfitAndLoss = fifo_realized_pnl(recent_trade_records, cutoff_hours=24)
-        holdings_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(
-            open_position_records, prices_by_pair_address
-        )
 
-        starting_cash_balance_usd: float = settings.PAPER_STARTING_CASH
-        realized_cash_flow = cash_from_trades(starting_cash_balance_usd, recent_trade_records)
-        total_equity_usd: float = round(realized_cash_flow.available_cash + holdings_data.total_holdings_value, 2)
-
-        current_portfolio_snapshot = portfolio_dao.create_snapshot(
-            equity=total_equity_usd,
-            cash=realized_cash_flow.available_cash,
-            holdings=holdings_data.total_holdings_value,
-        )
-        database_session.commit()
-
-        portfolio_payload = serialize_trading_portfolio_snapshot(
-            current_portfolio_snapshot,
-            equity_curve=portfolio_dao.retrieve_equity_curve(),
-            realized_total=realized_profit_and_loss_data.total_realized_profit_and_loss,
-            realized_24h=realized_profit_and_loss_data.recent_realized_profit_and_loss,
-            unrealized=holdings_data.total_unrealized_profit_and_loss,
-            shadow_status=shadow_status,
-        )
-
-        positions_payload: List[TradingPositionPayload] = []
-        for position_record in open_position_records:
-            last_known_price = prices_by_pair_address.get(position_record.pair_address) if position_record.pair_address else None
-            if last_known_price is None or last_known_price <= 0.0:
-                last_known_price = position_record.entry_price
-            positions_payload.append(serialize_trading_position(position_record, last_price=last_known_price))
-
+        positions_payload: List[TradingPositionPayload] = [
+            serialize_trading_position(
+                position_record,
+                last_price=prices_by_pair_address.get(position_record.pair_address) if position_record.pair_address else None,
+            )
+            for position_record in open_position_records
+        ]
         trades_payload: List[TradingTradePayload] = [serialize_trading_trade(trade_record) for trade_record in recent_trade_records]
+
+        missing_price_pair_addresses = [
+            position_record.pair_address
+            for position_record in open_position_records
+            if position_record.pair_address and prices_by_pair_address.get(position_record.pair_address) is None
+        ]
+
+        portfolio_payload: Optional[TradingPortfolioPayload] = None
+
+        if missing_price_pair_addresses:
+            logger.warning(
+                "[TRADING][DISPLAY_BROADCAST][FETCH] Skipping portfolio snapshot — %d position(s) missing on-chain price",
+                len(missing_price_pair_addresses),
+            )
+        else:
+            holdings_data: HoldingsAndUnrealizedProfitAndLoss = holdings_and_unrealized_from_positions(
+                open_position_records, prices_by_pair_address
+            )
+
+            starting_cash_balance_usd: float = settings.PAPER_STARTING_CASH
+            realized_cash_flow = cash_from_trades(starting_cash_balance_usd, recent_trade_records)
+            total_equity_usd: float = round(realized_cash_flow.available_cash + holdings_data.total_holdings_value, 2)
+
+            current_portfolio_snapshot = portfolio_dao.create_snapshot(
+                equity=total_equity_usd,
+                cash=realized_cash_flow.available_cash,
+                holdings=holdings_data.total_holdings_value,
+            )
+            database_session.commit()
+
+            portfolio_payload = serialize_trading_portfolio_snapshot(
+                current_portfolio_snapshot,
+                equity_curve=portfolio_dao.retrieve_equity_curve(),
+                realized_total=realized_profit_and_loss_data.total_realized_profit_and_loss,
+                realized_24h=realized_profit_and_loss_data.recent_realized_profit_and_loss,
+                unrealized=holdings_data.total_unrealized_profit_and_loss,
+                shadow_status=shadow_status,
+            )
+
+    trading_display_state_cache.update_trading_state(
+        positions_payload=positions_payload,
+        trades_payload=trades_payload,
+        portfolio_payload=portfolio_payload,
+    )
 
     return {
         "positions": jsonable_encoder(positions_payload),
         "trades": jsonable_encoder(trades_payload),
-        "portfolio": jsonable_encoder(portfolio_payload),
+        "portfolio": jsonable_encoder(portfolio_payload) if portfolio_payload is not None else None,
     }
 
 
@@ -172,7 +212,9 @@ async def _compute_dca_strategies_payload() -> List[DcaStrategyPayload]:
 async def broadcast_dca_strategies_state() -> None:
     try:
         dca_strategies_payload = await _compute_dca_strategies_payload()
-        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.DCA_STRATEGIES.value, "payload": jsonable_encoder(dca_strategies_payload)})
+        encoded_payload = jsonable_encoder(dca_strategies_payload)
+        trading_display_state_cache.update_dca_strategies_state(dca_strategies_payload)
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.DCA_STRATEGIES.value, "payload": encoded_payload})
         logger.info("[TRADING][DISPLAY_BROADCAST][DCA] DCA strategies state successfully broadcasted")
     except Exception as exception:
         logger.exception("[TRADING][DISPLAY_BROADCAST][DCA] DCA strategies payload computation/broadcast failed: %s", exception)
@@ -184,5 +226,9 @@ async def broadcast_trading_display_state() -> None:
         return
 
     websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.POSITIONS.value, "payload": display_payloads["positions"]})
-    websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.PORTFOLIO.value, "payload": display_payloads["portfolio"]})
     websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.TRADES.value, "payload": display_payloads["trades"]})
+
+    if display_payloads["portfolio"] is not None:
+        websocket_manager.broadcast_json_payload_threadsafe({"type": WebsocketMessageType.PORTFOLIO.value, "payload": display_payloads["portfolio"]})
+    else:
+        logger.warning("[TRADING][DISPLAY_BROADCAST] Skipping portfolio broadcast — snapshot unavailable due to missing onchain prices")

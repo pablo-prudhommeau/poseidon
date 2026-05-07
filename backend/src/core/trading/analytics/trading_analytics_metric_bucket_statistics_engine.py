@@ -4,7 +4,7 @@ import statistics
 
 from src.configuration.config import settings
 from src.core.trading.analytics.trading_analytics_helpers import compute_bucket_edges, assign_bucket_index, quantile, MINIMUM_POINTS_PER_BUCKET
-from src.core.trading.analytics.trading_analytics_structures import AnalyticsOutcomeRecord, MetricBucketStatistics, MetricBucketProfile, MetricDefinition
+from src.core.trading.analytics.trading_analytics_structures import AnalyticsOutcomeRecord, MetricBucketStatistics, MetricBucketProfile, MetricDefinition, MetaStatistics
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -45,14 +45,19 @@ def evaluate_golden_condition(bucket_statistics: MetricBucketStatistics) -> bool
     )
 
 
-def evaluate_toxic_condition(bucket_statistics: MetricBucketStatistics) -> bool:
+def evaluate_toxic_condition(bucket_statistics: MetricBucketStatistics, meta_statistics: MetaStatistics) -> bool:
+    toxic_win_rate = (meta_statistics.win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET) * 100.0
+    toxic_average_pnl = meta_statistics.average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0
+    toxic_max_holding_time_hours = meta_statistics.average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET
+    toxic_min_capital_velocity = meta_statistics.capital_velocity + settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET
+
     return (
             bucket_statistics.sample_count >= MINIMUM_POINTS_PER_BUCKET
             and (
-                    bucket_statistics.win_rate < settings.TRADING_SHADOWING_TOXIC_WIN_RATE_THRESHOLD * 100.0
-                    or bucket_statistics.average_pnl < settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_THRESHOLD * 100.0
-                    or bucket_statistics.capital_velocity < settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_THRESHOLD
-                    or (bucket_statistics.average_holding_time_minutes / 60.0) > settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_THRESHOLD
+                    bucket_statistics.win_rate < toxic_win_rate
+                    or bucket_statistics.average_pnl < toxic_average_pnl
+                    or bucket_statistics.capital_velocity < toxic_min_capital_velocity
+                    or (bucket_statistics.average_holding_time_minutes / 60.0) > toxic_max_holding_time_hours
             )
     )
 
@@ -60,6 +65,7 @@ def evaluate_toxic_condition(bucket_statistics: MetricBucketStatistics) -> bool:
 def compute_metric_bucket_profile(
         metric_definition: MetricDefinition,
         closed_records: list[AnalyticsOutcomeRecord],
+        meta_statistics: MetaStatistics,
 ) -> MetricBucketProfile:
     metric_values: list[float] = []
     pnl_values: list[float] = []
@@ -150,7 +156,7 @@ def compute_metric_bucket_profile(
         )
 
         bucket_stats.is_golden = evaluate_golden_condition(bucket_stats)
-        bucket_stats.is_toxic = evaluate_toxic_condition(bucket_stats)
+        bucket_stats.is_toxic = evaluate_toxic_condition(bucket_stats, meta_statistics)
 
         all_bucket_statistics.append(bucket_stats)
 
@@ -176,10 +182,11 @@ def compute_metric_bucket_profile(
 
 def compute_all_metric_bucket_profiles(
         closed_records: list[AnalyticsOutcomeRecord],
+        meta_statistics: MetaStatistics = MetaStatistics(),
 ) -> list[MetricBucketProfile]:
     profiles: list[MetricBucketProfile] = []
     for metric_definition in METRIC_DEFINITIONS:
-        profile = compute_metric_bucket_profile(metric_definition, closed_records)
+        profile = compute_metric_bucket_profile(metric_definition, closed_records, meta_statistics)
         profiles.append(profile)
     logger.info(
         "[ANALYTICS][ENGINE] Computed bucket profiles for %d metrics from %d records",

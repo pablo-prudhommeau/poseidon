@@ -26,6 +26,10 @@ class ShadowIntelligenceSnapshot(BaseModel):
     is_activated: bool
     resolved_outcome_count: int = 0
     elapsed_hours: float = 0.0
+    meta_win_rate: float = 0.0
+    meta_average_pnl: float = 0.0
+    meta_average_holding_time_hours: float = 0.0
+    meta_capital_velocity: float = 0.0
 
 
 class ShadowIntelligenceSnapshotMetricPayload(BaseModel):

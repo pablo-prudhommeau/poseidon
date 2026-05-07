@@ -117,33 +117,30 @@ def read_solana_pool_prices_usd_batch(
     rpc_url = get_solana_rpc_url()
     results: dict[str, float] = {}
 
-    max_batch_size = 100
-    for batch_start in range(0, len(eligible_descriptors), max_batch_size):
-        batch = eligible_descriptors[batch_start:batch_start + max_batch_size]
-        pool_addresses = [pair_address for _, pair_address, _ in batch]
+    pool_addresses = [pair_address for _, pair_address, _ in eligible_descriptors]
 
-        try:
-            account_infos = rpc_get_multiple_accounts(rpc_url, pool_addresses)
+    try:
+        account_infos = rpc_get_multiple_accounts(rpc_url, pool_addresses)
 
-            for descriptor_index, (token_address, pair_address, dex_id) in enumerate(batch):
-                account_info = account_infos[descriptor_index] if descriptor_index < len(account_infos) else None
-                if account_info is None:
+        for descriptor_index, (token_address, pair_address, dex_id) in enumerate(eligible_descriptors):
+            account_info = account_infos[descriptor_index] if descriptor_index < len(account_infos) else None
+            if account_info is None:
+                continue
+
+            try:
+                price_result = _parse_pool_price_by_dex(rpc_url, dex_id, account_info, token_address)
+                if price_result is None:
                     continue
 
-                try:
-                    price_result = _parse_pool_price_by_dex(rpc_url, dex_id, account_info, token_address)
-                    if price_result is None:
-                        continue
+                price_in_quote, quote_mint = price_result
+                price_usd = convert_price_to_usd(rpc_url, price_in_quote, quote_mint)
+                if price_usd is not None and price_usd > 0:
+                    results[token_address] = price_usd
+            except Exception:
+                logger.exception("[BLOCKCHAIN][PRICE][SOL] Batch parse error for %s (%s)", token_address[:8], dex_id)
 
-                    price_in_quote, quote_mint = price_result
-                    price_usd = convert_price_to_usd(rpc_url, price_in_quote, quote_mint)
-                    if price_usd is not None and price_usd > 0:
-                        results[token_address] = price_usd
-                except Exception:
-                    logger.exception("[BLOCKCHAIN][PRICE][SOL] Batch parse error for %s (%s)", token_address[:8], dex_id)
-
-        except Exception:
-            logger.exception("[BLOCKCHAIN][PRICE][SOL] RPC batch fetch failed for %d pools", len(batch))
+    except Exception:
+        logger.exception("[BLOCKCHAIN][PRICE][SOL] RPC batch fetch failed for %d pools", len(eligible_descriptors))
 
     logger.info("[BLOCKCHAIN][PRICE][SOL] Batch resolved %d / %d pool prices via RPC", len(results), len(eligible_descriptors))
     return results

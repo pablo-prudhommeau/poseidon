@@ -471,6 +471,7 @@ export interface AnalyticsKpiPayload {
     worst_trade_pnl_percentage: number;
     profit_factor: number;
     expected_value_usd: number;
+    capital_velocity: number;
 }
 
 export interface AnalyticsResponse {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from src.configuration.config import settings
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
@@ -27,9 +28,13 @@ class ShadowVerdictTracker:
             logger.info("[TRADING][SHADOW][VERDICT] Checking %d pending shadow verdicts", len(pending_verdicts))
 
             probes = [verdict.probe for verdict in pending_verdicts]
-            current_prices = self._fetch_current_prices(probes)
+            dexscreener_prices = self._fetch_dexscreener_prices(probes)
+
+            if dexscreener_prices is None:
+                logger.warning("[TRADING][SHADOW][VERDICT] Skipping verdict cycle — DexScreener price fetch failed entirely")
+                return
+
             current_time = get_current_local_datetime()
-            stale_cutoff_hours = settings.TRADING_SHADOWING_STALE_HOURS
             lethargic_cutoff_hours = settings.TRADING_SHADOWING_LETHARGIC_HOURS
             resolved_count = 0
 
@@ -38,15 +43,12 @@ class ShadowVerdictTracker:
 
             for verdict in pending_verdicts:
                 probe = verdict.probe
-                current_price = current_prices.get(self._build_price_key(probe))
+                current_price = dexscreener_prices.get(self._build_price_key(probe))
 
                 if current_price is None:
-                    aware_probed_at = ensure_timezone_aware(probe.probed_at) or current_time
-                    age_hours = (current_time - aware_probed_at).total_seconds() / 3600.0
-                    if age_hours >= stale_cutoff_hours:
-                        self._attach_stale_verdict(verdict, probe, current_time)
-                        resolved_count += 1
-                        logger.info("[TRADING][SHADOW][VERDICT] %s marked as STALED after %d hours", probe.token_symbol, stale_cutoff_hours)
+                    self._attach_stale_verdict(verdict, probe, current_time)
+                    resolved_count += 1
+                    logger.info("[TRADING][SHADOW][VERDICT] %s marked as STALED — no DexScreener price (token delisted or dead)", probe.token_symbol)
                     continue
 
                 if current_price >= verdict.take_profit_tier_1_price and verdict.take_profit_tier_1_hit_at is None:
@@ -77,26 +79,45 @@ class ShadowVerdictTracker:
                 ]
 
                 onchain_prices = fetch_onchain_prices_for_tokens(resolution_tokens)
-                maximum_price_multiplier = settings.TRADING_MAX_PRICE_DEVIATION_MULTIPLIER
+                all_onchain_failed = len(resolving_candidates) > 0 and not onchain_prices
+
+                maximum_slippage = settings.TRADING_MAX_SLIPPAGE
+                aberrant_price_tolerance = settings.TRADING_SHADOWING_DEXSCREENER_ABERRANT_PRICE_TOLERANCE
 
                 for verdict, dex_price in resolving_candidates:
                     probe = verdict.probe
                     onchain_price = onchain_prices.get(probe.pair_address)
 
                     if onchain_price is None or onchain_price <= 0.0:
-                        logger.warning("[TRADING][SHADOW][VERDICT] Skip: unable to verify onchain price for %s to confirm resolution. Marking as STALED.", probe.token_symbol)
+                        if all_onchain_failed:
+                            logger.debug(
+                                "[TRADING][SHADOW][VERDICT] Skipping %s — all onchain prices unavailable (RPC failure), will retry next cycle",
+                                probe.token_symbol,
+                            )
+                            continue
+
+                        logger.info("[TRADING][SHADOW][VERDICT] %s marked as STALED — onchain price unrecoverable", probe.token_symbol)
                         self._attach_stale_verdict(verdict, probe, current_time)
                         resolved_count += 1
                         continue
 
                     low_price, high_price = sorted([onchain_price, dex_price])
-                    if (high_price / low_price) > maximum_price_multiplier:
-                        logger.warning(
-                            "[TRADING][SHADOW][VERDICT] Skip: price mismatch glitch for %s — onchain=%.12f dexscreener=%.12f (>×%.1f). Marking as STALED.",
-                            probe.token_symbol, onchain_price, dex_price, maximum_price_multiplier,
+                    relative_deviation = (high_price / low_price) - 1.0
+
+                    if relative_deviation > aberrant_price_tolerance:
+                        logger.info(
+                            "[TRADING][SHADOW][VERDICT] %s marked as STALED — aberrant DexScreener price deviation %.1f%% (onchain=%.12f dex=%.12f, tolerance=%.0f%%)",
+                            probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price, aberrant_price_tolerance * 100.0,
                         )
                         self._attach_stale_verdict(verdict, probe, current_time)
                         resolved_count += 1
+                        continue
+
+                    if relative_deviation > maximum_slippage:
+                        logger.debug(
+                            "[TRADING][SHADOW][VERDICT] Skipping %s — transient slippage %.1f%% (onchain=%.12f dex=%.12f), will retry next cycle",
+                            probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price,
+                        )
                         continue
 
                     if self._evaluate_price_against_thresholds(verdict, probe, onchain_price, current_time):
@@ -191,7 +212,7 @@ class ShadowVerdictTracker:
         verdict.is_profitable = pnl_percentage > 0.0
         verdict.resolved_at = current_time
 
-    def _fetch_current_prices(self, probes: list[TradingShadowingProbe]) -> dict[str, float]:
+    def _fetch_dexscreener_prices(self, probes: list[TradingShadowingProbe]) -> Optional[dict[str, float]]:
         from src.core.structures.structures import Token
         from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
 
@@ -217,8 +238,8 @@ class ShadowVerdictTracker:
         try:
             token_information_list = fetch_dexscreener_token_information_list_sync(unique_tokens)
         except Exception:
-            logger.exception("[TRADING][SHADOW][VERDICT] Failed to fetch current prices for shadow probes")
-            return {}
+            logger.exception("[TRADING][SHADOW][VERDICT] Failed to fetch DexScreener prices for shadow probes")
+            return None
 
         price_map: dict[str, float] = {}
         for token_information in token_information_list:

@@ -68,7 +68,12 @@ def compute_kpis(
     profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
     expected_value_usd = (total_pnl_usd / total_outcomes) if total_outcomes > 0 else 0.0
 
-    logger.info("[ANALYTICS][AGGREGATION][KPIS] Computed KPIs — %d outcomes from %d evaluations, win_rate=%.1f%%, PF=%.2f", total_outcomes, total_evaluations, win_rate, profit_factor)
+    average_holding_duration_hours = average_holding_duration / 60.0
+    capital_velocity = 0.0
+    if average_holding_duration_hours > 0:
+        capital_velocity = (average_pnl_percentage * (win_rate / 100.0)) / average_holding_duration_hours
+
+    logger.info("[ANALYTICS][AGGREGATION][KPIS] Computed KPIs — %d outcomes from %d evaluations, win_rate=%.1f%%, PF=%.2f, Vel=%.2f", total_outcomes, total_evaluations, win_rate, profit_factor, capital_velocity)
 
     return AnalyticsKpiPayload(
         total_evaluations=total_evaluations,
@@ -83,6 +88,7 @@ def compute_kpis(
         worst_trade_pnl_percentage=worst_trade_pnl,
         profit_factor=profit_factor,
         expected_value_usd=expected_value_usd,
+        capital_velocity=capital_velocity,
     )
 
 

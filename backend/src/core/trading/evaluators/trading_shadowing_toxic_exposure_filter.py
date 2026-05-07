@@ -19,10 +19,10 @@ def apply_shadowing_toxic_exposure_filter(
         logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shadow intelligence not activated, bypassing filter")
         return candidates
 
-    toxic_win_rate_threshold = settings.TRADING_SHADOWING_TOXIC_WIN_RATE_THRESHOLD
-    toxic_max_average_pnl = settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_THRESHOLD * 100.0
-    toxic_min_capital_velocity = settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_THRESHOLD
-    toxic_max_holding_time_minutes = settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_THRESHOLD * 60.0
+    toxic_win_rate_threshold = snapshot.meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
+    toxic_max_average_pnl = (snapshot.meta_average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0)
+    toxic_min_capital_velocity = snapshot.meta_capital_velocity + settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET
+    toxic_max_holding_time_minutes = (snapshot.meta_average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET) * 60.0
     maximum_toxic_exposure = settings.TRADING_SHADOWING_TOXIC_MAX_EXPOSURE
 
     retained: list[TradingCandidate] = []
@@ -148,9 +148,17 @@ def apply_shadowing_toxic_exposure_filter(
         else:
             retained.append(candidate)
 
+    meta_summary = (
+        "meta(WR=%.1f%%, PnL=%.2f%%, Hold=%.1fh, Vel=%.2f) → toxic(WR<%.1f%%, PnL<%.2f%%, Hold>%.1fh, Vel<%.2f)"
+        % (
+            snapshot.meta_win_rate * 100, snapshot.meta_average_pnl, snapshot.meta_average_holding_time_hours, snapshot.meta_capital_velocity,
+            toxic_win_rate_threshold * 100, toxic_max_average_pnl, toxic_max_holding_time_minutes / 60.0, toxic_min_capital_velocity,
+        )
+    )
+
     if len(retained) < len(candidates):
-        logger.info("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Retained %d / %d candidates", len(retained), len(candidates))
+        logger.info("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Retained %d / %d candidates — %s", len(retained), len(candidates), meta_summary)
     else:
-        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] All %d candidates passed", len(candidates))
+        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] All %d candidates passed — %s", len(candidates), meta_summary)
 
     return retained

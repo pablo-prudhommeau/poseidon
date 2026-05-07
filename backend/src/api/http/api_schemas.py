@@ -368,6 +368,7 @@ class AnalyticsKpiPayload(BaseModel):
     worst_trade_pnl_percentage: float
     profit_factor: float
     expected_value_usd: float
+    capital_velocity: float
 
 
 class AnalyticsResponse(BaseModel):

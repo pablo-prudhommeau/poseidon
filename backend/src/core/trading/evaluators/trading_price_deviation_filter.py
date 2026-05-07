@@ -15,7 +15,7 @@ def apply_price_deviation_filter(
 ) -> list[TradingCandidate]:
     from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
 
-    max_deviation = settings.TRADING_MAX_PRICE_DEVIATION_MULTIPLIER
+    maximum_slippage = settings.TRADING_MAX_SLIPPAGE
     retained: list[TradingCandidate] = []
 
     for candidate in candidates:
@@ -30,8 +30,8 @@ def apply_price_deviation_filter(
         quoted_price = candidate.dexscreener_token_information.price_usd
         if dex_price and quoted_price:
             low, high = sorted([dex_price, quoted_price])
-            if low > 0.0 and (high / low) > max_deviation:
-                logger.debug("[TRADING][FILTER][PRICE] %s — deviation too high dex=%.10f quoted=%.10f", symbol, dex_price, quoted_price)
+            if low > 0.0 and (high / low - 1.0) > maximum_slippage:
+                logger.debug("[TRADING][FILTER][PRICE] %s — slippage too high dex=%.10f quoted=%.10f (>%.1f%%)", symbol, dex_price, quoted_price, maximum_slippage * 100.0)
                 TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, len(retained) + 1, "PRICE_DEVIATION")
                 continue
 

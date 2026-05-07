@@ -81,3 +81,10 @@ class AnalyticsDailyAggregation(BaseModel):
     pnl_percentage: float = 0.0
     trade_count: int = 0
     win_count: int = 0
+
+
+class MetaStatistics(BaseModel):
+    win_rate: float = 0.0
+    average_pnl: float = 0.0
+    average_holding_time_hours: float = 0.0
+    capital_velocity: float = 0.0

@@ -102,7 +102,20 @@ class TradingPositionGuardJob:
 
             starting_cash_balance_usd: float = settings.PAPER_STARTING_CASH
             realized_cash_flow = cash_from_trades(starting_cash_balance_usd, recent_trade_records)
+
+            missing_prices = any(
+                prices_by_pair_address.get(position.pair_address) is None
+                for position in open_position_records
+                if position.pair_address
+            )
+
+            if missing_prices:
+                logger.warning("[TRADING][POSITION_GUARD][CYCLE] Skipping equity snapshot — some positions missing on-chain price")
+                database_session.commit()
+                return
+
             holdings_data = holdings_and_unrealized_from_positions(open_position_records, prices_by_pair_address)
+
             total_equity_usd: float = round(realized_cash_flow.available_cash + holdings_data.total_holdings_value, 2)
 
             portfolio_dao.create_snapshot(

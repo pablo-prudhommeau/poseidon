@@ -212,36 +212,25 @@ def get_shadow_trades_for_pair(
 
 @router.get("/api/positions", tags=["positions"])
 async def get_open_positions_list(database_session: Session = Depends(get_fastapi_database_session)) -> TradingPositionsResponse:
-    logger.debug("[HTTP][POSITIONS][FETCH] Retrieving currently open positions")
+    from src.api.cache.trading_display_state_cache import trading_display_state_cache
+
+    logger.debug("[HTTP][POSITIONS][FETCH] Retrieving currently open positions from cache")
+    trading_state = trading_display_state_cache.get_trading_state()
+    cached_positions = trading_state.get("positions")
+
+    if cached_positions is not None:
+        logger.info("[HTTP][POSITIONS][FETCH] Successfully retrieved %s open positions from cache", len(cached_positions))
+        return TradingPositionsResponse(positions=cached_positions)
+
+    logger.warning("[HTTP][POSITIONS][FETCH] Cache is empty, falling back to database fetch without current prices")
     position_dao = TradingPositionDao(database_session)
     open_positions = position_dao.retrieve_open_positions()
 
-    tokens_list: List[Token] = [
-        Token(
-            chain=position.blockchain_network,
-            symbol=position.token_symbol,
-            token_address=position.token_address,
-            pair_address=position.pair_address,
-            dex_id=position.dex_id,
-        )
-        for position in open_positions
-    ]
-    token_information_list = await fetch_dexscreener_token_information_list(tokens_list)
-
     serialized_positions = []
     for position in open_positions:
-        last_known_price = next(
-            (
-                token_information.price_usd for token_information in token_information_list
-                if token_information.chain_id == position.blockchain_network
-                   and token_information.base_token.address == position.token_address
-                   and token_information.pair_address == position.pair_address
-            ),
-            None,
-        )
-        serialized_positions.append(serialize_trading_position(position, last_price=last_known_price))
+        serialized_positions.append(serialize_trading_position(position, last_price=position.entry_price))
 
-    logger.info("[HTTP][POSITIONS][FETCH] Successfully retrieved %s open positions", len(serialized_positions))
+    logger.info("[HTTP][POSITIONS][FETCH] Successfully retrieved %s open positions from database fallback", len(serialized_positions))
     return TradingPositionsResponse(positions=serialized_positions)
 
 
