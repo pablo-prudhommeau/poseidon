@@ -1,5 +1,15 @@
 import {Injectable, signal} from '@angular/core';
-import {DcaStrategyPayload, TradingEvaluationPayload, TradingPortfolioPayload, TradingPositionPayload, TradingTradePayload, WebsocketMessageType, WebsocketMessageUnion} from './models';
+import {
+    DcaStrategyPayload,
+    TradingEvaluationPayload,
+    TradingLiquidityPayload,
+    TradingPortfolioPayload,
+    TradingPositionPayload,
+    TradingShadowMetaPayload,
+    TradingTradePayload,
+    WebsocketMessageType,
+    WebsocketMessageUnion
+} from './models';
 
 export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 
@@ -9,6 +19,8 @@ export class WebSocketService {
 
     public readonly status = signal<WebsocketConnectionStatus>('closed');
     public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
+    public readonly liquidity = signal<TradingLiquidityPayload | null>(null);
+    public readonly shadowMeta = signal<TradingShadowMetaPayload | null>(null);
     public readonly positions = signal<TradingPositionPayload[]>([]);
     public readonly trades = signal<TradingTradePayload[]>([]);
     public readonly analytics = signal<TradingEvaluationPayload[]>([]);
@@ -63,6 +75,14 @@ export class WebSocketService {
             }
             case WebsocketMessageType.PORTFOLIO: {
                 this.portfolio.set(message.payload);
+                break;
+            }
+            case WebsocketMessageType.LIQUIDITY: {
+                this.liquidity.set(message.payload);
+                break;
+            }
+            case WebsocketMessageType.SHADOW_META: {
+                this.shadowMeta.set(message.payload);
                 break;
             }
             case WebsocketMessageType.POSITIONS: {

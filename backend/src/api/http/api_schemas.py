@@ -4,6 +4,9 @@ from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel
+from pydantic import Field
+
+from src.core.structures.structures import BlockchainNetwork
 
 
 class SystemHealthComponentPayload(BaseModel):
@@ -25,7 +28,7 @@ class TradingPaperResetPayload(BaseModel):
 
 
 class DcaStrategyCreatePayload(BaseModel):
-    blockchain_network: str
+    blockchain_network: BlockchainNetwork
     source_asset_symbol: str
     source_asset_address: str
     source_asset_decimals: int
@@ -95,7 +98,7 @@ class DcaBacktestPayload(BaseModel):
 
 class DcaStrategyPayload(BaseModel):
     id: int
-    blockchain_network: str
+    blockchain_network: BlockchainNetwork
     source_asset_symbol: str
     source_asset_address: str
     source_asset_decimals: int
@@ -146,7 +149,7 @@ class TradingTradePayload(BaseModel):
     evaluation_id: int
     trade_side: str
     token_symbol: str
-    blockchain_network: str
+    blockchain_network: BlockchainNetwork
     execution_price: float
     execution_quantity: float
     transaction_fee: float
@@ -171,7 +174,7 @@ class TradingPositionPayload(BaseModel):
     take_profit_tier_2_price: float
     stop_loss_price: float
     position_phase: str
-    blockchain_network: str
+    blockchain_network: BlockchainNetwork
     dex_id: str
     opened_at: str
     updated_at: str
@@ -184,6 +187,40 @@ class TradingEquityCurvePointPayload(BaseModel):
     total_equity_value: float
 
 
+class BlockchainCashBalancePayload(BaseModel):
+    blockchain_network: BlockchainNetwork
+    stablecoin_symbol: str
+    stablecoin_address: str
+    stablecoin_currency_symbol: str
+    balance_raw: float
+    native_token_symbol: str
+    native_token_balance_raw: float
+    native_token_balance_usd: float = 0.0
+
+
+class TradingLiquidityPayload(BaseModel):
+    mode: str
+    available_cash_balance: float
+    stablecoin_currency_symbol: str
+    maximum_chain_count: int
+    blockchain_balances: List[BlockchainCashBalancePayload] = Field(default_factory=list)
+    updated_at: str
+
+
+class TradingShadowMetaPayload(BaseModel):
+    is_enabled: bool
+    is_activated: bool
+    phase: str
+    total_outcomes_analyzed: int
+    resolved_outcome_count: int
+    elapsed_hours: float
+    win_rate_percentage: float
+    profit_factor: float
+    expected_value_usd: float
+    capital_velocity: float
+    minimum_profit_factor: float
+
+
 class TradingPortfolioPayload(BaseModel):
     total_equity_value: float
     available_cash_balance: float
@@ -194,6 +231,7 @@ class TradingPortfolioPayload(BaseModel):
     realized_profit_and_loss_24h: float
     realized_profit_and_loss_total: float
     shadow_intelligence_status: ShadowIntelligenceStatusPayload
+    blockchain_balances: List[BlockchainCashBalancePayload] = Field(default_factory=list)
 
 
 class TradingEvaluationScoresPayload(BaseModel):
@@ -227,9 +265,6 @@ class TradingEvaluationShadowIntelligenceSnapshotMetricPayload(BaseModel):
     is_toxic: bool
     is_golden: bool
     normalized_influence: float
-
-
-from pydantic import BaseModel, Field
 
 
 class TradingEvaluationShadowIntelligenceSnapshotPayload(BaseModel):
@@ -291,7 +326,7 @@ class TradingEvaluationFundamentalsPayload(BaseModel):
 class TradingEvaluationPayload(BaseModel):
     id: int
     token_symbol: str
-    blockchain_network: str
+    blockchain_network: BlockchainNetwork
     token_address: str
     pair_address: str
     evaluated_at: str

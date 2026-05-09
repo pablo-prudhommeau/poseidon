@@ -1,0 +1,69 @@
+@keyframes matrixFlow {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(-50%);
+    }
+}
+
+@keyframes reserveRadarSpin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.matrix-column {
+    animation-name: matrixFlow;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: transform;
+}
+
+.matrix-col-1 {
+    animation-duration: 9s;
+}
+
+.matrix-col-2 {
+    animation-duration: 13s;
+    animation-delay: -2s;
+}
+
+.matrix-col-3 {
+    animation-duration: 11s;
+    animation-delay: -5s;
+}
+
+.matrix-col-4 {
+    animation-duration: 15s;
+    animation-delay: -8s;
+}
+
+.matrix-col-5 {
+    animation-duration: 10s;
+    animation-delay: -3s;
+}
+
+.matrix-col-6 {
+    animation-duration: 12s;
+    animation-delay: -6s;
+}
+
+.reserve-matrix-mask {
+    -webkit-mask-image: radial-gradient(ellipse at center, transparent 0%, transparent 30%, black 80%);
+    mask-image: radial-gradient(ellipse at center, transparent 0%, transparent 30%, black 80%);
+}
+
+.reserve-radar-sweep {
+    background: conic-gradient(
+            from 0deg,
+            transparent 0deg,
+            rgba(252, 211, 77, 0.35) 60deg,
+            transparent 120deg,
+            transparent 360deg
+    );
+    animation: reserveRadarSpin 4s linear infinite;
+}

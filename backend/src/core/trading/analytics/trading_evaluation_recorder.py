@@ -41,7 +41,7 @@ class TradingEvaluationRecorder:
 
         payload = TradingEvaluation(
             token_symbol=base_token.symbol.upper(),
-            blockchain_network=str(token_information.chain_id),
+            blockchain_network=token_information.chain_id.value,
             token_address=str(base_token.address),
             pair_address=str(token_information.pair_address),
             price_usd=token_information.price_usd or 0.0,

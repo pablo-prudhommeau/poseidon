@@ -4,6 +4,7 @@ from typing import Optional
 
 from src.core.ai.chart_signal_provider import ChartAiSignalProvider
 from src.core.ai.chart_structures import ChartAiSignal
+from src.core.structures.structures import BlockchainNetwork
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -16,7 +17,7 @@ class TradingChartAiSignalProvider:
     def predict_market_signal(
             self,
             symbol: Optional[str],
-            chain_name: Optional[str],
+            chain: Optional[BlockchainNetwork],
             pair_address: Optional[str],
             timeframe_minutes: int,
             lookback_minutes: int,
@@ -24,7 +25,7 @@ class TradingChartAiSignalProvider:
     ) -> Optional[ChartAiSignal]:
         return self._delegate.predict_market_signal(
             symbol=symbol,
-            chain_name=chain_name,
+            chain=chain,
             pair_address=pair_address,
             timeframe_minutes=timeframe_minutes,
             lookback_minutes=lookback_minutes,

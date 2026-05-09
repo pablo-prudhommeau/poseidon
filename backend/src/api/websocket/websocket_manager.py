@@ -49,14 +49,12 @@ class WebsocketManager:
     async def broadcast_json_payload(self, raw_payload: dict) -> None:
         formatted_payload = self._convert_to_json_compatible_payload(raw_payload)
         stale_websocket_clients: list[WebSocket] = []
-
         for websocket_client in list(self._connected_clients):
             try:
                 await websocket_client.send_json(formatted_payload)
             except Exception as exception:
                 stale_websocket_clients.append(websocket_client)
                 logger.exception("[WEBSOCKET][MANAGER][BROADCAST] Payload transmission to client failed, scheduling for removal", exception)
-
         for dead_websocket_client in stale_websocket_clients:
             self.unregister_client_connection(dead_websocket_client)
 
@@ -64,7 +62,6 @@ class WebsocketManager:
         if not self._event_loop:
             logger.debug("[WEBSOCKET][MANAGER][THREADSAFE] Threadsafe broadcast aborted: no event loop currently attached")
             return
-
         try:
             formatted_payload = self._convert_to_json_compatible_payload(raw_payload)
             asyncio.run_coroutine_threadsafe(self.broadcast_json_payload(formatted_payload), self._event_loop)

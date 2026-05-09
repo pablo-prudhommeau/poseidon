@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.trading.shadowing.shadow_trading_pipeline import ShadowTradingPipeline
 from src.core.trading.shadowing.shadow_verdict_tracker import ShadowVerdictTracker
@@ -24,6 +26,7 @@ class TradingShadowingJob:
                     logger.info("[TRADING][SHADOWING][JOB] Starting shadow intelligence synchronization cycle")
                     self._pipeline.run_once()
                     self._verdict_tracker.check_pending_verdicts()
+                    cache_invalidator.mark_dirty(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
                     logger.info("[TRADING][SHADOWING][JOB] Shadow intelligence synchronization cycle complete")
                 else:
                     logger.debug("[TRADING][SHADOWING][JOB] Shadowing is disabled in settings, skipping cycle")

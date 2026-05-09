@@ -17,7 +17,7 @@ class DcaJob:
     def __init__(self) -> None:
         self.is_running: bool = False
 
-    async def start(self) -> None:
+    async def run_loop(self) -> None:
         self.is_running = True
         logger.info("[DCA][JOB] Background monitoring initialized.")
 

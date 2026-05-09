@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, asc
 from sqlalchemy.orm import Session
 
 from src.core.structures.structures import EquityCurve, EquityCurvePoint
@@ -13,6 +13,10 @@ from src.persistence.models import TradingPortfolioSnapshot
 class TradingPortfolioSnapshotDao:
     def __init__(self, database_session: Session) -> None:
         self.database_session = database_session
+
+    def retrieve_initial_snapshot(self) -> Optional[TradingPortfolioSnapshot]:
+        database_query = select(TradingPortfolioSnapshot).order_by(asc(TradingPortfolioSnapshot.created_at)).limit(1)
+        return self.database_session.execute(database_query).scalar_one_or_none()
 
     def retrieve_latest_snapshot(self) -> Optional[TradingPortfolioSnapshot]:
         database_query = select(TradingPortfolioSnapshot).order_by(desc(TradingPortfolioSnapshot.created_at)).limit(1)

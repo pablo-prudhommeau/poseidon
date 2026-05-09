@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.trading.evaluators.trading_quality_scorer import _evaluate_quality
+from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate
-from src.core.trading.utils.trading_candidate_utils import fetch_trading_candidates_sync
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.db import get_database_session
@@ -100,7 +102,7 @@ class ShadowTradingPipeline:
         allowed_chains = set(settings.TRADING_ALLOWED_CHAINS)
         retained = [
             candidate for candidate in candidates
-            if (candidate.dexscreener_token_information.chain_id or "").strip().lower() in allowed_chains
+            if candidate.dexscreener_token_information.chain_id.value in allowed_chains
         ]
         if len(retained) < len(candidates):
             logger.debug("[TRADING][SHADOW][PIPELINE] Chain filter retained %d / %d", len(retained), len(candidates))
@@ -125,7 +127,7 @@ class ShadowTradingPipeline:
 
         probe = TradingShadowingProbe(
             token_symbol=base_token.symbol.upper(),
-            blockchain_network=str(token_information.chain_id),
+            blockchain_network=token_information.chain_id.value,
             token_address=str(base_token.address),
             pair_address=str(token_information.pair_address),
             dex_id=str(token_information.dex_id),
@@ -163,6 +165,7 @@ class ShadowTradingPipeline:
         with get_database_session() as database_session:
             database_session.add(probe)
 
+        cache_invalidator.mark_dirty(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
         logger.debug("[TRADING][SHADOW][PERSIST] Recorded shadow probe for %s at price %.10f", base_token.symbol, token_information.price_usd or 0.0)
 
     def _compute_buy_to_sell_ratio(self, transactions) -> float:

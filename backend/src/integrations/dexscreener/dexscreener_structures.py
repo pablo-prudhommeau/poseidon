@@ -6,6 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime, convert_epoch_to_local_datetime
 
 
@@ -110,7 +111,7 @@ class DexscreenerTokenInformation(_DexscreenerBaseModel):
     base_token: DexscreenerToken
     quote_token: DexscreenerToken
     pair_address: str
-    chain_id: str
+    chain_id: BlockchainNetwork
     dex_id: str
     price_usd: Optional[float] = None
     price_native: Optional[float] = None
@@ -127,6 +128,13 @@ class DexscreenerTokenInformation(_DexscreenerBaseModel):
 
     retrieval_date: datetime = Field(default_factory=get_current_local_datetime)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_chain_id(cls, data: object) -> object:
+        if isinstance(data, dict) and "chain_id" in data:
+            data["chain_id"] = parse_dexscreener_chain(str(data["chain_id"]))
+        return data
+
     @property
     def age_hours(self) -> float:
         if self.pair_created_at is not None and self.pair_created_at > 0:
@@ -134,3 +142,24 @@ class DexscreenerTokenInformation(_DexscreenerBaseModel):
             age_delta = self.retrieval_date - created_at_datetime
             return max(0.0, age_delta.total_seconds() / 3600.0)
         return 0.0
+
+
+def parse_dexscreener_chain(chain_id: str) -> Optional[BlockchainNetwork]:
+    if not chain_id:
+        return None
+    normalized = chain_id.strip().lower()
+    if normalized in {"solana", "sol"}:
+        return BlockchainNetwork.SOLANA
+    if normalized in {"bsc", "binance", "bsc-mainnet"}:
+        return BlockchainNetwork.BSC
+    if normalized == "base":
+        return BlockchainNetwork.BASE
+    if normalized in {"avalanche", "avax", "avalanche-c"}:
+        return BlockchainNetwork.AVALANCHE
+    return None
+
+
+def is_blockchain_network_supported(chain_id: Optional[str]) -> bool:
+    if not chain_id:
+        return False
+    return parse_dexscreener_chain(chain_id) is not None

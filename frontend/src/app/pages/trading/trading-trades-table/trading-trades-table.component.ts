@@ -15,21 +15,21 @@ import {PanelModule} from 'primeng/panel';
 
 import {ApexAxisChartSeries, ApexChart, ApexDataLabels, ApexGrid, ApexLegend, ApexNonAxisChartSeries, ApexPlotOptions, ApexStates, ApexTooltip, ApexXAxis, NgApexchartsModule} from 'ng-apexcharts';
 
-import {balhamDarkThemeCompact} from '../../ag-grid.theme';
-import {NumberFormattingService} from '../../core/number-formatting.service';
-import {WebSocketService} from '../../core/websocket.service';
-import {TradingEvaluationPayload, TradingTradePayload} from '../../core/models';
-import {MetricsFormattingService} from '../../core/metrics-formatting.service';
+import {balhamDarkThemeCompact} from '../../../ag-grid.theme';
+import {NumberFormattingService} from '../../../core/number-formatting.service';
+import {WebSocketService} from '../../../core/websocket.service';
+import {TradingEvaluationPayload, TradingTradePayload} from '../../../core/models';
+import {MetricsFormattingService} from '../../../core/metrics-formatting.service';
 
-import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer';
-import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
-import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
-import {ApiService} from '../../api.service';
-import {EXPLORATION_CATEGORIES} from '../../core/constants';
+import {SymbolChipRendererComponent} from '../../../renderers/symbol-chip.renderer';
+import {TemplateCellRendererComponent} from '../../../renderers/template-cell.renderer';
+import {TemplateHeaderRendererComponent} from '../../../renderers/template-header.renderer';
+import {ApiService} from '../../../api.service';
+import {EXPLORATION_CATEGORIES} from '../../../core/constants';
 
 @Component({
     standalone: true,
-    selector: 'trades-table',
+    selector: 'trading-trades-table',
     imports: [
         CommonModule,
         DatePipe,
@@ -45,9 +45,9 @@ import {EXPLORATION_CATEGORIES} from '../../core/constants';
         PanelModule,
         NgApexchartsModule
     ],
-    templateUrl: './trades-table.component.html'
+    templateUrl: './trading-trades-table.component.html'
 })
-export class TradesTableComponent implements AfterViewInit {
+export class TradingTradesTableComponent implements AfterViewInit {
     public readonly agGridTheme = balhamDarkThemeCompact;
 
     private readonly webSocketService = inject(WebSocketService);
@@ -305,19 +305,15 @@ export class TradesTableComponent implements AfterViewInit {
 
         const scoreValues: number[] = [];
         const scoreLabels: string[] = [];
-        const toPct = (v: number | null | undefined) => (v == null ? null : v <= 1 && v >= 0 ? v * 100 : v);
         const push = (label: string, v: number | null | undefined) => {
-            const n = toPct(v);
-            if (n == null) {
+            if (v == null) {
                 return;
             }
             scoreLabels.push(label);
-            scoreValues.push(n);
+            scoreValues.push(v);
         };
-        push('Final', (a as any)?.scores?.final_score);
         push('Quality', (a as any)?.scores?.quality_score);
-        push('Statistics', (a as any)?.scores?.statistics_score);
-        push('Entry', (a as any)?.scores?.entry_score);
+        push('AI adjusted', (a as any)?.scores?.ai_adjusted_quality_score);
         this.scoresLabels = scoreLabels;
         this.scoresSeries = scoreValues;
 

@@ -32,16 +32,12 @@ def format_percent(value: Optional[float], decimals: int = 2) -> str:
         return "N/A"
 
 
-def _format(value: Optional[float]) -> str:
-    return "NA" if value is None else f"{value:.2f}"
-
-
-def _tail(address: str, n: int = 6) -> str:
+def tail(address: str, n: int = 6) -> str:
     addr = (address or "").lower()
     return addr[-n:] if len(addr) >= n else addr
 
 
-def _num(value: object) -> Optional[float]:
+def num(value: object) -> Optional[float]:
     try:
         parsed = float(value)
         return None if isnan(parsed) else parsed
@@ -49,7 +45,7 @@ def _num(value: object) -> Optional[float]:
         return None
 
 
-def _age_hours(ms: int) -> float:
+def age_hours(ms: int) -> float:
     if not ms or ms <= 0:
         return 0.0
     return max(0.0, (time.time() - (ms / 1000.0)) / 3600.0)

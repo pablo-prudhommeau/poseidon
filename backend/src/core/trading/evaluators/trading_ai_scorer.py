@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from src.configuration.config import settings
 from src.core.trading.trading_structures import TradingCandidate, TradingPipelineContext
-from src.core.utils.math_utils import _clamp
+from src.core.utils.math_utils import clamp
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -30,7 +30,7 @@ def apply_ai_scorer(candidates: list[TradingCandidate], pipeline_context: Tradin
             try:
                 signal = chart_ai.predict_market_signal(
                     symbol=candidate.token.symbol,
-                    chain_name=candidate.token.chain or None,
+                    chain=candidate.token.chain,
                     pair_address=candidate.token.pair_address or None,
                     timeframe_minutes=settings.TRADING_AI_TIMEFRAME_MINUTES,
                     lookback_minutes=settings.TRADING_AI_LOOKBACK_MINUTES,
@@ -46,8 +46,8 @@ def apply_ai_scorer(candidates: list[TradingCandidate], pipeline_context: Tradin
                 ai_probability = signal.take_profit_one_probability
 
         scaled_delta = ai_delta * delta_multiplier
-        bounded_delta = _clamp(scaled_delta, -maximum_absolute_delta_points, +maximum_absolute_delta_points)
-        adjusted_quality_score = _clamp(candidate.quality_score + bounded_delta, 0.0, 100.0)
+        bounded_delta = clamp(scaled_delta, -maximum_absolute_delta_points, +maximum_absolute_delta_points)
+        adjusted_quality_score = clamp(candidate.quality_score + bounded_delta, 0.0, 100.0)
 
         candidate.ai_quality_delta = ai_delta
         candidate.ai_buy_probability = ai_probability

@@ -24,21 +24,20 @@ from src.api.serializers import (
     serialize_dca_order,
     serialize_trading_position,
 )
-from src.api.websocket.websocket_hub import notify_trading_state_changed, notify_dca_state_changed
-from src.configuration.config import settings
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.core.dca.dca_backtester import DcaBacktester
 from src.core.dca.dca_scheduler import DcaScheduler
-from src.core.structures.structures import Token, DcaStrategyStatus
+from src.core.structures.structures import DcaStrategyStatus, BlockchainNetwork
 from src.core.trading.analytics.trading_analytics_helpers import map_trading_evaluation
+from src.core.trading.cache.trading_cache import trading_state_cache
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
-from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list
 from src.logging.logger import get_application_logger
 from src.persistence import service
 from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
 from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
 from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
-from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.db import get_fastapi_database_session
 from src.persistence.models import DcaStrategy
@@ -76,19 +75,13 @@ def reset_paper_mode(database_session: Session = Depends(get_fastapi_database_se
     logger.debug("[HTTP][PAPER][RESET] Initiating paper mode reset process")
     service.reset_paper(database_session)
 
-    portfolio_dao = TradingPortfolioSnapshotDao(database_session)
-    if not portfolio_dao.retrieve_latest_snapshot():
-        portfolio_dao.create_snapshot(
-            equity=settings.PAPER_STARTING_CASH,
-            cash=settings.PAPER_STARTING_CASH,
-            holdings=0.0
-        )
-
-    logger.info("[HTTP][PAPER][RESET] Paper mode has been reset and initial cash properly ensured")
-
-    notify_trading_state_changed()
-    logger.info("[HTTP][PAPER][REBROADCAST] Scheduled immediate recompute broadcast after reset")
-
+    cache_invalidator.mark_dirty(
+        CacheRealm.POSITIONS,
+        CacheRealm.TRADES,
+        CacheRealm.PORTFOLIO,
+        CacheRealm.AVAILABLE_CASH,
+    )
+    logger.info("[HTTP][PAPER][RESET] Cache invalidated after paper mode reset")
     return TradingPaperResetPayload(ok=True)
 
 
@@ -212,11 +205,9 @@ def get_shadow_trades_for_pair(
 
 @router.get("/api/positions", tags=["positions"])
 async def get_open_positions_list(database_session: Session = Depends(get_fastapi_database_session)) -> TradingPositionsResponse:
-    from src.api.cache.trading_display_state_cache import trading_display_state_cache
-
     logger.debug("[HTTP][POSITIONS][FETCH] Retrieving currently open positions from cache")
-    trading_state = trading_display_state_cache.get_trading_state()
-    cached_positions = trading_state.get("positions")
+    trading_state = trading_state_cache.get_trading_state()
+    cached_positions = trading_state.positions
 
     if cached_positions is not None:
         logger.info("[HTTP][POSITIONS][FETCH] Successfully retrieved %s open positions from cache", len(cached_positions))
@@ -256,7 +247,7 @@ async def create_new_dca_strategy(
 
     current_local_time = get_current_local_datetime()
     new_dca_strategy = DcaStrategy(
-        blockchain_network=strategy_payload.blockchain_network.lower(),
+        blockchain_network=strategy_payload.blockchain_network.value,
         source_asset_symbol=strategy_payload.source_asset_symbol,
         source_asset_address=strategy_payload.source_asset_address,
         source_asset_decimals=strategy_payload.source_asset_decimals,
@@ -295,7 +286,7 @@ async def create_new_dca_strategy(
 
     logger.info("[HTTP][DCA][STRATEGY][CREATE] Successfully created DCA strategy with id %s generating %s orders", saved_dca_strategy.id, len(scheduled_orders))
 
-    notify_dca_state_changed()
+    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
 
     return DcaStrategyCreateResponse(
         message="Strategy successfully created",
@@ -312,7 +303,7 @@ async def get_all_dca_strategies(database_session: Session = Depends(get_fastapi
     dca_strategy_payloads: List[DcaStrategyPayload] = []
     for registered_strategy in all_dca_strategies:
         live_metrics = await aave_executor_client.get_live_metrics(
-            chain=registered_strategy.blockchain_network,
+            chain=BlockchainNetwork(registered_strategy.blockchain_network.lower()),
             asset_in_address=registered_strategy.source_asset_address,
             asset_out_address=registered_strategy.target_asset_address,
         )

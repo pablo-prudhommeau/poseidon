@@ -14,6 +14,7 @@ from playwright.sync_api import (
 
 from src.configuration.config import settings
 from src.core.ai.chart_structures import ChartCaptureResult, ChartCacheEntry
+from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 
@@ -61,11 +62,11 @@ class ChartCaptureService:
 
     def _build_dexscreener_target_url(
             self,
-            chain_name: str,
+            chain: BlockchainNetwork,
             pair_address: str,
             time_interval: Optional[str] = None,
     ) -> str:
-        target_url = f"https://dexscreener.com/{chain_name}/{pair_address}?embed=1"
+        target_url = f"https://dexscreener.com/{chain.value}/{pair_address}?embed=1"
         if time_interval:
             target_url += f"&interval={time_interval}"
         return target_url
@@ -255,13 +256,13 @@ class ChartCaptureService:
             self,
             *,
             symbol: Optional[str],
-            chain_name: Optional[str],
+            chain: Optional[BlockchainNetwork],
             pair_address: Optional[str],
             timeframe_minutes: int,
             lookback_minutes: int,
             token_age_hours: Optional[float] = None,
     ) -> ChartCaptureResult:
-        if not chain_name or not pair_address:
+        if not chain or not pair_address:
             raise ChartCaptureError("Insufficient data provided to capture chart: chain name and pair address are strictly required")
 
         if token_age_hours is not None:
@@ -271,7 +272,7 @@ class ChartCaptureService:
             preferred_time_interval = "D" if timeframe_minutes >= 1440 else str(timeframe_minutes)
             logger.debug("[AI][CHART][CAPTURE][INTERVAL] Using fallback time interval derived from timeframe, selecting interval %s", preferred_time_interval)
 
-        chart_cache_key = f"{chain_name}:{pair_address}:{preferred_time_interval}:{timeframe_minutes}:{lookback_minutes}"
+        chart_cache_key = f"{chain.value}:{pair_address}:{preferred_time_interval}:{timeframe_minutes}:{lookback_minutes}"
         current_timestamp = time.time()
         cached_capture_entry = self._screenshots_cache.get(chart_cache_key)
 
@@ -288,10 +289,10 @@ class ChartCaptureService:
         capture_timeout_in_seconds = int(settings.CHART_CAPTURE_TIMEOUT_SEC)
         persisted_file_path: Optional[str] = None
 
-        raw_token_identifier = f"{chain_name}:{pair_address}"
+        raw_token_identifier = f"{chain.value}:{pair_address}"
         sanitized_token_identifier = self._sanitize_string_identifier(raw_token_identifier)
 
-        dexscreener_target_url = self._build_dexscreener_target_url(chain_name, pair_address, time_interval=preferred_time_interval)
+        dexscreener_target_url = self._build_dexscreener_target_url(chain, pair_address, time_interval=preferred_time_interval)
 
         try:
             captured_png_payload = self._screenshot_dexscreener_fullpage_render(
@@ -320,7 +321,7 @@ class ChartCaptureService:
             logger.info(
                 "[AI][CHART][CAPTURE][SUCCESS] DexScreener chart page successfully captured for token %s on chain %s with interval %s and timeframe %s minutes",
                 pair_address,
-                chain_name,
+                chain.value,
                 preferred_time_interval,
                 timeframe_minutes,
             )
@@ -333,5 +334,5 @@ class ChartCaptureService:
                 file_path=persisted_file_path,
             )
         except Exception as exception:
-            logger.exception("[AI][CHART][CAPTURE][FAILURE] DexScreener chart capture completely failed for token %s on chain %s", pair_address, chain_name, exception)
-            raise ChartCaptureError(f"Dexscreener capture failed for {chain_name}/{pair_address}") from exception
+            logger.exception("[AI][CHART][CAPTURE][FAILURE] DexScreener chart capture completely failed for token %s on chain %s", pair_address, chain.value, exception)
+            raise ChartCaptureError(f"Dexscreener capture failed for {chain.value}/{pair_address}") from exception

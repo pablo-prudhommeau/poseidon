@@ -4,9 +4,8 @@ from typing import Optional, Final
 
 from src.configuration.config import settings
 from src.core.trading.trading_structures import TradingCandidate, TradingQualityContext, TradingQualityResult
-from src.core.trading.utils.trading_candidate_utils import is_finite_number
-from src.core.utils.format_utils import _tail
-from src.core.utils.math_utils import _squash_positive_percentage
+from src.core.utils.format_utils import tail
+from src.core.utils.math_utils import squash_positive_percentage, is_finite_number
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTransactionActivity
 from src.logging.logger import get_application_logger
 
@@ -37,10 +36,10 @@ def compute_buy_sell_score(transaction_activity: Optional[DexscreenerTransaction
 
 
 def blend_momentum_percentages(percent_m5: float, percent_h1: float, percent_h6: float, percent_h24: float) -> float:
-    squashed_percent_m5 = _squash_positive_percentage(percent_m5)
-    squashed_percent_h1 = _squash_positive_percentage(percent_h1)
-    squashed_percent_h6 = _squash_positive_percentage(percent_h6)
-    squashed_percent_h24 = _squash_positive_percentage(percent_h24)
+    squashed_percent_m5 = squash_positive_percentage(percent_m5)
+    squashed_percent_h1 = squash_positive_percentage(percent_h1)
+    squashed_percent_h6 = squash_positive_percentage(percent_h6)
+    squashed_percent_h24 = squash_positive_percentage(percent_h24)
 
     weighted_sum = (
             _MOMENTUM_WEIGHT_5M * squashed_percent_m5
@@ -143,7 +142,7 @@ def compute_quality_scores(candidates: list[TradingCandidate]) -> None:
         candidate.quality_score = quality_result.score
 
         base_token = candidate.dexscreener_token_information.base_token
-        short_address = _tail(base_token.address)
+        short_address = tail(base_token.address)
 
     logger.info("[TRADING][EVALUATOR][QUALITY] Computed quality scores for %d candidates", len(candidates))
 
@@ -158,7 +157,7 @@ def apply_quality_gate(candidates: list[TradingCandidate]) -> list[TradingCandid
 
     for candidate in candidates:
         base_token = candidate.dexscreener_token_information.base_token
-        short_address = _tail(base_token.address)
+        short_address = tail(base_token.address)
 
         if candidate.quality_score >= minimum_quality_score:
             if not _has_valid_intraday_bars(candidate):

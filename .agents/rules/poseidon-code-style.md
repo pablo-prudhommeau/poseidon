@@ -18,6 +18,8 @@ Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un 
 
 * Évite l'utilisation de `*` / `*args` / `**kwargs` / `Any` qui rendent le code faussement modulaire et illisible
 
+* Privilégie les appels de fonctions avec arguments nommés (`object.function(argument_name=value)`) uniquement quand cela améliore clairement la lisibilité (booléens, paramètres optionnels, plusieurs paramètres du même type, valeurs numériques sans unité explicite). Conserve les appels positionnels pour les APIs courtes et idiomatiques (`append`, `min`, `max`, signatures évidentes).
+
 * Privilégie l'utilisation de structure typées via BaseModel plutôt que des `dict` / `Tuple` / `Mapping` de types primitifs et n'utilise pas de dict.get() ni de dict["..."] ni de getattr() pour récupérer les attributs des structures (`structure.attribute` plutôt que `structure.get("attribute")` ou `structure["attribute"]`)
 
 * Ces structures typées backend doivent être regroupées dans des `*_structures.py` par "module applicatif"

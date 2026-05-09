@@ -7,6 +7,7 @@ from src.core.trading.analytics.trading_analytics_helpers import map_trading_sha
 from src.core.trading.analytics.trading_analytics_metric_bucket_statistics_engine import (
     compute_all_metric_bucket_profiles,
 )
+from src.core.trading.analytics.trading_analytics_service import compute_kpis
 from src.core.trading.analytics.trading_analytics_structures import MetricBucketProfile
 from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceMetricSnapshot, ShadowIntelligenceSnapshot
 from src.core.trading.trading_structures import TradingCandidate
@@ -55,15 +56,17 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
         meta_average_pnl = 0.0
         meta_average_holding_time_hours = 0.0
         meta_capital_velocity = 0.0
+        meta_profit_factor = 0.0
+        meta_expected_value_usd = 0.0
 
         if closed_records:
-            meta_win_count = sum(1 for record in closed_records if record.is_profitable)
-            meta_win_rate = meta_win_count / len(closed_records)
-            meta_average_pnl = sum(record.realized_profit_and_loss_percentage for record in closed_records) / len(closed_records)
-            meta_average_holding_time_minutes = sum(record.holding_duration_minutes for record in closed_records) / len(closed_records)
-            meta_average_holding_time_hours = meta_average_holding_time_minutes / 60.0
-            if meta_average_holding_time_hours > 0:
-                meta_capital_velocity = (meta_average_pnl * meta_win_rate) / meta_average_holding_time_hours
+            meta_kpis = compute_kpis(analytics_records, total_outcomes)
+            meta_win_rate = meta_kpis.win_rate_percentage / 100.0
+            meta_average_pnl = meta_kpis.average_pnl_percentage
+            meta_average_holding_time_hours = meta_kpis.average_holding_duration_minutes / 60.0
+            meta_capital_velocity = meta_kpis.capital_velocity
+            meta_profit_factor = meta_kpis.profit_factor
+            meta_expected_value_usd = meta_kpis.expected_value_usd
 
         from src.core.trading.analytics.trading_analytics_structures import MetaStatistics
         meta_statistics = MetaStatistics(
@@ -82,8 +85,8 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
                 metric_snapshots.append(snapshot)
 
         logger.info(
-            "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence snapshot computed — %d outcomes analyzed, %d metrics profiled, meta(WR=%.1f%%, PnL=%.2f%%, Hold=%.1fh, Vel=%.2f)",
-            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_average_pnl, meta_average_holding_time_hours, meta_capital_velocity,
+            "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence snapshot computed — %d outcomes analyzed, %d metrics profiled, meta(WR=%.1f%%, PF=%.2f, EV=%.2f, Vel=%.2f)",
+            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_capital_velocity,
         )
 
         return ShadowIntelligenceSnapshot(
@@ -96,6 +99,8 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
             meta_average_pnl=meta_average_pnl,
             meta_average_holding_time_hours=meta_average_holding_time_hours,
             meta_capital_velocity=meta_capital_velocity,
+            meta_profit_factor=meta_profit_factor,
+            meta_expected_value_usd=meta_expected_value_usd,
         )
 
 

@@ -30,6 +30,8 @@ class ShadowIntelligenceSnapshot(BaseModel):
     meta_average_pnl: float = 0.0
     meta_average_holding_time_hours: float = 0.0
     meta_capital_velocity: float = 0.0
+    meta_profit_factor: float = 0.0
+    meta_expected_value_usd: float = 0.0
 
 
 class ShadowIntelligenceSnapshotMetricPayload(BaseModel):

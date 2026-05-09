@@ -12,6 +12,7 @@ from src.core.ai.chart_structures import (
     ChartCaptureResult,
     ChartSignalCacheEntry
 )
+from src.core.structures.structures import BlockchainNetwork
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -40,13 +41,14 @@ class ChartAiSignalProvider:
     def predict_market_signal(
             self,
             symbol: Optional[str],
-            chain_name: Optional[str],
+            chain: Optional[BlockchainNetwork],
             pair_address: Optional[str],
             timeframe_minutes: int,
             lookback_minutes: int,
             token_age_hours: Optional[float] = None
     ) -> Optional[ChartAiSignal]:
-        cache_lookup_key = f"{symbol or chain_name}:{pair_address}:{timeframe_minutes}:{lookback_minutes}"
+        chain_label = chain.value if chain else "unknown"
+        cache_lookup_key = f"{symbol or chain_label}:{pair_address}:{timeframe_minutes}:{lookback_minutes}"
         current_timestamp = time.time()
 
         cached_entry = self._signal_cache.get(cache_lookup_key)
@@ -61,7 +63,7 @@ class ChartAiSignalProvider:
         try:
             capture_result: ChartCaptureResult = self._capture_service.capture_chart_png(
                 symbol=symbol,
-                chain_name=chain_name,
+                chain=chain,
                 pair_address=pair_address,
                 timeframe_minutes=timeframe_minutes,
                 lookback_minutes=lookback_minutes,
@@ -74,7 +76,7 @@ class ChartAiSignalProvider:
         ai_analysis: Optional[ChartAiOutput] = self._openai_client.analyze_chart_vision(
             screenshot_bytes=capture_result.png_bytes,
             symbol=symbol,
-            chain_name=chain_name,
+            chain=chain,
             pair_address=pair_address,
             timeframe_minutes=timeframe_minutes,
             lookback_minutes=lookback_minutes,

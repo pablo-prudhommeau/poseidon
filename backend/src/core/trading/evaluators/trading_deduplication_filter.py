@@ -1,7 +1,7 @@
 from typing import Set, Tuple
 
 from src.core.trading.trading_structures import TradingCandidate
-from src.core.trading.utils.trading_candidate_utils import is_address_in_open_positions
+from src.core.trading.trading_utils import is_address_in_open_positions
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
 from src.persistence.db import get_database_session

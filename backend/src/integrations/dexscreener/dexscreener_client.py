@@ -7,6 +7,7 @@ import httpx
 
 from src.configuration.config import settings
 from src.core.structures.structures import Token
+from src.core.utils.format_utils import tail
 from src.integrations.dexscreener.dexscreener_constants import (
     LATEST_PAIRS_ENDPOINT,
     TOTAL_ADDRESS_HARD_CAP,
@@ -83,21 +84,28 @@ async def fetch_dexscreener_token_information_list(
     _client = client if client is not None else _get_shared_client()
 
     token_information_list: List[DexscreenerTokenInformation] = []
-    for chain_id, chain_tokens in tokens_by_chain.items():
+    for chain, chain_tokens in tokens_by_chain.items():
         if not chain_tokens:
             continue
 
         seen_pair_addresses: set[str] = set()
         pair_addresses: List[str] = []
+        symbol_map: dict[str, str] = {}
         for token in chain_tokens:
             if token.pair_address not in seen_pair_addresses:
                 seen_pair_addresses.add(token.pair_address)
                 pair_addresses.append(token.pair_address)
+                symbol_map[token.pair_address] = token.symbol
 
         for batch in _chunk_strings(pair_addresses, DEFAULT_MAX_ADDRESSES_PER_CALL):
+            symbols_in_batch = [symbol_map.get(address, "") for address in batch]
+            logger.debug(
+                "[DEX][TOKEN][INFORMATION] Fetching chain=%s batch_size=%d pairs=%s symbols=%s",
+                chain.value, len(batch), ",".join([tail(a) for a in batch]), ",".join([s for s in symbols_in_batch if s])
+            )
             try:
                 token_information_list_fetched: List[DexscreenerTokenInformation] = \
-                    await _fetch_token_information_for_chain(_client, chain_id, batch)
+                    await _fetch_token_information_for_chain(_client, chain, batch)
             except httpx.HTTPStatusError as error:
                 status_code = error.response.status_code
                 if status_code in (400, 413, 414) and len(batch) > 1:
@@ -107,14 +115,14 @@ async def fetch_dexscreener_token_information_list(
                         len(batch),
                     )
                     midpoint = len(batch) // 2
-                    left = await _fetch_token_information_for_chain(_client, chain_id, batch[:midpoint])
-                    right = await _fetch_token_information_for_chain(_client, chain_id, batch[midpoint:])
+                    left = await _fetch_token_information_for_chain(_client, chain, batch[:midpoint])
+                    right = await _fetch_token_information_for_chain(_client, chain, batch[midpoint:])
                     token_information_list_fetched = left + right
                 else:
                     logger.warning(
                         "[DEX][TOKEN][INFORMATION] HTTP error %d for URL '%s'.",
                         status_code,
-                        f"{LATEST_PAIRS_ENDPOINT}/{chain_id}/…",
+                        f"{LATEST_PAIRS_ENDPOINT}/{chain.value}/…",
                     )
                     raise
 

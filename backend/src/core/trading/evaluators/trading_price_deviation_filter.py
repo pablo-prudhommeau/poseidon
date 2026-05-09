@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from src.configuration.config import settings
 from src.core.trading.trading_structures import TradingCandidate
-from src.core.trading.utils.trading_candidate_utils import get_price_from_token_information_list
+from src.core.trading.trading_utils import get_price_from_token_information_list
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_application_logger
 

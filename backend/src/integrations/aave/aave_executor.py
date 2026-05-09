@@ -10,6 +10,7 @@ from web3.contract import AsyncContract
 from web3.types import TxParams
 
 from src.configuration.config import settings
+from src.core.structures.structures import BlockchainNetwork
 from src.integrations.aave.aave_abis import (
     AAVE_POOL_ABI,
     ERC20_ABI,
@@ -36,8 +37,8 @@ class AaveExecutor:
         if self.is_initialized:
             return
 
-        self.web3_clients: dict[str, AsyncWeb3] = {}
-        self.pool_contracts: dict[str, AsyncContract] = {}
+        self.web3_clients: dict[BlockchainNetwork, AsyncWeb3] = {}
+        self.pool_contracts: dict[BlockchainNetwork, AsyncContract] = {}
         self.wallet_address: str = ""
         self.private_key: str = ""
 
@@ -46,7 +47,7 @@ class AaveExecutor:
     def get_wallet_address(self) -> str:
         return self.wallet_address
 
-    async def _initialize_provider(self, chain: str) -> None:
+    async def _initialize_provider(self, chain: BlockchainNetwork) -> None:
         if chain in self.web3_clients:
             return
 
@@ -61,13 +62,13 @@ class AaveExecutor:
         self.private_key = account.key.hex()
         self.wallet_address = account.address
 
-        if chain == "avalanche":
+        if chain == BlockchainNetwork.AVALANCHE:
             from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
-            rpc_url = resolve_rpc_url_for_chain("avalanche")
+            rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.AVALANCHE)
             pool_address = settings.AAVE_POOL_V3_ADDRESS
         else:
-            logger.error("[AAVE][EXECUTOR][INIT] Chain '%s' is not supported", chain)
-            raise ValueError(f"Chain '{chain}' is not supported for Aave.")
+            logger.error("[AAVE][EXECUTOR][INIT] Chain '%s' is not supported", chain.value)
+            raise ValueError(f"Chain '{chain.value}' is not supported for Aave.")
 
         client = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
         self.web3_clients[chain] = client
@@ -77,7 +78,7 @@ class AaveExecutor:
 
         logger.info("[AAVE][EXECUTOR][INIT] Provider initialized for chain: %s", chain)
 
-    async def fetch_supply_apy(self, chain: str, asset_address: str) -> float:
+    async def fetch_supply_apy(self, chain: BlockchainNetwork, asset_address: str) -> float:
         await self._initialize_provider(chain)
         pool = self.pool_contracts[chain]
         checksum_address = AsyncWeb3.to_checksum_address(asset_address)
@@ -91,7 +92,7 @@ class AaveExecutor:
 
         return current_apy
 
-    async def fetch_asset_oracle_price(self, chain: str, asset_address: str) -> float:
+    async def fetch_asset_oracle_price(self, chain: BlockchainNetwork, asset_address: str) -> float:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         pool = self.pool_contracts[chain]
@@ -108,7 +109,7 @@ class AaveExecutor:
 
         return float(raw_price) / 1e8
 
-    async def fetch_token_balance(self, chain: str, asset_address: str) -> float:
+    async def fetch_token_balance(self, chain: BlockchainNetwork, asset_address: str) -> float:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         pool = self.pool_contracts[chain]
@@ -125,7 +126,7 @@ class AaveExecutor:
 
     async def get_live_metrics(
             self,
-            chain: str,
+            chain: BlockchainNetwork,
             asset_in_address: str,
             asset_out_address: str
     ) -> AaveLiveMetrics:
@@ -136,7 +137,7 @@ class AaveExecutor:
             asset_out_price_usd=asset_out_price_usd
         )
 
-    async def verify_active_debt(self, chain: str, asset_address: str) -> bool:
+    async def verify_active_debt(self, chain: BlockchainNetwork, asset_address: str) -> bool:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         pool = self.pool_contracts[chain]
@@ -153,7 +154,7 @@ class AaveExecutor:
             logger.exception("[AAVE][EXECUTOR] Debt verification failed: %s", exception)
             return True
 
-    async def execute_withdrawal(self, chain: str, asset_address: str, amount_in_wei: int) -> Optional[str]:
+    async def execute_withdrawal(self, chain: BlockchainNetwork, asset_address: str, amount_in_wei: int) -> Optional[str]:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         pool = self.pool_contracts[chain]
@@ -182,7 +183,7 @@ class AaveExecutor:
             logger.exception("[AAVE][EXECUTOR][WITHDRAW] Withdrawal execution failed: %s", exception)
             return None
 
-    async def execute_supply(self, chain: str, asset_address: str, amount_in_wei: int) -> Optional[str]:
+    async def execute_supply(self, chain: BlockchainNetwork, asset_address: str, amount_in_wei: int) -> Optional[str]:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         pool = self.pool_contracts[chain]
@@ -222,7 +223,7 @@ class AaveExecutor:
             return None
 
     async def approve_and_execute_raw_transaction(
-            self, chain: str, source_token: str, spender: str, amount_in_wei: int,
+            self, chain: BlockchainNetwork, source_token: str, spender: str, amount_in_wei: int,
             to_address: str, tx_data: str, tx_value: int, gas_limit: int, chain_id_numeric: int
     ) -> Optional[str]:
         await self._initialize_provider(chain)
@@ -267,7 +268,7 @@ class AaveExecutor:
             logger.exception("[ONCHAIN][EXECUTOR] Raw transaction failed: %s", exception)
             return None
 
-    async def fetch_erc20_balance(self, chain: str, token_address: str) -> int:
+    async def fetch_erc20_balance(self, chain: BlockchainNetwork, token_address: str) -> int:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         checksum_address = AsyncWeb3.to_checksum_address(token_address)

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from src.configuration.config import settings
+from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
@@ -71,7 +72,7 @@ class ShadowVerdictTracker:
                 resolution_tokens = [
                     Token(
                         symbol=verdict.probe.token_symbol,
-                        chain=verdict.probe.blockchain_network,
+                        chain=BlockchainNetwork(verdict.probe.blockchain_network.lower()),
                         token_address=verdict.probe.token_address,
                         pair_address=verdict.probe.pair_address,
                         dex_id=verdict.probe.dex_id,
@@ -226,7 +227,7 @@ class ShadowVerdictTracker:
             processed_keys.add(price_key)
             unique_tokens.append(Token(
                 symbol=probe.token_symbol,
-                chain=probe.blockchain_network,
+                chain=BlockchainNetwork(probe.blockchain_network.lower()),
                 token_address=probe.token_address,
                 pair_address=probe.pair_address,
                 dex_id=probe.dex_id,
@@ -243,7 +244,7 @@ class ShadowVerdictTracker:
 
         price_map: dict[str, float] = {}
         for token_information in token_information_list:
-            price_key = f"{token_information.chain_id}:{token_information.base_token.address}:{token_information.pair_address}"
+            price_key = f"{token_information.chain_id.value}:{token_information.base_token.address}:{token_information.pair_address}"
             if token_information.price_usd is not None and token_information.price_usd > 0.0:
                 price_map[price_key] = token_information.price_usd
 

@@ -13,6 +13,7 @@ from src.core.ai.chart_prompt import (
     chartist_json_schema
 )
 from src.core.ai.chart_structures import ChartAiOutput
+from src.core.structures.structures import BlockchainNetwork
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -29,7 +30,7 @@ class ChartOpenAiClient:
             self,
             screenshot_bytes: bytes,
             symbol: Optional[str],
-            chain_name: Optional[str],
+            chain: Optional[BlockchainNetwork],
             pair_address: Optional[str],
             timeframe_minutes: int,
             lookback_minutes: int,
@@ -42,7 +43,7 @@ class ChartOpenAiClient:
         system_instructions = build_chartist_system_prompt()
         user_instructions = build_chartist_user_prompt(
             symbol=symbol,
-            chain_name=chain_name,
+            chain_name=chain.value if chain else None,
             pair_address=pair_address,
             timeframe_minutes=timeframe_minutes,
             lookback_minutes=lookback_minutes,

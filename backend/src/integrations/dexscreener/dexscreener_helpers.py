@@ -4,10 +4,11 @@ from typing import List, Dict, Iterable, Union, Optional
 
 import httpx
 
-from src.core.structures.structures import Token
+from src.core.structures.structures import Token, BlockchainNetwork
 from src.integrations.dexscreener.dexscreener_constants import JSON, LATEST_TOKENS_ENDPOINT, LATEST_PAIRS_ENDPOINT, HTTP_TIMEOUT_SECONDS
 from src.integrations.dexscreener.dexscreener_structures import (
     DexscreenerTokenInformation,
+    is_blockchain_network_supported,
 )
 from src.logging.logger import get_application_logger
 
@@ -102,13 +103,13 @@ def _chunk_strings(items: List[str], size: int) -> List[List[str]]:
 
 async def _fetch_token_information_for_chain(
         client: httpx.AsyncClient,
-        chain_id: str,
+        chain: BlockchainNetwork,
         pair_addresses: List[str],
 ) -> List[DexscreenerTokenInformation]:
     if not pair_addresses:
         return []
 
-    url = f"{LATEST_PAIRS_ENDPOINT}/{chain_id}/{','.join(pair_addresses)}"
+    url = f"{LATEST_PAIRS_ENDPOINT}/{chain.value}/{','.join(pair_addresses)}"
     payload = await _http_get_json(client, url)
 
     pairs: List[DexscreenerTokenInformation] = []
@@ -117,9 +118,16 @@ async def _fetch_token_information_for_chain(
         if isinstance(raw_list, list):
             for item in raw_list:
                 if isinstance(item, dict):
+                    chain_id = item.get("chainId")
+                    if not is_blockchain_network_supported(chain_id):
+                        continue
                     try:
                         pairs.append(DexscreenerTokenInformation.model_validate(item))
-                    except Exception:
+                    except Exception as error:
+                        logger.debug(
+                            "[DEX][PAIR][VALIDATE] Failed to validate pair: %s",
+                            error
+                        )
                         continue
     return pairs
 
@@ -162,12 +170,32 @@ async def _fetch_token_information_list(
             pairs_list = [pair_item for pair_item in pairs_value if isinstance(pair_item, dict)]
 
     token_information_list: List[DexscreenerTokenInformation] = []
+    unsupported_chains_count: dict[str, int] = {}
+
     for pair_payload in pairs_list:
-        dexscreener_token_information = DexscreenerTokenInformation.model_validate(pair_payload)
-        address = dexscreener_token_information.base_token.address
-        if not address:
+        chain_id = pair_payload.get("chainId")
+        if not is_blockchain_network_supported(chain_id):
+            unsupported_chains_count[chain_id] = unsupported_chains_count.get(chain_id, 0) + 1
             continue
-        token_information_list.append(dexscreener_token_information)
+
+        try:
+            dexscreener_token_information = DexscreenerTokenInformation.model_validate(pair_payload)
+            address = dexscreener_token_information.base_token.address
+            if not address:
+                continue
+            token_information_list.append(dexscreener_token_information)
+        except Exception as error:
+            logger.debug(
+                "[DEX][FETCH][VALIDATE] Failed to validate pair for address '%s': %s",
+                pair_payload.get("baseToken", {}).get("address", "unknown"),
+                error
+            )
+            continue
+
+    if unsupported_chains_count:
+        chains_summary = ", ".join([f"{chain}({count})" for chain, count in sorted(unsupported_chains_count.items())])
+        logger.debug("[DEX][FETCH][FILTER] Filtered unsupported blockchains: %s", chains_summary)
+
     return token_information_list
 
 

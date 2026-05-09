@@ -14,11 +14,13 @@ from src.api.http.api_schemas import (
     TradingEvaluationDecisionPayload,
     DcaOrderPayload,
     DcaStrategyPayload,
-    ShadowIntelligenceStatusPayload, TradingEvaluationShadowDiagnosticsPayload,
+    ShadowIntelligenceStatusPayload,
+    TradingEvaluationShadowDiagnosticsPayload,
+    BlockchainCashBalancePayload,
 )
-from src.core.structures.structures import EquityCurve
+from src.core.structures.structures import EquityCurve, BlockchainNetwork
+from src.core.trading.trading_utils import get_currency_symbol
 from src.core.utils.date_utils import format_datetime_to_local_iso
-from src.core.utils.symbol_utils import get_currency_symbol
 from src.integrations.aave.aave_structures import AaveLiveMetrics
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingEvaluation, DcaOrder, DcaStrategy, TradingTrade, TradingPosition, TradingPortfolioSnapshot
@@ -32,7 +34,7 @@ def serialize_trading_trade(trading_trade: TradingTrade) -> TradingTradePayload:
         evaluation_id=trading_trade.evaluation_id,
         trade_side=trading_trade.trade_side.value,
         token_symbol=trading_trade.token_symbol,
-        blockchain_network=trading_trade.blockchain_network,
+        blockchain_network=BlockchainNetwork(trading_trade.blockchain_network.lower()),
         execution_price=trading_trade.execution_price,
         execution_quantity=trading_trade.execution_quantity,
         transaction_fee=trading_trade.transaction_fee,
@@ -59,7 +61,7 @@ def serialize_trading_position(trading_position: TradingPosition, last_price: Op
         take_profit_tier_2_price=trading_position.take_profit_tier_2_price,
         stop_loss_price=trading_position.stop_loss_price,
         position_phase=trading_position.position_phase.value,
-        blockchain_network=trading_position.blockchain_network,
+        blockchain_network=BlockchainNetwork(trading_position.blockchain_network.lower()),
         dex_id=trading_position.dex_id,
         opened_at=format_datetime_to_local_iso(trading_position.opened_at),
         updated_at=format_datetime_to_local_iso(trading_position.updated_at),
@@ -75,6 +77,7 @@ def serialize_trading_portfolio_snapshot(
         realized_24h: float,
         unrealized: float,
         shadow_status: ShadowIntelligenceStatusPayload,
+        blockchain_balances: list[BlockchainCashBalancePayload],
 ) -> TradingPortfolioPayload:
     return TradingPortfolioPayload(
         total_equity_value=snapshot.total_equity_value,
@@ -89,6 +92,7 @@ def serialize_trading_portfolio_snapshot(
         realized_profit_and_loss_total=realized_total,
         realized_profit_and_loss_24h=realized_24h,
         shadow_intelligence_status=shadow_status,
+        blockchain_balances=blockchain_balances,
     )
 
 
@@ -96,7 +100,7 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
     return TradingEvaluationPayload(
         id=row.id,
         token_symbol=row.token_symbol,
-        blockchain_network=row.blockchain_network,
+        blockchain_network=BlockchainNetwork(row.blockchain_network.lower()),
         token_address=row.token_address,
         pair_address=row.pair_address,
         evaluated_at=format_datetime_to_local_iso(row.evaluated_at),
@@ -162,7 +166,7 @@ def serialize_dca_order(order: DcaOrder) -> DcaOrderPayload:
 def serialize_dca_strategy(strategy: DcaStrategy, live_metrics: AaveLiveMetrics) -> DcaStrategyPayload:
     return DcaStrategyPayload(
         id=strategy.id,
-        blockchain_network=strategy.blockchain_network,
+        blockchain_network=BlockchainNetwork(strategy.blockchain_network.lower()),
         source_asset_symbol=strategy.source_asset_symbol,
         source_asset_address=strategy.source_asset_address,
         source_asset_decimals=strategy.source_asset_decimals,

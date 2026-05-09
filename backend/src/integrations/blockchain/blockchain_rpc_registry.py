@@ -9,61 +9,94 @@ from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
-FREE_RPC_ENDPOINTS: dict[str, list[str]] = {
-    "solana": [
+from src.core.structures.structures import BlockchainNetwork
+import time
+
+FREE_RPC_ENDPOINTS: dict[BlockchainNetwork, list[str]] = {
+    BlockchainNetwork.SOLANA: [
         "https://api.mainnet-beta.solana.com",
         "https://solana-rpc.publicnode.com",
         "https://rpc.ankr.com/solana",
     ],
-    "bsc": [
+    BlockchainNetwork.BSC: [
         "https://bsc-dataseed.binance.org/",
         "https://bsc-dataseed1.defibit.io/",
         "https://bsc-dataseed2.defibit.io/",
     ],
-    "base": [
+    BlockchainNetwork.BASE: [
         "https://base.gateway.tenderly.co",
         "https://1rpc.io/base",
         "https://mainnet.base.org",
     ],
-    "ethereum": [
-        "https://eth.llamarpc.com",
-        "https://rpc.ankr.com/eth",
-    ],
-    "avalanche": [
+    BlockchainNetwork.AVALANCHE: [
         "https://api.avax.network/ext/bc/C/rpc",
         "https://rpc.ankr.com/avalanche",
     ],
 }
 
-PREMIUM_RPC_SETTING_BY_CHAIN: dict[str, str] = {
-    "solana": "SOLANA_RPC_PREMIUM_URL",
-    "bsc": "BSC_RPC_PREMIUM_URL",
-    "base": "BASE_RPC_PREMIUM_URL",
-    "ethereum": "ETHEREUM_RPC_PREMIUM_URL",
-    "avalanche": "AVALANCHE_RPC_PREMIUM_URL",
+_resolved_web3_provider_cache: dict[BlockchainNetwork, Web3] = {}
+_resolved_async_web3_provider_cache: dict[BlockchainNetwork, AsyncWeb3] = {}
+_resolved_rpc_url_cache: dict[BlockchainNetwork, str] = {}
+_blacklisted_rpc_urls: dict[str, float] = {}
+
+
+def _is_rpc_url_blacklisted(rpc_url: str) -> bool:
+    blacklist_timestamp = _blacklisted_rpc_urls.get(rpc_url)
+    if blacklist_timestamp is None:
+        return False
+
+    if time.time() - blacklist_timestamp > 5:
+        del _blacklisted_rpc_urls[rpc_url]
+        return False
+
+    return True
+
+
+def invalidate_rpc_cache_for_chain(chain: BlockchainNetwork) -> None:
+    removed_url = _resolved_rpc_url_cache.pop(chain, None)
+    removed_provider = _resolved_web3_provider_cache.pop(chain, None)
+    _resolved_async_web3_provider_cache.pop(chain, None)
+    if removed_url:
+        _blacklisted_rpc_urls[removed_url] = time.time()
+    if removed_url or removed_provider:
+        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Invalidated cached RPC for %s (was %s) and temporarily blacklisted", chain.value, removed_url)
+
+
+_PREMIUM_RPC_SETTING_NAME_BY_CHAIN: dict[BlockchainNetwork, str] = {
+    BlockchainNetwork.SOLANA: "RPC_PREMIUM_URL_SOLANA",
+    BlockchainNetwork.BSC: "RPC_PREMIUM_URL_BSC",
+    BlockchainNetwork.BASE: "RPC_PREMIUM_URL_BASE",
+    BlockchainNetwork.AVALANCHE: "RPC_PREMIUM_URL_AVALANCHE",
 }
 
-_resolved_web3_provider_cache: dict[str, Web3] = {}
-_resolved_async_web3_provider_cache: dict[str, AsyncWeb3] = {}
-_resolved_rpc_url_cache: dict[str, str] = {}
 
-
-def invalidate_rpc_cache_for_chain(chain_identifier: str) -> None:
-    normalized_chain = chain_identifier.lower()
-    if normalized_chain == "sol":
-        normalized_chain = "solana"
-    removed_url = _resolved_rpc_url_cache.pop(normalized_chain, None)
-    removed_provider = _resolved_web3_provider_cache.pop(normalized_chain, None)
-    _resolved_async_web3_provider_cache.pop(normalized_chain, None)
-    if removed_url or removed_provider:
-        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Invalidated cached RPC for %s (was %s)", normalized_chain, removed_url)
-
-
-def _get_premium_rpc_url(chain_identifier: str) -> str:
-    setting_name = PREMIUM_RPC_SETTING_BY_CHAIN.get(chain_identifier, "")
-    if not setting_name:
+def _get_premium_rpc_url(chain: BlockchainNetwork) -> str:
+    setting_name = _PREMIUM_RPC_SETTING_NAME_BY_CHAIN.get(chain)
+    if setting_name is None:
         return ""
-    return getattr(settings, setting_name, "")
+    return getattr(settings, setting_name, "") or ""
+
+
+def list_fallback_rpc_urls_for_chain(chain: BlockchainNetwork, primary_url: str) -> list[str]:
+    urls: list[str] = []
+
+    def _append_if_usable(candidate: str | None) -> None:
+        if not candidate:
+            return
+        if candidate == primary_url:
+            return
+        if candidate in urls:
+            return
+        if _is_rpc_url_blacklisted(candidate):
+            return
+        urls.append(candidate)
+
+    for free_url in FREE_RPC_ENDPOINTS.get(chain, []):
+        _append_if_usable(free_url)
+
+    _append_if_usable(_get_premium_rpc_url(chain))
+
+    return urls
 
 
 def _test_evm_rpc_connectivity(rpc_url: str) -> bool:
@@ -128,84 +161,77 @@ def _test_solana_rpc_connectivity(rpc_url: str) -> bool:
         return False
 
 
-def _is_solana_chain(chain_identifier: str) -> bool:
-    return chain_identifier in {"solana", "sol"}
-
-
-def resolve_rpc_url_for_chain(chain_identifier: str) -> str:
-    normalized_chain = chain_identifier.lower()
-    if normalized_chain == "sol":
-        normalized_chain = "solana"
-
-    cached_url = _resolved_rpc_url_cache.get(normalized_chain)
+def resolve_rpc_url_for_chain(chain: BlockchainNetwork) -> str:
+    cached_url = _resolved_rpc_url_cache.get(chain)
     if cached_url is not None:
         return cached_url
 
-    free_endpoints = FREE_RPC_ENDPOINTS.get(normalized_chain, [])
-    is_solana = _is_solana_chain(normalized_chain)
+    free_endpoints = FREE_RPC_ENDPOINTS.get(chain, [])
+    is_solana = (chain == BlockchainNetwork.SOLANA)
 
     for free_rpc_url in free_endpoints:
-        logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Testing free RPC for %s at %s", normalized_chain, free_rpc_url)
+        if _is_rpc_url_blacklisted(free_rpc_url):
+            logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Skipping blacklisted free RPC for %s at %s", chain.value, free_rpc_url)
+            continue
+
+        logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Testing free RPC for %s at %s", chain.value, free_rpc_url)
         connectivity_test_passed = (
             _test_solana_rpc_connectivity(free_rpc_url) if is_solana
             else _test_evm_rpc_connectivity(free_rpc_url)
         )
         if connectivity_test_passed:
-            logger.info("[BLOCKCHAIN][RPC][REGISTRY] Connected to free RPC for %s at %s", normalized_chain, free_rpc_url)
-            _resolved_rpc_url_cache[normalized_chain] = free_rpc_url
+            logger.info("[BLOCKCHAIN][RPC][REGISTRY] Connected to free RPC for %s at %s", chain.value, free_rpc_url)
+            _resolved_rpc_url_cache[chain] = free_rpc_url
             return free_rpc_url
-        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Free RPC unreachable for %s at %s", normalized_chain, free_rpc_url)
+        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Free RPC unreachable for %s at %s", chain.value, free_rpc_url)
 
-    premium_rpc_url = _get_premium_rpc_url(normalized_chain)
+    premium_rpc_url = _get_premium_rpc_url(chain)
     if premium_rpc_url:
-        logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Testing premium RPC for %s", normalized_chain)
-        connectivity_test_passed = (
-            _test_solana_rpc_connectivity(premium_rpc_url) if is_solana
-            else _test_evm_rpc_connectivity(premium_rpc_url)
-        )
-        if connectivity_test_passed:
-            logger.info("[BLOCKCHAIN][RPC][REGISTRY] Connected to premium RPC for %s", normalized_chain)
-            _resolved_rpc_url_cache[normalized_chain] = premium_rpc_url
-            return premium_rpc_url
-        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Premium RPC also unreachable for %s", normalized_chain)
+        if _is_rpc_url_blacklisted(premium_rpc_url):
+            logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Skipping blacklisted premium RPC for %s", chain.value)
+        else:
+            logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Testing premium RPC for %s at %s", chain.value, premium_rpc_url)
+            connectivity_test_passed = (
+                _test_solana_rpc_connectivity(premium_rpc_url) if is_solana
+                else _test_evm_rpc_connectivity(premium_rpc_url)
+            )
+            if connectivity_test_passed:
+                logger.info("[BLOCKCHAIN][RPC][REGISTRY] Connected to premium RPC for %s", chain.value)
+                _resolved_rpc_url_cache[chain] = premium_rpc_url
+                return premium_rpc_url
+            logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Premium RPC also unreachable for %s", chain.value)
+    else:
+        logger.debug("[BLOCKCHAIN][RPC][REGISTRY] No premium RPC configured for chain %s", chain.value)
 
-    raise ConnectionError(f"[BLOCKCHAIN][RPC][REGISTRY] No reachable RPC endpoint found for chain {normalized_chain}")
+    raise ConnectionError(f"[BLOCKCHAIN][RPC][REGISTRY] No reachable RPC endpoint found for chain {chain.value}")
 
 
-def resolve_web3_provider_for_chain(chain_identifier: str) -> Optional[Web3]:
-    normalized_chain = chain_identifier.lower()
-    if normalized_chain == "sol":
-        normalized_chain = "solana"
-
-    cached_provider = _resolved_web3_provider_cache.get(normalized_chain)
+def resolve_web3_provider_for_chain(chain: BlockchainNetwork) -> Optional[Web3]:
+    cached_provider = _resolved_web3_provider_cache.get(chain)
     if cached_provider is not None:
         return cached_provider
 
     try:
-        rpc_url = resolve_rpc_url_for_chain(normalized_chain)
+        rpc_url = resolve_rpc_url_for_chain(chain)
     except ConnectionError:
-        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Cannot resolve any RPC for chain %s", normalized_chain)
+        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Cannot resolve any RPC for chain %s", chain.value)
         return None
 
     provider = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
-    _resolved_web3_provider_cache[normalized_chain] = provider
+    _resolved_web3_provider_cache[chain] = provider
     return provider
 
 
-def resolve_async_web3_provider_for_chain(chain_identifier: str) -> AsyncWeb3:
-    normalized_chain = chain_identifier.lower()
-    if normalized_chain == "sol":
-        normalized_chain = "solana"
-
-    cached_provider = _resolved_async_web3_provider_cache.get(normalized_chain)
+def resolve_async_web3_provider_for_chain(chain: BlockchainNetwork) -> AsyncWeb3:
+    cached_provider = _resolved_async_web3_provider_cache.get(chain)
     if cached_provider is not None:
         return cached_provider
 
-    rpc_url = resolve_rpc_url_for_chain(normalized_chain)
+    rpc_url = resolve_rpc_url_for_chain(chain)
     provider = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
-    _resolved_async_web3_provider_cache[normalized_chain] = provider
+    _resolved_async_web3_provider_cache[chain] = provider
     return provider
 
 
-def get_supported_evm_chains() -> list[str]:
-    return [chain for chain in FREE_RPC_ENDPOINTS if chain != "solana"]
+def get_supported_evm_chains() -> list[BlockchainNetwork]:
+    return [chain for chain in FREE_RPC_ENDPOINTS if chain != BlockchainNetwork.SOLANA]

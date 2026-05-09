@@ -149,7 +149,7 @@ export class AnalyticsExplorationComponent implements OnChanges {
                             }
                         ]
                     });
-                } else { // outlier
+                } else {
                     const outlierData = series.cells.map(cell => parseFloat((cell.outlier_hit_rate_percentage || 0).toFixed(1)));
                     newConfigs.push({
                         metricLabel: series.metric_label,

@@ -13,34 +13,28 @@ from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
-
-def _is_solana_chain(chain_identifier: str) -> bool:
-    return chain_identifier.lower() in {"solana", "sol"}
-
-
-def _is_supported_evm_chain(chain_identifier: str) -> bool:
-    return chain_identifier.lower() in get_supported_evm_chains()
+from src.core.structures.structures import BlockchainNetwork
 
 
 def fetch_onchain_price_for_token(token: Token) -> Optional[float]:
-    chain_identifier = token.chain
+    chain = token.chain
     pair_address = token.pair_address
     token_address = token.token_address
 
-    if not chain_identifier or not pair_address or not token_address:
+    if not chain or not pair_address or not token_address:
         logger.debug("[BLOCKCHAIN][PRICE][SERVICE] Skipping %s — missing chain/pair/token", token.symbol)
         return None
 
-    if _is_solana_chain(chain_identifier):
+    if chain == BlockchainNetwork.SOLANA:
         return read_solana_pool_price_usd(pair_address, token_address, token.dex_id)
 
-    if _is_supported_evm_chain(chain_identifier):
-        web3_provider = resolve_web3_provider_for_chain(chain_identifier)
+    if chain in get_supported_evm_chains():
+        web3_provider = resolve_web3_provider_for_chain(chain)
         if web3_provider is None:
             return None
-        return read_evm_pair_price_usd(web3_provider, chain_identifier, pair_address, token_address)
+        return read_evm_pair_price_usd(web3_provider, chain, pair_address, token_address)
 
-    logger.debug("[BLOCKCHAIN][PRICE][SERVICE] Unsupported chain %s for token %s", chain_identifier, token.symbol)
+    logger.debug("[BLOCKCHAIN][PRICE][SERVICE] Unsupported chain %s for token %s", chain.value, token.symbol)
     return None
 
 
@@ -58,7 +52,7 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
     for token in tokens:
         if not token.pair_address or not token.token_address:
             continue
-        if _is_solana_chain(token.chain):
+        if token.chain == BlockchainNetwork.SOLANA:
             solana_tokens.append(token)
         else:
             other_tokens.append(token)
@@ -113,7 +107,7 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
                 failed_pair_addresses.add(pair_address)
                 logger.debug(
                     "[BLOCKCHAIN][PRICE][SERVICE] No valid price for %s (%s) on %s",
-                    token.symbol, pair_address[:10], token.chain,
+                    token.symbol, pair_address[:10], token.chain.value,
                 )
         except Exception:
             failed_pair_addresses.add(pair_address)

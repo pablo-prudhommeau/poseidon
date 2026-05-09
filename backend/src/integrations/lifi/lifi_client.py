@@ -5,10 +5,11 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.configuration.config import settings
-from src.core.trading.trading_structures import TradingLifiRoute as LifiRoute, TradingLifiEvmTransactionRequest as LifiEvmTransactionRequest, TradingLifiSolanaSerializedTransaction as LifiSolanaSerializedTransaction
-from src.integrations.lifi.lifi_helpers import normalize_chain_identifier, execute_http_get_json
-from src.integrations.lifi.lifi_structures import EvmChain, LifiQuote
+from src.integrations.lifi.lifi_helpers import execute_http_get_json
+from src.integrations.lifi.lifi_structures import LifiTransactionRequest, LifiRoute, LifiSolanaSerializedTransaction, LifiQuote, EvmChain
 from src.logging.logger import get_application_logger
+
+LifiEvmTransactionRequest = LifiTransactionRequest
 
 logger = get_application_logger(__name__)
 
@@ -17,31 +18,12 @@ EVM_NATIVE_TOKEN_ZERO_ADDRESS: str = "0x0000000000000000000000000000000000000000
 SOLANA_CHAIN_IDENTIFIER: str = "SOL"
 SOLANA_NATIVE_TOKEN_TICKER: str = "SOL"
 
-_EVM_CHAIN_REGISTRY: dict[str, EvmChain] = {
-    "ethereum": EvmChain(dexscreener_chain_identifier="ethereum", chain_identifier=1, native_token_symbol="ETH"),
-    "arbitrum": EvmChain(dexscreener_chain_identifier="arbitrum", chain_identifier=42161, native_token_symbol="ETH"),
-    "optimism": EvmChain(dexscreener_chain_identifier="optimism", chain_identifier=10, native_token_symbol="ETH"),
-    "base": EvmChain(dexscreener_chain_identifier="base", chain_identifier=8453, native_token_symbol="ETH"),
-    "linea": EvmChain(dexscreener_chain_identifier="linea", chain_identifier=59144, native_token_symbol="ETH"),
-    "scroll": EvmChain(dexscreener_chain_identifier="scroll", chain_identifier=534352, native_token_symbol="ETH"),
-    "blast": EvmChain(dexscreener_chain_identifier="blast", chain_identifier=81457, native_token_symbol="ETH"),
-    "zksync": EvmChain(dexscreener_chain_identifier="zksync", chain_identifier=324, native_token_symbol="ETH"),
-    "era": EvmChain(dexscreener_chain_identifier="era", chain_identifier=324, native_token_symbol="ETH"),
-    "polygon-zkevm": EvmChain(dexscreener_chain_identifier="polygon-zkevm", chain_identifier=1101, native_token_symbol="ETH"),
-    "polygon_zkevm": EvmChain(dexscreener_chain_identifier="polygon_zkevm", chain_identifier=1101, native_token_symbol="ETH"),
-    "bsc": EvmChain(dexscreener_chain_identifier="bsc", chain_identifier=56, native_token_symbol="BNB"),
-    "opbnb": EvmChain(dexscreener_chain_identifier="opbnb", chain_identifier=204, native_token_symbol="BNB"),
-    "polygon": EvmChain(dexscreener_chain_identifier="polygon", chain_identifier=137, native_token_symbol="MATIC"),
-    "avalanche": EvmChain(dexscreener_chain_identifier="avalanche", chain_identifier=43114, native_token_symbol="AVAX"),
-    "fantom": EvmChain(dexscreener_chain_identifier="fantom", chain_identifier=250, native_token_symbol="FTM"),
-    "cronos": EvmChain(dexscreener_chain_identifier="cronos", chain_identifier=25, native_token_symbol="CRO"),
-    "gnosis": EvmChain(dexscreener_chain_identifier="gnosis", chain_identifier=100, native_token_symbol="xDAI"),
-    "celo": EvmChain(dexscreener_chain_identifier="celo", chain_identifier=42220, native_token_symbol="CELO"),
-    "metis": EvmChain(dexscreener_chain_identifier="metis", chain_identifier=1088, native_token_symbol="METIS"),
-    "mantle": EvmChain(dexscreener_chain_identifier="mantle", chain_identifier=5000, native_token_symbol="MNT"),
-    "kava": EvmChain(dexscreener_chain_identifier="kava", chain_identifier=2222, native_token_symbol="KAVA"),
-    "moonbeam": EvmChain(dexscreener_chain_identifier="moonbeam", chain_identifier=1284, native_token_symbol="GLMR"),
-    "moonriver": EvmChain(dexscreener_chain_identifier="moonriver", chain_identifier=1285, native_token_symbol="MOVR"),
+from src.core.structures.structures import BlockchainNetwork
+
+_EVM_CHAIN_REGISTRY: dict[BlockchainNetwork, EvmChain] = {
+    BlockchainNetwork.BASE: EvmChain(dexscreener_chain_identifier="base", chain_identifier=8453, native_token_symbol="ETH"),
+    BlockchainNetwork.BSC: EvmChain(dexscreener_chain_identifier="bsc", chain_identifier=56, native_token_symbol="BNB"),
+    BlockchainNetwork.AVALANCHE: EvmChain(dexscreener_chain_identifier="avalanche", chain_identifier=43114, native_token_symbol="AVAX"),
 }
 
 
@@ -69,19 +51,18 @@ class LifiRouteResponsePayload(BaseModel):
     steps: Optional[list[LifiQuoteStep]] = None
 
 
-def resolve_lifi_chain_identifier(dexscreener_chain_identifier: str) -> Optional[int]:
-    normalized_chain_identifier = normalize_chain_identifier(raw_chain_identifier=dexscreener_chain_identifier)
-    matched_chain = _EVM_CHAIN_REGISTRY.get(normalized_chain_identifier)
+def resolve_lifi_chain_identifier(chain: BlockchainNetwork) -> Optional[int]:
+    matched_chain = _EVM_CHAIN_REGISTRY.get(chain)
 
     if matched_chain is None:
-        logger.debug("[LIFI][CLIENT][CHAIN][RESOLVE] Unsupported Dexscreener chain identifier '%s'", dexscreener_chain_identifier)
+        logger.debug("[LIFI][CLIENT][CHAIN][RESOLVE] Unsupported chain identifier '%s'", chain.value)
         return None
 
     return matched_chain.chain_identifier
 
 
 def generate_native_token_to_erc20_quote(
-        chain_identifier: str,
+        chain: BlockchainNetwork,
         source_address: str,
         destination_token_address: str,
         source_amount_wei: int,
@@ -95,10 +76,10 @@ def generate_native_token_to_erc20_quote(
         logger.error("[LIFI][CLIENT][QUOTE][EVM] Invalid source amount %d", source_amount_wei)
         raise ValueError("Source amount in wei must be strictly positive.")
 
-    lifi_chain_identifier = resolve_lifi_chain_identifier(dexscreener_chain_identifier=chain_identifier)
+    lifi_chain_identifier = resolve_lifi_chain_identifier(chain=chain)
     if lifi_chain_identifier is None:
-        logger.error("[LIFI][CLIENT][QUOTE][EVM] Unsupported EVM chain %s", chain_identifier)
-        raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain_identifier}'")
+        logger.error("[LIFI][CLIENT][QUOTE][EVM] Unsupported EVM chain %s", chain.value)
+        raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain.value}'")
 
     lifi_base_url = str(settings.LIFI_BASE_URL).rstrip("/")
     if not lifi_base_url:
@@ -118,7 +99,7 @@ def generate_native_token_to_erc20_quote(
 
     logger.debug(
         "[LIFI][CLIENT][QUOTE][EVM][REQUEST] Requesting quote for chain %s (ID: %s) to token %s for %d wei with slippage %f",
-        chain_identifier,
+        chain.value,
         lifi_chain_identifier,
         destination_token_address,
         source_amount_wei,
@@ -127,7 +108,7 @@ def generate_native_token_to_erc20_quote(
 
     response_payload = execute_http_get_json(endpoint_url=target_endpoint_url, query_parameters=query_parameters)
 
-    logger.info("[LIFI][CLIENT][QUOTE][EVM][SUCCESS] Received quote for chain %s to token %s", chain_identifier, destination_token_address)
+    logger.info("[LIFI][CLIENT][QUOTE][EVM][SUCCESS] Received quote for chain %s to token %s", chain.value, destination_token_address)
     return LifiQuote.model_validate(response_payload)
 
 
@@ -224,15 +205,13 @@ def normalize_quote_response_to_route(quote_response: LifiRouteResponsePayload) 
 
 
 def generate_native_to_token_route(
-        chain_identifier: str,
+        chain: BlockchainNetwork,
         source_address: str,
         destination_token_address: str,
         source_amount_wei: int,
         slippage_tolerance: float,
 ) -> Optional[LifiRoute]:
-    normalized_chain = normalize_chain_identifier(raw_chain_identifier=chain_identifier)
-
-    if normalized_chain == "solana":
+    if chain == BlockchainNetwork.SOLANA:
         quote_payload = generate_solana_native_to_token_quote(
             source_address=source_address,
             destination_token_mint=destination_token_address,
@@ -242,7 +221,7 @@ def generate_native_to_token_route(
         resolved_route = normalize_quote_response_to_route(quote_response=quote_payload)
     else:
         evm_quote_model = generate_native_token_to_erc20_quote(
-            chain_identifier=normalized_chain,
+            chain=chain,
             source_address=source_address,
             destination_token_address=destination_token_address,
             source_amount_wei=source_amount_wei,
@@ -254,18 +233,48 @@ def generate_native_to_token_route(
     if resolved_route is None:
         logger.warning(
             "[LIFI][CLIENT][ROUTE][NORMALIZE] Missing executable payload in quote for chain %s and token %s",
-            chain_identifier,
+            chain.value,
             destination_token_address,
         )
         return None
 
-    network_tag = "SOLANA" if normalized_chain == "solana" else "EVM"
+    network_tag = "SOLANA" if chain == BlockchainNetwork.SOLANA else "EVM"
     logger.debug("[LIFI][CLIENT][ROUTE][SUCCESS] Successfully normalized LI.FI quote to route for network %s", network_tag)
     return resolved_route
 
 
+def generate_token_to_token_route(
+        chain: BlockchainNetwork,
+        source_address: str,
+        source_token_address: str,
+        destination_token_address: str,
+        source_amount_wei: int,
+        slippage_tolerance: float,
+) -> Optional[LifiRoute]:
+    evm_quote_model = generate_token_to_token_quote(
+        chain=chain,
+        source_address=source_address,
+        source_token_address=source_token_address,
+        destination_token_address=destination_token_address,
+        source_amount_wei=source_amount_wei,
+        slippage_tolerance=slippage_tolerance,
+    )
+    quote_payload = LifiRouteResponsePayload.model_validate(evm_quote_model.model_dump(by_alias=True))
+    resolved_route = normalize_quote_response_to_route(quote_response=quote_payload)
+
+    if resolved_route is None:
+        logger.warning(
+            "[LIFI][CLIENT][ROUTE][NORMALIZE] Missing executable payload in token quote for chain %s",
+            chain.value,
+        )
+        return None
+
+    logger.debug("[LIFI][CLIENT][ROUTE][SUCCESS] Successfully normalized LI.FI token quote to route")
+    return resolved_route
+
+
 def generate_token_to_token_quote(
-        chain_identifier: str,
+        chain: BlockchainNetwork,
         source_address: str,
         source_token_address: str,
         destination_token_address: str,
@@ -280,10 +289,10 @@ def generate_token_to_token_quote(
         logger.error("[LIFI][CLIENT][QUOTE][TOKEN] Invalid source amount %d", source_amount_wei)
         raise ValueError("Source amount in wei must be strictly positive.")
 
-    lifi_chain_identifier = resolve_lifi_chain_identifier(dexscreener_chain_identifier=chain_identifier)
+    lifi_chain_identifier = resolve_lifi_chain_identifier(chain=chain)
     if lifi_chain_identifier is None:
-        logger.error("[LIFI][CLIENT][QUOTE][TOKEN] Unsupported EVM chain %s", chain_identifier)
-        raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain_identifier}'")
+        logger.error("[LIFI][CLIENT][QUOTE][TOKEN] Unsupported EVM chain %s", chain.value)
+        raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain.value}'")
 
     lifi_base_url = str(settings.LIFI_BASE_URL).rstrip("/")
 
@@ -301,7 +310,7 @@ def generate_token_to_token_quote(
 
     logger.debug(
         "[LIFI][CLIENT][QUOTE][TOKEN][REQUEST] Requesting quote for chain %s (ID: %s) from token %s to token %s for amount %d",
-        chain_identifier,
+        chain.value,
         lifi_chain_identifier,
         source_token_address,
         destination_token_address,
@@ -309,6 +318,6 @@ def generate_token_to_token_quote(
     )
 
     response_payload = execute_http_get_json(endpoint_url=target_endpoint_url, query_parameters=query_parameters)
-    logger.info("[LIFI][CLIENT][QUOTE][TOKEN][SUCCESS] Received quote for chain %s from token %s to token %s", chain_identifier, source_token_address, destination_token_address)
+    logger.info("[LIFI][CLIENT][QUOTE][TOKEN][SUCCESS] Received quote for chain %s from token %s to token %s", chain.value, source_token_address, destination_token_address)
 
     return LifiQuote.model_validate(response_payload)

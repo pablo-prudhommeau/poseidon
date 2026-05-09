@@ -59,8 +59,10 @@ export class PaperModeControlComponent implements OnInit {
     private notifyWebSocketRefresh(): void {
         const socketReference = (this.webSocketService as any)['socket'];
 
-        if (socketReference) {
+        if (socketReference && socketReference.readyState === WebSocket.OPEN) {
             socketReference.send(JSON.stringify({type: 'refresh'}));
+            return;
         }
+        console.debug('[WEBSOCKET][REFRESH] Refresh skipped because websocket is not open');
     }
 }

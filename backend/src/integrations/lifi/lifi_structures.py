@@ -35,3 +35,13 @@ class EvmChain(BaseModel):
     dexscreener_chain_identifier: str
     chain_identifier: int
     native_token_symbol: str
+
+
+class LifiSolanaSerializedTransaction(BaseModel):
+    serialized_transaction: str
+
+
+class LifiRoute(BaseModel):
+    transaction_request: LifiTransactionRequest
+    transaction: Optional[LifiSolanaSerializedTransaction] = None
+    transactions: Optional[list[LifiSolanaSerializedTransaction]] = None

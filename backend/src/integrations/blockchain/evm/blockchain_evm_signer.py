@@ -130,11 +130,29 @@ class EvmSigner:
         logger.info("[BLOCKCHAIN][EVM][BROADCAST] Transaction successfully broadcasted. Hash: %s", transaction_hash_hex)
         return transaction_hash_hex
 
+    def confirm_transaction(self, tx_hash_hex: str, timeout_seconds: int = 45) -> bool:
+        try:
+            receipt = self.web3_provider.eth.wait_for_transaction_receipt(tx_hash_hex, timeout=timeout_seconds)
+            if receipt is not None:
+                status = receipt.get('status')
+                if status == 1:
+                    return True
+                else:
+                    logger.error("[BLOCKCHAIN][EVM][SIGNER] Transaction %s failed on-chain (status 0)", tx_hash_hex)
+                    return False
+            return False
+        except Exception as exception:
+            logger.error("[BLOCKCHAIN][EVM][SIGNER] Error confirming tx %s: %s", tx_hash_hex, exception)
+            return False
 
-def build_default_evm_signer() -> EvmSigner:
+
+from src.core.structures.structures import BlockchainNetwork
+
+
+def build_default_evm_signer(chain: BlockchainNetwork) -> EvmSigner:
     from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
     default_configuration = EvmSignerConfiguration(
-        rpc_endpoint_url=resolve_rpc_url_for_chain("ethereum"),
+        rpc_endpoint_url=resolve_rpc_url_for_chain(chain),
         security_mnemonic_phrase=settings.WALLET_MNEMONIC,
         wallet_derivation_index=settings.WALLET_DERIVATION_INDEX,
     )

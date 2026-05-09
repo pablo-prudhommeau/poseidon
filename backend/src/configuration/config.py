@@ -1,5 +1,8 @@
+import logging
 import os
 from pathlib import Path
+
+MAX_TRADING_ALLOWED_CHAIN_COUNT = 4
 
 
 def _as_bool(value: str | None, default: bool = False) -> bool:
@@ -9,11 +12,25 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
 
 
 def _to_dict(settings: object) -> dict:
-    return {
+    configuration_values = {
         name: value
         for name, value in vars(settings.__class__).items()
         if name.isupper() and not callable(value)
     }
+    configuration_values.update({
+        name: value
+        for name, value in vars(settings).items()
+        if name.isupper() and not callable(value)
+    })
+    return configuration_values
+
+
+def _parse_csv_values(raw_value: str) -> list[str]:
+    return [
+        normalized_value
+        for value in raw_value.lower().split(",")
+        if (normalized_value := value.strip())
+    ]
 
 
 class Settings:
@@ -54,9 +71,9 @@ class Settings:
     TRADING_MIN_VOLUME_6H_USD: float = float(os.getenv("TRADING_MIN_VOLUME_6H_USD", "25000"))
     TRADING_MIN_VOLUME_24H_USD: float = float(os.getenv("TRADING_MIN_VOLUME_24H_USD", "90000"))
     TRADING_MIN_LIQUIDITY_USD: float = float(os.getenv("TRADING_MIN_LIQUIDITY_USD", "5000"))
-    TRADING_LOOP_INTERVAL_SECONDS: int = int(os.getenv("TRADING_LOOP_INTERVAL_SECONDS", "30"))
-    TRADING_POSITION_GUARD_INTERVAL_SECONDS: int = int(os.getenv("TRADING_POSITION_GUARD_INTERVAL_SECONDS", "5"))
-    TRADING_DISPLAY_BROADCAST_INTERVAL_SECONDS: int = int(os.getenv("TRADING_DISPLAY_BROADCAST_INTERVAL_SECONDS", "10"))
+    TRADING_LOOP_INTERVAL_SECONDS: int = int(os.getenv("TRADING_LOOP_INTERVAL_SECONDS", "15"))
+    TRADING_POSITION_GUARD_INTERVAL_SECONDS: int = int(os.getenv("TRADING_POSITION_GUARD_INTERVAL_SECONDS", "2"))
+    CACHE_WATCHER_DEBOUNCE_SECONDS: float = float(os.getenv("CACHE_WATCHER_DEBOUNCE_SECONDS", "0.1"))
     TRADING_PER_BUY_FRACTION: float = float(os.getenv("TRADING_PER_BUY_FRACTION", "0.05"))
     TRADING_MIN_FREE_CASH_USD: float = float(os.getenv("TRADING_MIN_FREE_CASH_USD", "200"))
     TRADING_MAX_SLIPPAGE: float = float(os.getenv("TRADING_MAX_SLIPPAGE", "0.03"))
@@ -73,8 +90,15 @@ class Settings:
     TRADING_MAX_ABSOLUTE_PERCENT_6H: float = float(os.getenv("TRADING_MAX_ABSOLUTE_PERCENT_6H", "100"))
     TRADING_MAX_ABSOLUTE_PERCENT_24H: float = float(os.getenv("TRADING_MAX_ABSOLUTE_PERCENT_24H", "150"))
     TRADING_REBUY_COOLDOWN_MINUTES: int = int(os.getenv("TRADING_REBUY_COOLDOWN_MINUTES", "45"))
-    TRADING_ALLOWED_CHAINS: list[str] = os.getenv("TRADING_ALLOWED_CHAINS", "solana,bsc,base").lower().split(",")
+    TRADING_ALLOWED_CHAINS: list[str] = _parse_csv_values(os.getenv("TRADING_ALLOWED_CHAINS", "solana,bsc,base"))
     TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str] = os.getenv("TRADING_SOLANA_SUPPORTED_DEX_IDS", "pumpfun,pumpswap,raydium,meteora,orca").lower().split(",")
+
+    TRADING_STABLECOIN_SYMBOL: str = os.getenv("TRADING_STABLECOIN_SYMBOL", "USDT")
+    TRADING_STABLECOIN_ADDRESS_SOLANA: str = os.getenv("TRADING_STABLECOIN_ADDRESS_SOLANA", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB")
+    TRADING_STABLECOIN_ADDRESS_ETHEREUM: str = os.getenv("TRADING_STABLECOIN_ADDRESS_ETHEREUM", "0xdAC17F958D2ee523a2206206994597C13D831ec7")
+    TRADING_STABLECOIN_ADDRESS_BSC: str = os.getenv("TRADING_STABLECOIN_ADDRESS_BSC", "0x55d398326f99059fF775485246999027B3197955")
+    TRADING_STABLECOIN_ADDRESS_BASE: str = os.getenv("TRADING_STABLECOIN_ADDRESS_BASE", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
+    TRADING_STABLECOIN_ADDRESS_AVALANCHE: str = os.getenv("TRADING_STABLECOIN_ADDRESS_AVALANCHE", "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7")
 
     TRADING_MIN_FDV_USD: float = float(os.getenv("TRADING_MIN_FDV_USD", "100000"))
     TRADING_MAX_FDV_USD: float = float(os.getenv("TRADING_MAX_FDV_USD", "40000000"))
@@ -129,11 +153,11 @@ class Settings:
     WALLET_MNEMONIC: str = os.getenv("WALLET_MNEMONIC", "")
     WALLET_DERIVATION_INDEX: int = int(os.getenv("WALLET_DERIVATION_INDEX", "0"))
 
-    SOLANA_RPC_PREMIUM_URL: str = os.getenv("SOLANA_RPC_PREMIUM_URL", "")
-    ETHEREUM_RPC_PREMIUM_URL: str = os.getenv("ETHEREUM_RPC_PREMIUM_URL", "")
-    BSC_RPC_PREMIUM_URL: str = os.getenv("BSC_RPC_PREMIUM_URL", "")
-    BASE_RPC_PREMIUM_URL: str = os.getenv("BASE_RPC_PREMIUM_URL", "")
-    AVALANCHE_RPC_PREMIUM_URL: str = os.getenv("AVALANCHE_RPC_PREMIUM_URL", "")
+    RPC_PREMIUM_URL_SOLANA: str = os.getenv("RPC_PREMIUM_URL_SOLANA", "")
+    RPC_PREMIUM_URL_ETHEREUM: str = os.getenv("RPC_PREMIUM_URL_ETHEREUM", "")
+    RPC_PREMIUM_URL_BSC: str = os.getenv("RPC_PREMIUM_URL_BSC", "")
+    RPC_PREMIUM_URL_BASE: str = os.getenv("RPC_PREMIUM_URL_BASE", "")
+    RPC_PREMIUM_URL_AVALANCHE: str = os.getenv("RPC_PREMIUM_URL_AVALANCHE", "")
 
     WETH_ADDRESS: str = os.getenv("WETH_ADDRESS", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
     LIFI_BASE_URL: str = os.getenv("LIFI_BASE_URL", "https://li.quest")
@@ -166,6 +190,7 @@ class Settings:
     TRADING_SHADOWING_FIXED_NOTIONAL_USD: float = float(os.getenv("TRADING_SHADOWING_FIXED_NOTIONAL_USD", "500.0"))
     TRADING_SHADOWING_LOOKBACK_EVALUATIONS: int = int(os.getenv("TRADING_SHADOWING_LOOKBACK_EVALUATIONS", "50000"))
     TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION: int = int(os.getenv("TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION", "10000"))
+    TRADING_SHADOWING_MIN_PROFIT_FACTOR: float = float(os.getenv("TRADING_SHADOWING_MIN_PROFIT_FACTOR", "1.0"))
     TRADING_SHADOWING_MAX_NOTIONAL_MULTIPLIER: float = float(os.getenv("TRADING_SHADOWING_MAX_NOTIONAL_MULTIPLIER", "4.0"))
     TRADING_SHADOWING_LETHARGIC_HOURS: float = float(os.getenv("TRADING_SHADOWING_LETHARGIC_HOURS", "24"))
     TRADING_SHADOWING_DEXSCREENER_ABERRANT_PRICE_TOLERANCE: float = float(os.getenv("TRADING_SHADOWING_DEXSCREENER_ABERRANT_PRICE_TOLERANCE", "0.30"))
@@ -180,9 +205,22 @@ class Settings:
     TRADING_SHADOWING_GOLDEN_CAPITAL_VELOCITY_THRESHOLD: float = float(os.getenv("TRADING_SHADOWING_GOLDEN_CAPITAL_VELOCITY_THRESHOLD", "0.00"))
     TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET: float = float(os.getenv("TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET", "-0.025"))
     TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET: float = float(os.getenv("TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET", "-0.025"))
-    TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET: float = float(os.getenv("TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET", "2.5"))
-    TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET: float = float(os.getenv("TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET", "-0.50"))
+    TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET: float = float(os.getenv("TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET", "3.00"))
+    TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET: float = float(os.getenv("TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET", "-0.75"))
     TRADING_SHADOWING_TOXIC_MAX_EXPOSURE: int = int(os.getenv("TRADING_SHADOWING_TOXIC_MAX_EXPOSURE", "0"))
     TRADING_SHADOWING_OUTLIER_PNL_THRESHOLD: float = float(os.getenv("TRADING_SHADOWING_OUTLIER_PNL_THRESHOLD", "15.0"))
+
+    def __init__(self) -> None:
+        if len(self.TRADING_ALLOWED_CHAINS) <= MAX_TRADING_ALLOWED_CHAIN_COUNT:
+            return
+        ignored_chains = self.TRADING_ALLOWED_CHAINS[MAX_TRADING_ALLOWED_CHAIN_COUNT:]
+        self.TRADING_ALLOWED_CHAINS = self.TRADING_ALLOWED_CHAINS[:MAX_TRADING_ALLOWED_CHAIN_COUNT]
+        logging.getLogger(__name__).warning(
+            "[CONFIGURATION][TRADING][CHAINS] Ignoring %d configured chains beyond hard limit %d: %s",
+            len(ignored_chains),
+            MAX_TRADING_ALLOWED_CHAIN_COUNT,
+            ", ".join(ignored_chains),
+        )
+
 
 settings: Settings = Settings()

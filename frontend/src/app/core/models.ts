@@ -40,6 +40,13 @@ export interface DcaStrategyCreatePayload {
     average_unit_price_elasticity_factor: number;
     bear_market_start_date: string;
     bear_market_end_date: string;
+    current_cycle_index: number;
+    previous_all_time_high_price: number;
+    previous_bull_market_amplitude_percentage: number;
+    curve_flattening_factor: number;
+    bear_market_bottom_multiplier: number;
+    minimum_bull_market_multiplier: number;
+    aave_estimated_annual_percentage_yield: number;
 }
 
 export interface DcaStrategyCreateResponse {
@@ -146,6 +153,7 @@ export interface TradingTradePayload {
     token_address: string;
     pair_address: string;
     created_at: string;
+    dex_id: string;
     realized_profit_and_loss?: number | null;
     transaction_hash?: string | null;
 }
@@ -163,6 +171,7 @@ export interface TradingPositionPayload {
     stop_loss_price: number;
     position_phase: PositionPhase;
     blockchain_network: string;
+    dex_id: string;
     opened_at: string;
     updated_at: string;
     closed_at?: string | null;
@@ -185,6 +194,40 @@ export interface ShadowIntelligenceStatusPayload {
     hours_progress_percentage: number;
 }
 
+export interface BlockchainCashBalancePayload {
+    blockchain_network: string;
+    stablecoin_symbol: string;
+    stablecoin_address: string;
+    stablecoin_currency_symbol: string;
+    balance_raw: number;
+    native_token_symbol: string;
+    native_token_balance_raw: number;
+    native_token_balance_usd: number;
+}
+
+export interface TradingLiquidityPayload {
+    mode: TradeMode;
+    available_cash_balance: number;
+    stablecoin_currency_symbol: string;
+    maximum_chain_count: number;
+    blockchain_balances: BlockchainCashBalancePayload[];
+    updated_at: string;
+}
+
+export interface TradingShadowMetaPayload {
+    is_enabled: boolean;
+    is_activated: boolean;
+    phase: string;
+    total_outcomes_analyzed: number;
+    resolved_outcome_count: number;
+    elapsed_hours: number;
+    win_rate_percentage: number;
+    profit_factor: number;
+    expected_value_usd: number;
+    capital_velocity: number;
+    minimum_profit_factor: number;
+}
+
 export interface TradingPortfolioPayload {
     total_equity_value: number;
     available_cash_balance: number;
@@ -195,6 +238,7 @@ export interface TradingPortfolioPayload {
     realized_profit_and_loss_24h: number;
     realized_profit_and_loss_total: number;
     shadow_intelligence_status: ShadowIntelligenceStatusPayload;
+    blockchain_balances: BlockchainCashBalancePayload[];
 }
 
 export interface TradingEvaluationScoresPayload {
@@ -209,7 +253,6 @@ export interface TradingEvaluationAiPayload {
 
 export interface TradingEvaluationDecisionPayload {
     execution_decision: string;
-    execution_decision_reason: string;
     sizing_multiplier: number;
     order_notional_value_usd: number;
     free_cash_before_execution_usd: number;
@@ -248,8 +291,8 @@ export interface TradingEvaluationShadowSimulationPayload {
     take_profit_tier_2_hit_at?: string | null;
     stop_loss_hit_at?: string | null;
     exit_reason?: string | null;
-    realized_profit_and_loss_percentage?: number | null;
-    realized_profit_and_loss_usd?: number | null;
+    realized_pnl_percentage?: number | null;
+    realized_pnl_usd?: number | null;
     holding_duration_minutes?: number | null;
     is_profitable?: boolean | null;
     resolved_at?: string | null;
@@ -273,6 +316,7 @@ export interface TradingEvaluationFundamentalsPayload {
     buy_to_sell_ratio: number;
     market_cap_usd: number;
     fully_diluted_valuation_usd: number;
+    dexscreener_boost?: number | null;
 }
 
 export interface TradingEvaluationPayload {
@@ -288,7 +332,6 @@ export interface TradingEvaluationPayload {
     fundamentals: TradingEvaluationFundamentalsPayload;
     decision: TradingEvaluationDecisionPayload;
     shadow_diagnostics: TradingEvaluationShadowDiagnosticsPayload;
-    shadow_simulation?: TradingEvaluationShadowSimulationPayload | null;
     raw_dexscreener_payload: Record<string, object>;
     raw_configuration_settings: Record<string, object>;
 }
@@ -309,6 +352,8 @@ export interface WebsocketInitializationPayload {
 export enum WebsocketMessageType {
     INITIALIZATION = 'initialization',
     PORTFOLIO = 'portfolio',
+    LIQUIDITY = 'liquidity',
+    SHADOW_META = 'shadow_meta',
     POSITIONS = 'positions',
     TRADES = 'trades',
     DCA_STRATEGIES = 'dca_strategies',
@@ -329,6 +374,14 @@ export interface WebsocketInitializationMessage extends BaseWebsocketMessage<Web
 
 export interface WebsocketPortfolioMessage extends BaseWebsocketMessage<TradingPortfolioPayload> {
     type: WebsocketMessageType.PORTFOLIO;
+}
+
+export interface WebsocketLiquidityMessage extends BaseWebsocketMessage<TradingLiquidityPayload> {
+    type: WebsocketMessageType.LIQUIDITY;
+}
+
+export interface WebsocketShadowMetaMessage extends BaseWebsocketMessage<TradingShadowMetaPayload> {
+    type: WebsocketMessageType.SHADOW_META;
 }
 
 export interface WebsocketPositionsMessage extends BaseWebsocketMessage<TradingPositionPayload[]> {
@@ -362,6 +415,8 @@ export interface WebsocketRefreshMessage {
 export type WebsocketMessageUnion =
     | WebsocketInitializationMessage
     | WebsocketPortfolioMessage
+    | WebsocketLiquidityMessage
+    | WebsocketShadowMetaMessage
     | WebsocketPositionsMessage
     | WebsocketTradesMessage
     | WebsocketDcaStrategiesMessage

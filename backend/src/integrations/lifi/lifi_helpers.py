@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast, Optional
+from typing import cast
 
 import httpx
 
@@ -54,32 +54,3 @@ def execute_http_get_json(endpoint_url: str, query_parameters: dict[str, object]
             request_exception,
         )
         raise request_exception
-
-
-def normalize_chain_identifier(raw_chain_identifier: Optional[str]) -> str:
-    if raw_chain_identifier is None or not raw_chain_identifier.strip():
-        logger.debug("[LIFI][NORMALIZATION][SKIPPED] Empty chain identifier provided, returning default fallback string")
-        return "ethereum"
-
-    lowercased_identifier = raw_chain_identifier.strip().lower()
-
-    if lowercased_identifier in {"eth", "ethereum-mainnet"}:
-        return "ethereum"
-    if lowercased_identifier in {"arb", "arbitrum-one"}:
-        return "arbitrum"
-    if lowercased_identifier in {"op", "optimism-mainnet"}:
-        return "optimism"
-    if lowercased_identifier in {"bsc-mainnet", "binance-smart-chain", "binance"}:
-        return "bsc"
-    if lowercased_identifier in {"matic", "polygon-pos", "polygon-mainnet"}:
-        return "polygon"
-    if lowercased_identifier in {"avax", "avalanche-c"}:
-        return "avalanche"
-    if lowercased_identifier in {"xdai"}:
-        return "gnosis"
-    if lowercased_identifier in {"zk-sync", "zk-sync-era", "zksync-era"}:
-        return "zksync"
-    if lowercased_identifier in {"polygonzkevm", "polygon-zk-evm"}:
-        return "polygon-zkevm"
-
-    return lowercased_identifier

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import os
-from typing import Any, Dict, List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,67 +9,73 @@ from fastapi.middleware.gzip import GZipMiddleware
 from src.api.http.http_api import router as http_router
 from src.api.websocket.websocket_hub import router as ws_router
 from src.api.websocket.websocket_manager import websocket_manager
-from src.core.jobs.dca_job import dca_job as aave_dca
-from src.core.jobs.job_launcher import ensure_started, get_status
-from src.integrations.aave.aave_sentinel import sentinel as aave_sentinel
+from src.cache.cache_invalidator import cache_invalidator
+from src.core.jobs.job_structures import ApiStatusResponse
+from src.core.jobs.orchestrator import read_background_jobs_runtime_status, start_background_jobs
 from src.logging.logger import get_application_logger
-from src.persistence.db import initialize_database, get_database_session
+from src.persistence.db import get_database_session, initialize_database
 
-log = get_application_logger(__name__)
+logger = get_application_logger(__name__)
 
 
-def _parse_allowed_origins(env_value: str) -> List[str]:
-    return [origin.strip() for origin in env_value.split(",") if origin.strip()]
+def _parse_allowed_origins(environment_value: str) -> list[str]:
+    return [origin_segment.strip() for origin_segment in environment_value.split(",") if origin_segment.strip()]
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Poseidon API")
+    application = FastAPI(title="Poseidon API")
 
-    cors_origins_env = os.getenv(
+    cors_origins_environment_value = os.getenv(
         "CORS_ORIGINS",
         "http://localhost:4200,http://127.0.0.1:4200",
     )
-    allowed_origins = _parse_allowed_origins(cors_origins_env)
+    allowed_origin_list = _parse_allowed_origins(cors_origins_environment_value)
 
-    app.add_middleware(
+    application.add_middleware(
         CORSMiddleware,
-        allow_origins=allowed_origins,
+        allow_origins=allowed_origin_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    app.add_middleware(GZipMiddleware, minimum_size=500)
+    application.add_middleware(GZipMiddleware, minimum_size=500)
 
-    @app.on_event("startup")
+    @application.on_event("startup")
     async def on_startup() -> None:
         initialize_database()
         websocket_manager.attach_current_event_loop()
-        ensure_started()
+
+        from src.core.dca.cache.dca_cache_rebuilders import register_dca_rebuilders
+        from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders
+        register_trading_rebuilders()
+        register_dca_rebuilders()
+
+        cache_invalidator.start_watcher()
+        logger.info("[STARTUP][CACHE] Invalidation watcher started")
 
         from src.core.dca.dca_manager import DcaManager
-        with get_database_session() as session:
-            manager = DcaManager(session)
-            manager.resync_waiting_approvals()
+        with get_database_session() as database_session:
+            DcaManager(database_session).resync_waiting_approvals()
 
-        asyncio.create_task(aave_sentinel.start())
-        log.info("Aave Sentinel task scheduled.")
+        start_background_jobs()
 
-        asyncio.create_task(aave_dca.start())
-        log.info("DCA background task successfully scheduled.")
-
-    @app.on_event("shutdown")
+    @application.on_event("shutdown")
     async def on_shutdown() -> None:
-        await aave_sentinel.stop()
+        from src.integrations.aave.aave_sentinel import sentinel
+        await sentinel.stop()
 
-    @app.get("/api/status")
-    def api_status() -> Dict[str, Any]:
-        return {"ok": True, "status": get_status()}
+    @application.get("/api/status", response_model=ApiStatusResponse)
+    def api_status() -> ApiStatusResponse:
+        return ApiStatusResponse(
+            ok=True,
+            status=read_background_jobs_runtime_status(),
+        )
 
-    app.include_router(ws_router)
-    app.include_router(http_router)
+    application.include_router(ws_router)
+    application.include_router(http_router)
 
-    return app
+    return application
 
 
 app = create_app()

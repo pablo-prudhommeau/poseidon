@@ -11,15 +11,17 @@ from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
+from src.core.structures.structures import BlockchainNetwork
+
 
 class PairIdentity(BaseModel):
-    chain: str
+    chain: BlockchainNetwork
     token_address: str
     pair_address: str
 
     def get_unique_key(self) -> str:
         strict_pair_or_token_address = self.pair_address if self.pair_address else self.token_address
-        return f"{self.chain}:{strict_pair_or_token_address}".lower()
+        return f"{self.chain.value}:{strict_pair_or_token_address}".lower()
 
 
 class WindowActivity(BaseModel):

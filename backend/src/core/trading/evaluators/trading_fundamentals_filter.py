@@ -4,7 +4,7 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.trading.trading_structures import TradingCandidate
-from src.core.utils.format_utils import _tail
+from src.core.utils.format_utils import tail
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -26,7 +26,7 @@ def apply_fundamentals_filter(candidates: list[TradingCandidate]) -> list[Tradin
     for candidate in candidates:
         token_information = candidate.dexscreener_token_information
         symbol = token_information.base_token.symbol
-        short_address = _tail(token_information.base_token.address)
+        short_address = tail(token_information.base_token.address)
 
         fdv: Optional[float] = token_information.fully_diluted_valuation
         market_cap: Optional[float] = token_information.market_cap

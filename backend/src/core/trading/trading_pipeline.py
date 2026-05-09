@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import math
+
 from src.configuration.config import settings
+from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
 from src.core.trading.evaluators.trading_age_filter import apply_age_filter
 from src.core.trading.evaluators.trading_ai_scorer import apply_ai_scorer
@@ -17,15 +20,14 @@ from src.core.trading.evaluators.trading_shadowing_notional_booster import apply
 from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
 from src.core.trading.execution.trading_executor import TradingExecutor
-from src.core.trading.execution.trading_order_builder import build_lifi_route_for_live_execution
-from src.core.trading.shadowing.shadow_analytics_intelligence import compute_shadow_intelligence_snapshot
+from src.core.trading.execution.trading_order_builder import build_route_for_live_execution
+from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot
+from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload, TradingPipelineContext
-from src.core.trading.utils.trading_candidate_utils import (
-    fetch_trading_candidates_sync,
+from src.core.trading.trading_utils import (
     preload_best_prices,
 )
-from src.core.utils.format_utils import _tail
-from src.core.utils.pnl_utils import compute_portfolio_free_cash
+from src.core.utils.format_utils import tail
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -70,9 +72,17 @@ class TradingPipeline:
         shadow_snapshot = None
         if settings.TRADING_SHADOWING_ENABLED:
             shadow_snapshot = self._step_load_shadow_intelligence()
+            if shadow_snapshot is None:
+                logger.warning(
+                    "[TRADING][PIPELINE][SHADOW] Shadow intelligence not yet in cache — "
+                    "shadowing job has not produced its first snapshot yet; aborting trading cycle"
+                )
+                return
             pipeline_context.shadow_intelligence_snapshot = shadow_snapshot
             if not shadow_snapshot.is_activated:
                 logger.info("[TRADING][PIPELINE][GATE] Shadow intelligence in LEARNING phase — live trading is paused until sufficient data is collected.")
+                return
+            if not self._is_shadow_profit_factor_tradable(shadow_snapshot):
                 return
 
         shadow_active = shadow_snapshot is not None and shadow_snapshot.is_activated
@@ -147,16 +157,29 @@ class TradingPipeline:
 
     def _step_filter_allowed_chains(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         allowed_chains = set(settings.TRADING_ALLOWED_CHAINS)
+        if not settings.PAPER_MODE:
+            allowed_chains = {BlockchainNetwork.SOLANA.value}
+            logger.info(
+                "[TRADING][PIPELINE][CHAIN_FILTER] Live execution guard active: restricting candidate universe to %s",
+                BlockchainNetwork.SOLANA.value,
+            )
         retained: list[TradingCandidate] = []
+        rejected_counts: dict[str, int] = {}
+        rejected_examples: dict[str, list[str]] = {}
         for candidate in candidates:
-            chain_identifier = (candidate.dexscreener_token_information.chain_id or "").strip().lower()
+            chain_identifier = candidate.token.chain.value if candidate.token.chain else ""
             if chain_identifier in allowed_chains:
                 retained.append(candidate)
             else:
-                logger.debug(
-                    "[TRADING][PIPELINE][CHAIN_FILTER] %s rejected — chain %s not in allowed list %s",
-                    candidate.token.symbol, chain_identifier, allowed_chains,
-                )
+                rejected_counts[chain_identifier] = rejected_counts.get(chain_identifier, 0) + 1
+                examples = rejected_examples.setdefault(chain_identifier, [])
+                if len(examples) < 5:
+                    examples.append(candidate.token.symbol)
+
+        if rejected_counts:
+            chains_summary = ", ".join([f"{chain}({count})" for chain, count in sorted(rejected_counts.items())])
+            examples_summary = "; ".join([f"{chain}:[{', '.join(examples)}]" for chain, examples in rejected_examples.items()])
+            logger.debug("[TRADING][PIPELINE][CHAIN_FILTER] Rejected chains summary: %s — examples: %s", chains_summary, examples_summary)
 
         if len(retained) < len(candidates):
             logger.info(
@@ -168,20 +191,27 @@ class TradingPipeline:
     def _step_filter_supported_dexes(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         allowed_solana_dexes = set(settings.TRADING_SOLANA_SUPPORTED_DEX_IDS)
         retained: list[TradingCandidate] = []
+        rejected_counts: dict[str, int] = {}
+        rejected_examples: dict[str, list[str]] = {}
         for candidate in candidates:
-            chain_identifier = (candidate.dexscreener_token_information.chain_id or "").strip().lower()
+            chain_identifier = candidate.token.chain.value if candidate.token.chain else ""
             dex_identifier = (candidate.dexscreener_token_information.dex_id or "").strip().lower()
 
-            if chain_identifier == "solana":
+            if chain_identifier == BlockchainNetwork.SOLANA.value:
                 if dex_identifier in allowed_solana_dexes:
                     retained.append(candidate)
                 else:
-                    logger.debug(
-                        "[TRADING][PIPELINE][DEX_FILTER] %s rejected — DEX %s not in allowed list %s",
-                        candidate.token.symbol, dex_identifier, allowed_solana_dexes,
-                    )
+                    rejected_counts[dex_identifier] = rejected_counts.get(dex_identifier, 0) + 1
+                    examples = rejected_examples.setdefault(dex_identifier, [])
+                    if len(examples) < 5:
+                        examples.append(candidate.token.symbol)
             else:
                 retained.append(candidate)
+
+        if rejected_counts:
+            dex_summary = ", ".join([f"{dex}({count})" for dex, count in sorted(rejected_counts.items())])
+            examples_summary = "; ".join([f"{dex}:[{', '.join(examples)}]" for dex, examples in rejected_examples.items()])
+            logger.debug("[TRADING][PIPELINE][DEX_FILTER] Rejected dexes summary: %s — examples: %s", dex_summary, examples_summary)
 
         if len(retained) < len(candidates):
             logger.info(
@@ -230,17 +260,34 @@ class TradingPipeline:
         return apply_ai_scorer(candidates, pipeline_context)
 
     def _step_load_shadow_intelligence(self):
-        from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot
-        try:
-            snapshot = compute_shadow_intelligence_snapshot()
-            logger.info(
-                "[TRADING][PIPELINE][SHADOW] Shadow intelligence loaded — activated=%s, outcomes=%d",
-                snapshot.is_activated, snapshot.total_outcomes_analyzed,
+        from src.core.trading.cache.trading_cache import trading_state_cache
+        snapshot = trading_state_cache.get_shadow_intelligence_snapshot()
+        if snapshot is None:
+            return None
+        logger.info(
+            "[TRADING][PIPELINE][SHADOW] Shadow intelligence loaded — activated=%s, outcomes=%d",
+            snapshot.is_activated, snapshot.total_outcomes_analyzed,
+        )
+        return snapshot
+
+    def _is_shadow_profit_factor_tradable(self, shadow_snapshot: ShadowIntelligenceSnapshot) -> bool:
+        profit_factor = shadow_snapshot.meta_profit_factor
+        if not math.isfinite(profit_factor) or profit_factor <= 0.0:
+            logger.warning(
+                "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow profit factor unavailable/invalid (value=%s); trading cycle blocked",
+                profit_factor,
             )
-            return snapshot
-        except Exception:
-            logger.exception("[TRADING][PIPELINE][SHADOW] Failed to load shadow intelligence, using empty snapshot")
-            return ShadowIntelligenceSnapshot(metric_snapshots=[], total_outcomes_analyzed=0, is_activated=False)
+            return False
+
+        minimum_profit_factor = settings.TRADING_SHADOWING_MIN_PROFIT_FACTOR
+        if profit_factor >= minimum_profit_factor:
+            return True
+        logger.warning(
+            "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow profit factor %.2f is below %.2f; trading cycle blocked",
+            profit_factor,
+            minimum_profit_factor,
+        )
+        return False
 
     def _step_shadowing_toxic_exposure_filter(self, candidates: list[TradingCandidate], shadow_snapshot) -> list[TradingCandidate]:
         return apply_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
@@ -270,13 +317,21 @@ class TradingPipeline:
             else:
                 total_equity_usd = latest_snapshot.total_equity_value
 
-        free_cash_usd = compute_portfolio_free_cash()
+        from src.core.trading.cache.trading_cache import trading_state_cache
+        available_cash_usd = trading_state_cache.get_available_cash_usd()
+        if available_cash_usd is None:
+            logger.warning(
+                "[TRADING][PIPELINE][EXECUTE] Available cash not yet in cache — cache not yet warmed up; skipping execution cycle"
+            )
+            for rank, candidate in enumerate(candidates, start=1):
+                TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "CACHE_NOT_READY")
+            return
         per_buy_fraction = settings.TRADING_PER_BUY_FRACTION
         min_free_cash = settings.TRADING_MIN_FREE_CASH_USD
         max_positions = settings.TRADING_MAX_OPEN_POSITIONS
 
-        if free_cash_usd < min_free_cash:
-            logger.info("[TRADING][PIPELINE][EXECUTE] Insufficient free cash: %.2f < %.2f", free_cash_usd, min_free_cash)
+        if available_cash_usd < min_free_cash:
+            logger.info("[TRADING][PIPELINE][EXECUTE] Insufficient free cash: %.2f < %.2f", available_cash_usd, min_free_cash)
             for rank, candidate in enumerate(candidates, start=1):
                 TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
             return
@@ -292,11 +347,11 @@ class TradingPipeline:
                 TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "MAX_POSITIONS")
                 continue
 
-            if free_cash_usd < min_free_cash:
+            if available_cash_usd < min_free_cash:
                 TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, "NO_CASH")
                 continue
 
-            available_to_spend = max(0.0, free_cash_usd - min_free_cash)
+            available_to_spend = max(0.0, available_cash_usd - min_free_cash)
             order_notional = total_equity_usd * per_buy_fraction * candidate.shadow_notional_multiplier
 
             if order_notional > available_to_spend:
@@ -311,10 +366,10 @@ class TradingPipeline:
                 continue
             dex_price = candidate.dex_price or candidate.dexscreener_token_information.price_usd or 0.0
 
-            lifi_route = build_lifi_route_for_live_execution(candidate, order_notional)
+            execution_route = build_route_for_live_execution(candidate, order_notional)
 
-            free_cash_before = free_cash_usd
-            free_cash_after = free_cash_usd - order_notional
+            free_cash_before = available_cash_usd
+            free_cash_after = available_cash_usd - order_notional
 
             evaluation_id = TradingEvaluationRecorder.persist_and_broadcast(
                 candidate,
@@ -333,18 +388,19 @@ class TradingPipeline:
                 order_notional=order_notional,
                 original_candidate=candidate,
                 origin_evaluation_id=evaluation_id,
-                lifi_routing_path=lifi_route,
+                execution_route=execution_route,
             )
 
             logger.info(
-                "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f quality=%.2f shadow_mult=%.2f",
-                rank, candidate.token.symbol, _tail(candidate.token.token_address), order_notional, candidate.ai_adjusted_quality_score, candidate.shadow_notional_multiplier,
+                "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f quality=%.2f shadow_mult=%.2f route=%s",
+                rank, candidate.token.symbol, tail(candidate.token.token_address), order_notional, candidate.ai_adjusted_quality_score, candidate.shadow_notional_multiplier,
+                "available" if execution_route is not None else "paper",
             )
 
             buy_succeeded = self._executor.buy(order_payload)
 
             if buy_succeeded:
-                free_cash_usd = free_cash_after
+                available_cash_usd = free_cash_after
                 executed_count += 1
                 current_open_count += 1
             else:

@@ -3,13 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
+from bip_utils import Bip39SeedGenerator, Bip32Slip10Ed25519
 from solana.rpc.api import Client
 from solana.rpc.types import TxOpts
 from solders.keypair import Keypair
 from solders.presigner import Presigner
 from solders.signature import Signature
 from solders.transaction import VersionedTransaction
+
+from src.core.structures.structures import BlockchainNetwork
 
 try:
     from solders.rpc.responses import SendTransactionResp
@@ -37,10 +39,11 @@ class SolanaSigner:
         self.client = Client(configuration.rpc_url, timeout=30)
 
         seed = Bip39SeedGenerator(configuration.mnemonic).Generate("")
-        bip_obj = Bip44.FromSeed(seed, Bip44Coins.SOLANA)
-        account = bip_obj.Purpose().Coin().Account(configuration.wallet_derivation_index).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
-        raw_private_key = account.PrivateKey().Raw().ToBytes()
-        self.keypair = Keypair.from_bytes(raw_private_key)
+        bip32_node = Bip32Slip10Ed25519.FromSeed(seed)
+        derivation_path = f"m/44'/501'/{configuration.wallet_derivation_index}'/0'"
+        derived_node = bip32_node.DerivePath(derivation_path)
+        raw_private_key = derived_node.PrivateKey().Raw().ToBytes()
+        self.keypair = Keypair.from_seed(raw_private_key)
 
         logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Initialized signer. Address=%s", self.keypair.pubkey())
 
@@ -169,11 +172,44 @@ class SolanaSigner:
         logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Broadcasted signature %s", signature)
         return signature
 
+    def confirm_transaction(self, signature_str: str, timeout_seconds: int = 45) -> bool:
+        import time
+        from solders.signature import Signature
+
+        try:
+            signature_obj = Signature.from_string(signature_str)
+        except Exception:
+            return False
+
+        start_time = time.time()
+        while time.time() - start_time < timeout_seconds:
+            try:
+                response = self.client.get_signature_statuses([signature_obj])
+                if response and hasattr(response, "value"):
+                    statuses = response.value
+                    if statuses and len(statuses) > 0 and statuses[0] is not None:
+                        status = statuses[0]
+                        if hasattr(status, "err") and status.err is not None:
+                            logger.error("[BLOCKCHAIN][SOLANA][SIGNER] Transaction %s failed with error: %s", signature_str, status.err)
+                            return False
+
+                        if hasattr(status, "confirmation_status"):
+                            conf_status = str(status.confirmation_status)
+                            if "confirmed" in conf_status.lower() or "finalized" in conf_status.lower():
+                                return True
+            except Exception as exception:
+                logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Error checking status: %s", exception)
+
+            time.sleep(2.0)
+
+        logger.warning("[BLOCKCHAIN][SOLANA][SIGNER] Transaction %s confirmation timed out after %d seconds", signature_str, timeout_seconds)
+        return False
+
 
 def build_default_solana_signer() -> SolanaSigner:
     from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
     configuration = SolanaSignerConfiguration(
-        rpc_url=resolve_rpc_url_for_chain("solana"),
+        rpc_url=resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA),
         mnemonic=settings.WALLET_MNEMONIC,
         wallet_derivation_index=settings.WALLET_DERIVATION_INDEX
     )

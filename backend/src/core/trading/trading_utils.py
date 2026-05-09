@@ -1,25 +1,26 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import threading
-from typing import Awaitable, Optional, TypeVar
+from enum import Enum
+from typing import Awaitable, Optional, TypeVar, Dict, Set, Any
 
-from src.core.structures.structures import Token
+from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.trading_structures import TradingCandidate
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_application_logger
+from src.persistence.models import TradingPosition
 
 logger = get_application_logger(__name__)
 
 U = TypeVar("U")
 
-
-def is_finite_number(value: object) -> bool:
-    try:
-        return math.isfinite(float(value))
-    except Exception:
-        return False
+_NATIVE_SYMBOL_SYNONYMS: Dict[BlockchainNetwork, Set[str]] = {
+    BlockchainNetwork.BASE: {"ETH", "WETH"},
+    BlockchainNetwork.BSC: {"BNB", "WBNB"},
+    BlockchainNetwork.AVALANCHE: {"AVAX", "WAVAX"},
+    BlockchainNetwork.SOLANA: {"SOL", "WSOL"},
+}
 
 
 def candidate_from_dexscreener_token_information(token_information: DexscreenerTokenInformation) -> TradingCandidate:
@@ -136,13 +137,71 @@ def run_awaitable_in_fresh_loop(asynchronous_task: Awaitable[U], debug_label: st
         return task_result_container["result"]
 
 
-def fetch_trading_candidates_sync() -> list[TradingCandidate]:
-    from src.integrations.dexscreener.dexscreener_client import fetch_trending_candidates
-
-    token_information_list: list[DexscreenerTokenInformation] = run_awaitable_in_fresh_loop(
-        asynchronous_task=fetch_trending_candidates(),
-        debug_label="fetch_trading_candidates",
+def convert_trading_position_to_token(position: TradingPosition) -> Token:
+    pair_address: Optional[str] = position.pair_address if isinstance(position.pair_address,
+                                                                      str) and position.pair_address else None
+    return Token(
+        chain=position.blockchain_network,
+        token_address=position.token_address,
+        symbol=position.token_symbol,
+        pair_address=pair_address,
+        dex_id=position.dex_id,
     )
-    candidates_list: list[TradingCandidate] = [candidate_from_dexscreener_token_information(token_information) for token_information in token_information_list]
-    logger.info("[TRADING][FETCH] Successfully converted %d token records into trading candidates", len(candidates_list))
-    return candidates_list
+
+
+def normalize_side_to_upper(value: str | Enum | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.upper()
+    if isinstance(value, Enum):
+        try:
+            enum_value = value.value
+        except Exception:
+            enum_value = str(value)
+        return str(enum_value).upper()
+    return str(value).upper()
+
+
+def get_symbol(obj: Any) -> str:
+    if not isinstance(obj, dict):
+        return ""
+    sym = obj.get("symbol") or obj.get("sym") or obj.get("ticker")
+    return str(sym).strip().upper() if isinstance(sym, str) else ""
+
+
+def get_address(obj: Any) -> Optional[str]:
+    if not isinstance(obj, dict):
+        return None
+    addr = obj.get("address") or obj.get("addr")
+    return str(addr) if isinstance(addr, str) and addr else None
+
+
+def native_synonyms(chain_key: BlockchainNetwork) -> Set[str]:
+    return _NATIVE_SYMBOL_SYNONYMS.get(chain_key, {"ETH", "WETH"})
+
+
+def is_native_symbol(symbol: str, chain_key: BlockchainNetwork) -> bool:
+    return symbol.upper() in native_synonyms(chain_key)
+
+
+def get_currency_symbol(asset_symbol: str) -> str:
+    if not asset_symbol:
+        return ""
+
+    symbol_upper = asset_symbol.upper()
+
+    if any(sub in symbol_upper for sub in ["USD", "DAI", "USDT", "USDC"]):
+        return "$"
+    if "EUR" in symbol_upper:
+        return "€"
+    if "BTC" in symbol_upper:
+        return "₿"
+    if "ETH" in symbol_upper:
+        return "Ξ"
+    if "SOL" in symbol_upper:
+        return "◎"
+    if "LINK" in symbol_upper:
+        return "⬡"
+
+    return asset_symbol

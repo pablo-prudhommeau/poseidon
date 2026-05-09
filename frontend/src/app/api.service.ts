@@ -18,8 +18,10 @@ import {
 
 export interface AppStatus {
     mode: TradeMode;
-    interval: number;
-    display_broadcast_interval: number;
+    trading_enabled: boolean;
+    trading_interval_seconds: number;
+    position_guard_interval_seconds: number;
+    shadowing_enabled: boolean;
 }
 
 export interface AppStatusResponse {

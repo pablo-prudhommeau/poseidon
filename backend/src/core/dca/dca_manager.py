@@ -4,10 +4,11 @@ import asyncio
 
 from sqlalchemy.orm import Session
 
-from src.api.websocket.websocket_hub import notify_dca_state_changed
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.dca.dca_allocation_engine import DcaAllocationEngine
-from src.core.structures.structures import DcaOrderStatus, DcaStrategyStatus
+from src.core.structures.structures import DcaOrderStatus, DcaStrategyStatus, BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.binance.binance_client import fetch_exponential_moving_average_and_price
@@ -57,7 +58,8 @@ class DcaManager:
 
             if elapsed_seconds > 0:
                 year_fraction = elapsed_seconds / 31536000.0
-                current_supply_annual_percentage_yield = await self.aave_executor.fetch_supply_apy(dca_strategy.blockchain_network, dca_strategy.source_asset_address)
+                blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
+                current_supply_annual_percentage_yield = await self.aave_executor.fetch_supply_apy(blockchain, dca_strategy.source_asset_address)
                 accrued_yield_amount = unspent_investment_budget * current_supply_annual_percentage_yield * year_fraction
                 dca_strategy.realized_aave_yield_amount += accrued_yield_amount
                 logger.info(
@@ -70,7 +72,8 @@ class DcaManager:
         dca_strategy.last_yield_calculation_timestamp = current_local_time
         self.database_session.commit()
 
-        is_conflicting_debt_detected = await self.aave_executor.verify_active_debt(dca_strategy.blockchain_network, dca_strategy.target_asset_address)
+        blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
+        is_conflicting_debt_detected = await self.aave_executor.verify_active_debt(blockchain, dca_strategy.target_asset_address)
         if is_conflicting_debt_detected:
             logger.error("[DCA][MANAGER][DEBT] Conflicting borrow position detected for target asset. Suspending strategy safety first.")
             dca_strategy.strategy_status = DcaStrategyStatus.PAUSED
@@ -119,7 +122,7 @@ class DcaManager:
                 dca_order.order_status = DcaOrderStatus.WAITING_USER_APPROVAL
                 self.dca_order_dao.save(dca_order)
                 self._send_approval_request(dca_order, dca_strategy)
-                notify_dca_state_changed()
+                cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
                 return
 
             if "AVERAGE_PRICE_PROTECTION" in allocation_verdict.action_description:
@@ -164,7 +167,7 @@ class DcaManager:
                     dca_strategy.available_dry_powder += dry_powder_delta
                     self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
                     self.dca_order_dao.save(dca_order)
-                    notify_dca_state_changed()
+                    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
 
                     send_alert(
                         f"[{dca_strategy.target_asset_symbol}] : PRU Protection",
@@ -183,14 +186,14 @@ class DcaManager:
                     dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
-                    notify_dca_state_changed()
+                    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
                     await asyncio.sleep(2)
 
                 if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
                     dca_order.order_status = DcaOrderStatus.SWAPPED
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
-                    notify_dca_state_changed()
+                    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
                     await asyncio.sleep(2)
 
                 if dca_order.order_status == DcaOrderStatus.SWAPPED:
@@ -204,7 +207,7 @@ class DcaManager:
                     self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
-                    notify_dca_state_changed()
+                    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
 
                 display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
                 send_alert(
@@ -226,7 +229,7 @@ class DcaManager:
                 )
                 dca_order.order_status = DcaOrderStatus.FAILED
                 self.dca_order_dao.save(dca_order)
-                notify_dca_state_changed()
+                cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
                 send_alert(
                     f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline (Paper)",
                     f"🆔 Ordre identifier: {dca_order.id}\n"
@@ -253,8 +256,9 @@ class DcaManager:
 
             if dca_order.order_status == DcaOrderStatus.APPROVED:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 1/3: Withdrawing %s liquidity from Aave lending pool", dca_strategy.source_asset_symbol)
+                blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
                 withdrawal_transaction_hash = await self.aave_executor.execute_withdrawal(
-                    dca_strategy.blockchain_network,
+                    blockchain,
                     dca_strategy.source_asset_address,
                     amount_in_base_units
                 )
@@ -264,17 +268,18 @@ class DcaManager:
                 dca_order.order_status = DcaOrderStatus.WITHDRAWN_FROM_AAVE
                 self.dca_order_dao.save(dca_order)
                 self.database_session.commit()
-                notify_dca_state_changed()
+                cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
                 await asyncio.sleep(5)
 
             if dca_order.order_status == DcaOrderStatus.WITHDRAWN_FROM_AAVE:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 2/3: Fetching LI.FI routing quote for optimal swap path")
-                await self.aave_executor._initialize_provider(dca_strategy.blockchain_network)
+                blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
+                await self.aave_executor._initialize_provider(blockchain)
                 current_wallet_address = self.aave_executor.get_wallet_address()
 
                 routing_quote = await asyncio.to_thread(
                     generate_token_to_token_quote,
-                    chain_key=dca_strategy.blockchain_network,
+                    chain=blockchain,
                     from_address=current_wallet_address,
                     from_token_address=dca_strategy.source_asset_address,
                     to_token_address=dca_strategy.target_asset_address,
@@ -285,9 +290,9 @@ class DcaManager:
                 minimum_expected_out_units = int(routing_quote["estimate"]["toAmountMin"])
                 logger.info("[DCA][MANAGER][PIPELINE] Guaranteed minimum output for swap: %d units", minimum_expected_out_units)
 
-                numeric_chain_identifier = resolve_lifi_chain_identifier(dca_strategy.blockchain_network)
+                numeric_chain_identifier = resolve_lifi_chain_identifier(blockchain)
                 swap_transaction_hash = await self.aave_executor.approve_and_execute_raw_transaction(
-                    chain=dca_strategy.blockchain_network,
+                    chain=blockchain,
                     source_token=dca_strategy.source_asset_address,
                     spender=routing_quote["transactionRequest"]["to"],
                     amount_in_wei=amount_in_base_units,
@@ -303,18 +308,19 @@ class DcaManager:
                 dca_order.order_status = DcaOrderStatus.SWAPPED
                 self.dca_order_dao.save(dca_order)
                 self.database_session.commit()
-                notify_dca_state_changed()
+                cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
                 await asyncio.sleep(6)
 
             if dca_order.order_status == DcaOrderStatus.SWAPPED:
                 logger.info("[DCA][MANAGER][PIPELINE] Step 3/3: Supplying newly acquired asset back to Aave lending pool")
-                target_asset_balance_wei = await self.aave_executor.fetch_erc20_balance(dca_strategy.blockchain_network, dca_strategy.target_asset_address)
+                blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
+                target_asset_balance_wei = await self.aave_executor.fetch_erc20_balance(blockchain, dca_strategy.target_asset_address)
 
                 if target_asset_balance_wei <= 0:
                     raise RuntimeError("On-chain balance check failed: target asset balance is zero post-swap")
 
                 supply_transaction_hash = await self.aave_executor.execute_supply(
-                    dca_strategy.blockchain_network,
+                    blockchain,
                     dca_strategy.target_asset_address,
                     target_asset_balance_wei
                 )
@@ -329,7 +335,7 @@ class DcaManager:
                 dca_strategy.available_dry_powder += dry_powder_delta
                 self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
                 self.dca_order_dao.save(dca_order)
-                notify_dca_state_changed()
+                cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
 
                 display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
                 send_alert(
@@ -351,7 +357,7 @@ class DcaManager:
             )
             dca_order.order_status = DcaOrderStatus.FAILED
             self.dca_order_dao.save(dca_order)
-            notify_dca_state_changed()
+            cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
             send_alert(
                 f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline",
                 f"🆔 Ordre identifier: {dca_order.id}\n"

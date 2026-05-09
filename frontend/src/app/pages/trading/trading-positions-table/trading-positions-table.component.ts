@@ -30,21 +30,21 @@ import {
     NgApexchartsModule
 } from 'ng-apexcharts';
 
-import {balhamDarkThemeCompact} from '../../ag-grid.theme';
-import {NumberFormattingService} from '../../core/number-formatting.service';
-import {WebSocketService} from '../../core/websocket.service';
-import {TradingEvaluationPayload, TradingPositionPayload, TradingTradePayload} from '../../core/models';
-import {MetricsFormattingService} from '../../core/metrics-formatting.service';
+import {balhamDarkThemeCompact} from '../../../ag-grid.theme';
+import {NumberFormattingService} from '../../../core/number-formatting.service';
+import {WebSocketService} from '../../../core/websocket.service';
+import {TradingEvaluationPayload, TradingPositionPayload, TradingTradePayload} from '../../../core/models';
+import {MetricsFormattingService} from '../../../core/metrics-formatting.service';
 
-import {SymbolChipRendererComponent} from '../../renderers/symbol-chip.renderer';
-import {TemplateCellRendererComponent} from '../../renderers/template-cell.renderer';
-import {TemplateHeaderRendererComponent} from '../../renderers/template-header.renderer';
-import {ApiService} from '../../api.service';
-import {EXPLORATION_CATEGORIES} from '../../core/constants';
+import {SymbolChipRendererComponent} from '../../../renderers/symbol-chip.renderer';
+import {TemplateCellRendererComponent} from '../../../renderers/template-cell.renderer';
+import {TemplateHeaderRendererComponent} from '../../../renderers/template-header.renderer';
+import {ApiService} from '../../../api.service';
+import {EXPLORATION_CATEGORIES} from '../../../core/constants';
 
 @Component({
     standalone: true,
-    selector: 'positions-table',
+    selector: 'trading-positions-table',
     imports: [
         CommonModule,
         DatePipe,
@@ -60,10 +60,10 @@ import {EXPLORATION_CATEGORIES} from '../../core/constants';
         PanelModule,
         NgApexchartsModule
     ],
-    templateUrl: './positions-table.component.html',
-    styleUrl: './positions-table.component.css'
+    templateUrl: './trading-positions-table.component.html',
+    styleUrl: './trading-positions-table.component.css'
 })
-export class PositionsTableComponent implements AfterViewInit {
+export class TradingPositionsTableComponent implements AfterViewInit {
     public readonly agGridTheme = balhamDarkThemeCompact;
 
     private readonly webSocketService = inject(WebSocketService);
@@ -483,14 +483,11 @@ export class PositionsTableComponent implements AfterViewInit {
             if (raw == null) {
                 return;
             }
-            const v = this.toPercent0to100(raw);
             scoreLabels.push(label);
-            scoreValues.push(v);
+            scoreValues.push(raw);
         };
-        pushScore('Final', (a as any)?.scores?.final);
-        pushScore('Quality', (a as any)?.scores?.quality);
-        pushScore('Statistics', (a as any)?.scores?.statistics);
-        pushScore('Entry', (a as any)?.scores?.entry);
+        pushScore('Quality', (a as any)?.scores?.quality_score);
+        pushScore('AI adjusted', (a as any)?.scores?.ai_adjusted_quality_score);
         this.scoresLabels = scoreLabels;
         this.scoresSeries = scoreValues;
 

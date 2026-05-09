@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
 from typing import Optional, List
 
@@ -7,6 +8,12 @@ from pydantic import BaseModel, Field
 
 from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshotPayload
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
+
+
+class AutosellTriggerReason(str, enum.Enum):
+    TAKE_PROFIT_1 = "TAKE_PROFIT_1"
+    TAKE_PROFIT_2 = "TAKE_PROFIT_2"
+    STOP_LOSS = "STOP_LOSS"
 
 
 class TradingFilterVerdict(BaseModel):
@@ -76,16 +83,17 @@ class TradingLifiEvmTransactionRequest(BaseModel):
     raw_transaction: Optional[str] = None
 
 
-class TradingLifiSolanaSerializedTransaction(BaseModel):
-    serialized_transaction: str
+class TradingSolanaRoute(BaseModel):
+    serialized_transaction_base64: str
 
 
-class TradingLifiRoute(BaseModel):
+class TradingEvmRoute(BaseModel):
     transaction_request: TradingLifiEvmTransactionRequest
-    transaction: Optional[TradingLifiSolanaSerializedTransaction] = None
-    transactions: Optional[List[TradingLifiSolanaSerializedTransaction]] = None
-    serialized_transaction: Optional[str] = None
-    from_address: Optional[str] = None
+
+
+class TradingExecutionRoute(BaseModel):
+    evm_route: Optional[TradingEvmRoute] = None
+    solana_route: Optional[TradingSolanaRoute] = None
 
 
 class TradingOrderPayload(BaseModel):
@@ -94,7 +102,7 @@ class TradingOrderPayload(BaseModel):
     order_notional: float
     original_candidate: TradingCandidate
     origin_evaluation_id: int
-    lifi_routing_path: Optional[TradingLifiRoute] = None
+    execution_route: Optional[TradingExecutionRoute] = None
 
 
 class TradingEvmTransactionRequest(BaseModel):
@@ -147,6 +155,13 @@ class TradingPipelineContext(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+@dataclass
+class InventoryLot:
+    quantity: float
+    unit_price_usd: float
+    buy_fee_per_unit_usd: float
 
 
 from src.core.structures.structures import Token

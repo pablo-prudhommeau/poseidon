@@ -13,9 +13,10 @@ from web3 import AsyncWeb3
 from web3.contract import AsyncContract
 from web3.types import TxParams
 
-from src.api.websocket.websocket_hub import notify_trading_state_changed
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
-from src.core.structures.structures import DcaOrderStatus
+from src.core.structures.structures import DcaOrderStatus, BlockchainNetwork
 from src.core.utils.format_utils import format_currency, format_percent
 from src.integrations.aave.aave_abis import (
     AAVE_POOL_ABI,
@@ -77,7 +78,7 @@ class AaveSentinelService:
 
         if not self._web3_client:
             from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
-            self._web3_client = resolve_async_web3_provider_for_chain("avalanche")
+            self._web3_client = resolve_async_web3_provider_for_chain(BlockchainNetwork.AVALANCHE)
 
             pool_contract_address = AsyncWeb3.to_checksum_address(settings.AAVE_POOL_V3_ADDRESS)
             self._pool_contract = self._web3_client.eth.contract(address=pool_contract_address, abi=AAVE_POOL_ABI)
@@ -253,7 +254,7 @@ class AaveSentinelService:
                             text=f"✅ Ordre #{target_order_identifier} {status_display_label} avec succès."
                         )
 
-                    notify_trading_state_changed()
+                    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
                     logger.info("[AAVE][SENTINEL][CALLBACK] Order identifier %s successfully transitioned to status %s", target_order_identifier, resolved_order_status.name)
                 else:
                     logger.error("[AAVE][SENTINEL][CALLBACK] Target order identifier %s not found in persistence layer", target_order_identifier)
