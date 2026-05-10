@@ -23,6 +23,20 @@ class SystemHealthPayload(BaseModel):
     components: SystemHealthComponentsPayload
 
 
+class WebsocketStatusPayload(BaseModel):
+    paper_mode: bool
+    interval_seconds: int
+
+
+class WebsocketInitializationPayload(BaseModel):
+    status: WebsocketStatusPayload
+
+
+class WebsocketEventPayload(BaseModel):
+    type: str
+    payload: dict[str, object]
+
+
 class TradingPaperResetPayload(BaseModel):
     ok: bool
 
@@ -215,10 +229,22 @@ class TradingShadowMetaPayload(BaseModel):
     resolved_outcome_count: int
     elapsed_hours: float
     win_rate_percentage: float
-    profit_factor: float
     expected_value_usd: float
     capital_velocity: float
-    minimum_profit_factor: float
+    global_profit_factor: float
+    empirical_profit_factor: float
+    empirical_profit_factor_threshold: float
+    empirical_profit_factor_window_verdict_count: int
+    chronicle_profit_factor: float
+    chronicle_profit_factor_threshold: float
+    chronicle_profit_factor_lookback_days: float
+    chronicle_profit_factor_bucket_width_seconds: int
+    chronicle_profit_factor_moving_average_period: int
+    sparse_expected_value_usd: float
+    sparse_expected_value_usd_threshold: float
+    sparse_expected_value_lookback_days: float
+    sparse_expected_value_bucket_width_seconds: int
+    sparse_expected_value_moving_average_period: int
 
 
 class TradingPortfolioPayload(BaseModel):
@@ -413,15 +439,80 @@ class AnalyticsResponse(BaseModel):
     scatter_series: List[AnalyticsScatterSeriesPayload]
 
 
-class WebsocketStatusPayload(BaseModel):
-    paper_mode: bool
-    interval_seconds: int
+class ShadowVerdictChronicleMetricPointPayload(BaseModel):
+    timestamp_milliseconds: int
+    average_pnl_percentage: float
+    average_win_rate_percentage: float
+    expected_value_per_trade_usd: float
+    capital_velocity_per_hour: float
+    profit_factor: float
 
 
-class WebsocketInitializationPayload(BaseModel):
-    status: WebsocketStatusPayload
+class ShadowVerdictChronicleVolumePointPayload(BaseModel):
+    timestamp_milliseconds: int
+    verdict_count: int
 
 
-class WebsocketEventPayload(BaseModel):
-    type: str
-    payload: dict[str, object]
+class ShadowVerdictChronicleVerdictPointPayload(BaseModel):
+    verdict_id: int
+    timestamp_milliseconds: int
+    pnl_percentage: float
+    pnl_usd: float
+    exit_reason: str
+    order_notional_usd: float
+    point_size: float
+    is_profitable: bool
+
+
+class ShadowVerdictChronicleBucketPayload(BaseModel):
+    bucket_label: str
+    granularity_seconds: int
+    from_iso: str
+    to_iso: str
+    metrics: List[ShadowVerdictChronicleMetricPointPayload] = Field(default_factory=list)
+    volumes: List[ShadowVerdictChronicleVolumePointPayload] = Field(default_factory=list)
+    verdict_cloud: List[ShadowVerdictChronicleVerdictPointPayload] = Field(default_factory=list)
+
+
+class ShadowVerdictChroniclePayload(BaseModel):
+    generated_at_iso: str
+    as_of_iso: str
+    from_iso: str
+    to_iso: str
+    total_verdicts_considered: int
+    source: str
+    series_end_lag_seconds: int
+    buckets: List[ShadowVerdictChronicleBucketPayload] = Field(default_factory=list)
+
+
+class ShadowVerdictChronicleDeltaBucketPayload(BaseModel):
+    bucket_label: str
+    drop_metrics_before_ms: Optional[int] = None
+    drop_volumes_before_ms: Optional[int] = None
+    metrics_remove_timestamps_ms: List[int] = Field(default_factory=list)
+    volumes_remove_timestamps_ms: List[int] = Field(default_factory=list)
+    metrics_upsert: List[ShadowVerdictChronicleMetricPointPayload] = Field(default_factory=list)
+    volumes_upsert: List[ShadowVerdictChronicleVolumePointPayload] = Field(default_factory=list)
+    verdict_cloud_replace: Optional[List[ShadowVerdictChronicleVerdictPointPayload]] = None
+
+
+class ShadowVerdictChronicleDeltaVerdictPayload(BaseModel):
+    id: int
+    resolved_at: datetime
+    realized_pnl_percentage: float
+    realized_pnl_usd: float
+    is_profitable: bool
+    exit_reason: str
+    order_notional_value_usd: float
+
+
+class ShadowVerdictChronicleDeltaPayload(BaseModel):
+    generated_at_iso: str
+    as_of_iso: str
+    from_iso: str
+    to_iso: str
+    total_verdicts_considered: int
+    source: str
+    series_end_lag_seconds: int
+    buckets: List[ShadowVerdictChronicleDeltaBucketPayload]
+    verdicts: List[ShadowVerdictChronicleDeltaVerdictPayload]

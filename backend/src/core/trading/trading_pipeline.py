@@ -21,7 +21,8 @@ from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import 
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
 from src.core.trading.execution.trading_executor import TradingExecutor
 from src.core.trading.execution.trading_order_builder import build_route_for_live_execution
-from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot
+from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
+from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot
 from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload, TradingPipelineContext
 from src.core.trading.trading_utils import (
@@ -260,8 +261,7 @@ class TradingPipeline:
         return apply_ai_scorer(candidates, pipeline_context)
 
     def _step_load_shadow_intelligence(self):
-        from src.core.trading.cache.trading_cache import trading_state_cache
-        snapshot = trading_state_cache.get_shadow_intelligence_snapshot()
+        snapshot = trading_shadowing_cache.get_shadow_intelligence_snapshot()
         if snapshot is None:
             return None
         logger.info(
@@ -271,23 +271,45 @@ class TradingPipeline:
         return snapshot
 
     def _is_shadow_profit_factor_tradable(self, shadow_snapshot: ShadowIntelligenceSnapshot) -> bool:
-        profit_factor = shadow_snapshot.meta_profit_factor
-        if not math.isfinite(profit_factor) or profit_factor <= 0.0:
+        empirical_profit_factor = shadow_snapshot.empirical_profit_factor
+        if not math.isfinite(empirical_profit_factor) or empirical_profit_factor <= 0.0:
             logger.warning(
-                "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow profit factor unavailable/invalid (value=%s); trading cycle blocked",
-                profit_factor,
+                "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow empirical profit factor unavailable/invalid (value=%s); trading cycle blocked",
+                empirical_profit_factor,
             )
             return False
 
-        minimum_profit_factor = settings.TRADING_SHADOWING_MIN_PROFIT_FACTOR
-        if profit_factor >= minimum_profit_factor:
-            return True
-        logger.warning(
-            "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow profit factor %.2f is below %.2f; trading cycle blocked",
-            profit_factor,
-            minimum_profit_factor,
-        )
-        return False
+        minimum_profit_factor = settings.TRADING_SHADOWING_REGIME_EMPIRICAL_PROFIT_FACTOR_THRESHOLD
+        if empirical_profit_factor < minimum_profit_factor:
+            logger.warning(
+                "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow empirical profit factor %.2f is below %.2f (meta_pf=%.2f); trading cycle blocked",
+                empirical_profit_factor,
+                minimum_profit_factor,
+                shadow_snapshot.meta_profit_factor,
+            )
+            return False
+
+        chronicle_profit_factor = shadow_snapshot.chronicle_profit_factor
+        chronicle_threshold = settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_THRESHOLD
+        if chronicle_profit_factor < chronicle_threshold:
+            logger.warning(
+                "[TRADING][PIPELINE][GATE][SHADOW_SMA_PF] Chronicle profit factor %.2f is below %.2f; trading cycle blocked",
+                chronicle_profit_factor,
+                chronicle_threshold,
+            )
+            return False
+
+        sparse_expected_value_usd = shadow_snapshot.sparse_expected_value_usd
+        sparse_expected_value_threshold = settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_USD_THRESHOLD
+        if sparse_expected_value_usd < sparse_expected_value_threshold:
+            logger.warning(
+                "[TRADING][PIPELINE][GATE][SHADOW_SPARSE_EV] Sparse expected value USD %.2f is below %.2f; trading cycle blocked",
+                sparse_expected_value_usd,
+                sparse_expected_value_threshold,
+            )
+            return False
+
+        return True
 
     def _step_shadowing_toxic_exposure_filter(self, candidates: list[TradingCandidate], shadow_snapshot) -> list[TradingCandidate]:
         return apply_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
@@ -317,8 +339,8 @@ class TradingPipeline:
             else:
                 total_equity_usd = latest_snapshot.total_equity_value
 
-        from src.core.trading.cache.trading_cache import trading_state_cache
-        available_cash_usd = trading_state_cache.get_available_cash_usd()
+        from src.core.trading.cache.trading_cache import trading_cache
+        available_cash_usd = trading_cache.get_available_cash_usd()
         if available_cash_usd is None:
             logger.warning(
                 "[TRADING][PIPELINE][EXECUTE] Available cash not yet in cache — cache not yet warmed up; skipping execution cycle"

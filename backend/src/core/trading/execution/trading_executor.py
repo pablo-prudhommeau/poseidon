@@ -4,10 +4,9 @@ import asyncio
 import threading
 from typing import Optional
 
-from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
+from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
 from src.core.trading.trading_structures import TradingOrderPayload, TradingExecutionRoute
 from src.integrations.blockchain.blockchain_live_executor import LiveExecutionService
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
@@ -155,7 +154,7 @@ class TradingExecutor:
                 position_dao.save(trading_position)
                 database_session.commit()
 
-            self._invalidate_trading_cache()
+            invalidate_trading_positions_and_trades_cache()
             return True
 
         if payload.execution_route is None:
@@ -172,15 +171,6 @@ class TradingExecutor:
             execution_route=payload.execution_route,
             origin_evaluation_id=payload.origin_evaluation_id,
         )
-
-    def _invalidate_trading_cache(self) -> None:
-        cache_invalidator.mark_dirty(
-            CacheRealm.POSITIONS,
-            CacheRealm.TRADES,
-            CacheRealm.PORTFOLIO,
-            CacheRealm.AVAILABLE_CASH,
-        )
-        logger.debug("[TRADING][EXECUTOR] Cache realms marked dirty after trade execution")
 
     def _fetch_onchain_price_for_token(self, token: Token) -> Optional[float]:
         try:
@@ -304,7 +294,7 @@ class TradingExecutor:
                 await execution_service.close()
             except Exception as close_exception:
                 logger.exception("[TRADING][EXECUTOR][LIVE] Execution service close suppressed — %s", close_exception)
-            self._invalidate_trading_cache()
+            invalidate_trading_positions_and_trades_cache()
 
     def _run_live_buy_blocking(
             self,
@@ -412,4 +402,3 @@ class TradingExecutor:
                 await execution_service.close()
             except Exception as close_exception:
                 logger.exception("[TRADING][EXECUTOR][LIVE] Execution service close suppressed — %s", close_exception)
-            self._invalidate_trading_cache()

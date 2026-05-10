@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from src.configuration.config import settings
-from src.core.trading.shadowing.shadow_analytics_intelligence import find_bucket_index_for_value, extract_metric_value_from_candidate
-from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshot, \
+from src.core.trading.shadowing.trading_shadowing_intelligence_service import find_bucket_index_for_value, extract_metric_value_from_candidate
+from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot, \
     ShadowIntelligenceSnapshotMetricPayload
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.log_utils import get_visual_width

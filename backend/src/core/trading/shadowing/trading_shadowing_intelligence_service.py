@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Optional
 
 from src.configuration.config import settings
@@ -8,9 +11,16 @@ from src.core.trading.analytics.trading_analytics_metric_bucket_statistics_engin
     compute_all_metric_bucket_profiles,
 )
 from src.core.trading.analytics.trading_analytics_service import compute_kpis
-from src.core.trading.analytics.trading_analytics_structures import MetricBucketProfile
-from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceMetricSnapshot, ShadowIntelligenceSnapshot
+from src.core.trading.analytics.trading_analytics_structures import MetricBucketProfile, MetaStatistics
+from src.core.trading.shadowing.trading_shadowing_service import (
+    _chronicle_display_lag_timedelta,
+    _compute_profit_factor,
+    _floor_datetime_to_granularity,
+    _series_end_datetime,
+)
+from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceMetricSnapshot, ShadowIntelligenceSnapshot
 from src.core.trading.trading_structures import TradingCandidate
+from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
@@ -68,7 +78,20 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
             meta_profit_factor = meta_kpis.profit_factor
             meta_expected_value_usd = meta_kpis.expected_value_usd
 
-        from src.core.trading.analytics.trading_analytics_structures import MetaStatistics
+        empirical_window_verdict_count = settings.TRADING_SHADOWING_REGIME_EMPIRICAL_PROFIT_FACTOR_WINDOW_VERDICT_COUNT
+        empirical_profit_factor = meta_profit_factor
+        if empirical_window_verdict_count < lookback_limit and len(resolved_verdicts) > empirical_window_verdict_count:
+            empirical_verdicts = resolved_verdicts[:empirical_window_verdict_count]
+            empirical_analytics_records = [map_trading_shadowing_verdict(verdict) for verdict in empirical_verdicts]
+            empirical_closed_records = [record for record in empirical_analytics_records if record.has_outcome]
+            if empirical_closed_records:
+                empirical_kpis = compute_kpis(empirical_analytics_records, len(empirical_verdicts))
+                empirical_profit_factor = empirical_kpis.profit_factor
+                logger.info(
+                    "[TRADING][SHADOW][INTELLIGENCE] Empirical profit factor — window_verdicts=%d empirical_pf=%.2f meta_pf=%.2f",
+                    empirical_window_verdict_count, empirical_profit_factor, meta_profit_factor,
+                )
+
         meta_statistics = MetaStatistics(
             win_rate=meta_win_rate,
             average_pnl=meta_average_pnl,
@@ -84,9 +107,38 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
             if snapshot is not None:
                 metric_snapshots.append(snapshot)
 
+        current_time = get_current_local_datetime()
+        chronicle_moving_average_period = settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD
+        sparse_moving_average_period = settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD
+        chronicle_profit_factor, sparse_pf_buckets = _compute_shadow_chart_sma_profit_factor_at_series_end(
+            resolved_verdicts=resolved_verdicts,
+            current_time=current_time,
+            sma_period=chronicle_moving_average_period,
+        )
+        sparse_expected_value_usd, sparse_ev_buckets = _compute_shadow_chart_sma_expected_value_usd_at_series_end(
+            resolved_verdicts=resolved_verdicts,
+            current_time=current_time,
+            sma_period=sparse_moving_average_period,
+        )
+
         logger.info(
-            "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence snapshot computed — %d outcomes analyzed, %d metrics profiled, meta(WR=%.1f%%, PF=%.2f, EV=%.2f, Vel=%.2f)",
-            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_capital_velocity,
+            "[TRADING][SHADOW][INTELLIGENCE][CHRONICLE_PF] Chronicle profit factor SMA — period=%d sparse_buckets=%d chronicle_pf=%.2f",
+            chronicle_moving_average_period,
+            sparse_pf_buckets,
+            chronicle_profit_factor,
+        )
+        logger.info(
+            "[TRADING][SHADOW][INTELLIGENCE][SPARSE_EV] Sparse expected value USD — lookback_days=%.1f bucket_width_seconds=%d period=%d sparse_buckets=%d sparse_ev_usd=%.2f",
+            settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
+            settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
+            sparse_moving_average_period,
+            sparse_ev_buckets,
+            sparse_expected_value_usd,
+        )
+
+        logger.info(
+            "[TRADING][SHADOW][INTELLIGENCE][SNAPSHOT] Shadow intelligence snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f empirical_pf=%.2f chronicle_pf=%.2f sparse_ev_usd=%.2f",
+            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_capital_velocity, empirical_profit_factor, chronicle_profit_factor, sparse_expected_value_usd
         )
 
         return ShadowIntelligenceSnapshot(
@@ -101,7 +153,125 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
             meta_capital_velocity=meta_capital_velocity,
             meta_profit_factor=meta_profit_factor,
             meta_expected_value_usd=meta_expected_value_usd,
+            empirical_profit_factor=empirical_profit_factor,
+            chronicle_profit_factor=chronicle_profit_factor,
+            sparse_expected_value_usd=sparse_expected_value_usd,
+            chronicle_profit_factor_threshold=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_THRESHOLD
         )
+
+
+def _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
+        resolved_verdicts: list,
+        current_time: datetime,
+        lookback: timedelta,
+        granularity_seconds: int,
+) -> tuple[list[float], list[float], int]:
+    chronicle_lag_td = _chronicle_display_lag_timedelta()
+    trailing = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
+
+    series_end = _series_end_datetime(current_time)
+    global_from_datetime = series_end - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
+    bucket_from_datetime = max(global_from_datetime, series_end - lookback - chronicle_lag_td)
+    bucket_to_datetime = series_end + timedelta(seconds=granularity_seconds * max(0, trailing))
+
+    grouped_verdicts: defaultdict = defaultdict(list)
+    for verdict in resolved_verdicts:
+        verdict_resolved_at = ensure_timezone_aware(verdict.resolved_at)
+        if verdict_resolved_at is None:
+            continue
+        if verdict_resolved_at < bucket_from_datetime or verdict_resolved_at > bucket_to_datetime:
+            continue
+        if verdict.realized_pnl_usd is None:
+            continue
+        bucket_start = _floor_datetime_to_granularity(verdict_resolved_at, granularity_seconds)
+        grouped_verdicts[bucket_start].append(verdict)
+
+    profit_factors_sparse: list[float] = []
+    mean_pnl_usd_sparse: list[float] = []
+    for bucket_timestamp in sorted(grouped_verdicts.keys()):
+        items = grouped_verdicts[bucket_timestamp]
+        pnl_usd_values = [item.realized_pnl_usd for item in items if item.realized_pnl_usd is not None]
+        if not pnl_usd_values:
+            continue
+        gross_profit_usd = sum(value for value in pnl_usd_values if value > 0.0)
+        gross_loss_usd = abs(sum(value for value in pnl_usd_values if value < 0.0))
+        profit_factors_sparse.append(_compute_profit_factor(gross_profit_usd, gross_loss_usd))
+        mean_pnl_usd_sparse.append(sum(pnl_usd_values) / float(len(pnl_usd_values)))
+
+    return profit_factors_sparse, mean_pnl_usd_sparse, len(profit_factors_sparse)
+
+
+def _shadow_chart_sma_at_series_end(
+        series_values: list[float],
+        sma_period: int,
+        *,
+        empty_fallback: float,
+) -> float:
+    if not series_values:
+        return empty_fallback
+    winsorized = _winsorize_series_like_shadow_verdict_chronicle_chart(series_values)
+    sma_series = _simple_moving_average_like_shadow_verdict_chronicle_chart(winsorized, sma_period)
+    return sma_series[-1]
+
+
+def _compute_shadow_chart_sma_profit_factor_at_series_end(
+        resolved_verdicts: list,
+        current_time: datetime,
+        sma_period: int,
+) -> tuple[float, int]:
+    chronicle_lookback = timedelta(days=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS)
+    chronicle_bucket_width_seconds = settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS
+    profit_factors_sparse, _, sparse_bucket_count = _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
+        resolved_verdicts,
+        current_time,
+        chronicle_lookback,
+        chronicle_bucket_width_seconds,
+    )
+    chronicle_pf = _shadow_chart_sma_at_series_end(profit_factors_sparse, sma_period, empty_fallback=1.0)
+    return chronicle_pf, sparse_bucket_count
+
+
+def _compute_shadow_chart_sma_expected_value_usd_at_series_end(
+        resolved_verdicts: list,
+        current_time: datetime,
+        sma_period: int,
+) -> tuple[float, int]:
+    lookback = timedelta(days=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS)
+    granularity_seconds = settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS
+    _, mean_pnl_usd_sparse, sparse_bucket_count = _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
+        resolved_verdicts,
+        current_time,
+        lookback,
+        granularity_seconds,
+    )
+    sma_ev_usd = _shadow_chart_sma_at_series_end(mean_pnl_usd_sparse, sma_period, empty_fallback=0.0)
+    return sma_ev_usd, sparse_bucket_count
+
+
+def _winsorize_series_like_shadow_verdict_chronicle_chart(values: list[float]) -> list[float]:
+    if len(values) < 4:
+        return list(values)
+    sorted_values = sorted(values)
+    lower_index = max(0, math.floor((len(sorted_values) - 1) * 0.02))
+    upper_index = min(len(sorted_values) - 1, math.ceil((len(sorted_values) - 1) * 0.98))
+    lower_bound = sorted_values[lower_index]
+    upper_bound = sorted_values[upper_index]
+    return [min(upper_bound, max(lower_bound, value)) for value in values]
+
+
+def _simple_moving_average_like_shadow_verdict_chronicle_chart(values: list[float], window_size: int) -> list[float]:
+    if len(values) == 0 or window_size <= 1:
+        return list(values)
+    effective_window = min(window_size, len(values))
+    result: list[float] = [0.0] * len(values)
+    running_sum = 0.0
+    for index in range(len(values)):
+        running_sum += values[index]
+        if index >= effective_window:
+            running_sum -= values[index - effective_window]
+        current_window = min(index + 1, effective_window)
+        result[index] = running_sum / current_window
+    return result
 
 
 def _convert_bucket_profile_to_metric_snapshot(

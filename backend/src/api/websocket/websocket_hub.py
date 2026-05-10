@@ -12,11 +12,13 @@ from src.api.http.api_schemas import (
 )
 from src.api.websocket.websocket_manager import websocket_manager
 from src.configuration.config import settings
+from src.core.dca.cache.dca_cache import dca_state_cache
 from src.core.structures.structures import (
     WebsocketInboundMessage,
     WebsocketMessageType,
 )
-from src.core.trading.cache.trading_cache import trading_state_cache
+from src.core.trading.cache.trading_cache import trading_cache
+from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
 from src.logging.logger import get_application_logger
 
 router = APIRouter()
@@ -24,7 +26,7 @@ logger = get_application_logger(__name__)
 
 
 async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
-    trading_state = trading_state_cache.get_trading_state()
+    trading_state = trading_cache.get_trading_state()
     if trading_state.positions is not None:
         await websocket_connection.send_json({
             "type": WebsocketMessageType.POSITIONS.value,
@@ -45,18 +47,26 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
             "type": WebsocketMessageType.LIQUIDITY.value,
             "payload": jsonable_encoder(trading_state.liquidity),
         })
-    if trading_state.shadow_meta is not None:
+
+    trading_shadowing_state = trading_shadowing_cache.get_shadowing_trading_state()
+    if trading_shadowing_state.shadow_meta is not None:
         await websocket_connection.send_json({
             "type": WebsocketMessageType.SHADOW_META.value,
-            "payload": jsonable_encoder(trading_state.shadow_meta),
+            "payload": jsonable_encoder(trading_shadowing_state.shadow_meta),
+        })
+    if trading_shadowing_state.shadow_verdict_chronicle is not None:
+        await websocket_connection.send_json({
+            "type": WebsocketMessageType.SHADOW_VERDICT_CHRONICLE.value,
+            "payload": jsonable_encoder(trading_shadowing_state.shadow_verdict_chronicle),
         })
 
-    from src.core.dca.cache.dca_cache import dca_state_cache
-    dca_strategies_payload = dca_state_cache.get_dca_strategies_state()
-    await websocket_connection.send_json({
-        "type": WebsocketMessageType.DCA_STRATEGIES.value,
-        "payload": jsonable_encoder(dca_strategies_payload),
-    })
+    dca_state = dca_state_cache.get_dca_state()
+    if dca_state.dca_strategies is not None:
+        dca_strategies_payload = dca_state.dca_strategies
+        await websocket_connection.send_json({
+            "type": WebsocketMessageType.DCA_STRATEGIES.value,
+            "payload": jsonable_encoder(dca_strategies_payload),
+        })
 
 
 async def send_websocket_handshake(websocket_connection: WebSocket) -> None:

@@ -6,7 +6,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
-from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceSnapshotPayload
+from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshotPayload
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 
 

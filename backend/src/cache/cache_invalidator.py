@@ -4,7 +4,7 @@ import asyncio
 import threading
 import time
 
-from src.cache.cache_protocols import RealmRebuilder
+from src.cache.cache_protocols import RealmRebuilder, CacheRealmRebuildSkipped
 from src.cache.cache_realm import CacheRealm
 from src.logging.logger import get_application_logger
 
@@ -100,6 +100,8 @@ class CacheInvalidator:
             rebuilder.apply_to_cache(rebuilt_payload)
             await rebuilder.notify_websocket(rebuilt_payload)
             logger.debug("[CACHE][REBUILD] realm=%s done", realm_candidate.value)
+        except CacheRealmRebuildSkipped as exception:
+            logger.debug("[CACHE][REBUILD] realm=%s skipped (%s)", realm_candidate.value, exception)
         except Exception:
             logger.exception("[CACHE][REBUILD] realm=%s failed", realm_candidate.value)
         finally:

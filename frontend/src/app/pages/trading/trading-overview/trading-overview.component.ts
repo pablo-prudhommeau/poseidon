@@ -1,4 +1,4 @@
-import {Component, computed, inject} from '@angular/core';
+import {Component, computed, inject, output} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {WebSocketService} from '../../../core/websocket.service';
 import {BlockchainCashBalancePayload, TradingEquityCurvePointPayload, TradingPositionPayload} from '../../../core/models';
@@ -19,6 +19,8 @@ type LiquidityBalanceCard = BlockchainCashBalancePayload & { isPlaceholder: bool
 export class TradingOverviewComponent {
     private readonly webSocketService = inject(WebSocketService);
 
+    readonly openShadowChronicle = output<void>();
+
     readonly portfolio = computed(() => this.webSocketService.portfolio());
     readonly equity = computed<number | null>(() => this.mapNullable(this.portfolio(), portfolio => portfolio.total_equity_value));
     readonly liquidity = computed(() => this.webSocketService.liquidity());
@@ -26,6 +28,7 @@ export class TradingOverviewComponent {
         this.mapNullable(this.liquidity(), liquidity => liquidity.available_cash_balance),
         this.mapNullable(this.portfolio(), portfolio => portfolio.available_cash_balance)
     ));
+
     readonly holdings = computed<number | null>(() => this.mapNullable(this.portfolio(), portfolio => portfolio.active_holdings_value));
     readonly unrealized = computed<number | null>(() => this.mapNullable(this.portfolio(), portfolio => portfolio.unrealized_profit_and_loss));
     readonly realizedTotal = computed<number | null>(() => this.mapNullable(this.portfolio(), portfolio => portfolio.realized_profit_and_loss_total));
@@ -41,27 +44,110 @@ export class TradingOverviewComponent {
     readonly shadowElapsedHours = computed(() => this.shadowStatus()?.elapsed_hours ?? 0);
     readonly shadowRequiredHours = computed(() => this.shadowStatus()?.required_hours ?? 0);
 
-    readonly shadowMeta = computed(() => this.webSocketService.shadowMeta());
-    readonly shadowProfitFactor = computed<number | null>(() => this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.profit_factor));
-    readonly shadowMinimumProfitFactor = computed<number | null>(() => this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.minimum_profit_factor));
-    readonly shadowWinRate = computed<number | null>(() => this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.win_rate_percentage));
+    readonly shadowMeta = computed(() =>
+        this.webSocketService.shadowMeta()
+    );
+    readonly shadowEmpiricalProfitFactor = computed<number | null>(() =>
+        this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.empirical_profit_factor),
+    );
+    readonly shadowEmpiricalProfitFactorThreshold = computed<number | null>(() =>
+        this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.empirical_profit_factor_threshold),
+    );
+    readonly shadowWinRate = computed<number | null>(() =>
+        this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.win_rate_percentage)
+    );
+    readonly shadowChronicleProfitFactor = computed<number | null>(() =>
+        this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.chronicle_profit_factor),
+    );
+    readonly shadowChronicleProfitFactorThreshold = computed<number | null>(() =>
+        this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.chronicle_profit_factor_threshold),
+    );
+    readonly shadowSparseExpectedValueUsd = computed<number | null>(() =>
+        this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.sparse_expected_value_usd),
+    );
+    readonly shadowSparseExpectedValueUsdThreshold = computed<number | null>(() =>
+        this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.sparse_expected_value_usd_threshold),
+    );
+    readonly shadowEmpiricalGeometryLabel = computed(() => {
+        const meta = this.shadowMeta();
+        if (!meta) {
+            return '—';
+        }
+        return `empirical, ${this.formatShadowVerdictWindowToken(meta.empirical_profit_factor_window_verdict_count)}`;
+    });
+
+    readonly shadowChronicleGeometryLabel = computed(() => {
+        const meta = this.shadowMeta();
+        if (!meta) {
+            return '—';
+        }
+        return `momentum ${this.formatShadowMetricLookbackDays(meta.chronicle_profit_factor_lookback_days)}d ${meta.chronicle_profit_factor_bucket_width_seconds}s p${meta.chronicle_profit_factor_moving_average_period}`;
+    });
+
+    readonly shadowSparseExpectedValueGeometryLabel = computed(() => {
+        const meta = this.shadowMeta();
+        if (!meta) {
+            return '—';
+        }
+        return `sparse ev ${this.formatShadowMetricLookbackDays(meta.sparse_expected_value_lookback_days)}d ${meta.sparse_expected_value_bucket_width_seconds}s p${meta.sparse_expected_value_moving_average_period}`;
+    });
+
     readonly shadowExpectedValue = computed<number | null>(() => this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.expected_value_usd));
     readonly shadowCapitalVelocity = computed<number | null>(() => this.mapNullable(this.shadowMeta(), shadowMeta => shadowMeta.capital_velocity));
+
     readonly shadowTradable = computed(() => {
-        const shadowProfitFactor = this.shadowProfitFactor();
-        const shadowMinimumProfitFactor = this.shadowMinimumProfitFactor();
-        if (this.shadowPhase() !== 'ACTIVE' || shadowProfitFactor === null || shadowMinimumProfitFactor === null) {
+        const empiricalPf = this.shadowEmpiricalProfitFactor();
+        const empiricalThreshold = this.shadowEmpiricalProfitFactorThreshold();
+        const chroniclePf = this.shadowChronicleProfitFactor();
+        const chronicleThreshold = this.shadowChronicleProfitFactorThreshold();
+        const sparseEv = this.shadowSparseExpectedValueUsd();
+        const sparseEvThreshold = this.shadowSparseExpectedValueUsdThreshold();
+
+        if (this.shadowPhase() !== 'ACTIVE' ||
+            empiricalPf === null ||
+            empiricalThreshold === null ||
+            chroniclePf === null ||
+            chronicleThreshold === null ||
+            sparseEv === null ||
+            sparseEvThreshold === null
+        ) {
             return false;
         }
-        return shadowProfitFactor >= shadowMinimumProfitFactor;
+        return (
+            empiricalPf >= empiricalThreshold &&
+            chroniclePf >= chronicleThreshold &&
+            sparseEv >= sparseEvThreshold
+        );
     });
-    readonly shadowProfitFactorProgress = computed(() => {
-        const minimumProfitFactor = this.shadowMinimumProfitFactor();
-        const shadowProfitFactor = this.shadowProfitFactor();
-        if (minimumProfitFactor === null || shadowProfitFactor === null || minimumProfitFactor <= 0) {
-            return 0;
+
+    readonly shadowEmpiricalProfitFactorProgress = computed(() => {
+        const threshold = this.shadowEmpiricalProfitFactorThreshold();
+        const value = this.shadowEmpiricalProfitFactor();
+        if (threshold === null || value === null || threshold <= 0) {
+            return null;
         }
-        return Math.min(100, (shadowProfitFactor / minimumProfitFactor) * 100);
+        return Math.min(100, (value / threshold) * 100);
+    });
+
+    readonly shadowChronicleProfitFactorProgress = computed(() => {
+        const threshold = this.shadowChronicleProfitFactorThreshold();
+        const value = this.shadowChronicleProfitFactor();
+        if (threshold === null || value === null || threshold <= 0) {
+            return null;
+        }
+        return Math.min(100, (value / threshold) * 100);
+    });
+
+    readonly shadowSparseExpectedValueProgress = computed(() => {
+        const ev = this.shadowSparseExpectedValueUsd();
+        const threshold = this.shadowSparseExpectedValueUsdThreshold();
+        if (ev === null || threshold === null) {
+            return null;
+        }
+        if (threshold > 0) {
+            return Math.min(100, (ev / threshold) * 100);
+        }
+        return ev >= threshold ? 100 : 0;
     });
 
     readonly blockchainBalances = computed<BlockchainCashBalancePayload[]>(() => this.liquidity()?.blockchain_balances ?? this.webSocketService.portfolio()?.blockchain_balances ?? []);
@@ -154,7 +240,14 @@ export class TradingOverviewComponent {
         if (this.shadowPhase() === 'LEARNING') {
             return 'learning';
         }
-        if (this.shadowPhase() === 'ACTIVE' && (this.shadowProfitFactor() === null || this.shadowMinimumProfitFactor() === null)) {
+        if (this.shadowPhase() === 'ACTIVE' &&
+            (this.shadowEmpiricalProfitFactor() === null ||
+                this.shadowEmpiricalProfitFactorThreshold() === null ||
+                this.shadowChronicleProfitFactor() === null ||
+                this.shadowChronicleProfitFactorThreshold() === null ||
+                this.shadowSparseExpectedValueUsd() === null ||
+                this.shadowSparseExpectedValueUsdThreshold() === null)
+        ) {
             return 'syncing';
         }
         return this.shadowTradable() ? 'tradable' : 'bear meta';
@@ -224,14 +317,37 @@ export class TradingOverviewComponent {
         return 'bg-slate-400';
     });
 
-    formatMultiplier(value: number | null): string {
-        if (value === null) {
+    formatMultiplier(value: number | null | undefined): string {
+        if (value === null || value === undefined || !Number.isFinite(value)) {
             return '—';
         }
         if (value >= 900) {
             return '999+';
         }
         return value.toFixed(2);
+    }
+
+    /** Compact day display for shadow geometry captions (avoids "7.0" when unnecessary). */
+    formatShadowMetricLookbackDays(days: number): string {
+        if (Number.isInteger(days)) {
+            return String(days);
+        }
+        const rounded = Math.round(days * 10) / 10;
+        return rounded % 1 === 0 ? String(Math.round(rounded)) : rounded.toFixed(1);
+    }
+
+    formatShadowVerdictWindowToken(verdictCount: number): string {
+        if (!Number.isFinite(verdictCount) || verdictCount <= 0) {
+            return '—';
+        }
+        if (verdictCount % 1000 === 0 && verdictCount >= 1000) {
+            const thousands = verdictCount / 1000;
+            return `${thousands % 1 === 0 ? thousands : thousands.toFixed(1)}k verdicts`;
+        }
+        if (verdictCount >= 1000) {
+            return `${(verdictCount / 1000).toFixed(1)}k verdicts`;
+        }
+        return `${verdictCount} verdicts`;
     }
 
     isNonNegative(value: number | null): boolean {

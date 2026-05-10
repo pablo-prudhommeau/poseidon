@@ -14,7 +14,7 @@ from src.persistence.models import TradingShadowingVerdict, TradingShadowingProb
 logger = get_application_logger(__name__)
 
 
-class ShadowVerdictTracker:
+class TradingShadowingVerdictTracker:
     def check_pending_verdicts(self) -> None:
         logger.debug("[TRADING][SHADOW][VERDICT] Starting shadow verdict check cycle")
 

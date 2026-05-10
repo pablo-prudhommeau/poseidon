@@ -9,7 +9,6 @@ from src.api.http.api_schemas import (
     TradingTradePayload,
     TradingPortfolioPayload,
     TradingLiquidityPayload,
-    TradingShadowMetaPayload,
 )
 
 
@@ -18,5 +17,5 @@ class TradingState(BaseModel):
     trades: Optional[list[TradingTradePayload]] = None
     portfolio: Optional[TradingPortfolioPayload] = None
     liquidity: Optional[TradingLiquidityPayload] = None
-    shadow_meta: Optional[TradingShadowMetaPayload] = None
     prices_by_pair_address: Optional[dict[str, float]] = None
+    available_cash_usd: Optional[float] = None

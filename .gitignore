@@ -3,5 +3,5 @@ venv/
 .venv
 .idea/
 *.iws
-data/
+backend/data
 .vscode/

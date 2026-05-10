@@ -1,0 +1,62 @@
+<p-dialog
+		[visible]="visible()"
+		(visibleChange)="onVisibleChange($event)"
+		(onShow)="handleDialogShow()"
+		(onHide)="handleDialogHide()"
+		[modal]="true"
+		[draggable]="false"
+		[dismissableMask]="true"
+		appendTo="body"
+		[breakpoints]="{ '1200px': '96vw', '768px': '98vw' }"
+		[style]="{ width: '96rem', maxWidth: '100vw' }"
+		styleClass="shadow-chronicle-dialog">
+	<ng-template pTemplate="header">
+		<div class="chronicle-header flex flex-col gap-3 w-full md:flex-row md:items-start md:justify-between">
+			<div class="space-y-1 p-3">
+				<div class="text-4xl font-black tracking-tight text-white chronicle-title-shimmer">
+					Shadowing verdict chronicle
+				</div>
+			</div>
+			<div class="flex flex-col items-stretch gap-2 p-3 md:items-end">
+				<p-selectButton
+						[options]="bucketOptions"
+						[ngModel]="selectedBucket()"
+						(ngModelChange)="selectedBucket.set($event); onBucketChange()"
+						optionLabel="label"
+						optionValue="value"
+						styleClass="chronicle-select-btn"
+				/>
+				<p-selectButton
+						[options]="smaWindowOptions"
+						[ngModel]="selectedSmaWindow()"
+						(ngModelChange)="selectedSmaWindow.set($event); onSmaWindowChange()"
+						optionLabel="label"
+						optionValue="value"
+						styleClass="chronicle-select-btn"
+				/>
+			</div>
+		</div>
+	</ng-template>
+
+	<div class="chronicle-body relative rounded-xl overflow-hidden min-h-[520px] border border-white/10">
+		@if (error(); as err) {
+			<div class="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 p-8 text-center bg-slate-950/90">
+				<i class="fa fa-bolt text-rose-400/70 text-3xl"></i>
+				<p class="text-slate-300 text-sm">{{ err }}</p>
+				<button pButton type="button" label="Request cached state (WebSocket)" class="p-button-sm" (click)="retry()"></button>
+			</div>
+		}
+		<div class="relative z-[1] w-full min-h-[520px]">
+			@if (showChronicleLoader()) {
+				<div class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-slate-950/85 backdrop-blur-md">
+					<div class="chronicle-aurora pointer-events-none absolute inset-0 opacity-70"></div>
+					<div class="chronicle-grid pointer-events-none absolute inset-0 opacity-90"></div>
+					<div class="chronicle-loader-ring relative z-[1]"></div>
+					<div class="relative z-[1] text-[10px] uppercase font-black tracking-[0.4em] text-fuchsia-300/80">waiting for shadow verdict chronicle stream…</div>
+				</div>
+			}
+			<div #chartHost class="chronicle-chart-host relative z-[1] w-full min-h-[520px] rounded-lg bg-[#050914]"></div>
+		</div>
+	</div>
+</p-dialog>
+

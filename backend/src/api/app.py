@@ -10,8 +10,11 @@ from src.api.http.http_api import router as http_router
 from src.api.websocket.websocket_hub import router as ws_router
 from src.api.websocket.websocket_manager import websocket_manager
 from src.cache.cache_invalidator import cache_invalidator
+from src.core.dca.cache.dca_cache_rebuilders import register_dca_rebuilders
 from src.core.jobs.job_structures import ApiStatusResponse
 from src.core.jobs.orchestrator import read_background_jobs_runtime_status, start_background_jobs
+from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders
+from src.core.trading.shadowing.cache.trading_shadowing_cache_rebuilders import register_trading_shadowing_rebuilders
 from src.logging.logger import get_application_logger
 from src.persistence.db import get_database_session, initialize_database
 
@@ -46,9 +49,8 @@ def create_app() -> FastAPI:
         initialize_database()
         websocket_manager.attach_current_event_loop()
 
-        from src.core.dca.cache.dca_cache_rebuilders import register_dca_rebuilders
-        from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders
         register_trading_rebuilders()
+        register_trading_shadowing_rebuilders()
         register_dca_rebuilders()
 
         cache_invalidator.start_watcher()

@@ -6,7 +6,7 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
-from src.core.trading.cache.trading_cache import trading_state_cache
+from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
@@ -36,7 +36,7 @@ class TradingPositionGuardJob:
             logger.exception("[TRADING][POSITION_GUARD][CYCLE] On-chain price fetch failed")
             return
 
-        trading_state_cache.update_prices_by_pair_address(prices_by_pair_address)
+        trading_cache.update_prices_by_pair_address(prices_by_pair_address)
 
         await asyncio.to_thread(self._run_autosell_evaluations_for_tokens, position_tokens, prices_by_pair_address)
 

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.trading.evaluators.trading_quality_scorer import _evaluate_quality
 from src.core.trading.trading_service import fetch_trading_candidates_sync
@@ -16,7 +14,7 @@ from src.persistence.models import TradingShadowingProbe, TradingShadowingVerdic
 logger = get_application_logger(__name__)
 
 
-class ShadowTradingPipeline:
+class TradingShadowingPipeline:
     def __init__(self) -> None:
         pass
 
@@ -165,7 +163,6 @@ class ShadowTradingPipeline:
         with get_database_session() as database_session:
             database_session.add(probe)
 
-        cache_invalidator.mark_dirty(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
         logger.debug("[TRADING][SHADOW][PERSIST] Recorded shadow probe for %s at price %.10f", base_token.symbol, token_information.price_usd or 0.0)
 
     def _compute_buy_to_sell_ratio(self, transactions) -> float:

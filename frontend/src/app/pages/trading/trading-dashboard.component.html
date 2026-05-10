@@ -1,4 +1,5 @@
 <div class="space-y-5">
+	<app-shadow-verdict-chronicle #shadowChronicle></app-shadow-verdict-chronicle>
 	<p-tabs [value]="activeTabValue()" (valueChange)="onTabChange($event)">
 		<p-tablist>
 			<p-tab value="overview">
@@ -23,7 +24,7 @@
 
 		<p-tabpanels>
 			<p-tabpanel value="overview">
-				<app-trading-overview></app-trading-overview>
+				<app-trading-overview (openShadowChronicle)="shadowChronicle.open()"></app-trading-overview>
 			</p-tabpanel>
 
 			<p-tabpanel value="analytics-qualified">
@@ -99,9 +100,14 @@
 								</div>
 								<span class="text-[10px] text-slate-500">All candidates evaluated without filters — statistical exhaustivity</span>
 							</div>
-							<button pButton icon="fa fa-refresh" label="Refresh"
-							        class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs"
-							        (click)="refreshShadowAnalytics()"></button>
+							<div class="flex items-center gap-1.5">
+								<button pButton icon="fa fa-bolt" label="Chronicle"
+								        class="p-button-sm h-8 text-xs chronicle-glow-btn"
+								        (click)="shadowChronicle.open()"></button>
+								<button pButton icon="fa fa-refresh" label="Refresh"
+								        class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs"
+								        (click)="refreshShadowAnalytics()"></button>
+							</div>
 						</div>
 
 						<app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>

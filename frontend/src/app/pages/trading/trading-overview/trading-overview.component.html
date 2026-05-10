@@ -1,7 +1,7 @@
 <div class="space-y-6">
-	<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+	<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 items-stretch">
 
-		<div class="p-4 rounded-2xl bg-black/20 border border-blue-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-all hover:border-blue-500/30">
+		<div class="p-4 rounded-2xl bg-black/20 border border-blue-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between h-full min-h-0 transition-all hover:border-blue-500/30">
 			<div class="flex justify-between items-center h-7 mb-3">
 				<span class="text-[10px] uppercase font-bold text-blue-400 tracking-widest">portfolio equity</span>
 				<i class="fa fa-wallet text-blue-500/50 text-xl"></i>
@@ -31,7 +31,7 @@
 			</div>
 		</div>
 
-		<div class="p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col transition-all border"
+		<div class="p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col h-full min-h-0 transition-all border"
 		     [ngClass]="{
 		         'border-slate-500/20 hover:border-slate-500/30': realizedTotal() === null,
 		         'border-emerald-500/20 hover:border-emerald-500/30': realizedTotal() !== null && isNonNegative(realizedTotal()),
@@ -69,7 +69,7 @@
 			</div>
 		</div>
 
-		<div class="p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-all border"
+		<div class="p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col h-full min-h-0 transition-all border"
 		     [ngClass]="{
 		         'border-purple-500/20 hover:border-purple-500/30': shadowTradable() || shadowRegimeLabel() === 'syncing',
 		         'border-red-500/20 hover:border-red-500/30': shadowRegimeLabel() === 'bear meta',
@@ -78,29 +78,94 @@
 		     }">
 			<div class="flex justify-between items-center h-7 mb-3">
 				<span class="text-[10px] uppercase font-bold tracking-widest" [ngClass]="shadowTitleTextClass()">shadow regime</span>
-				<span class="px-2 py-1 rounded-lg border text-[8px] uppercase font-black tracking-widest" [ngClass]="shadowRegimeClasses()">
-					{{ shadowRegimeLabel() }}
-				</span>
-			</div>
-			<div class="flex items-baseline gap-2">
-				<div class="text-3xl font-black tracking-tight" [ngClass]="shadowAccentTextClass()">
-					{{ formatMultiplier(shadowProfitFactor()) }}
+				<div class="flex items-center gap-2">
+					<button
+							type="button"
+							class="chronicle-ghost-btn"
+							title="Shadowing verdict chronicle"
+							(click)="openShadowChronicle.emit()"
+					>
+						<i class="fa fa-bolt"></i>
+					</button>
+					<span class="px-2 py-1 rounded-lg border text-[8px] uppercase font-black tracking-widest" [ngClass]="shadowRegimeClasses()">
+						{{ shadowRegimeLabel() }}
+					</span>
 				</div>
 			</div>
-			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
-				profit factor
-			</div>
-			<div class="mt-3">
-				<div class="flex items-center justify-between text-[9px] text-slate-500 mb-1">
-					<span class="uppercase font-black tracking-widest">threshold</span>
-					<span class="font-bold text-slate-300">{{ shadowMinimumProfitFactor() | optionalNumber:'1.2-2' }}</span>
-				</div>
-				<div class="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
-					<div class="h-1.5 rounded-full transition-all duration-700" [ngClass]="shadowProgressClass()" [style.width.%]="shadowProfitFactorProgress()"></div>
+			<div class="flex flex-col">
+				<div class="grid grid-cols-1 sm:grid-cols-3 sm:gap-x-3 gap-y-8 sm:gap-y-0 items-stretch">
+					<div class="shadow-regime-metric-col flex flex-col min-w-0">
+						<div class="min-h-[2.25rem] flex flex-col">
+							<span class="text-3xl font-black tabular-nums tracking-tight"
+							      [ngClass]="shadowAccentTextClass() === null ? 'text-slate-200' : (shadowEmpiricalProfitFactorProgress()! >= 100 ? 'text-purple-400' : 'text-red-400')">
+								{{ formatMultiplier(shadowEmpiricalProfitFactor()) }}
+							</span>
+						</div>
+						<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug">
+							{{ shadowEmpiricalGeometryLabel() }}
+						</div>
+						<div class="mt-3 flex flex-col flex-1">
+							<div class="flex items-center justify-between text-[9px] text-slate-500 mb-2 leading-none">
+								<span class="uppercase font-black tracking-widest">gate</span>
+								<span class="font-bold text-slate-300 tabular-nums">{{ shadowEmpiricalProfitFactorThreshold() | optionalNumber:'1.2-2' }}</span>
+							</div>
+							<div class="w-full bg-slate-800/80 rounded-full h-1.5 mb-2 overflow-hidden">
+								<div class="h-1.5 rounded-full transition-all duration-700"
+								     [ngClass]="shadowEmpiricalProfitFactorProgress() === null ? 'bg-slate-700' : (shadowEmpiricalProfitFactorProgress()! >= 100 ? 'bg-purple-400' : 'bg-red-400')"
+								     [style.width.%]="shadowEmpiricalProfitFactorProgress() ?? 0"></div>
+							</div>
+						</div>
+					</div>
+
+					<div class="shadow-regime-metric-col flex flex-col min-w-0 border-l-0 sm:border-l border-white/10 sm:pl-2">
+						<div class="min-h-[2.25rem] flex flex-col">
+							<span class="text-3xl font-black tabular-nums tracking-tight"
+							      [ngClass]="shadowChronicleProfitFactorProgress() === null ? 'text-slate-200' : (shadowChronicleProfitFactorProgress()! >= 100 ? 'text-purple-400' : 'text-red-400')">
+								{{ formatMultiplier(shadowChronicleProfitFactor()) }}
+							</span>
+						</div>
+						<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug">
+							{{ shadowChronicleGeometryLabel() }}
+						</div>
+						<div class="mt-3 flex flex-col justify-end flex-1">
+							<div class="flex items-center justify-between text-[9px] text-slate-500 mb-2 leading-none">
+								<span class="uppercase font-black tracking-widest">circuit</span>
+								<span class="font-bold text-slate-300 tabular-nums">{{ shadowChronicleProfitFactorThreshold() | optionalNumber:'1.2-2' }}</span>
+							</div>
+							<div class="w-full bg-slate-800/80 rounded-full h-1.5 mb-2 overflow-hidden">
+								<div class="h-1.5 rounded-full transition-all duration-700"
+								     [ngClass]="shadowChronicleProfitFactorProgress() === null ? 'bg-slate-700' : (shadowChronicleProfitFactorProgress()! >= 100 ? 'bg-purple-400' : 'bg-red-400')"
+								     [style.width.%]="shadowChronicleProfitFactorProgress() ?? 0"></div>
+							</div>
+						</div>
+					</div>
+
+					<div class="shadow-regime-metric-col flex flex-col min-w-0 border-l-0 sm:border-l border-white/10 sm:pl-2">
+						<div class="min-h-[2.25rem] flex flex-col">
+							<span class="text-3xl font-black tabular-nums tracking-tight"
+							      [ngClass]="shadowSparseExpectedValueProgress() === null ? 'text-slate-200' : (shadowSparseExpectedValueProgress()! >= 100 ? 'text-purple-400' : 'text-red-400')">
+								{{ shadowSparseExpectedValueUsd() | optionalNumber:'1.1-1':'$ ' }}
+							</span>
+						</div>
+						<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug">
+							{{ shadowSparseExpectedValueGeometryLabel() }}
+						</div>
+						<div class="mt-3 flex flex-col justify-end flex-1">
+							<div class="flex items-center justify-between text-[9px] text-slate-500 mb-2 leading-none">
+								<span class="uppercase font-black tracking-widest">floor</span>
+								<span class="font-bold text-slate-300 tabular-nums">{{ shadowSparseExpectedValueUsdThreshold() | optionalNumber:'1.2-2':'$ ' }}</span>
+							</div>
+							<div class="w-full bg-slate-800/80 rounded-full h-1.5 mb-2 overflow-hidden">
+								<div class="h-1.5 rounded-full transition-all duration-700"
+								     [ngClass]="shadowSparseExpectedValueProgress() === null ? 'bg-slate-700' : (shadowSparseExpectedValueProgress()! >= 100 ? 'bg-purple-400' : 'bg-red-400')"
+								     [style.width.%]="shadowSparseExpectedValueProgress() ?? 0"></div>
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 			<div class="mt-auto pt-3 border-t border-white/5">
-				<div class="grid grid-cols-3 gap-2 min-h-[36px]">
+				<div class="grid grid-cols-3 gap-3 min-h-[36px]">
 					<div class="flex flex-col justify-center leading-none">
 						<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">win rate</span>
 						<div class="text-xs font-black text-slate-200 mt-1 leading-none">{{ shadowWinRate() | optionalNumber:'1.0-1':'':'%' }}</div>
@@ -110,8 +175,8 @@
 						<div class="text-xs font-black text-slate-200 mt-1 leading-none">{{ shadowCapitalVelocity() | optionalNumber:'1.2-2' }}</div>
 					</div>
 					<div class="flex flex-col justify-center border-l border-white/5 pl-2 leading-none">
-						<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">ev</span>
-						<div class="text-xs font-black mt-1 leading-none" [ngClass]="shadowExpectedValue() === null ? 'text-slate-400' : (isNonNegative(shadowExpectedValue()) ? 'text-emerald-400' : 'text-red-400')">
+						<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">meta ev</span>
+						<div class="text-xs font-black mt-1 leading-none" [ngClass]="shadowExpectedValue() === null ? 'text-slate-200' : (isNonNegative(shadowExpectedValue()) ? 'text-purple-400' : 'text-red-400')">
 							{{ shadowExpectedValue() | optionalNumber:'1.2-2':'$ ' }}
 						</div>
 					</div>

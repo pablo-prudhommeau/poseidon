@@ -52,9 +52,9 @@ class WebsocketManager:
         for websocket_client in list(self._connected_clients):
             try:
                 await websocket_client.send_json(formatted_payload)
-            except Exception as exception:
+            except Exception:
                 stale_websocket_clients.append(websocket_client)
-                logger.exception("[WEBSOCKET][MANAGER][BROADCAST] Payload transmission to client failed, scheduling for removal", exception)
+                logger.debug("[WEBSOCKET][MANAGER][BROADCAST] Payload transmission to client failed, scheduling for removal")
         for dead_websocket_client in stale_websocket_clients:
             self.unregister_client_connection(dead_websocket_client)
 

@@ -35,3 +35,14 @@
     color: #ef4444;
     font-size: 0.9rem;
 }
+
+:host ::ng-deep .chronicle-glow-btn.p-button {
+    background: linear-gradient(120deg, rgba(168, 85, 247, 0.35), rgba(6, 182, 212, 0.22)) !important;
+    border: 1px solid rgba(232, 121, 249, 0.45) !important;
+    color: #faf5ff !important;
+    box-shadow: 0 0 18px rgba(168, 85, 247, 0.25);
+}
+
+:host ::ng-deep .chronicle-glow-btn.p-button:hover {
+    box-shadow: 0 0 26px rgba(244, 114, 182, 0.35);
+}

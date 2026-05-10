@@ -222,10 +222,22 @@ export interface TradingShadowMetaPayload {
     resolved_outcome_count: number;
     elapsed_hours: number;
     win_rate_percentage: number;
-    profit_factor: number;
     expected_value_usd: number;
     capital_velocity: number;
-    minimum_profit_factor: number;
+    global_profit_factor: number;
+    empirical_profit_factor: number;
+    empirical_profit_factor_threshold: number;
+    empirical_profit_factor_window_verdict_count: number;
+    chronicle_profit_factor: number;
+    chronicle_profit_factor_threshold: number;
+    chronicle_profit_factor_lookback_days: number;
+    chronicle_profit_factor_bucket_width_seconds: number;
+    chronicle_profit_factor_moving_average_period: number;
+    sparse_expected_value_usd: number;
+    sparse_expected_value_usd_threshold: number;
+    sparse_expected_value_lookback_days: number;
+    sparse_expected_value_bucket_width_seconds: number;
+    sparse_expected_value_moving_average_period: number;
 }
 
 export interface TradingPortfolioPayload {
@@ -354,6 +366,8 @@ export enum WebsocketMessageType {
     PORTFOLIO = 'portfolio',
     LIQUIDITY = 'liquidity',
     SHADOW_META = 'shadow_meta',
+    SHADOW_VERDICT_CHRONICLE = 'shadow_verdict_chronicle',
+    SHADOW_VERDICT_CHRONICLE_DELTA = 'shadow_verdict_chronicle_delta',
     POSITIONS = 'positions',
     TRADES = 'trades',
     DCA_STRATEGIES = 'dca_strategies',
@@ -382,6 +396,14 @@ export interface WebsocketLiquidityMessage extends BaseWebsocketMessage<TradingL
 
 export interface WebsocketShadowMetaMessage extends BaseWebsocketMessage<TradingShadowMetaPayload> {
     type: WebsocketMessageType.SHADOW_META;
+}
+
+export interface WebsocketShadowVerdictChronicleMessage extends BaseWebsocketMessage<ShadowVerdictChronicleResponse> {
+    type: WebsocketMessageType.SHADOW_VERDICT_CHRONICLE;
+}
+
+export interface WebsocketShadowVerdictChronicleDeltaMessage extends BaseWebsocketMessage<ShadowVerdictChronicleDeltaPayload> {
+    type: WebsocketMessageType.SHADOW_VERDICT_CHRONICLE_DELTA;
 }
 
 export interface WebsocketPositionsMessage extends BaseWebsocketMessage<TradingPositionPayload[]> {
@@ -417,6 +439,8 @@ export type WebsocketMessageUnion =
     | WebsocketPortfolioMessage
     | WebsocketLiquidityMessage
     | WebsocketShadowMetaMessage
+    | WebsocketShadowVerdictChronicleMessage
+    | WebsocketShadowVerdictChronicleDeltaMessage
     | WebsocketPositionsMessage
     | WebsocketTradesMessage
     | WebsocketDcaStrategiesMessage
@@ -536,4 +560,71 @@ export interface AnalyticsResponse {
     scatter_series: AnalyticsScatterSeriesPayload[];
 }
 
+export interface ShadowVerdictChronicleMetricPointPayload {
+    timestamp_milliseconds: number;
+    average_pnl_percentage: number;
+    average_win_rate_percentage: number;
+    expected_value_per_trade_usd: number;
+    capital_velocity_per_hour: number;
+    profit_factor: number;
+}
+
+export interface ShadowVerdictChronicleVolumePointPayload {
+    timestamp_milliseconds: number;
+    verdict_count: number;
+}
+
+export interface ShadowVerdictChronicleVerdictPointPayload {
+    verdict_id: number;
+    timestamp_milliseconds: number;
+    pnl_percentage: number;
+    pnl_usd: number;
+    exit_reason: string;
+    order_notional_usd: number;
+    point_size: number;
+    is_profitable: boolean;
+}
+
+export interface ShadowVerdictChronicleBucketPayload {
+    bucket_label: string;
+    granularity_seconds: number;
+    from_iso: string;
+    to_iso: string;
+    metrics: ShadowVerdictChronicleMetricPointPayload[];
+    volumes: ShadowVerdictChronicleVolumePointPayload[];
+    verdict_cloud: ShadowVerdictChronicleVerdictPointPayload[];
+}
+
+export interface ShadowVerdictChronicleResponse {
+    generated_at_iso: string;
+    as_of_iso: string;
+    from_iso: string;
+    to_iso: string;
+    total_verdicts_considered: number;
+    source: string;
+    series_end_lag_seconds: number;
+    buckets: ShadowVerdictChronicleBucketPayload[];
+}
+
+export interface ShadowVerdictChronicleBucketDeltaPayload {
+    bucket_label: string;
+    drop_metrics_before_ms?: number | null;
+    drop_volumes_before_ms?: number | null;
+    metrics_remove_timestamps_ms?: number[];
+    volumes_remove_timestamps_ms?: number[];
+    metrics_upsert: ShadowVerdictChronicleMetricPointPayload[];
+    volumes_upsert: ShadowVerdictChronicleVolumePointPayload[];
+    verdict_cloud_replace?: ShadowVerdictChronicleVerdictPointPayload[] | null;
+}
+
+export interface ShadowVerdictChronicleDeltaPayload {
+    generated_at_iso: string;
+    as_of_iso: string;
+    from_iso: string;
+    to_iso: string;
+    total_verdicts_considered: number;
+    source: string;
+    series_end_lag_seconds: number;
+    buckets: ShadowVerdictChronicleBucketDeltaPayload[];
+}
 

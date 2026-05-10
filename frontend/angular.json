@@ -23,6 +23,11 @@
                                 "glob": "**/*",
                                 "input": "src/assets",
                                 "output": "assets"
+                            },
+                            {
+                                "glob": "**/*",
+                                "input": "node_modules/scichart/_wasm",
+                                "output": "scichart-wasm"
                             }
                         ],
                         "styles": [

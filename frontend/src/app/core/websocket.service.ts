@@ -1,6 +1,8 @@
 import {Injectable, signal} from '@angular/core';
 import {
     DcaStrategyPayload,
+    ShadowVerdictChronicleDeltaPayload,
+    ShadowVerdictChronicleResponse,
     TradingEvaluationPayload,
     TradingLiquidityPayload,
     TradingPortfolioPayload,
@@ -10,12 +12,15 @@ import {
     WebsocketMessageType,
     WebsocketMessageUnion
 } from './models';
+import {ShadowVerdictChronicleMergeService} from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
 
 export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 
 @Injectable({providedIn: 'root'})
 export class WebSocketService {
     private socket?: WebSocket;
+
+    constructor(private readonly shadowHistoryMerge: ShadowVerdictChronicleMergeService) {}
 
     public readonly status = signal<WebsocketConnectionStatus>('closed');
     public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
@@ -25,6 +30,7 @@ export class WebSocketService {
     public readonly trades = signal<TradingTradePayload[]>([]);
     public readonly analytics = signal<TradingEvaluationPayload[]>([]);
     public readonly dcaStrategies = signal<DcaStrategyPayload[]>([]);
+    public readonly shadowHistory = signal<ShadowVerdictChronicleResponse | null>(null);
 
     private defaultWebsocketUrl(): string {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -42,7 +48,6 @@ export class WebSocketService {
 
         socket.onopen = () => {
             this.status.set('open');
-            console.info('[WEBSOCKET][CONNECTION][OPEN] WebSocket connection established');
         };
 
         socket.onmessage = (event) => {
@@ -50,27 +55,30 @@ export class WebSocketService {
                 const message = JSON.parse(event.data) as WebsocketMessageUnion;
                 this.apply(message);
             } catch {
-                console.debug('[WEBSOCKET][MESSAGE][ERROR] Invalid WebSocket message payload received', event.data);
             }
         };
 
         socket.onerror = () => {
             this.status.set('closed');
-            console.debug('[WEBSOCKET][CONNECTION][ERROR] WebSocket socket error encountered');
         };
 
         socket.onclose = () => {
             this.status.set('closed');
             this.socket = undefined;
-            console.info('[WEBSOCKET][CONNECTION][CLOSE] Socket closed — attempting reconnection in 3 seconds');
             setTimeout(() => this.connect(url), 3000);
         };
+    }
+
+    public requestCachedStateRefresh(): void {
+        if (this.socket?.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        this.socket.send(JSON.stringify({type: WebsocketMessageType.REFRESH}));
     }
 
     private apply(message: WebsocketMessageUnion): void {
         switch (message.type) {
             case WebsocketMessageType.INITIALIZATION: {
-                console.info('[WEBSOCKET][MESSAGE][INITIALIZATION] Handshake received. System ready for data streaming.');
                 break;
             }
             case WebsocketMessageType.PORTFOLIO: {
@@ -83,6 +91,20 @@ export class WebSocketService {
             }
             case WebsocketMessageType.SHADOW_META: {
                 this.shadowMeta.set(message.payload);
+                break;
+            }
+            case WebsocketMessageType.SHADOW_VERDICT_CHRONICLE: {
+                this.shadowHistory.set(message.payload);
+                break;
+            }
+            case WebsocketMessageType.SHADOW_VERDICT_CHRONICLE_DELTA: {
+                const baseline = this.shadowHistory();
+                const patch = message.payload as ShadowVerdictChronicleDeltaPayload;
+                if (!baseline) {
+                    this.requestCachedStateRefresh();
+                    break;
+                }
+                this.shadowHistory.set(this.shadowHistoryMerge.mergeShadowVerdictChronicleDelta(baseline, patch));
                 break;
             }
             case WebsocketMessageType.POSITIONS: {
@@ -98,13 +120,10 @@ export class WebSocketService {
                 break;
             }
             case WebsocketMessageType.PONG:
-                console.debug('[WEBSOCKET][MESSAGE][PONG] Heartbeat acknowledged by server');
                 break;
             case WebsocketMessageType.ERROR:
-                console.error('[WEBSOCKET][MESSAGE][ERROR] Server-side error reported:', message.payload);
                 break;
             default:
-                console.warn('[WEBSOCKET][MESSAGE][WARN] Unhandled message type received:', (message as any).type);
                 break;
         }
     }

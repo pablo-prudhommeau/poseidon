@@ -17,8 +17,7 @@ from src.api.http.api_schemas import (
     DcaOrdersResponse,
     TradingPositionsResponse,
     DcaStrategyPayload,
-    AnalyticsResponse, TradingEvaluationPayload,
-)
+    AnalyticsResponse, TradingEvaluationPayload, )
 from src.api.serializers import (
     serialize_dca_strategy,
     serialize_dca_order,
@@ -30,7 +29,7 @@ from src.core.dca.dca_backtester import DcaBacktester
 from src.core.dca.dca_scheduler import DcaScheduler
 from src.core.structures.structures import DcaStrategyStatus, BlockchainNetwork
 from src.core.trading.analytics.trading_analytics_helpers import map_trading_evaluation
-from src.core.trading.cache.trading_cache import trading_state_cache
+from src.core.trading.cache.trading_cache import trading_cache
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.logging.logger import get_application_logger
@@ -206,7 +205,7 @@ def get_shadow_trades_for_pair(
 @router.get("/api/positions", tags=["positions"])
 async def get_open_positions_list(database_session: Session = Depends(get_fastapi_database_session)) -> TradingPositionsResponse:
     logger.debug("[HTTP][POSITIONS][FETCH] Retrieving currently open positions from cache")
-    trading_state = trading_state_cache.get_trading_state()
+    trading_state = trading_cache.get_trading_state()
     cached_positions = trading_state.positions
 
     if cached_positions is not None:

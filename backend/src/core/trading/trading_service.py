@@ -8,6 +8,8 @@ from typing import Iterable, List, Dict, Deque, Optional
 from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import TradingTradePayload
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import RealizedProfitAndLoss, Token, CashFromTrades
 from src.core.trading.trading_structures import InventoryLot, TradingCandidate
@@ -116,41 +118,7 @@ def compute_available_cash_usd(*, database_session: Optional[Session] = None) ->
     return _compute_live_available_cash_usd()
 
 
-def _paper_available_cash_from_trades(database_session: Session, starting_cash_usd: float) -> float:
-    from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
-
-    trade_dao = TradingTradeDao(database_session)
-    all_trades = trade_dao.retrieve_recent_trades(limit_count=100000)
-    cash_state = cash_from_trades(starting_cash_usd, all_trades)
-    return cash_state.available_cash
-
-
-def _compute_live_available_cash_usd() -> float:
-    from src.core.trading.cache.trading_cache import trading_state_cache
-    from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
-
-    try:
-        balances = fetch_stablecoin_balances_for_allowed_chains()
-    except ConnectionError:
-        cached_cash = trading_state_cache.get_available_cash_usd()
-        if cached_cash is not None:
-            logger.warning(
-                "[TRADING][CASH] Live balances unavailable; using cached available cash %.2f USD",
-                cached_cash,
-            )
-            return cached_cash
-        raise
-    return sum(balance.balance_raw for balance in balances)
-
-
-def _compute_paper_available_cash_usd(starting_cash_usd: float) -> float:
-    from src.persistence.db import get_database_session
-
-    with get_database_session() as database_session:
-        return _paper_available_cash_from_trades(database_session, starting_cash_usd)
-
-
-def cash_from_trades(start_cash_usd: float, trades: Iterable[TradingTrade]) -> CashFromTrades:
+def compute_cash_from_trades(start_cash_usd: float, trades: Iterable[TradingTrade]) -> CashFromTrades:
     sorted_trades: List[TradingTrade] = list(trades)
 
     total_buys: Decimal = Decimal("0")
@@ -199,3 +167,42 @@ def fetch_trading_candidates_sync() -> list[TradingCandidate]:
     candidates_list: list[TradingCandidate] = [candidate_from_dexscreener_token_information(token_information) for token_information in token_information_list]
     logger.info("[TRADING][FETCH] Successfully converted %d token records into trading candidates", len(candidates_list))
     return candidates_list
+
+
+def invalidate_trading_positions_and_trades_cache() -> None:
+    cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.TRADES)
+    logger.debug("[TRADING][SERVICE] Positions and trades cache realms marked dirty after persisted mutation")
+
+
+def _paper_available_cash_from_trades(database_session: Session, starting_cash_usd: float) -> float:
+    from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
+
+    trade_dao = TradingTradeDao(database_session)
+    all_trades = trade_dao.retrieve_recent_trades(limit_count=100000)
+    cash_state = compute_cash_from_trades(starting_cash_usd, all_trades)
+    return cash_state.available_cash
+
+
+def _compute_live_available_cash_usd() -> float:
+    from src.core.trading.cache.trading_cache import trading_cache
+    from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
+
+    try:
+        balances = fetch_stablecoin_balances_for_allowed_chains()
+    except ConnectionError:
+        cached_cash = trading_cache.get_available_cash_usd()
+        if cached_cash is not None:
+            logger.warning(
+                "[TRADING][CASH] Live balances unavailable; using cached available cash %.2f USD",
+                cached_cash,
+            )
+            return cached_cash
+        raise
+    return sum(balance.balance_raw for balance in balances)
+
+
+def _compute_paper_available_cash_usd(starting_cash_usd: float) -> float:
+    from src.persistence.db import get_database_session
+
+    with get_database_session() as database_session:
+        return _paper_available_cash_from_trades(database_session, starting_cash_usd)

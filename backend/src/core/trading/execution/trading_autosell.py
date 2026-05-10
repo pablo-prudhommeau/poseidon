@@ -6,11 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.websocket.telemetry import TelemetryService
-from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.execution.trading_executor import TradingExecutor
+from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
 from src.core.trading.execution.trading_order_builder import build_route_for_live_sell
 from src.core.trading.trading_structures import AutosellTriggerReason
 from src.core.utils.date_utils import get_current_local_datetime
@@ -45,6 +44,7 @@ def check_thresholds_and_autosell_for_token_address(
 
     if created_trades:
         database_session.commit()
+        invalidate_trading_positions_and_trades_cache()
 
     return created_trades
 
@@ -167,12 +167,6 @@ def _execute_sell_operation(
     sell_trade.realized_profit_and_loss = trade_pnl_usd
 
     database_session.flush()
-    cache_invalidator.mark_dirty(
-        CacheRealm.POSITIONS,
-        CacheRealm.TRADES,
-        CacheRealm.PORTFOLIO,
-        CacheRealm.AVAILABLE_CASH,
-    )
 
     pnl_percentage = ((execution_price / position.entry_price) - 1) * 100
 

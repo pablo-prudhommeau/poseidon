@@ -7,8 +7,6 @@ from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import TradingEvaluationPayload
 from src.api.serializers import serialize_trading_evaluation
-from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_realm import CacheRealm
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading.trading_outcome_dao import TradingOutcomeDao
@@ -88,6 +86,5 @@ class TelemetryService:
 
         if serialized_payload:
             logger.info("[TRADING][TELEMETRY][OUTCOME] Successfully linked outcome for trade id %s", trade_id)
-            cache_invalidator.mark_dirty(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
 
         return serialized_payload

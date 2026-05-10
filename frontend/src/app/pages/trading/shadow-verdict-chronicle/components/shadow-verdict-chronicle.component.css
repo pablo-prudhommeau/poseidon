@@ -1,0 +1,135 @@
+:host {
+    display: contents;
+}
+
+.chronicle-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: radial-gradient(circle at 30% 30%, #f0abfc, #a855f7 45%, #4c1d95);
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.95),
+    0 0 28px rgba(52, 211, 153, 0.35);
+    animation: chronicle-pulse 2.1s ease-in-out infinite;
+}
+
+@keyframes chronicle-pulse {
+    0%,
+    100% {
+        opacity: 0.75;
+        transform: scale(1);
+        filter: blur(0);
+    }
+    45% {
+        opacity: 1;
+        transform: scale(1.15);
+        filter: blur(0.2px);
+    }
+}
+
+.chronicle-title-shimmer {
+    background: linear-gradient(
+            105deg,
+            #fdf4ff 0%,
+            #e9d5ff 18%,
+            #a855f7 38%,
+            #22d3ee 55%,
+            #c084fc 72%,
+            #fdf4ff 100%
+    );
+    background-size: 220% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: chronicle-shimmer 11s linear infinite;
+}
+
+@keyframes chronicle-shimmer {
+    0% {
+        background-position: 0% center;
+    }
+    100% {
+        background-position: 200% center;
+    }
+}
+
+.chronicle-body {
+    background: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(168, 85, 247, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 60%, rgba(6, 182, 212, 0.12), transparent 50%),
+    rgba(3, 7, 18, 0.88);
+}
+
+.chronicle-aurora {
+    position: absolute;
+    inset: -40%;
+    background: conic-gradient(from 120deg at 50% 50%, rgba(168, 85, 247, 0.12), rgba(34, 211, 238, 0.1), rgba(236, 72, 153, 0.08), rgba(168, 85, 247, 0.12));
+    animation: chronicle-spin 28s linear infinite;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+@keyframes chronicle-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.chronicle-grid {
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 100%);
+    pointer-events: none;
+    opacity: 0.9;
+}
+
+.chronicle-chart-host {
+    min-height: 520px;
+}
+
+.chronicle-loader-ring {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 2px solid rgba(168, 85, 247, 0.25);
+    border-top-color: rgba(244, 114, 182, 0.95);
+    border-right-color: rgba(34, 211, 238, 0.75);
+    animation: chronicle-spin 0.85s linear infinite;
+}
+
+:host ::ng-deep .chronicle-select-btn.p-selectbutton {
+    display: inline-flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+:host ::ng-deep .chronicle-select-btn .p-togglebutton {
+    border-radius: 999px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background: rgba(15, 23, 42, 0.55) !important;
+    color: #cbd5f5 !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+    padding: 0.35rem 0.75rem !important;
+}
+
+:host ::ng-deep .chronicle-select-btn .p-togglebutton.p-highlight {
+    background: linear-gradient(120deg, rgba(168, 85, 247, 0.45), rgba(6, 182, 212, 0.35)) !important;
+    border-color: rgba(232, 121, 249, 0.45) !important;
+    color: #faf5ff !important;
+    box-shadow: 0 0 18px rgba(168, 85, 247, 0.25);
+}
+
+:host ::ng-deep .shadow-chronicle-dialog .p-dialog-header {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.88));
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.1rem 1.25rem;
+}
+
+:host ::ng-deep .shadow-chronicle-dialog .p-dialog-content {
+    padding: 0.75rem 1rem 1rem;
+    background: rgba(2, 6, 23, 0.6);
+}

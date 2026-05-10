@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import Lock
 
 from src.api.http.api_schemas import DcaStrategyPayload
+from src.core.dca.cache.dca_cache_structures import DcaState
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -18,9 +19,11 @@ class DcaCache:
             self._cached_strategies = strategies_payload
             logger.debug("[DCA][CACHE] DCA strategies updated (%d entries)", len(strategies_payload))
 
-    def get_dca_strategies_state(self) -> list[DcaStrategyPayload]:
+    def get_dca_state(self) -> DcaState:
         with self._lock:
-            return list(self._cached_strategies)
+            return DcaState(
+                dca_strategies=self._cached_strategies
+            )
 
 
 dca_state_cache = DcaCache()

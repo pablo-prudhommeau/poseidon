@@ -12,6 +12,8 @@ Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un 
 
 * Les phrases de logging doivent utiliser des tags en préfixes [TAG1][...][TAGN][...] en gardant une cohérence dans toute la codebase
 
+* Ces règles de logging exhaustives ne s'appliquent évidemment pas côté frontend, pas de console.log(...)
+
 * Tout le code doit être évidemment en anglais  
 
 * Tu ne dois pas indenter artificiellement les affectations de variables pour les aligner

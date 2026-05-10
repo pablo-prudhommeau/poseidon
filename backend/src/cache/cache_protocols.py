@@ -5,6 +5,10 @@ from typing import Protocol
 from src.cache.cache_realm import CacheRealm
 
 
+class CacheRealmRebuildSkipped(Exception):
+    pass
+
+
 class RealmRebuilder(Protocol):
     realm: CacheRealm
     ttl_seconds: float

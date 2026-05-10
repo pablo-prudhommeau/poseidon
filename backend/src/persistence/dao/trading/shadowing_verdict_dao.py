@@ -1,7 +1,9 @@
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceStatusSummary
+from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceStatusSummary
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingShadowingVerdict, TradingShadowingProbe
 
@@ -48,6 +50,65 @@ class TradingShadowingVerdictDao:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve recent resolved verdicts — %s", error)
             raise
 
+    def retrieve_resolved_in_window(
+            self,
+            start_datetime: datetime,
+            end_datetime: datetime,
+            limit_count: int,
+    ) -> list[TradingShadowingVerdict]:
+        from sqlalchemy.orm import joinedload
+        try:
+            return list(self.database_session.scalars(
+                select(TradingShadowingVerdict)
+                .options(joinedload(TradingShadowingVerdict.probe))
+                .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
+                .where(TradingShadowingVerdict.resolved_at.is_not(None))
+                .where(TradingShadowingVerdict.resolved_at >= start_datetime)
+                .where(TradingShadowingVerdict.resolved_at <= end_datetime)
+                .order_by(TradingShadowingVerdict.resolved_at.asc())
+                .limit(limit_count)
+            ).unique().all())
+        except Exception as error:
+            logger.exception(
+                "[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts in range [%s, %s] — %s",
+                start_datetime,
+                end_datetime,
+                error,
+            )
+            raise
+
+    def retrieve_resolved_in_window_after_id(
+            self,
+            after_id_exclusive: int,
+            start_datetime: datetime,
+            end_datetime: datetime,
+            limit_count: int,
+    ) -> list[TradingShadowingVerdict]:
+        from sqlalchemy.orm import joinedload
+        try:
+            return list(self.database_session.scalars(
+                select(TradingShadowingVerdict)
+                .options(joinedload(TradingShadowingVerdict.probe))
+                .where(TradingShadowingVerdict.id > after_id_exclusive)
+                .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
+                .where(TradingShadowingVerdict.resolved_at.is_not(None))
+                .where(TradingShadowingVerdict.resolved_at >= start_datetime)
+                .where(TradingShadowingVerdict.resolved_at <= end_datetime)
+                .order_by(TradingShadowingVerdict.id.asc())
+                .limit(limit_count)
+            ).unique().all())
+        except Exception as error:
+            logger.exception(
+                "[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts after id=%s in range [%s, %s] — %s",
+                after_id_exclusive,
+                start_datetime,
+                end_datetime,
+                error,
+            )
+            raise
+
     def count_resolved(self) -> int:
         from sqlalchemy import func
         try:
@@ -77,7 +138,7 @@ class TradingShadowingVerdictDao:
             raise
 
     def retrieve_shadow_intelligence_status_summary(self) -> ShadowIntelligenceStatusSummary:
-        from src.core.trading.shadowing.shadow_trading_structures import ShadowIntelligenceStatusSummary
+        from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceStatusSummary
         from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
 
         resolved_outcome_count = self.count_resolved()

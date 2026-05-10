@@ -8,6 +8,7 @@ import {TradingOverviewComponent} from './trading-overview/trading-overview.comp
 import {AnalyticsKpiBarComponent} from '../analytics/analytics-kpi-bar/analytics-kpi-bar.component';
 import {AnalyticsSynthesisComponent} from '../analytics/analytics-synthesis/analytics-synthesis.component';
 import {AnalyticsExplorationComponent} from '../analytics/analytics-exploration/analytics-exploration.component';
+import {ShadowVerdictChronicleComponent} from './shadow-verdict-chronicle/components/shadow-verdict-chronicle.component';
 
 @Component({
     standalone: true,
@@ -20,6 +21,7 @@ import {AnalyticsExplorationComponent} from '../analytics/analytics-exploration/
         AnalyticsKpiBarComponent,
         AnalyticsSynthesisComponent,
         AnalyticsExplorationComponent,
+        ShadowVerdictChronicleComponent,
     ],
     templateUrl: './trading-dashboard.component.html',
     styleUrl: './trading-dashboard.component.css'
