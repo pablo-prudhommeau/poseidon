@@ -1,7 +1,15 @@
 import {CommonModule, DatePipe} from '@angular/common';
-import {AfterViewInit, Component, computed, inject, signal, TemplateRef, ViewChild} from '@angular/core';
+import {AfterViewInit, Component, computed, DestroyRef, inject, signal, TemplateRef, ViewChild} from '@angular/core';
 import {AgGridAngular} from 'ag-grid-angular';
-import {ColDef, ValueFormatterParams, ValueGetterParams} from 'ag-grid-community';
+import {
+    ColDef,
+    GetRowIdParams,
+    GridApi,
+    GridReadyEvent,
+    ITooltipParams,
+    ValueFormatterParams,
+    ValueGetterParams
+} from 'ag-grid-community';
 
 import {ButtonModule} from 'primeng/button';
 import {DialogModule} from 'primeng/dialog';
@@ -17,15 +25,16 @@ import {ApexAxisChartSeries, ApexChart, ApexDataLabels, ApexGrid, ApexLegend, Ap
 
 import {balhamDarkThemeCompact} from '../../../ag-grid.theme';
 import {NumberFormattingService} from '../../../core/number-formatting.service';
+import {DatetimeDisplayService} from '../../../core/datetime-display.service';
 import {WebSocketService} from '../../../core/websocket.service';
 import {TradingEvaluationPayload, TradingTradePayload} from '../../../core/models';
-import {MetricsFormattingService} from '../../../core/metrics-formatting.service';
 
 import {SymbolChipRendererComponent} from '../../../renderers/symbol-chip.renderer';
+import {IconHeaderRendererComponent} from '../../../renderers/icon-header.renderer';
 import {TemplateCellRendererComponent} from '../../../renderers/template-cell.renderer';
-import {TemplateHeaderRendererComponent} from '../../../renderers/template-header.renderer';
 import {ApiService} from '../../../api.service';
-import {EXPLORATION_CATEGORIES} from '../../../core/constants';
+import {tradingGridsLeadingColumnLayout} from '../trading-grids-leading-column-layout';
+import {TradingShadowIntelligenceTabComponent} from '../trading-shadow-intelligence-tab/trading-shadow-intelligence-tab.component';
 
 @Component({
     standalone: true,
@@ -43,28 +52,35 @@ import {EXPLORATION_CATEGORIES} from '../../../core/constants';
         CardModule,
         TooltipModule,
         PanelModule,
-        NgApexchartsModule
+        NgApexchartsModule,
+        IconHeaderRendererComponent,
+        TradingShadowIntelligenceTabComponent
     ],
-    templateUrl: './trading-trades-table.component.html'
+    templateUrl: './trading-trades-table.component.html',
+    styleUrl: './trading-trades-table.component.css'
 })
 export class TradingTradesTableComponent implements AfterViewInit {
     public readonly agGridTheme = balhamDarkThemeCompact;
 
+    private readonly destroyRef = inject(DestroyRef);
     private readonly webSocketService = inject(WebSocketService);
     private readonly numberFormattingService = inject(NumberFormattingService);
-    private readonly metricsFormattingService = inject(MetricsFormattingService);
+    private readonly datetimeDisplayService = inject(DatetimeDisplayService);
     private readonly apiService = inject(ApiService);
+
+    private tradesGridApi: GridApi | null = null;
 
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
         const rows = this.webSocketService.trades() ?? [];
-        return Array.isArray(rows) ? [...(rows as TradingTradePayload[])] : [];
+        return Array.isArray(rows) ? (rows as TradingTradePayload[]) : [];
     });
+    public readonly getRowId = (params: GetRowIdParams<TradingTradePayload>): string =>
+        String(params.data?.id ?? '');
 
     public columnDefinitions: ColDef<TradingTradePayload>[] = [];
     public readonly defaultColumnDefinition: ColDef<TradingTradePayload> = {resizable: true, sortable: true, filter: true, flex: 1};
 
     @ViewChild('actionsTemplate', {static: false}) private actionsTemplate?: TemplateRef<unknown>;
-    @ViewChild('symbolHeaderTemplate', {static: false}) private symbolHeaderTemplate?: TemplateRef<unknown>;
 
     public readonly detailsVisible = signal<boolean>(false);
     public readonly selectedTrade = signal<TradingTradePayload | null>(null);
@@ -108,104 +124,228 @@ export class TradingTradesTableComponent implements AfterViewInit {
     public ngAfterViewInit(): void {
         this.columnDefinitions = [
             {
-                headerName: 'Symbol',
+                headerName: 'symbol',
+                colId: 'tokenSymbol',
                 field: 'token_symbol',
                 sortable: true,
                 filter: true,
                 cellRenderer: SymbolChipRendererComponent,
-                flex: 1.2,
-                headerComponent: this.symbolHeaderTemplate ? TemplateHeaderRendererComponent : undefined,
-                headerComponentParams: this.symbolHeaderTemplate ? {template: this.symbolHeaderTemplate} : undefined
+                ...tradingGridsLeadingColumnLayout.symbol,
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-coins'},
+                cellClass: 'poseidon-grid-symbol-cell'
             },
             {
-                headerName: 'Date',
-                field: 'created_at' as unknown as keyof TradingTradePayload,
+                headerName: 'executed',
+                colId: 'createdAt',
                 sortable: true,
                 filter: 'agDateColumnFilter',
-                valueGetter: (p: ValueGetterParams<TradingTradePayload>) => (p.data as any)?.created_at ?? null,
-                flex: 1
+                valueGetter: (p: ValueGetterParams<TradingTradePayload>) =>
+                    this.datetimeDisplayService.parseToDate((p.data as any)?.created_at),
+                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) =>
+                    p.value == null ? '' : this.datetimeDisplayService.formatShortForGrid(p.value as Date),
+                tooltipValueGetter: (p: ITooltipParams<TradingTradePayload>) =>
+                    this.datetimeDisplayService.formatIsoForTooltip((p.data as any)?.created_at),
+                comparator: (valueA, valueB) => {
+                    const timeA =
+                        valueA instanceof Date
+                            ? valueA.getTime()
+                            : this.datetimeDisplayService.parseToDate(valueA)?.getTime() ?? 0;
+                    const timeB =
+                        valueB instanceof Date
+                            ? valueB.getTime()
+                            : this.datetimeDisplayService.parseToDate(valueB)?.getTime() ?? 0;
+                    return timeA - timeB;
+                },
+                cellClass: 'whitespace-nowrap tabular-nums text-xs font-semibold text-slate-300',
+                ...tradingGridsLeadingColumnLayout.dateTime,
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-clock'}
             },
             {
-                headerName: 'Side',
+                headerName: 'side',
+                colId: 'tradeSide',
                 field: 'trade_side',
                 sortable: true,
                 filter: true,
                 cellRenderer: (p: ValueFormatterParams<TradingTradePayload>) => {
                     const v = String(p.value ?? '');
-                    const colorClass = v === 'BUY' ? 'bg-teal-600' : 'bg-indigo-500';
-                    return `<span class="${colorClass} saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">${v}</span>`;
+                    const pillClass = v === 'BUY' ? 'poseidon-grid-pill--buy' : 'poseidon-grid-pill--sell';
+                    return `<span class="poseidon-grid-pill ${pillClass}">${v}</span>`;
                 },
-                flex: 0.5
+                cellClass: 'poseidon-grid-phase-side-cell',
+                ...tradingGridsLeadingColumnLayout.phaseOrSide,
+                headerClass: 'poseidon-header-align-center',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-right-left', alignCenter: true}
             },
             {
-                headerName: 'Quantity',
+                headerName: 'QTY',
+                colId: 'executionQuantity',
                 field: 'execution_quantity',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) => this.numberFormattingService.formatNumber(p.value, 2, 6),
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 1.3
-            },
-            {
-                headerName: 'Price',
-                field: 'execution_price',
-                type: 'numericColumn',
-                sortable: true,
-                filter: 'agNumberColumnFilter',
                 valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) =>
-                    this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 1.1
+                    this.numberFormattingService.formatQuantityHumanReadable(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingTradePayload>) =>
+                    this.numberFormattingService.formatNumber((p.data as any)?.execution_quantity, 2, 8),
+                cellClass: 'text-right whitespace-nowrap tabular-nums font-bold text-slate-100 tracking-tight',
+                ...tradingGridsLeadingColumnLayout.qty,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-layer-group', alignRight: true}
             },
             {
-                headerName: 'P&L',
+                headerName: 'PnL',
+                colId: 'realizedProfitAndLoss',
                 field: 'realized_profit_and_loss' as unknown as keyof TradingTradePayload,
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
                 valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) =>
                     this.numberFormattingService.formatCurrency(p.value, 'USD', 2, 2),
+                headerClass: 'ag-right-aligned-header poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-scale-balanced', alignRight: true},
                 cellClass: (p: ValueFormatterParams<TradingTradePayload>) => {
                     const n = this.numberFormattingService.toNumberSafe(p.value as number | null);
                     if (n === null) {
-                        return 'text-right whitespace-nowrap';
+                        return 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums font-semibold text-slate-400';
                     }
                     return n > 0
-                        ? 'text-right whitespace-nowrap text-green-400'
+                        ? 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums poseidon-grid-emphasized-metric text-emerald-400'
                         : n < 0
-                            ? 'text-right whitespace-nowrap text-red-400'
-                            : 'text-right whitespace-nowrap';
+                            ? 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums poseidon-grid-emphasized-metric text-rose-400'
+                            : 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums font-semibold text-slate-300';
                 },
-                flex: 1
+                ...tradingGridsLeadingColumnLayout.leadingFifthNumeric
             },
             {
-                headerName: 'Status',
-                field: 'execution_status' as unknown as keyof TradingTradePayload,
+                headerName: 'price',
+                colId: 'executionPrice',
+                field: 'execution_price',
+                type: 'numericColumn',
+                sortable: true,
+                filter: 'agNumberColumnFilter',
+                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) =>
+                    this.numberFormattingService.formatUsdCompactForGrid(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingTradePayload>) =>
+                    this.numberFormattingService.formatCurrency((p.data as any)?.execution_price, 'USD', 4, 12),
+                cellClass: 'text-right whitespace-nowrap tabular-nums font-semibold text-slate-200',
+                flex: 1,
+                minWidth: 96,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-dollar-sign', alignRight: true}
+            },
+            {
+                headerName: 'tx fee',
+                colId: 'transactionFee',
+                field: 'transaction_fee' as unknown as keyof TradingTradePayload,
+                type: 'numericColumn',
+                sortable: true,
+                filter: 'agNumberColumnFilter',
+                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) => {
+                    const feeUsd = this.numberFormattingService.toNumberSafe(p.value as number | null);
+                    if (feeUsd === null) {
+                        return '—';
+                    }
+                    return this.numberFormattingService.formatCurrency(feeUsd, 'USD', 2, 6);
+                },
+                cellClass: 'text-right whitespace-nowrap tabular-nums font-semibold text-slate-300',
+                flex: 1,
+                minWidth: 88,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-receipt', alignRight: true}
+            },
+            {
+                headerName: 'tx hash',
+                colId: 'transactionHash',
                 sortable: true,
                 filter: true,
-                flex: 0.5
+                valueGetter: (p: ValueGetterParams<TradingTradePayload>) => {
+                    const raw = p.data?.transaction_hash?.trim();
+                    return raw == null || raw.length === 0 ? null : raw;
+                },
+                valueFormatter: (p: ValueFormatterParams<TradingTradePayload>) => {
+                    const raw = typeof p.value === 'string' ? p.value.trim() : '';
+                    if (raw.length === 0) {
+                        return '—';
+                    }
+                    return raw.length <= 18 ? raw : `${raw.slice(0, 8)}…${raw.slice(-6)}`;
+                },
+                tooltipValueGetter: (p: ITooltipParams<TradingTradePayload>) => p.data?.transaction_hash?.trim() ?? '',
+                cellRenderer: (p: ValueFormatterParams<TradingTradePayload>) =>
+                    this.formatTransactionHashCellHtml(p.data ?? undefined),
+                cellClass: 'text-right whitespace-nowrap',
+                flex: 2,
+                minWidth: 120,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-link', alignRight: true}
             },
             {
-                headerName: 'Actions',
+                headerName: '',
                 colId: 'actions',
                 pinned: 'right',
                 width: 100,
                 suppressHeaderMenuButton: true,
                 sortable: false,
                 filter: false,
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-ellipsis-vertical', hideLabel: true},
                 cellRenderer: TemplateCellRendererComponent,
                 cellRendererParams: {template: this.actionsTemplate}
             }
         ];
     }
 
+    public onTradesGridReady(event: GridReadyEvent): void {
+        this.tradesGridApi = event.api;
+        this.applyTradesColumnVisibilityForViewport();
+        const handler = (): void => {
+            this.applyTradesColumnVisibilityForViewport();
+        };
+        const mediaExtraSmall = window.matchMedia('(max-width: 768px)');
+        mediaExtraSmall.addEventListener('change', handler);
+        this.destroyRef.onDestroy(() => {
+            mediaExtraSmall.removeEventListener('change', handler);
+        });
+    }
+
+    private applyTradesColumnVisibilityForViewport(): void {
+        if (this.tradesGridApi === null) {
+            return;
+        }
+        const isExtraSmallViewport = window.matchMedia('(max-width: 768px)').matches;
+        if (isExtraSmallViewport) {
+            this.tradesGridApi.setColumnsVisible(['tokenSymbol', 'realizedProfitAndLoss', 'actions'], true);
+            this.tradesGridApi.setColumnsVisible(
+                ['createdAt', 'tradeSide', 'executionQuantity', 'executionPrice', 'transactionFee', 'transactionHash'],
+                false
+            );
+            return;
+        }
+        this.tradesGridApi.setColumnsVisible(
+            [
+                'createdAt',
+                'tradeSide',
+                'executionQuantity',
+                'realizedProfitAndLoss',
+                'executionPrice',
+                'transactionFee',
+                'transactionHash'
+            ],
+            true
+        );
+    }
+
     public openDetails(row: TradingTradePayload | null): void {
         this.selectedTrade.set(row ?? null);
         this.selectedAnalytics.set(null);
         this.detailsVisible.set(true);
-        console.info('[UI][TRADES][DETAILS] open', row);
-        console.debug('[UI][TRADES][DETAILS][VERBOSE] resolving analytics & charts…');
 
         if (row && row.evaluation_id) {
             this.apiService.getEvaluationById(row.evaluation_id).subscribe({
@@ -237,6 +377,45 @@ export class TradingTradesTableComponent implements AfterViewInit {
         return chain && token ? `https://dexscreener.com/${chain}/${token}` : '';
     }
 
+    public transactionExplorerUrl(row: TradingTradePayload | null): string | null {
+        const hash = row?.transaction_hash?.trim();
+        if (!row || !hash) {
+            return null;
+        }
+        const chain = String(row.blockchain_network ?? '').toLowerCase();
+        if (chain === 'solana') {
+            return `https://solana.fm/tx/${hash}`;
+        }
+        return null;
+    }
+
+    private formatTransactionHashCellHtml(row: TradingTradePayload | undefined): string {
+        const raw = row?.transaction_hash?.trim();
+        if (raw == null || raw.length === 0) {
+            return '<span class="text-slate-500">—</span>';
+        }
+        const shortLabel = raw.length <= 14 ? raw : `${raw.slice(0, 6)}…${raw.slice(-4)}`;
+        const shortHtml = this.escapeHtmlText(shortLabel);
+        const explorerUrl = row == null ? null : this.transactionExplorerUrl(row);
+        if (explorerUrl != null && explorerUrl.length > 0) {
+            const href = this.escapeHtmlAttributeValue(explorerUrl);
+            return `<a class="poseidon-grid-tx-hash-link" href="${href}" target="_blank" rel="noopener noreferrer">${shortHtml}</a>`;
+        }
+        return `<span class="poseidon-grid-tx-hash-muted">${shortHtml}</span>`;
+    }
+
+    private escapeHtmlText(text: string): string {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    private escapeHtmlAttributeValue(text: string): string {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     public orderNotionalUsd(row: TradingTradePayload | null): number | null {
         if (!row) {
             return null;
@@ -255,10 +434,8 @@ export class TradingTradesTableComponent implements AfterViewInit {
         }
         try {
             await navigator.clipboard.writeText(value);
-            console.info('[UI][TRADES][COPY] value copied');
-        } catch (error) {
-            console.info('[UI][TRADES][COPY] failed');
-            console.debug('[UI][TRADES][COPY][VERBOSE]', error);
+        } catch {
+            return;
         }
     }
 
@@ -275,28 +452,6 @@ export class TradingTradesTableComponent implements AfterViewInit {
             return '—';
         }
         return `${this.numberFormattingService.formatNumber(value, 2, 2)}%`;
-    }
-
-    public formatMetricLabel(key: string): string {
-        return this.metricsFormattingService.formatMetricLabel(key);
-    }
-
-    public formatMetricValue(key: string, value: number | null | undefined): string {
-        return this.metricsFormattingService.formatMetricValue(key, value);
-    }
-
-    public groupedShadowMetrics(snapshot: any): { category: any, metrics: any[] }[] {
-        if (!snapshot || !snapshot.evaluated_metrics) {
-            return [];
-        }
-        const metricsMap = new Map(snapshot.evaluated_metrics.map((m: any) => [m.metric_key, m]));
-        return EXPLORATION_CATEGORIES.map(category => {
-            const metrics = category.metricKeys
-                .map(key => metricsMap.get(key))
-                .filter(m => !!m)
-                .sort((a: any, b: any) => (b.bucket_win_rate || 0) - (a.bucket_win_rate || 0));
-            return {category, metrics};
-        }).filter(group => group.metrics.length > 0);
     }
 
     private recomputeCharts(): void {
@@ -330,7 +485,5 @@ export class TradingTradesTableComponent implements AfterViewInit {
 
         const notional = this.orderNotionalUsd(t) ?? 0;
         this.notionalSeries = [{name: 'Notional', data: [notional]}];
-
-        console.debug('[UI][TRADES][DETAILS][VERBOSE] charts recomputed');
     }
 }

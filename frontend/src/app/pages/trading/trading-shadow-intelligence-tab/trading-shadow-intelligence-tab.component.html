@@ -1,0 +1,165 @@
+<div class="space-y-6">
+	@if (snapshot) {
+		<div class="space-y-3">
+			<div class="flex items-center gap-2 px-1">
+				<i class="fa fa-circle-info text-slate-500 text-sm"></i>
+				<span class="text-[10px] font-black tracking-widest text-slate-400">shadow information</span>
+			</div>
+			<div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">activated</span>
+					<div class="mt-1 text-sm font-black" [ngClass]="snapshot.summary.is_activated ? 'text-emerald-400' : 'text-slate-500'">
+						{{ snapshot.summary.is_activated ? 'yes' : 'no' }}
+					</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">total outcomes analyzed</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.total_outcomes_analyzed }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">resolved outcomes</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.resolved_outcome_count }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">elapsed hours</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.elapsed_hours | number:'1.1-1' }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">meta win rate</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.meta_win_rate * 100 | number:'1.1-1' }}%</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">meta average pnl</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.meta_average_pnl | number:'1.2-2' }}%</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">meta average holding (hours)</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.meta_average_holding_time_hours | number:'1.2-2' }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">meta capital velocity</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.meta_capital_velocity | number:'1.3-3' }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">meta profit factor</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.meta_profit_factor | number:'1.2-2' }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">meta expected value (USD)</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ formatUsd(snapshot.summary.meta_expected_value_usd) }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">empirical profit factor</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.empirical_profit_factor | number:'1.2-2' }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">chronicle profit factor</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.summary.chronicle_profit_factor | number:'1.2-2' }}</div>
+					<div class="text-[9px] text-slate-500 mt-0.5">threshold {{ snapshot.summary.chronicle_profit_factor_threshold | number:'1.2-2' }}</div>
+				</div>
+				<div class="p-3 rounded-xl bg-black/20 border border-white/5">
+					<span class="text-[9px] font-bold tracking-widest text-slate-500">sparse expected value (USD)</span>
+					<div class="mt-1 text-sm font-black text-slate-200">{{ formatUsd(snapshot.summary.sparse_expected_value_usd) }}</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="space-y-3">
+			<div class="flex items-center gap-2 px-1">
+				<i class="fa fa-chart-simple text-slate-500 text-sm"></i>
+				<span class="text-[10px] font-black tracking-widest text-slate-400">shadow metrics</span>
+			</div>
+			@if (groupedShadowMetrics(snapshot); as metricGroups) {
+				@if (metricGroups.length) {
+					<div class="space-y-6">
+						@for (group of metricGroups; track group.category.id) {
+							<div>
+								<div class="flex items-center gap-2 mb-3 px-1">
+									<i class="fa {{ group.category.icon }} text-slate-500 text-sm"></i>
+									<span class="text-[10px] font-black tracking-widest text-slate-400">{{ group.category.label }}</span>
+								</div>
+								<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+									@for (metric of group.metrics; track metric.metric_key) {
+										<div class="p-3 rounded-xl bg-black/20 border transition-all"
+										     [ngClass]="metric.is_golden ? 'border-emerald-500/20 hover:border-emerald-500/40' : (metric.is_toxic ? 'border-red-500/20 hover:border-red-500/40' : 'border-white/5')">
+											<div class="flex justify-between items-start mb-1.5">
+												<span class="text-[9px] uppercase font-bold tracking-widest truncate"
+												      [ngClass]="metric.is_golden ? 'text-emerald-400/80' : (metric.is_toxic ? 'text-red-400/80' : 'text-slate-500')">
+													{{ formatMetricLabel(metric.metric_key) }}
+												</span>
+												@if (metric.is_golden) {
+													<i class="fa fa-bullseye text-[10px] text-emerald-400/50"></i>
+												} @else if (metric.is_toxic) {
+													<i class="fa fa-radiation text-[10px] text-red-400/50"></i>
+												} @else {
+													<i class="fa fa-check text-[10px] text-slate-500/50"></i>
+												}
+											</div>
+											<div class="text-sm font-black tracking-tight mb-2"
+											     [ngClass]="metric.is_golden ? 'text-white' : (metric.is_toxic ? 'text-red-50' : 'text-slate-300')">
+												{{ formatMetricValue(metric.metric_key, metric.candidate_value) }}
+											</div>
+											<div class="flex items-center justify-between mt-2.5 rounded-lg p-2 border"
+											     [ngClass]="metric.is_golden ? 'bg-white/5 border-white/5' : (metric.is_toxic ? 'bg-red-500/5 border-red-500/10' : 'bg-white/5 border-white/5')">
+												<div class="flex flex-col">
+													<span class="text-[8px] text-slate-500 uppercase font-bold">Win rate</span>
+													<span class="font-bold text-[10px]"
+													      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : (metric.bucket_win_rate * 100 > 50 ? 'text-blue-400' : (metric.bucket_win_rate * 100 < 50 ? 'text-amber-400' : 'text-slate-400')))">
+														{{ metric.bucket_win_rate * 100 | number:'1.0-0' }}%
+													</span>
+												</div>
+												<div class="flex flex-col border-l border-white/5 pl-2">
+													<span class="text-[8px] text-slate-500 uppercase font-bold">Avg PnL</span>
+													<span class="font-bold text-[10px]"
+													      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : (metric.bucket_average_pnl > 0 ? 'text-blue-400' : (metric.bucket_average_pnl < 0 ? 'text-amber-400' : 'text-slate-400')))">
+														{{ metric.bucket_average_pnl | number:'1.1-1' }}%
+													</span>
+												</div>
+												<div class="flex flex-col border-l border-white/5 pl-2">
+													<span class="text-[8px] text-slate-500 uppercase font-bold">Outlier HR</span>
+													<span class="font-bold text-[10px]"
+													      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
+														{{ (metric.bucket_outlier_hit_rate || 0) * 100 | number:'1.0-1' }}%
+													</span>
+												</div>
+												<div class="flex flex-col border-l border-white/5 pl-2">
+													<span class="text-[8px] text-slate-500 uppercase font-bold">Holding</span>
+													<span class="font-bold text-[10px]"
+													      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
+														{{ (metric.bucket_average_holding_time / 60.0) | number:'1.1-1' }}h
+													</span>
+												</div>
+												<div class="flex flex-col border-l border-white/5 pl-2">
+													<span class="text-[8px] text-slate-500 uppercase font-bold">Velocity</span>
+													<span class="font-bold text-[10px]"
+													      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : (metric.bucket_capital_velocity > 0 ? 'text-blue-400' : (metric.bucket_capital_velocity < 0 ? 'text-amber-400' : 'text-slate-400')))">
+														{{ metric.bucket_capital_velocity | number:'1.2-2' }}
+													</span>
+												</div>
+												<div class="flex flex-col border-l border-white/5 pl-2">
+													<span class="text-[8px] text-slate-500 uppercase font-bold">Trades</span>
+													<span class="font-bold text-[10px] text-slate-300">
+														{{ metric.bucket_sample_count }}
+													</span>
+												</div>
+											</div>
+										</div>
+									}
+								</div>
+							</div>
+						}
+					</div>
+				} @else {
+					<div class="flex flex-col items-center justify-center p-8 text-slate-500 gap-2 border border-dashed border-white/5 rounded-xl">
+						<span class="text-[10px] font-bold tracking-widest">no evaluated metrics in snapshot</span>
+					</div>
+				}
+			}
+		</div>
+	} @else {
+		<div class="flex flex-col items-center justify-center p-12 text-slate-500 gap-3 border border-dashed border-white/5 rounded-xl">
+			<i class="fa fa-ghost text-2xl opacity-20"></i>
+			<span class="text-[10px] font-bold tracking-widest">no intelligence snapshot available</span>
+		</div>
+	}
+</div>

@@ -40,7 +40,7 @@ class TradingPositionGuardJob:
 
         await asyncio.to_thread(self._run_autosell_evaluations_for_tokens, position_tokens, prices_by_pair_address)
 
-        cache_invalidator.mark_dirty(CacheRealm.AVAILABLE_CASH, CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
+        cache_invalidator.mark_dirty(CacheRealm.AVAILABLE_CASH, CacheRealm.POSITION_PRICES, CacheRealm.PORTFOLIO)
 
     @staticmethod
     def _read_position_tokens() -> list[Token]:

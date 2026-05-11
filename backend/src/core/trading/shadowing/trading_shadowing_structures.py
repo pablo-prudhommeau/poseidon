@@ -39,6 +39,23 @@ class ShadowIntelligenceSnapshot(BaseModel):
     chronicle_profit_factor_threshold: float = 0.0
 
 
+class ShadowIntelligenceSnapshotSummaryPayload(BaseModel):
+    is_activated: bool
+    total_outcomes_analyzed: int
+    resolved_outcome_count: int = 0
+    elapsed_hours: float = 0.0
+    meta_win_rate: float = 0.0
+    meta_average_pnl: float = 0.0
+    meta_average_holding_time_hours: float = 0.0
+    meta_capital_velocity: float = 0.0
+    meta_profit_factor: float = 0.0
+    meta_expected_value_usd: float = 0.0
+    empirical_profit_factor: float = 0.0
+    chronicle_profit_factor: float = 0.0
+    chronicle_profit_factor_threshold: float = 0.0
+    sparse_expected_value_usd: float = 0.0
+
+
 class ShadowIntelligenceSnapshotMetricPayload(BaseModel):
     metric_key: str
     candidate_value: Optional[float] = None
@@ -55,6 +72,7 @@ class ShadowIntelligenceSnapshotMetricPayload(BaseModel):
 
 
 class ShadowIntelligenceSnapshotPayload(BaseModel):
+    summary: ShadowIntelligenceSnapshotSummaryPayload
     evaluated_metrics: list[ShadowIntelligenceSnapshotMetricPayload] = Field(default_factory=list)
 
 

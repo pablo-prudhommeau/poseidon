@@ -178,6 +178,13 @@ export interface TradingPositionPayload {
     last_price: number;
 }
 
+export interface TradingPositionPricePayload {
+    position_id: number;
+    pair_address: string;
+    last_price?: number | null;
+    delta_percent?: number | null;
+}
+
 export interface TradingEquityCurvePointPayload {
     timestamp_milliseconds: number;
     total_equity_value: number;
@@ -271,6 +278,23 @@ export interface TradingEvaluationDecisionPayload {
     free_cash_after_execution_usd: number;
 }
 
+export interface TradingEvaluationShadowIntelligenceSnapshotSummaryPayload {
+    is_activated: boolean;
+    total_outcomes_analyzed: number;
+    resolved_outcome_count: number;
+    elapsed_hours: number;
+    meta_win_rate: number;
+    meta_average_pnl: number;
+    meta_average_holding_time_hours: number;
+    meta_capital_velocity: number;
+    meta_profit_factor: number;
+    meta_expected_value_usd: number;
+    empirical_profit_factor: number;
+    chronicle_profit_factor: number;
+    chronicle_profit_factor_threshold: number;
+    sparse_expected_value_usd: number;
+}
+
 export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
     metric_key: string;
     candidate_value: number;
@@ -287,6 +311,7 @@ export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
 }
 
 export interface TradingEvaluationShadowIntelligenceSnapshotPayload {
+    summary: TradingEvaluationShadowIntelligenceSnapshotSummaryPayload;
     evaluated_metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[];
 }
 
@@ -369,6 +394,7 @@ export enum WebsocketMessageType {
     SHADOW_VERDICT_CHRONICLE = 'shadow_verdict_chronicle',
     SHADOW_VERDICT_CHRONICLE_DELTA = 'shadow_verdict_chronicle_delta',
     POSITIONS = 'positions',
+    POSITION_PRICES = 'position_prices',
     TRADES = 'trades',
     DCA_STRATEGIES = 'dca_strategies',
     PONG = 'pong',
@@ -410,6 +436,10 @@ export interface WebsocketPositionsMessage extends BaseWebsocketMessage<TradingP
     type: WebsocketMessageType.POSITIONS;
 }
 
+export interface WebsocketPositionPricesMessage extends BaseWebsocketMessage<TradingPositionPricePayload[]> {
+    type: WebsocketMessageType.POSITION_PRICES;
+}
+
 export interface WebsocketTradesMessage extends BaseWebsocketMessage<TradingTradePayload[]> {
     type: WebsocketMessageType.TRADES;
 }
@@ -442,6 +472,7 @@ export type WebsocketMessageUnion =
     | WebsocketShadowVerdictChronicleMessage
     | WebsocketShadowVerdictChronicleDeltaMessage
     | WebsocketPositionsMessage
+    | WebsocketPositionPricesMessage
     | WebsocketTradesMessage
     | WebsocketDcaStrategiesMessage
     | WebsocketErrorMessage

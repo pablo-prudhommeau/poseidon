@@ -1,18 +1,13 @@
 <ag-grid-angular
-		class="w-full"
+		class="w-full poseidon-ag-grid-surface"
 		domLayout="autoHeight"
 		[columnDefs]="columnDefinitions"
 		[defaultColDef]="defaultColumnDefinition"
 		[rowData]="tradesRowData()"
-		[theme]="agGridTheme">
+		[getRowId]="getRowId"
+		[theme]="agGridTheme"
+		(gridReady)="onTradesGridReady($event)">
 </ag-grid-angular>
-
-<ng-template #symbolHeaderTemplate let-displayName>
-	<div class="flex items-center gap-2">
-		<i class="fas fa-coins opacity-70"></i>
-		<span>{{ displayName }}</span>
-	</div>
-</ng-template>
 
 <ng-template #actionsTemplate let-row="row">
 	<div class="flex items-center justify-center gap-1.5 h-full">
@@ -227,99 +222,8 @@
 				</div>
 			</p-tabpanel>
 			<p-tabpanel value="shadows">
-				<div class="space-y-3">
-					@if (selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot; as snapshot) {
-						<div class="space-y-6">
-							@if (groupedShadowMetrics(snapshot); as metricGroups) {
-								@if (metricGroups.length) {
-									<div class="space-y-6">
-										@for (group of metricGroups; track group.category.id) {
-											<div>
-												<div class="flex items-center gap-2 mb-3 px-1">
-													<i class="fa {{ group.category.icon }} text-slate-500 text-sm"></i>
-													<span class="text-[10px] uppercase font-black tracking-widest text-slate-400">{{ group.category.label }}</span>
-												</div>
-												<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-													@for (metric of group.metrics; track metric.metric_key) {
-														<div class="p-3 rounded-xl bg-black/20 border transition-all"
-														     [ngClass]="metric.is_golden ? 'border-emerald-500/20 hover:border-emerald-500/40' : (metric.is_toxic ? 'border-red-500/20 hover:border-red-500/40' : 'border-white/5')">
-															<div class="flex justify-between items-start mb-1.5">
-                                                                <span class="text-[9px] uppercase font-bold tracking-widest truncate"
-                                                                      [ngClass]="metric.is_golden ? 'text-emerald-400/80' : (metric.is_toxic ? 'text-red-400/80' : 'text-slate-500')">
-                                                                    {{ formatMetricLabel(metric.metric_key) }}
-                                                                </span>
-																@if (metric.is_golden) {
-																	<i class="fa fa-bullseye text-[10px] text-emerald-400/50"></i>
-																} @else if (metric.is_toxic) {
-																	<i class="fa fa-radiation text-[10px] text-red-400/50"></i>
-																} @else {
-																	<i class="fa fa-check text-[10px] text-slate-500/50"></i>
-																}
-															</div>
-															<div class="text-sm font-black tracking-tight mb-2"
-															     [ngClass]="metric.is_golden ? 'text-white' : (metric.is_toxic ? 'text-red-50' : 'text-slate-300')">
-																{{ formatMetricValue(metric.metric_key, metric.candidate_value) }}
-															</div>
-															<div class="flex items-center justify-between mt-2.5 rounded-lg p-2 border"
-															     [ngClass]="metric.is_golden ? 'bg-white/5 border-white/5' : (metric.is_toxic ? 'bg-red-500/5 border-red-500/10' : 'bg-white/5 border-white/5')">
-																<div class="flex flex-col">
-																	<span class="text-[8px] text-slate-500 uppercase font-bold">Win rate</span>
-																	<span class="font-bold text-[10px]"
-																	      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : (metric.bucket_win_rate * 100 > 50 ? 'text-blue-400' : (metric.bucket_win_rate * 100 < 50 ? 'text-amber-400' : 'text-slate-400')))">
-                                                                        {{ metric.bucket_win_rate * 100 | number:'1.0-0' }}%
-                                                                    </span>
-																</div>
-																<div class="flex flex-col border-l border-white/5 pl-2">
-																	<span class="text-[8px] text-slate-500 uppercase font-bold">Avg PnL</span>
-																	<span class="font-bold text-[10px]"
-																	      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : (metric.bucket_average_pnl > 0 ? 'text-blue-400' : (metric.bucket_average_pnl < 0 ? 'text-amber-400' : 'text-slate-400')))">
-                                                                        {{ metric.bucket_average_pnl | number:'1.1-1' }}%
-                                                                    </span>
-																</div>
-																<div class="flex flex-col border-l border-white/5 pl-2">
-																	<span class="text-[8px] text-slate-500 uppercase font-bold">Outlier HR</span>
-																	<span class="font-bold text-[10px]"
-																	      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
-                                                                        {{ (metric.bucket_outlier_hit_rate || 0) * 100 | number:'1.0-1' }}%
-                                                                    </span>
-																</div>
-																<div class="flex flex-col border-l border-white/5 pl-2">
-																	<span class="text-[8px] text-slate-500 uppercase font-bold">Holding</span>
-																	<span class="font-bold text-[10px]"
-																	      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : 'text-slate-400')">
-                                                                        {{ (metric.bucket_average_holding_time / 60.0) | number:'1.1-1' }}h
-                                                                    </span>
-																</div>
-																<div class="flex flex-col border-l border-white/5 pl-2">
-																	<span class="text-[8px] text-slate-500 uppercase font-bold">Velocity</span>
-																	<span class="font-bold text-[10px]"
-																	      [ngClass]="metric.is_golden ? 'text-emerald-400' : (metric.is_toxic ? 'text-red-400' : (metric.bucket_capital_velocity > 0 ? 'text-blue-400' : (metric.bucket_capital_velocity < 0 ? 'text-amber-400' : 'text-slate-400')))">
-                                                                        {{ metric.bucket_capital_velocity | number:'1.2-2' }}
-                                                                    </span>
-																</div>
-																<div class="flex flex-col border-l border-white/5 pl-2">
-																	<span class="text-[8px] text-slate-500 uppercase font-bold">Trades</span>
-																	<span class="font-bold text-[10px] text-slate-300">
-                                                                        {{ metric.bucket_sample_count }}
-                                                                    </span>
-																</div>
-															</div>
-														</div>
-													}
-												</div>
-											</div>
-										}
-									</div>
-								}
-							}
-						</div>
-					} @else {
-						<div class="flex flex-col items-center justify-center p-12 text-slate-500 gap-3 border border-dashed border-white/5 rounded-xl">
-							<i class="fa fa-ghost text-2xl opacity-20"></i>
-							<span class="text-[10px] uppercase font-bold tracking-widest">No intelligence snapshot available</span>
-						</div>
-					}
-				</div>
+				<trading-shadow-intelligence-tab
+					[snapshot]="selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot ?? null" />
 			</p-tabpanel>
 		</p-tabpanels>
 	</p-tabs>

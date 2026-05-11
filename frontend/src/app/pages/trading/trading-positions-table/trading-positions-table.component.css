@@ -1,3 +1,20 @@
+.poseidon-ag-grid-surface ::ng-deep .ag-root-wrapper {
+    border-radius: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+.poseidon-ag-grid-surface ::ng-deep .ag-header-cell-text,
+.poseidon-ag-grid-surface ::ng-deep .ag-header-cell-comp-wrapper {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.poseidon-ag-grid-surface ::ng-deep .poseidon-grid-symbol-cell {
+    font-weight: 600;
+    color: rgb(248 250 252);
+}
+
 ::ng-deep .positions-table-dialog .p-tablist {
     border-bottom: 1px solid rgba(124, 92, 255, 0.2);
 }

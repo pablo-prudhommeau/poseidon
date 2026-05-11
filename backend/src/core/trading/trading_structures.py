@@ -4,7 +4,7 @@ import enum
 from dataclasses import dataclass
 from typing import Optional, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshotPayload
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
@@ -27,7 +27,7 @@ class ShadowDiagnostics(BaseModel):
     toxic_metric_keys: list[str] = []
     golden_metric_keys: list[str] = []
     notional_boost_factor: float = 1.0
-    intelligence_snapshot: ShadowIntelligenceSnapshotPayload = Field(default_factory=ShadowIntelligenceSnapshotPayload)
+    intelligence_snapshot: Optional[ShadowIntelligenceSnapshotPayload] = None
 
 
 class TradingCandidate(BaseModel):

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshotSummaryPayload
 
 
 class SystemHealthComponentPayload(BaseModel):
@@ -196,6 +197,13 @@ class TradingPositionPayload(BaseModel):
     last_price: Optional[float] = None
 
 
+class TradingPositionPricePayload(BaseModel):
+    position_id: int
+    pair_address: str
+    last_price: Optional[float] = None
+    delta_percent: Optional[float] = None
+
+
 class TradingEquityCurvePointPayload(BaseModel):
     timestamp_milliseconds: int
     total_equity_value: float
@@ -294,6 +302,7 @@ class TradingEvaluationShadowIntelligenceSnapshotMetricPayload(BaseModel):
 
 
 class TradingEvaluationShadowIntelligenceSnapshotPayload(BaseModel):
+    summary: ShadowIntelligenceSnapshotSummaryPayload
     evaluated_metrics: List[TradingEvaluationShadowIntelligenceSnapshotMetricPayload] = Field(default_factory=list)
 
 

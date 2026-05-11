@@ -6,6 +6,7 @@ from typing import Optional
 
 from src.api.http.api_schemas import (
     TradingPositionPayload,
+    TradingPositionPricePayload,
     TradingTradePayload,
     TradingPortfolioPayload,
     TradingLiquidityPayload,
@@ -27,6 +28,7 @@ class TradingCache:
     def __init__(self) -> None:
         self._lock = Lock()
         self._cached_positions: list[TradingPositionPayload] = []
+        self._cached_position_prices: list[TradingPositionPricePayload] = []
         self._cached_trades: list[TradingTradePayload] = []
         self._cached_portfolio: Optional[TradingPortfolioPayload] = None
         self._cached_liquidity: Optional[TradingLiquidityPayload] = None
@@ -47,6 +49,13 @@ class TradingCache:
             self._last_successful_update_timestamp = get_current_local_datetime()
             logger.debug("[TRADING][CACHE] Positions updated (%d entries)", len(positions_payload))
         _touch_realm(CacheRealm.POSITIONS)
+
+    def update_trading_position_prices_state(self, position_prices_payload: list[TradingPositionPricePayload]) -> None:
+        with self._lock:
+            self._cached_position_prices = position_prices_payload
+            self._last_successful_update_timestamp = get_current_local_datetime()
+            logger.debug("[TRADING][CACHE] Position prices updated (%d entries)", len(position_prices_payload))
+        _touch_realm(CacheRealm.POSITION_PRICES)
 
     def update_trading_trades_state(self, trades_payload: list[TradingTradePayload]) -> None:
         with self._lock:
@@ -86,6 +95,7 @@ class TradingCache:
         with self._lock:
             return TradingState(
                 positions=self._cached_positions,
+                position_prices=self._cached_position_prices,
                 trades=self._cached_trades,
                 portfolio=self._cached_portfolio,
                 liquidity=self._cached_liquidity,

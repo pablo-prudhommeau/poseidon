@@ -1,6 +1,16 @@
 from pydantic import BaseModel, ConfigDict
 
 
+class SolanaTransactionFeeBreakdown(BaseModel):
+    base_fee_lamports: int
+    account_rent_lamports: int
+    total_lamports: int
+    total_sol: float
+    total_usd: float
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class SolanaPoolPriceResult(BaseModel):
     price_in_quote_token: float
     quote_token_mint: str

@@ -1,7 +1,15 @@
 import {CommonModule, DatePipe} from '@angular/common';
-import {AfterViewInit, Component, computed, inject, signal, TemplateRef, ViewChild} from '@angular/core';
+import {AfterViewInit, Component, computed, DestroyRef, inject, signal, TemplateRef, ViewChild} from '@angular/core';
 import {AgGridAngular} from 'ag-grid-angular';
-import {CellClassParams, ColDef, ValueFormatterParams, ValueGetterParams} from 'ag-grid-community';
+import {
+    ColDef,
+    GetRowIdParams,
+    GridApi,
+    GridReadyEvent,
+    ITooltipParams,
+    ValueFormatterParams,
+    ValueGetterParams
+} from 'ag-grid-community';
 
 import {ButtonModule} from 'primeng/button';
 import {DialogModule} from 'primeng/dialog';
@@ -32,15 +40,16 @@ import {
 
 import {balhamDarkThemeCompact} from '../../../ag-grid.theme';
 import {NumberFormattingService} from '../../../core/number-formatting.service';
+import {DatetimeDisplayService} from '../../../core/datetime-display.service';
 import {WebSocketService} from '../../../core/websocket.service';
 import {TradingEvaluationPayload, TradingPositionPayload, TradingTradePayload} from '../../../core/models';
-import {MetricsFormattingService} from '../../../core/metrics-formatting.service';
 
 import {SymbolChipRendererComponent} from '../../../renderers/symbol-chip.renderer';
+import {IconHeaderRendererComponent} from '../../../renderers/icon-header.renderer';
 import {TemplateCellRendererComponent} from '../../../renderers/template-cell.renderer';
-import {TemplateHeaderRendererComponent} from '../../../renderers/template-header.renderer';
 import {ApiService} from '../../../api.service';
-import {EXPLORATION_CATEGORIES} from '../../../core/constants';
+import {tradingGridsLeadingColumnLayout} from '../trading-grids-leading-column-layout';
+import {TradingShadowIntelligenceTabComponent} from '../trading-shadow-intelligence-tab/trading-shadow-intelligence-tab.component';
 
 @Component({
     standalone: true,
@@ -58,7 +67,9 @@ import {EXPLORATION_CATEGORIES} from '../../../core/constants';
         CardModule,
         TooltipModule,
         PanelModule,
-        NgApexchartsModule
+        NgApexchartsModule,
+        IconHeaderRendererComponent,
+        TradingShadowIntelligenceTabComponent
     ],
     templateUrl: './trading-positions-table.component.html',
     styleUrl: './trading-positions-table.component.css'
@@ -66,15 +77,20 @@ import {EXPLORATION_CATEGORIES} from '../../../core/constants';
 export class TradingPositionsTableComponent implements AfterViewInit {
     public readonly agGridTheme = balhamDarkThemeCompact;
 
+    private readonly destroyRef = inject(DestroyRef);
     private readonly webSocketService = inject(WebSocketService);
     private readonly numberFormattingService = inject(NumberFormattingService);
-    private readonly metricsFormattingService = inject(MetricsFormattingService);
+    private readonly datetimeDisplayService = inject(DatetimeDisplayService);
     private readonly apiService = inject(ApiService);
+
+    private positionsGridApi: GridApi | null = null;
 
     public readonly positionsRowData = computed<TradingPositionPayload[]>(() => {
         const rows = this.webSocketService.positions() ?? [];
-        return Array.isArray(rows) ? [...(rows as TradingPositionPayload[])] : [];
+        return Array.isArray(rows) ? (rows as TradingPositionPayload[]) : [];
     });
+    public readonly getRowId = (params: GetRowIdParams<TradingPositionPayload>): string =>
+        String(params.data?.id ?? '');
 
     public columnDefinitions: ColDef<TradingPositionPayload>[] = [];
     public readonly defaultColumnDefinition: ColDef<TradingPositionPayload> = {
@@ -86,7 +102,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     };
 
     @ViewChild('actionsTemplate', {static: false}) private actionsTemplate?: TemplateRef<unknown>;
-    @ViewChild('symbolHeaderTemplate', {static: false}) private symbolHeaderTemplate?: TemplateRef<unknown>;
 
     public readonly detailsVisible = signal<boolean>(false);
     public readonly selectedPosition = signal<TradingPositionPayload | null>(null);
@@ -129,7 +144,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             dataLabels: {name: {show: true}, value: {show: true, formatter: (v: number) => `${v.toFixed(1)}%`}}
         }
     };
-    public probLabels: string[] = ['TP1 before SL'];
+    public probLabels: string[] = ['take profit tier 1 before stop loss'];
 
     public notionalSeries: ApexAxisChartSeries = [];
     public notionalChart: ApexChart = {type: 'bar', height: 220, toolbar: {show: false}};
@@ -149,104 +164,115 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     public ngAfterViewInit(): void {
         this.columnDefinitions = [
             {
-                headerName: 'Symbol',
+                headerName: 'symbol',
+                colId: 'tokenSymbol',
                 field: 'token_symbol',
                 sortable: true,
                 filter: true,
                 cellRenderer: SymbolChipRendererComponent,
                 comparator: (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, {sensitivity: 'base'}),
-                flex: 1.6,
-                headerComponent: this.symbolHeaderTemplate ? TemplateHeaderRendererComponent : undefined,
-                headerComponentParams: this.symbolHeaderTemplate ? {template: this.symbolHeaderTemplate} : undefined
+                ...tradingGridsLeadingColumnLayout.symbol,
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-coins'},
+                cellClass: 'poseidon-grid-symbol-cell'
             },
             {
-                headerName: 'Open date',
-                field: 'opened_at' as unknown as keyof TradingPositionPayload,
+                headerName: 'opened',
+                colId: 'openedAt',
                 sortable: true,
                 sort: 'desc',
                 filter: 'agDateColumnFilter',
-                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) => (p.data as any)?.opened_at ?? null,
-                cellClass: 'whitespace-nowrap',
-                flex: 1.4
+                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) =>
+                    this.datetimeDisplayService.parseToDate((p.data as any)?.opened_at),
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    p.value == null ? '' : this.datetimeDisplayService.formatShortForGrid(p.value as Date),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
+                    this.datetimeDisplayService.formatIsoForTooltip((p.data as any)?.opened_at),
+                comparator: (valueA, valueB) => {
+                    const timeA =
+                        valueA instanceof Date
+                            ? valueA.getTime()
+                            : this.datetimeDisplayService.parseToDate(valueA)?.getTime() ?? 0;
+                    const timeB =
+                        valueB instanceof Date
+                            ? valueB.getTime()
+                            : this.datetimeDisplayService.parseToDate(valueB)?.getTime() ?? 0;
+                    return timeA - timeB;
+                },
+                cellClass: 'whitespace-nowrap tabular-nums text-xs font-semibold text-slate-300',
+                ...tradingGridsLeadingColumnLayout.dateTime,
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-clock'}
             },
             {
-                headerName: 'Quantity',
+                headerName: 'phase',
+                colId: 'positionPhase',
+                field: 'position_phase' as unknown as keyof TradingPositionPayload,
+                sortable: true,
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) => {
+                    const sev = this.phaseSeverity(String((p.value as any) ?? ''));
+                    const pillClass =
+                        sev === 'info'
+                            ? 'poseidon-grid-pill--info'
+                            : sev === 'warn'
+                                ? 'poseidon-grid-pill--warn'
+                                : 'poseidon-grid-pill--neutral';
+                    return `<span class="poseidon-grid-pill ${pillClass}">${p.value}</span>`;
+                },
+                cellClass: 'poseidon-grid-phase-side-cell',
+                ...tradingGridsLeadingColumnLayout.phaseOrSide,
+                headerClass: 'poseidon-header-align-center',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-diagram-project', alignCenter: true}
+            },
+            {
+                headerName: 'QTY',
+                colId: 'openQuantity',
                 field: 'open_quantity',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) => this.numberFormattingService.formatNumber(p.value, 2, 6),
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 1.3
-            },
-            {
-                headerName: 'Entry',
-                field: 'entry_price',
-                type: 'numericColumn',
-                sortable: true,
-                filter: 'agNumberColumnFilter',
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 1.1
+                    this.numberFormattingService.formatQuantityHumanReadable(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatNumber((p.data as any)?.open_quantity, 2, 8),
+                cellClass: 'text-right whitespace-nowrap tabular-nums font-bold text-slate-100 tracking-tight',
+                ...tradingGridsLeadingColumnLayout.qty,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-layer-group', alignRight: true}
             },
             {
-                headerName: 'TP1',
-                field: 'take_profit_tier_1_price',
-                type: 'numericColumn',
-                sortable: true,
-                filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 1.1
-            },
-            {
-                headerName: 'TP2',
-                field: 'take_profit_tier_2_price',
-                type: 'numericColumn',
-                sortable: true,
-                filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 1.1
-            },
-            {
-                headerName: 'Stop',
-                field: 'stop_loss_price' as unknown as keyof TradingPositionPayload,
-                type: 'numericColumn',
-                sortable: true,
-                filter: 'agNumberColumnFilter',
-                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    this.numberFormattingService.formatCurrency(p.value, 'USD', 4, 8),
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 1.1
-            },
-            {
-                headerName: 'Δ %',
+                headerName: 'delta %',
                 colId: 'deltaPercent',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
                 valueGetter: (p: ValueGetterParams<TradingPositionPayload>) => this.computeDeltaPercent(p.data ?? null),
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     p.value == null ? '—' : `${this.numberFormattingService.formatNumber(p.value, 2, 2)}%`,
-                cellClassRules: {'pct-up': (p) => (p.value ?? 0) > 0, 'pct-down': (p) => (p.value ?? 0) < 0},
-                cellClass: 'text-right whitespace-nowrap',
-                flex: 0.9
-            },
-            {
-                headerName: 'Phase',
-                field: 'position_phase' as unknown as keyof TradingPositionPayload,
-                sortable: true,
                 cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) => {
-                    const sev = this.phaseSeverity(String((p.value as any) ?? ''));
-                    const colorClass = sev === 'info' ? 'bg-blue-600' : sev === 'warn' ? 'bg-yellow-600' : 'bg-gray-600';
-                    return `<span class="${colorClass} saturate-70 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs text-white font-semibold">${p.value}</span>`;
-                }
+                    const deltaValue = this.numberFormattingService.toNumberSafe(p.value as number | null);
+                    const displayedValue =
+                        deltaValue == null
+                            ? '—'
+                            : `${this.numberFormattingService.formatNumber(deltaValue, 2, 2)}%`;
+                    if (deltaValue == null || deltaValue === 0) {
+                        return `<span class="delta-static font-semibold text-slate-400 poseidon-grid-emphasized-metric">${displayedValue}</span>`;
+                    }
+                    if (deltaValue > 0) {
+                        return `<span class="delta-tick delta-tick-up font-bold"><span class="delta-arrow" aria-hidden="true">↗</span><span class="poseidon-grid-emphasized-metric">${displayedValue}</span></span>`;
+                    }
+                    return `<span class="delta-tick delta-tick-down font-bold"><span class="delta-arrow" aria-hidden="true">↘</span><span class="poseidon-grid-emphasized-metric">${displayedValue}</span></span>`;
+                },
+                cellClass: 'text-right whitespace-nowrap tabular-nums',
+                ...tradingGridsLeadingColumnLayout.leadingFifthNumeric,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-chart-line', alignRight: true}
             },
             {
-                headerName: 'Last price',
+                headerName: 'last',
+                colId: 'lastPrice',
                 field: 'last_price' as unknown as keyof TradingPositionPayload,
                 type: 'numericColumn',
                 sortable: true,
@@ -254,31 +280,223 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 valueGetter: (p: ValueGetterParams<TradingPositionPayload>) =>
                     this.numberFormattingService.toNumberSafe((p.data as any)?.last_price as number | null),
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    p.value == null ? '—' : this.numberFormattingService.formatNumber(p.value, 4, 8),
-                cellClass: (p: CellClassParams<TradingPositionPayload>) => {
-                    const direction = (p.data as any)?._lastDir as 'up' | 'down' | null | undefined;
+                    p.value == null ? '—' : this.numberFormattingService.formatUsdCompactForGrid(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
+                    p.data == null
+                        ? ''
+                        : this.numberFormattingService.formatCurrency((p.data as any)?.last_price, 'USD', 4, 12),
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) => {
+                    const displayedValue =
+                        p.value == null
+                            ? '—'
+                            : this.numberFormattingService.formatUsdCompactForGrid(p.value);
+                    const direction = (p.data as any)?.lastPriceDirection as 'up' | 'down' | null | undefined;
                     if (direction === 'up') {
-                        return 'text-right whitespace-nowrap price-up';
+                        return `<span class="last-price-tick last-price-tick-up"><span class="last-price-ripple"></span><span class="last-price-arrow" aria-hidden="true">↗</span><span class="last-price-value font-bold">${displayedValue}</span></span>`;
                     }
                     if (direction === 'down') {
-                        return 'text-right whitespace-nowrap price-down';
+                        return `<span class="last-price-tick last-price-tick-down"><span class="last-price-ripple"></span><span class="last-price-arrow" aria-hidden="true">↘</span><span class="last-price-value font-bold">${displayedValue}</span></span>`;
                     }
-                    return 'text-right whitespace-nowrap';
+                    return `<span class="last-price-static font-semibold text-slate-200">${displayedValue}</span>`;
                 },
-                flex: 1.2
+                cellClass: 'text-right whitespace-nowrap tabular-nums',
+                flex: 1.08,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-dollar-sign', alignRight: true}
             },
             {
-                headerName: 'Actions',
+                headerName: 'entry',
+                colId: 'entryPrice',
+                field: 'entry_price',
+                type: 'numericColumn',
+                sortable: true,
+                filter: 'agNumberColumnFilter',
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatUsdCompactForGrid(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatCurrency((p.data as any)?.entry_price, 'USD', 4, 12),
+                cellClass: 'text-right whitespace-nowrap tabular-nums font-semibold text-slate-200',
+                flex: 1.05,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-right-to-bracket', alignRight: true}
+            },
+            {
+                headerName: 'TP1',
+                colId: 'takeProfitTier1',
+                field: 'take_profit_tier_1_price',
+                type: 'numericColumn',
+                sortable: true,
+                filter: 'agNumberColumnFilter',
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatUsdCompactForGrid(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatCurrency((p.data as any)?.take_profit_tier_1_price, 'USD', 4, 12),
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.formatTakeProfitOrStopLossPriceStackCellHtml(
+                        p.data ?? undefined,
+                        p.value,
+                        'take_profit_tier_one'
+                    ),
+                cellClass: 'text-right whitespace-nowrap poseidon-grid-price-stack-cell',
+                flex: 1.05,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-flag', alignRight: true}
+            },
+            {
+                headerName: 'TP2',
+                colId: 'takeProfitTier2',
+                field: 'take_profit_tier_2_price',
+                type: 'numericColumn',
+                sortable: true,
+                filter: 'agNumberColumnFilter',
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatUsdCompactForGrid(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatCurrency((p.data as any)?.take_profit_tier_2_price, 'USD', 4, 12),
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.formatTakeProfitOrStopLossPriceStackCellHtml(
+                        p.data ?? undefined,
+                        p.value,
+                        'take_profit_tier_two'
+                    ),
+                cellClass: 'text-right whitespace-nowrap poseidon-grid-price-stack-cell',
+                flex: 1.05,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-flag-checkered', alignRight: true}
+            },
+            {
+                headerName: 'stop',
+                colId: 'stopLoss',
+                field: 'stop_loss_price' as unknown as keyof TradingPositionPayload,
+                type: 'numericColumn',
+                sortable: true,
+                filter: 'agNumberColumnFilter',
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatUsdCompactForGrid(p.value),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
+                    this.numberFormattingService.formatCurrency((p.data as any)?.stop_loss_price, 'USD', 4, 12),
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.formatTakeProfitOrStopLossPriceStackCellHtml(p.data ?? undefined, p.value, 'stop_loss'),
+                cellClass: 'text-right whitespace-nowrap poseidon-grid-price-stack-cell',
+                flex: 1.05,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-shield-halved', alignRight: true}
+            },
+            {
+                headerName: 'notional',
+                colId: 'positionEntryNotional',
+                sortable: true,
+                filter: 'agNumberColumnFilter',
+                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) =>
+                    this.orderNotionalUsd(p.data ?? null, 'last'),
+                valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    p.value == null ? '—' : this.numberFormattingService.formatCurrency(p.value as number, 'USD', 0, 2),
+                tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) => {
+                    const row = p.data;
+                    if (row == null) {
+                        return '';
+                    }
+                    const entryNotional = this.orderNotionalUsd(row, 'entry');
+                    const lastNotional = this.orderNotionalUsd(row, 'last');
+                    const delta = this.computeDeltaPercent(row);
+                    const parts: string[] = [];
+                    if (entryNotional != null) {
+                        parts.push(
+                            `entry ${this.numberFormattingService.formatCurrency(entryNotional, 'USD', 2, 8)}`
+                        );
+                    }
+                    if (lastNotional != null) {
+                        parts.push(`last ${this.numberFormattingService.formatCurrency(lastNotional, 'USD', 2, 8)}`);
+                    }
+                    if (delta != null) {
+                        parts.push(`delta ${this.numberFormattingService.formatNumber(delta, 2, 2)}%`);
+                    }
+                    return parts.join(' · ');
+                },
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    this.formatPositionNotionalCellHtml(p.data ?? undefined),
+                cellClass: 'text-right whitespace-nowrap',
+                flex: 0.95,
+                headerClass: 'poseidon-header-align-end',
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-coins', alignRight: true}
+            },
+            {
+                headerName: '',
                 colId: 'actions',
                 pinned: 'right',
                 width: 100,
                 suppressHeaderMenuButton: true,
                 sortable: false,
                 filter: false,
+                headerComponent: IconHeaderRendererComponent,
+                headerComponentParams: {iconClass: 'fa-ellipsis-vertical', hideLabel: true},
                 cellRenderer: TemplateCellRendererComponent,
                 cellRendererParams: {template: this.actionsTemplate}
             }
         ];
+    }
+
+    public onPositionsGridReady(event: GridReadyEvent): void {
+        this.positionsGridApi = event.api;
+        this.applyPositionsColumnVisibilityForViewport();
+        const handler = (): void => {
+            this.applyPositionsColumnVisibilityForViewport();
+        };
+        const mediaNarrow = window.matchMedia('(max-width: 1024px)');
+        const mediaExtraSmall = window.matchMedia('(max-width: 768px)');
+        mediaNarrow.addEventListener('change', handler);
+        mediaExtraSmall.addEventListener('change', handler);
+        this.destroyRef.onDestroy(() => {
+            mediaNarrow.removeEventListener('change', handler);
+            mediaExtraSmall.removeEventListener('change', handler);
+        });
+    }
+
+    private applyPositionsColumnVisibilityForViewport(): void {
+        if (this.positionsGridApi === null) {
+            return;
+        }
+        const isNarrowViewport = window.matchMedia('(max-width: 1024px)').matches;
+        const isExtraSmallViewport = window.matchMedia('(max-width: 768px)').matches;
+        if (isExtraSmallViewport) {
+            this.positionsGridApi.setColumnsVisible(
+                ['tokenSymbol', 'deltaPercent', 'positionEntryNotional', 'actions'],
+                true
+            );
+            this.positionsGridApi.setColumnsVisible(
+                [
+                    'openedAt',
+                    'positionPhase',
+                    'openQuantity',
+                    'lastPrice',
+                    'entryPrice',
+                    'takeProfitTier1',
+                    'takeProfitTier2',
+                    'stopLoss'
+                ],
+                false
+            );
+            return;
+        }
+        this.positionsGridApi.setColumnsVisible(
+            [
+                'openedAt',
+                'positionPhase',
+                'openQuantity',
+                'lastPrice',
+                'entryPrice',
+                'deltaPercent',
+                'positionEntryNotional'
+            ],
+            true
+        );
+        this.positionsGridApi.setColumnsVisible(['takeProfitTier1', 'takeProfitTier2', 'stopLoss'], !isNarrowViewport);
     }
 
     public openDetails(row: TradingPositionPayload | null): void {
@@ -286,9 +504,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         this.cachedOriginBuyTrade = null;
         this.selectedAnalytics.set(null);
         this.detailsVisible.set(true);
-
-        console.info('[UI][POSITIONS][DETAILS] open', row);
-        console.debug('[UI][POSITIONS][DETAILS][VERBOSE] resolving origin BUY trade & analytics…');
 
         if (row && row.evaluation_id) {
             this.apiService.getEvaluationById(row.evaluation_id).subscribe({
@@ -326,7 +541,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         if (!row) {
             return null;
         }
-        const enriched = this.numberFormattingService.toNumberSafe((row as any)._changePct as number | null);
+        const enriched = this.numberFormattingService.toNumberSafe((row as any).priceChangePercent as number | null);
         if (enriched !== null) {
             return enriched;
         }
@@ -340,6 +555,74 @@ export class TradingPositionsTableComponent implements AfterViewInit {
 
     public deltaPercent(row: TradingPositionPayload | null): number {
         return this.computeDeltaPercent(row) ?? 0;
+    }
+
+    private formatTakeProfitOrStopLossPriceStackCellHtml(
+        row: TradingPositionPayload | undefined,
+        priceValue: unknown,
+        priceStackKind: 'take_profit_tier_one' | 'take_profit_tier_two' | 'stop_loss'
+    ): string {
+        const mainLineText = this.numberFormattingService.formatUsdCompactForGrid(priceValue) ?? '—';
+        const mainLineCssClass = this.resolveTakeProfitStopLossPriceStackMainLineCssClass(priceStackKind);
+        if (row == null) {
+            return `<div class="poseidon-grid-price-stack"><span class="${mainLineCssClass}">${mainLineText}</span></div>`;
+        }
+        const entryPrice = this.numberFormattingService.toNumberSafe(row.entry_price);
+        const levelPrice = this.numberFormattingService.toNumberSafe(priceValue);
+        if (entryPrice === null || levelPrice === null || entryPrice === 0) {
+            return `<div class="poseidon-grid-price-stack"><span class="${mainLineCssClass}">${mainLineText}</span></div>`;
+        }
+        const priceVersusEntryPercent = ((levelPrice - entryPrice) / Math.abs(entryPrice)) * 100;
+        const entryRelativePercentLabel = `${priceVersusEntryPercent >= 0 ? '+' : ''}${this.numberFormattingService.formatNumber(priceVersusEntryPercent, 1, 1)}%`;
+        return `<div class="poseidon-grid-price-stack"><span class="${mainLineCssClass}">${mainLineText}</span><span class="poseidon-grid-price-stack-entry-relative-percent">${entryRelativePercentLabel}</span></div>`;
+    }
+
+    private resolveTakeProfitStopLossPriceStackMainLineCssClass(
+        priceStackKind: 'take_profit_tier_one' | 'take_profit_tier_two' | 'stop_loss'
+    ): string {
+        let modifierSuffix: string;
+        switch (priceStackKind) {
+            case 'take_profit_tier_one':
+                modifierSuffix = 'take-profit-tier-one';
+                break;
+            case 'take_profit_tier_two':
+                modifierSuffix = 'take-profit-tier-two';
+                break;
+            case 'stop_loss':
+                modifierSuffix = 'stop-loss';
+                break;
+        }
+        return `poseidon-grid-price-stack-main poseidon-grid-price-stack-main--${modifierSuffix}`;
+    }
+
+    private formatPositionNotionalCellHtml(row: TradingPositionPayload | undefined): string {
+        if (row == null) {
+            return '—';
+        }
+        const entryNotionalUsd = this.orderNotionalUsd(row, 'entry');
+        const lastNotionalUsd = this.orderNotionalUsd(row, 'last');
+        const entryNotionalLabel =
+            entryNotionalUsd == null
+                ? '—'
+                : this.numberFormattingService.formatCurrency(entryNotionalUsd, 'USD', 0, 2);
+        const lastNotionalLabel =
+            lastNotionalUsd == null
+                ? '—'
+                : this.numberFormattingService.formatCurrency(lastNotionalUsd, 'USD', 0, 2);
+        const deltaPercent = this.computeDeltaPercent(row);
+        let liveToneClass = 'poseidon-grid-notional-live poseidon-grid-notional-live--neutral';
+        if (deltaPercent != null && deltaPercent > 0) {
+            liveToneClass = 'poseidon-grid-notional-live poseidon-grid-notional-live--positive';
+        } else if (deltaPercent != null && deltaPercent < 0) {
+            liveToneClass = 'poseidon-grid-notional-live poseidon-grid-notional-live--negative';
+        }
+        if (entryNotionalUsd == null && lastNotionalUsd == null) {
+            return '—';
+        }
+        if (entryNotionalUsd == null) {
+            return `<span class="${liveToneClass} poseidon-grid-emphasized-metric">${lastNotionalLabel}</span>`;
+        }
+        return `<div class="poseidon-grid-notional-stack"><span class="poseidon-grid-notional-entry-struck">${entryNotionalLabel}</span><span class="${liveToneClass} poseidon-grid-emphasized-metric">${lastNotionalLabel}</span></div>`;
     }
 
     public pricePositionPercentage(row: TradingPositionPayload | null, targetPrice?: number | null): number {
@@ -401,10 +684,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
         try {
             await navigator.clipboard.writeText(value);
-            console.info('[UI][POSITIONS][COPY] value copied');
-        } catch (error) {
-            console.info('[UI][POSITIONS][COPY] failed');
-            console.debug('[UI][POSITIONS][COPY][VERBOSE]', error);
+        } catch {
+            return;
         }
     }
 
@@ -424,7 +705,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             const bt = new Date((b as any).created_at ?? 0).getTime();
             return Math.abs(at - opened) - Math.abs(bt - opened);
         });
-        console.debug('[UI][POSITIONS][DETAILS][VERBOSE] BUY trade candidates:', candidates.length);
         return candidates[0] ?? null;
     }
 
@@ -432,9 +712,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         return this.cachedOriginBuyTrade;
     }
 
-    public focusTradeInTable(trade: TradingTradePayload): void {
-        console.info('[UI][POSITIONS][DETAILS] focus BUY trade', trade);
-    }
+    public focusTradeInTable(_trade: TradingTradePayload): void {}
 
     public formatNumber(value: unknown, min: number, max: number): string {
         return this.numberFormattingService.formatNumber(value as number, min, max);
@@ -449,28 +727,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             return '—';
         }
         return `${this.numberFormattingService.formatNumber(value, 2, 2)}%`;
-    }
-
-    public formatMetricLabel(key: string): string {
-        return this.metricsFormattingService.formatMetricLabel(key);
-    }
-
-    public formatMetricValue(key: string, value: number | null | undefined): string {
-        return this.metricsFormattingService.formatMetricValue(key, value);
-    }
-
-    public groupedShadowMetrics(snapshot: any): { category: any, metrics: any[] }[] {
-        if (!snapshot || !snapshot.evaluated_metrics) {
-            return [];
-        }
-        const metricsMap = new Map(snapshot.evaluated_metrics.map((m: any) => [m.metric_key, m]));
-        return EXPLORATION_CATEGORIES.map(category => {
-            const metrics = category.metricKeys
-                .map(key => metricsMap.get(key))
-                .filter(m => !!m)
-                .sort((a: any, b: any) => (b.bucket_win_rate || 0) - (a.bucket_win_rate || 0));
-            return {category, metrics};
-        }).filter(group => group.metrics.length > 0);
     }
 
     private recomputeCharts(): void {
@@ -508,8 +764,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         const entryNotional = this.orderNotionalUsd(pos, 'entry') ?? 0;
         const lastNotional = this.orderNotionalUsd(pos, 'last') ?? 0;
         this.notionalSeries = [{name: 'Notional', data: [entryNotional, lastNotional]}];
-
-        console.debug('[UI][POSITIONS][DETAILS][VERBOSE] charts recomputed');
     }
 
     private toPercent0to100(value: number | null | undefined): number {

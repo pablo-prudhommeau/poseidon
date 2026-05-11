@@ -8,6 +8,7 @@ from src.api.http.api_schemas import (
     TradingLiquidityPayload,
     TradingPortfolioPayload,
     TradingPositionPayload,
+    TradingPositionPricePayload,
     TradingTradePayload,
 )
 from src.api.websocket.websocket_manager import websocket_manager
@@ -17,6 +18,7 @@ from src.core.structures.structures import WebsocketMessageType
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.cache.trading_cache_payload_builders import (
     build_trading_positions_payloads,
+    build_trading_position_prices_payloads,
     build_trading_trades_payloads,
     build_trading_liquidity_payload,
     build_trading_prices_payload,
@@ -58,6 +60,26 @@ class _PositionsRebuilder:
         await websocket_manager.broadcast_json_payload({
             "type": WebsocketMessageType.POSITIONS.value,
             "payload": jsonable_encoder(positions_payload),
+        })
+
+
+class _PositionPricesRebuilder:
+    realm = CacheRealm.POSITION_PRICES
+    ttl_seconds = 30.0
+
+    def rebuild(self) -> list[TradingPositionPricePayload]:
+        prices_candidate = trading_cache.get_prices_by_pair_address()
+        prices_lookup: dict[str, float] = prices_candidate if prices_candidate is not None else {}
+        return build_trading_position_prices_payloads(prices_lookup)
+
+    def apply_to_cache(self, payload: object) -> None:
+        trading_cache.update_trading_position_prices_state(cast(list[TradingPositionPricePayload], payload))
+
+    async def notify_websocket(self, payload: object) -> None:
+        position_prices_payload = cast(list[TradingPositionPricePayload], payload)
+        await websocket_manager.broadcast_json_payload({
+            "type": WebsocketMessageType.POSITION_PRICES.value,
+            "payload": jsonable_encoder(position_prices_payload),
         })
 
 
@@ -127,6 +149,7 @@ class _PortfolioRebuilder:
 def register_trading_rebuilders() -> None:
     cache_invalidator.register(_PricesRebuilder())
     cache_invalidator.register(_PositionsRebuilder())
+    cache_invalidator.register(_PositionPricesRebuilder())
     cache_invalidator.register(_TradesRebuilder())
     cache_invalidator.register(_AvailableCashRebuilder())
     cache_invalidator.register(_PortfolioRebuilder())

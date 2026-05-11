@@ -8,7 +8,7 @@ from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
 from src.core.trading.trading_structures import TradingOrderPayload, TradingExecutionRoute
-from src.integrations.blockchain.blockchain_live_executor import LiveExecutionService
+from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
@@ -36,7 +36,7 @@ class TradingExecutor:
             execution_price: float,
             execution_route: TradingExecutionRoute,
             origin_evaluation_id: int,
-    ) -> Optional[str]:
+    ) -> Optional[BlockchainExecutionResult]:
         coroutine = self._execute_live_sell(
             token_symbol=token_symbol,
             token_address=token_address,
@@ -238,11 +238,20 @@ class TradingExecutor:
                 return False
 
             if network == BlockchainNetwork.SOLANA and execution_route.solana_route:
-                signature = await execution_service.solana_execute_route(execution_route.solana_route)
-                logger.info("[TRADING][EXECUTOR][LIVE][BUY][SOL] Broadcast successful for %s — sig=%s", token.symbol, signature)
+                execution_outcome = await execution_service.solana_execute_route(execution_route.solana_route)
+                logger.info(
+                    "[TRADING][EXECUTOR][LIVE][BUY][SOL] Broadcast successful for %s — sig=%s fee_usd=%.6f",
+                    token.symbol,
+                    execution_outcome.transaction_hash_or_signature,
+                    execution_outcome.transaction_fee_usd,
+                )
             elif execution_route.evm_route:
-                transaction_hash = await execution_service.evm_execute_route(execution_route.evm_route, chain=token.chain)
-                logger.info("[TRADING][EXECUTOR][LIVE][BUY][EVM] Broadcast successful for %s — tx=%s", token.symbol, transaction_hash)
+                execution_outcome = await execution_service.evm_execute_route(execution_route.evm_route, chain=token.chain)
+                logger.info(
+                    "[TRADING][EXECUTOR][LIVE][BUY][EVM] Broadcast successful for %s — tx=%s",
+                    token.symbol,
+                    execution_outcome.transaction_hash_or_signature,
+                )
             else:
                 logger.error("[TRADING][EXECUTOR][LIVE][BUY] Missing proper route payload for network %s", network)
                 return False
@@ -258,12 +267,13 @@ class TradingExecutor:
                     blockchain_network=network,
                     execution_price=price_usd,
                     execution_quantity=quantity,
-                    transaction_fee=0.0,
+                    transaction_fee=execution_outcome.transaction_fee_usd,
                     realized_profit_and_loss=None,
                     execution_status=ExecutionStatus.LIVE,
                     token_address=token.token_address,
                     pair_address=token.pair_address,
                     dex_id=token.dex_id,
+                    transaction_hash=execution_outcome.transaction_hash_or_signature,
                 )
                 trade_dao.save(trading_trade)
 
@@ -346,7 +356,7 @@ class TradingExecutor:
             execution_price: float,
             execution_route: TradingExecutionRoute,
             origin_evaluation_id: int,
-    ) -> Optional[str]:
+    ) -> Optional[BlockchainExecutionResult]:
         execution_service = LiveExecutionService()
         try:
             network = self._infer_route_network(execution_route, hint_chain=chain)
@@ -383,13 +393,18 @@ class TradingExecutor:
                 return None
 
             if network == BlockchainNetwork.SOLANA and execution_route.solana_route:
-                signature = await execution_service.solana_execute_route(execution_route.solana_route)
-                logger.info("[TRADING][EXECUTOR][LIVE][SELL][SOL] Broadcast successful for %s — sig=%s", token_symbol, signature)
-                return signature
+                execution_outcome = await execution_service.solana_execute_route(execution_route.solana_route)
+                logger.info(
+                    "[TRADING][EXECUTOR][LIVE][SELL][SOL] Broadcast successful for %s — sig=%s fee_usd=%.6f",
+                    token_symbol,
+                    execution_outcome.transaction_hash_or_signature,
+                    execution_outcome.transaction_fee_usd,
+                )
+                return execution_outcome
             elif execution_route.evm_route:
-                transaction_hash = await execution_service.evm_execute_route(execution_route.evm_route, chain=chain)
-                logger.info("[TRADING][EXECUTOR][LIVE][SELL][EVM] Broadcast successful for %s — tx=%s", token_symbol, transaction_hash)
-                return transaction_hash
+                execution_outcome = await execution_service.evm_execute_route(execution_route.evm_route, chain=chain)
+                logger.info("[TRADING][EXECUTOR][LIVE][SELL][EVM] Broadcast successful for %s — tx=%s", token_symbol, execution_outcome.transaction_hash_or_signature)
+                return execution_outcome
             else:
                 logger.error("[TRADING][EXECUTOR][LIVE][SELL] Missing proper route payload for network %s", network)
                 return None

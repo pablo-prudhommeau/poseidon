@@ -19,6 +19,7 @@ logger = get_application_logger(__name__)
 class BlockchainExecutionResult:
     network: BlockchainNetwork
     transaction_hash_or_signature: str
+    transaction_fee_usd: float
 
 
 class LiveExecutionService:
@@ -29,7 +30,7 @@ class LiveExecutionService:
     async def close(self) -> None:
         return
 
-    async def solana_execute_route(self, route: TradingSolanaRoute) -> str:
+    async def solana_execute_route(self, route: TradingSolanaRoute) -> BlockchainExecutionResult:
         serialized_base64 = route.serialized_transaction_base64
         serialized = self._decode_blob(serialized_base64)
         if not isinstance(serialized, bytes) or len(serialized) == 0:
@@ -47,7 +48,17 @@ class LiveExecutionService:
             raise RuntimeError(f"Solana transaction {signature} failed during on-chain execution or timed out")
 
         logger.info("[BLOCKCHAIN][EXECUTOR][SOL] Confirmation success — signature=%s", signature)
-        return signature
+
+        fee_breakdown = await asyncio.to_thread(
+            self._solana_signer.fetch_confirmed_transaction_fee_breakdown_usd,
+            signature,
+        )
+        fee_usd = 0.0 if fee_breakdown is None else fee_breakdown.total_usd
+        return BlockchainExecutionResult(
+            network=BlockchainNetwork.SOLANA,
+            transaction_hash_or_signature=signature,
+            transaction_fee_usd=fee_usd,
+        )
 
     @staticmethod
     def _decode_blob(raw: str) -> bytes:
@@ -79,7 +90,7 @@ class LiveExecutionService:
 
         return b""
 
-    async def evm_execute_route(self, route: TradingEvmRoute, chain: BlockchainNetwork) -> str:
+    async def evm_execute_route(self, route: TradingEvmRoute, chain: BlockchainNetwork) -> BlockchainExecutionResult:
         transaction_request = route.transaction_request
         if transaction_request is None:
             raise ValueError("Missing transaction_request for EVM route")
@@ -102,7 +113,11 @@ class LiveExecutionService:
                 raise RuntimeError(f"EVM transaction {hex_hash} failed during on-chain execution or timed out")
 
             logger.info("[BLOCKCHAIN][EXECUTOR][EVM] Confirmation success — tx=%s", hex_hash)
-            return hex_hash
+            return BlockchainExecutionResult(
+                network=chain,
+                transaction_hash_or_signature=hex_hash,
+                transaction_fee_usd=0.0,
+            )
 
         to = transaction_request.to
         data = transaction_request.data
@@ -136,4 +151,8 @@ class LiveExecutionService:
             raise RuntimeError(f"EVM transaction {transaction_hash_hex} failed during on-chain execution or timed out")
 
         logger.info("[BLOCKCHAIN][EXECUTOR][EVM] Confirmation success — tx=%s", transaction_hash_hex)
-        return transaction_hash_hex
+        return BlockchainExecutionResult(
+            network=chain,
+            transaction_hash_or_signature=transaction_hash_hex,
+            transaction_fee_usd=0.0,
+        )
