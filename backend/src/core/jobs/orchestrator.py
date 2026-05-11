@@ -53,8 +53,11 @@ def start_background_jobs() -> None:
     _position_guard_task = event_loop.create_task(TradingPositionGuardJob().run_loop())
     logger.info("[ORCHESTRATOR] Position guard task started (interval=%ss)", settings.TRADING_POSITION_GUARD_INTERVAL_SECONDS)
 
-    _aave_sentinel_task = event_loop.create_task(AaveSentinelJob().run_loop())
-    logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Sentinel background task armed")
+    if settings.AAVE_SENTINEL_ENABLED:
+        _aave_sentinel_task = event_loop.create_task(AaveSentinelJob().run_loop())
+        logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Sentinel background task armed")
+    else:
+        logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Sentinel disabled in settings, task not scheduled")
 
     _dca_background_task = event_loop.create_task(DcaJob().run_loop())
     logger.info("[ORCHESTRATOR][DCA_JOB] Scheduled task started (interval=%ss)", settings.AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS)
@@ -70,4 +73,5 @@ def read_background_jobs_runtime_status() -> BackgroundJobsRuntimeStatus:
         trading_interval_seconds=settings.TRADING_LOOP_INTERVAL_SECONDS,
         position_guard_interval_seconds=settings.TRADING_POSITION_GUARD_INTERVAL_SECONDS,
         shadowing_enabled=settings.TRADING_SHADOWING_ENABLED,
+        aave_sentinel_enabled=settings.AAVE_SENTINEL_ENABLED,
     )
