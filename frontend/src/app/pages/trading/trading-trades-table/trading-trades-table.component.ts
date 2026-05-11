@@ -383,7 +383,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
         }
         const chain = String(row.blockchain_network ?? '').toLowerCase();
         if (chain === 'solana') {
-            return `https://solana.fm/tx/${hash}`;
+            return `https://solscan.io/tx/${hash}`;
         }
         return null;
     }
