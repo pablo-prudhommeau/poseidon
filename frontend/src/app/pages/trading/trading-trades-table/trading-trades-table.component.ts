@@ -53,7 +53,6 @@ import {TradingShadowIntelligenceTabComponent} from '../trading-shadow-intellige
         TooltipModule,
         PanelModule,
         NgApexchartsModule,
-        IconHeaderRendererComponent,
         TradingShadowIntelligenceTabComponent
     ],
     templateUrl: './trading-trades-table.component.html',

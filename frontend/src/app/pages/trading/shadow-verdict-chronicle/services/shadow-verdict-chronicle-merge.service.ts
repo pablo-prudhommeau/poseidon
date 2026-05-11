@@ -1,10 +1,10 @@
 import {Injectable} from '@angular/core';
 import type {ShadowVerdictChronicleBucketPayload, ShadowVerdictChronicleDeltaPayload, ShadowVerdictChronicleResponse, ShadowVerdictChronicleVerdictPointPayload,} from '../../../../core/models';
 import {
-    computeShadowVerdictChronicleVisibilityRetentionFloorServerEpochMilliseconds,
+    computeChronicleRetentionFloorServerEpochMilliseconds,
+    type ChronicleBucketLabel,
     parseIsoTimestampToEpochMilliseconds,
-    type ShadowVerdictChronicleBucketLabel,
-} from '../data/shadow-verdict-chronicle-chart-data';
+} from '../data/shadow-verdict-chronicle-arrays.utils';
 
 @Injectable({providedIn: 'root'})
 export class ShadowVerdictChronicleMergeService {
@@ -12,15 +12,16 @@ export class ShadowVerdictChronicleMergeService {
         baseSnapshot: ShadowVerdictChronicleResponse,
         incrementalPatch: ShadowVerdictChronicleDeltaPayload,
     ): ShadowVerdictChronicleResponse {
-        const deltaByLabel = new Map(
+        const deltaByLabel: Map<ChronicleBucketLabel, ShadowVerdictChronicleDeltaPayload['buckets'][number]> = new Map(
             incrementalPatch.buckets.map(bucketDelta => [bucketDelta.bucket_label, bucketDelta]),
         );
-        const referenceWallClockMilliseconds =
+        const referenceWallClockMilliseconds: number =
             parseIsoTimestampToEpochMilliseconds(incrementalPatch.as_of_iso) ??
             parseIsoTimestampToEpochMilliseconds(incrementalPatch.generated_at_iso) ??
             Date.now();
         const buckets: ShadowVerdictChronicleBucketPayload[] = baseSnapshot.buckets.map(bucket => {
-            const bucketDelta = deltaByLabel.get(bucket.bucket_label);
+            const bucketDelta: ShadowVerdictChronicleDeltaPayload['buckets'][number] | undefined =
+                deltaByLabel.get(bucket.bucket_label as ChronicleBucketLabel);
             const next: ShadowVerdictChronicleBucketPayload = {
                 ...bucket,
                 metrics: bucket.metrics.map(metric => ({...metric})),
@@ -52,9 +53,9 @@ export class ShadowVerdictChronicleMergeService {
         priorSnapshotBucket: ShadowVerdictChronicleBucketPayload,
         referenceWallClockMilliseconds: number,
     ): void {
-        const bucketLabel = bucket.bucket_label as ShadowVerdictChronicleBucketLabel;
+        const bucketLabel = bucket.bucket_label as ChronicleBucketLabel;
         const retentionFloorServerEpochMilliseconds =
-            computeShadowVerdictChronicleVisibilityRetentionFloorServerEpochMilliseconds(
+            computeChronicleRetentionFloorServerEpochMilliseconds(
                 bucketLabel,
                 bucket.granularity_seconds,
                 referenceWallClockMilliseconds,
@@ -70,7 +71,7 @@ export class ShadowVerdictChronicleMergeService {
             );
         }
         if (delta.metrics_remove_timestamps_ms?.length) {
-            const drop = new Set(
+            const drop: Set<number> = new Set(
                 delta.metrics_remove_timestamps_ms.filter(
                     timestampMilliseconds => timestampMilliseconds < retentionFloorServerEpochMilliseconds,
                 ),
@@ -79,7 +80,9 @@ export class ShadowVerdictChronicleMergeService {
         }
         const metricsUpsert = delta.metrics_upsert ?? [];
         if (metricsUpsert.length > 0) {
-            const byTimestamp = new Map(bucket.metrics.map(metric => [metric.timestamp_milliseconds, metric]));
+            const byTimestamp: Map<number, ShadowVerdictChronicleBucketPayload['metrics'][number]> = new Map(
+                bucket.metrics.map(metric => [metric.timestamp_milliseconds, metric]),
+            );
             for (const point of metricsUpsert) {
                 byTimestamp.set(point.timestamp_milliseconds, point);
             }
@@ -98,7 +101,7 @@ export class ShadowVerdictChronicleMergeService {
             );
         }
         if (delta.volumes_remove_timestamps_ms?.length) {
-            const drop = new Set(
+            const drop: Set<number> = new Set(
                 delta.volumes_remove_timestamps_ms.filter(
                     timestampMilliseconds => timestampMilliseconds < retentionFloorServerEpochMilliseconds,
                 ),
@@ -107,7 +110,9 @@ export class ShadowVerdictChronicleMergeService {
         }
         const volumesUpsert = delta.volumes_upsert ?? [];
         if (volumesUpsert.length > 0) {
-            const byTimestamp = new Map(bucket.volumes.map(volume => [volume.timestamp_milliseconds, volume]));
+            const byTimestamp: Map<number, ShadowVerdictChronicleBucketPayload['volumes'][number]> = new Map(
+                bucket.volumes.map(volume => [volume.timestamp_milliseconds, volume]),
+            );
             for (const point of volumesUpsert) {
                 byTimestamp.set(point.timestamp_milliseconds, point);
             }

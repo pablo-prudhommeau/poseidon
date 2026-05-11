@@ -1,5 +1,5 @@
 import {Injectable} from '@angular/core';
-import type {SciChartModule} from '../data/shadow-verdict-chronicle-chart-data';
+import type {SciChartModule} from '../data/shadow-verdict-chronicle.models';
 
 function unwrapSciChartModule(imported: unknown): SciChartModule {
     const ns = imported as SciChartModule & { default?: SciChartModule };
@@ -19,7 +19,7 @@ function unwrapSciChartModule(imported: unknown): SciChartModule {
     providedIn: 'root',
 })
 export class ShadowVerdictChronicleSciChartLoaderService {
-    private static runtimeConfigured = false;
+    private static runtimeConfigured: boolean = false;
 
     private moduleImport: Promise<SciChartModule> | null = null;
 

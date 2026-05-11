@@ -88,6 +88,109 @@
     min-height: 520px;
 }
 
+.chronicle-legend-toggle {
+    position: absolute;
+    top: 14px;
+    right: 258px;
+    z-index: 16;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(17, 11, 36, 0.72);
+    color: #e9d5ff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.65rem;
+    transition: all 0.15s ease;
+}
+
+.chronicle-legend-toggle:hover {
+    background: rgba(30, 41, 59, 0.85);
+    border-color: rgba(125, 211, 252, 0.35);
+    cursor: pointer;
+}
+
+.chronicle-legend-toggle.is-open {
+    border-color: rgba(236, 72, 153, 0.3);
+}
+
+.chronicle-custom-legend {
+    position: absolute;
+    top: 44px;
+    right: 258px;
+    z-index: 15;
+    max-height: calc(100% - 28px);
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(17, 11, 36, 0.52);
+    backdrop-filter: blur(3px);
+}
+
+.chronicle-custom-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #f5f3ff;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.chronicle-custom-legend-item input[type='checkbox'] {
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    accent-color: #22d3ee;
+}
+
+.chronicle-legend-swatch {
+    width: 16px;
+    height: 0;
+    border-top: 2px solid var(--legend-color);
+    opacity: 0.95;
+}
+
+.chronicle-legend-swatch.is-dashed {
+    border-top-style: dashed;
+}
+
+.chronicle-legend-swatch.is-area {
+    width: 12px;
+    height: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--legend-color) 70%, #ffffff 30%);
+    border-radius: 1.5px;
+    background: color-mix(in srgb, var(--legend-color) 35%, transparent 65%);
+}
+
+.chronicle-legend-swatch.is-column {
+    width: 8px;
+    height: 9px;
+    border-top: none;
+    border-radius: 1.2px;
+    background: color-mix(in srgb, var(--legend-color) 62%, transparent 38%);
+    border: 1px solid color-mix(in srgb, var(--legend-color) 82%, #ffffff 18%);
+}
+
+.chronicle-legend-swatch.is-verdict {
+    width: 10px;
+    height: 10px;
+    border-top: none;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--legend-color) 70%, transparent 30%);
+    border: 1px solid color-mix(in srgb, var(--legend-color) 85%, #ffffff 15%);
+}
+
+.chronicle-legend-label {
+    opacity: 0.95;
+}
+
 .chronicle-loader-ring {
     width: 56px;
     height: 56px;

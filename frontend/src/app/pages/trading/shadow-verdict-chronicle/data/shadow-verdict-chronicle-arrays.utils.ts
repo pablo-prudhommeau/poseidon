@@ -1,8 +1,37 @@
-import type {SciChartSurface, SeriesInfo, TSciChart, XyzDataSeries} from 'scichart';
-import type {ShadowVerdictChronicleBucketPayload, ShadowVerdictChronicleResponse, ShadowVerdictChronicleVerdictPointPayload,} from '../../../../core/models';
+import type {
+    ShadowVerdictChronicleBucketPayload,
+    ShadowVerdictChronicleResponse,
+    ShadowVerdictChronicleVerdictPointPayload,
+} from '../../../../core/models';
+import {easeOutCubic, linearInterpolate} from '../../../../core/math.utils';
+import type {ChronicleArrays, ChronicleBucketMeta, ChronicleCartesianPoint, SciChartModule} from './shadow-verdict-chronicle.models';
+
+export type {SciChartModule};
 
 export const CHRONICLE_STREAM_LAG_MS_FALLBACK = 240_000;
 export const CHRONICLE_SNAPSHOT_BLEND_MS = 1400;
+
+const CHRONICLE_MAX_METRIC_POINTS = 500;
+const CHRONICLE_MAX_VOLUME_POINTS = 900;
+
+export type ChronicleBucketLabel = ShadowVerdictChronicleBucketPayload['bucket_label'];
+export type ShadowVerdictChronicleBucketLabel = ChronicleBucketLabel;
+
+function buildDownsampledIndices(length: number, maxPoints: number): number[] {
+    if (length <= maxPoints) {
+        return Array.from({length}, (_unused, index) => index);
+    }
+    const stride = Math.max(1, Math.ceil(length / maxPoints));
+    const indices: number[] = [];
+    for (let index = 0; index < length; index += stride) {
+        indices.push(index);
+    }
+    const lastIndex = length - 1;
+    if (indices[indices.length - 1] !== lastIndex) {
+        indices.push(lastIndex);
+    }
+    return indices;
+}
 
 export function resolveChronicleStreamLagMilliseconds(seriesEndLagSeconds: number | undefined): number {
     if (seriesEndLagSeconds != null && seriesEndLagSeconds > 0) {
@@ -29,10 +58,7 @@ export function computeSimpleMovingAverage(values: number[], windowSize: number)
     return result;
 }
 
-export type SciChartModule = typeof import('scichart');
-export type ShadowVerdictChronicleBucketLabel = ShadowVerdictChronicleBucketPayload['bucket_label'];
-
-export function shadowHistoryBucketLookbackMilliseconds(bucketLabel: ShadowVerdictChronicleBucketLabel): number {
+export function shadowHistoryBucketLookbackMilliseconds(bucketLabel: ChronicleBucketLabel): number {
     switch (bucketLabel) {
         case 'last_30m_1m':
             return 30 * 60 * 1000;
@@ -47,8 +73,8 @@ export function shadowHistoryBucketLookbackMilliseconds(bucketLabel: ShadowVerdi
     }
 }
 
-export function computeShadowVerdictChronicleVisibilityRetentionFloorServerEpochMilliseconds(
-    bucketLabel: ShadowVerdictChronicleBucketLabel,
+export function computeChronicleRetentionFloorServerEpochMilliseconds(
+    bucketLabel: ChronicleBucketLabel,
     granularitySeconds: number,
     referenceWallClockMilliseconds: number = Date.now(),
 ): number {
@@ -87,44 +113,6 @@ export function formatChronicleAxisTickLabelMilliseconds(epochMilliseconds: numb
     });
 }
 
-export interface ChronicleChartModel {
-    sciChartSurface: SciChartSurface;
-    wasmContext: TSciChart;
-    sci: SciChartModule;
-    xAxis: InstanceType<SciChartModule['DateTimeNumericAxis']>;
-    viewportWidthMilliseconds: number;
-    volumeMountainDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
-    volumeColumnDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
-    volumeColumnRenderableSeries: InstanceType<SciChartModule['FastColumnRenderableSeries']>;
-    metricLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
-    movingAverageLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
-    profitableVerdictXyzDataSeries: XyzDataSeries;
-    lossVerdictXyzDataSeries: XyzDataSeries;
-}
-
-export interface ChronicleBucketMeta {
-    bucket: ShadowVerdictChronicleBucketPayload;
-    response: ShadowVerdictChronicleResponse;
-}
-
-export interface ChronicleArrays {
-    metricTimestampsMilliseconds: number[];
-    averagePnlPercentageSeries: number[];
-    averageWinRatePercentageSeries: number[];
-    expectedValuePerTradeUsdSeries: number[];
-    profitFactorSeries: number[];
-    capitalVelocityPerHourSeries: number[];
-    movingAveragePnlSeries: number[];
-    movingAverageWinRateSeries: number[];
-    movingAverageExpectedValueSeries: number[];
-    movingAverageProfitFactorSeries: number[];
-    movingAverageVelocitySeries: number[];
-    volumeBucketTimestampsMilliseconds: number[];
-    volumeBucketVerdictCounts: number[];
-    verdictCloudProfitablePoints: Array<{ x: number; y: number; z: number }>;
-    verdictCloudLossPoints: Array<{ x: number; y: number; z: number }>;
-}
-
 export function floorEpochMillisecondsToBucketStart(epochMilliseconds: number, granularitySeconds: number): number {
     const granularityMilliseconds = Math.max(1000, granularitySeconds * 1000);
     return Math.floor(epochMilliseconds / granularityMilliseconds) * granularityMilliseconds;
@@ -147,29 +135,16 @@ export function chronicleMinimumDisplayXMilliseconds(arrays: ChronicleArrays): n
     return Math.min(...candidates);
 }
 
-export function winsorizeSeries(
-    values: number[],
-    lowerQuantile = 0.02,
-    upperQuantile = 0.98,
-): number[] {
+export function winsorizeSeries(values: number[], lowerQuantile = 0.02, upperQuantile = 0.98): number[] {
     if (values.length < 4) {
         return [...values];
     }
-    const sorted = [...values].sort((a, b) => a - b);
+    const sorted = [...values].sort((left, right) => left - right);
     const lowerIndex = Math.max(0, Math.floor((sorted.length - 1) * lowerQuantile));
     const upperIndex = Math.min(sorted.length - 1, Math.ceil((sorted.length - 1) * upperQuantile));
     const lowerBound = sorted[lowerIndex];
     const upperBound = sorted[upperIndex];
-    return values.map(value => Math.min(upperBound, Math.max(lowerBound, value)));
-}
-
-function linearInterpolate(start: number, end: number, weight: number): number {
-    return start + (end - start) * weight;
-}
-
-function easeOutCubic(weight: number): number {
-    const clamped = Math.min(1, Math.max(0, weight));
-    return 1 - (1 - clamped) ** 3;
+    return values.map((value: number) => Math.min(upperBound, Math.max(lowerBound, value)));
 }
 
 export function chronicleShouldShowTargetVerdictCloud(rawAlpha: number): boolean {
@@ -190,11 +165,11 @@ function sampleSortedXySeriesAtX(sortedXValues: number[], yValues: number[], xQu
     let lower = 0;
     let upper = lastIndex;
     while (lower < upper - 1) {
-        const mid = (lower + upper) >> 1;
-        if (sortedXValues[mid] <= xQuery) {
-            lower = mid;
+        const middle = (lower + upper) >> 1;
+        if (sortedXValues[middle] <= xQuery) {
+            lower = middle;
         } else {
-            upper = mid;
+            upper = middle;
         }
     }
     const span = sortedXValues[upper] - sortedXValues[lower];
@@ -220,8 +195,8 @@ export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
         movingAverageVelocitySeries: [...source.movingAverageVelocitySeries],
         volumeBucketTimestampsMilliseconds: [...source.volumeBucketTimestampsMilliseconds],
         volumeBucketVerdictCounts: [...source.volumeBucketVerdictCounts],
-        verdictCloudProfitablePoints: source.verdictCloudProfitablePoints.map(point => ({...point})),
-        verdictCloudLossPoints: source.verdictCloudLossPoints.map(point => ({...point})),
+        verdictCloudProfitablePoints: source.verdictCloudProfitablePoints.map((point) => ({...point})),
+        verdictCloudLossPoints: source.verdictCloudLossPoints.map((point) => ({...point})),
     };
 }
 
@@ -304,15 +279,15 @@ export function blendChronicleArrays(
         ),
     );
 
-    const blendMetricSma = (fromField: keyof ChronicleArrays, toField: keyof ChronicleArrays): number[] =>
+    const blendMovingAverageSeries = (fieldName: keyof ChronicleArrays): number[] =>
         metricTimestampsMilliseconds.map((x, index) =>
             linearInterpolate(
                 sampleSortedXySeriesAtX(
                     fromArrays.metricTimestampsMilliseconds,
-                    fromArrays[fromField] as number[],
+                    fromArrays[fieldName] as number[],
                     x,
                 ),
-                (toArrays[toField] as number[])[index] ?? 0,
+                (toArrays[fieldName] as number[])[index] ?? 0,
                 alpha,
             ),
         );
@@ -324,37 +299,34 @@ export function blendChronicleArrays(
         expectedValuePerTradeUsdSeries,
         profitFactorSeries,
         capitalVelocityPerHourSeries,
-        movingAveragePnlSeries: blendMetricSma('movingAveragePnlSeries', 'movingAveragePnlSeries'),
-        movingAverageWinRateSeries: blendMetricSma('movingAverageWinRateSeries', 'movingAverageWinRateSeries'),
-        movingAverageExpectedValueSeries: blendMetricSma('movingAverageExpectedValueSeries', 'movingAverageExpectedValueSeries'),
-        movingAverageProfitFactorSeries: blendMetricSma('movingAverageProfitFactorSeries', 'movingAverageProfitFactorSeries'),
-        movingAverageVelocitySeries: blendMetricSma('movingAverageVelocitySeries', 'movingAverageVelocitySeries'),
+        movingAveragePnlSeries: blendMovingAverageSeries('movingAveragePnlSeries'),
+        movingAverageWinRateSeries: blendMovingAverageSeries('movingAverageWinRateSeries'),
+        movingAverageExpectedValueSeries: blendMovingAverageSeries('movingAverageExpectedValueSeries'),
+        movingAverageProfitFactorSeries: blendMovingAverageSeries('movingAverageProfitFactorSeries'),
+        movingAverageVelocitySeries: blendMovingAverageSeries('movingAverageVelocitySeries'),
         volumeBucketTimestampsMilliseconds,
         volumeBucketVerdictCounts,
         verdictCloudProfitablePoints: takeCloudFromSource
-            ? fromArrays.verdictCloudProfitablePoints.map(point => ({...point}))
-            : toArrays.verdictCloudProfitablePoints.map(point => ({...point})),
+            ? fromArrays.verdictCloudProfitablePoints.map((point) => ({...point}))
+            : toArrays.verdictCloudProfitablePoints.map((point) => ({...point})),
         verdictCloudLossPoints: takeCloudFromSource
-            ? fromArrays.verdictCloudLossPoints.map(point => ({...point}))
-            : toArrays.verdictCloudLossPoints.map(point => ({...point})),
+            ? fromArrays.verdictCloudLossPoints.map((point) => ({...point}))
+            : toArrays.verdictCloudLossPoints.map((point) => ({...point})),
     };
 }
 
-export function buildShadowVerdictChronicleFingerprint(hist: ShadowVerdictChronicleResponse): string {
-    const bucketParts = hist.buckets.map(bucket => {
-        const lastMetricTimestamp =
-            bucket.metrics[bucket.metrics.length - 1]?.timestamp_milliseconds ?? 0;
-        const lastVolumeTimestamp =
-            bucket.volumes[bucket.volumes.length - 1]?.timestamp_milliseconds ?? 0;
-        const lastCloudTimestamp =
-            bucket.verdict_cloud[bucket.verdict_cloud.length - 1]?.timestamp_milliseconds ?? 0;
+export function buildChronicleSnapshotFingerprint(historySnapshot: ShadowVerdictChronicleResponse): string {
+    const bucketParts = historySnapshot.buckets.map((bucket) => {
+        const lastMetricTimestamp = bucket.metrics[bucket.metrics.length - 1]?.timestamp_milliseconds ?? 0;
+        const lastVolumeTimestamp = bucket.volumes[bucket.volumes.length - 1]?.timestamp_milliseconds ?? 0;
+        const lastCloudTimestamp = bucket.verdict_cloud[bucket.verdict_cloud.length - 1]?.timestamp_milliseconds ?? 0;
         return `${bucket.bucket_label}:${bucket.metrics.length}:${bucket.volumes.length}:${bucket.verdict_cloud.length}:${lastMetricTimestamp}:${lastVolumeTimestamp}:${lastCloudTimestamp}`;
     });
     return [
-        hist.generated_at_iso,
-        hist.as_of_iso,
-        String(hist.total_verdicts_considered),
-        hist.source,
+        historySnapshot.generated_at_iso,
+        historySnapshot.as_of_iso,
+        String(historySnapshot.total_verdicts_considered),
+        historySnapshot.source,
         ...bucketParts,
     ].join('|');
 }
@@ -364,62 +336,108 @@ export function buildChronicleArraysFromBucket(
     streamLagMilliseconds: number = CHRONICLE_STREAM_LAG_MS_FALLBACK,
     smaWindowBuckets: number = 0,
 ): ChronicleArrays {
-    const displayTimeMilliseconds = (timestampMilliseconds: number) =>
+    const displayTimeMilliseconds = (timestampMilliseconds: number): number =>
         timestampMilliseconds - streamLagMilliseconds;
 
-    const metrics = meta.bucket.metrics;
-    const volumes = meta.bucket.volumes;
-    const metricTimestampsMilliseconds = metrics.map(metric =>
+    const metrics = (() => {
+        const metricByTimestamp = new Map<number, ShadowVerdictChronicleBucketPayload['metrics'][number]>();
+        for (const metric of meta.bucket.metrics) {
+            metricByTimestamp.set(metric.timestamp_milliseconds, metric);
+        }
+        return [...metricByTimestamp.values()].sort(
+            (left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds,
+        );
+    })();
+    const volumes = (() => {
+        const volumeByTimestamp = new Map<number, ShadowVerdictChronicleBucketPayload['volumes'][number]>();
+        for (const volume of meta.bucket.volumes) {
+            volumeByTimestamp.set(volume.timestamp_milliseconds, volume);
+        }
+        return [...volumeByTimestamp.values()].sort(
+            (left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds,
+        );
+    })();
+    const metricTimestampsMilliseconds = metrics.map((metric) =>
         displayTimeMilliseconds(metric.timestamp_milliseconds),
     );
-    const averagePnlPercentageSeries = winsorizeSeries(
-        metrics.map(metric => metric.average_pnl_percentage),
+    let averagePnlPercentageSeries = winsorizeSeries(
+        metrics.map((metric) => metric.average_pnl_percentage),
     );
-    const averageWinRatePercentageSeries = winsorizeSeries(
-        metrics.map(metric => metric.average_win_rate_percentage),
+    let averageWinRatePercentageSeries = winsorizeSeries(
+        metrics.map((metric) => metric.average_win_rate_percentage),
     );
-    const expectedValuePerTradeUsdSeries = winsorizeSeries(
-        metrics.map(metric => metric.expected_value_per_trade_usd),
+    let expectedValuePerTradeUsdSeries = winsorizeSeries(
+        metrics.map((metric) => metric.expected_value_per_trade_usd),
     );
-    const profitFactorSeries = winsorizeSeries(metrics.map(metric => metric.profit_factor));
-    const capitalVelocityPerHourSeries = winsorizeSeries(
-        metrics.map(metric => metric.capital_velocity_per_hour),
+    let profitFactorSeries = winsorizeSeries(metrics.map((metric) => metric.profit_factor));
+    let capitalVelocityPerHourSeries = winsorizeSeries(
+        metrics.map((metric) => metric.capital_velocity_per_hour),
     );
 
     const effectiveSmaWindow = smaWindowBuckets > 0 ? smaWindowBuckets : metrics.length;
-    const movingAveragePnlSeries = computeSimpleMovingAverage(averagePnlPercentageSeries, effectiveSmaWindow);
-    const movingAverageWinRateSeries = computeSimpleMovingAverage(averageWinRatePercentageSeries, effectiveSmaWindow);
-    const movingAverageExpectedValueSeries = computeSimpleMovingAverage(expectedValuePerTradeUsdSeries, effectiveSmaWindow);
-    const movingAverageProfitFactorSeries = computeSimpleMovingAverage(profitFactorSeries, effectiveSmaWindow);
-    const movingAverageVelocitySeries = computeSimpleMovingAverage(capitalVelocityPerHourSeries, effectiveSmaWindow);
+    let movingAveragePnlSeries = computeSimpleMovingAverage(averagePnlPercentageSeries, effectiveSmaWindow);
+    let movingAverageWinRateSeries = computeSimpleMovingAverage(averageWinRatePercentageSeries, effectiveSmaWindow);
+    let movingAverageExpectedValueSeries = computeSimpleMovingAverage(expectedValuePerTradeUsdSeries, effectiveSmaWindow);
+    let movingAverageProfitFactorSeries = computeSimpleMovingAverage(profitFactorSeries, effectiveSmaWindow);
+    let movingAverageVelocitySeries = computeSimpleMovingAverage(capitalVelocityPerHourSeries, effectiveSmaWindow);
 
-    const volumeBucketTimestampsMilliseconds = volumes.map(volume =>
+    const metricDownsampledIndices = buildDownsampledIndices(
+        metricTimestampsMilliseconds.length,
+        CHRONICLE_MAX_METRIC_POINTS,
+    );
+    const downsampleSeriesByMetricIndices = (values: number[]): number[] =>
+        metricDownsampledIndices.map((index) => values[index] ?? 0);
+    const downsampledMetricTimestampsMilliseconds = metricDownsampledIndices.map(
+        (index) => metricTimestampsMilliseconds[index] ?? 0,
+    );
+    averagePnlPercentageSeries = downsampleSeriesByMetricIndices(averagePnlPercentageSeries);
+    averageWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageWinRatePercentageSeries);
+    expectedValuePerTradeUsdSeries = downsampleSeriesByMetricIndices(expectedValuePerTradeUsdSeries);
+    profitFactorSeries = downsampleSeriesByMetricIndices(profitFactorSeries);
+    capitalVelocityPerHourSeries = downsampleSeriesByMetricIndices(capitalVelocityPerHourSeries);
+    movingAveragePnlSeries = downsampleSeriesByMetricIndices(movingAveragePnlSeries);
+    movingAverageWinRateSeries = downsampleSeriesByMetricIndices(movingAverageWinRateSeries);
+    movingAverageExpectedValueSeries = downsampleSeriesByMetricIndices(movingAverageExpectedValueSeries);
+    movingAverageProfitFactorSeries = downsampleSeriesByMetricIndices(movingAverageProfitFactorSeries);
+    movingAverageVelocitySeries = downsampleSeriesByMetricIndices(movingAverageVelocitySeries);
+
+    const volumeBucketTimestampsMilliseconds = volumes.map((volume) =>
         displayTimeMilliseconds(volume.timestamp_milliseconds),
     );
     const volumeBucketVerdictCounts = winsorizeSeries(
-        volumes.map(volume => volume.verdict_count),
+        volumes.map((volume) => volume.verdict_count),
         0,
         0.99,
+    );
+    const volumeDownsampledIndices = buildDownsampledIndices(
+        volumeBucketTimestampsMilliseconds.length,
+        CHRONICLE_MAX_VOLUME_POINTS,
+    );
+    const downsampledVolumeBucketTimestampsMilliseconds = volumeDownsampledIndices.map(
+        (index) => volumeBucketTimestampsMilliseconds[index] ?? 0,
+    );
+    const downsampledVolumeBucketVerdictCounts = volumeDownsampledIndices.map(
+        (index) => volumeBucketVerdictCounts[index] ?? 0,
     );
 
     const granularitySeconds = meta.bucket.granularity_seconds;
     const bucketSpanMilliseconds = Math.max(1000, granularitySeconds * 1000);
-    const organicVerdictCloud = meta.bucket.verdict_cloud.filter(point => point.exit_reason !== 'LETHARGIC');
+    const organicVerdictCloud = meta.bucket.verdict_cloud.filter((point) => point.exit_reason !== 'LETHARGIC');
 
-    const cohortByBucketStartServerMs = new Map<number, ShadowVerdictChronicleVerdictPointPayload[]>();
+    const cohortByBucketStartServerMilliseconds = new Map<number, ShadowVerdictChronicleVerdictPointPayload[]>();
     for (const point of organicVerdictCloud) {
-        const bucketStartServerMs = floorEpochMillisecondsToBucketStart(
+        const bucketStartServerMilliseconds = floorEpochMillisecondsToBucketStart(
             point.timestamp_milliseconds,
             granularitySeconds,
         );
-        const cohort = cohortByBucketStartServerMs.get(bucketStartServerMs);
+        const cohort = cohortByBucketStartServerMilliseconds.get(bucketStartServerMilliseconds);
         if (cohort) {
             cohort.push(point);
         } else {
-            cohortByBucketStartServerMs.set(bucketStartServerMs, [point]);
+            cohortByBucketStartServerMilliseconds.set(bucketStartServerMilliseconds, [point]);
         }
     }
-    for (const cohort of cohortByBucketStartServerMs.values()) {
+    for (const cohort of cohortByBucketStartServerMilliseconds.values()) {
         cohort.sort(
             (left, right) =>
                 left.timestamp_milliseconds - right.timestamp_milliseconds ||
@@ -427,39 +445,39 @@ export function buildChronicleArraysFromBucket(
         );
     }
     const verdictIndexWithinBucket = new Map<number, number>();
-    for (const cohort of cohortByBucketStartServerMs.values()) {
+    for (const cohort of cohortByBucketStartServerMilliseconds.values()) {
         cohort.forEach((payload, indexWithinCohort) => {
             verdictIndexWithinBucket.set(payload.verdict_id, indexWithinCohort);
         });
     }
 
-    const cloudPnls = organicVerdictCloud.map(point => point.pnl_percentage).sort((a, b) => a - b);
+    const cloudPnls = organicVerdictCloud.map((point) => point.pnl_percentage).sort((left, right) => left - right);
     const cloudLowerBound = cloudPnls[Math.floor(cloudPnls.length * 0.005)] ?? -100;
     const cloudUpperBound = cloudPnls[Math.floor(cloudPnls.length * 0.995)] ?? 100;
 
-    const verdictCloudProfitablePoints: Array<{ x: number; y: number; z: number }> = [];
-    const verdictCloudLossPoints: Array<{ x: number; y: number; z: number }> = [];
+    const verdictCloudProfitablePoints: ChronicleCartesianPoint[] = [];
+    const verdictCloudLossPoints: ChronicleCartesianPoint[] = [];
     for (const point of organicVerdictCloud) {
         if (point.pnl_percentage < cloudLowerBound || point.pnl_percentage > cloudUpperBound) {
             continue;
         }
 
-        const bucketStartServerMs = floorEpochMillisecondsToBucketStart(
+        const bucketStartServerMilliseconds = floorEpochMillisecondsToBucketStart(
             point.timestamp_milliseconds,
             granularitySeconds,
         );
-        const cohort = cohortByBucketStartServerMs.get(bucketStartServerMs) ?? [point];
+        const cohort = cohortByBucketStartServerMilliseconds.get(bucketStartServerMilliseconds) ?? [point];
         const indexWithinBucket = verdictIndexWithinBucket.get(point.verdict_id) ?? 0;
         const cohortSize = cohort.length;
-        const columnHalfWidthMs = (bucketSpanMilliseconds * 0.88) / 2;
-        let xServerMs = bucketStartServerMs;
+        const columnHalfWidthMilliseconds = (bucketSpanMilliseconds * 0.88) / 2;
+        let xServerMilliseconds = bucketStartServerMilliseconds;
         if (cohortSize > 1) {
-            const usableHalfMs = columnHalfWidthMs * 0.9;
-            const stepMs = (2 * usableHalfMs) / (cohortSize - 1);
-            xServerMs = bucketStartServerMs - usableHalfMs + indexWithinBucket * stepMs;
+            const usableHalfMilliseconds = columnHalfWidthMilliseconds * 0.9;
+            const stepMilliseconds = (2 * usableHalfMilliseconds) / (cohortSize - 1);
+            xServerMilliseconds = bucketStartServerMilliseconds - usableHalfMilliseconds + indexWithinBucket * stepMilliseconds;
         }
-        const row = {
-            x: displayTimeMilliseconds(xServerMs),
+        const row: ChronicleCartesianPoint = {
+            x: displayTimeMilliseconds(xServerMilliseconds),
             y: point.pnl_percentage,
             z: Math.max(6.5, point.point_size * 1.15),
         };
@@ -471,7 +489,7 @@ export function buildChronicleArraysFromBucket(
     }
 
     return {
-        metricTimestampsMilliseconds,
+        metricTimestampsMilliseconds: downsampledMetricTimestampsMilliseconds,
         averagePnlPercentageSeries,
         averageWinRatePercentageSeries,
         expectedValuePerTradeUsdSeries,
@@ -482,8 +500,8 @@ export function buildChronicleArraysFromBucket(
         movingAverageExpectedValueSeries,
         movingAverageProfitFactorSeries,
         movingAverageVelocitySeries,
-        volumeBucketTimestampsMilliseconds,
-        volumeBucketVerdictCounts,
+        volumeBucketTimestampsMilliseconds: downsampledVolumeBucketTimestampsMilliseconds,
+        volumeBucketVerdictCounts: downsampledVolumeBucketVerdictCounts,
         verdictCloudProfitablePoints,
         verdictCloudLossPoints,
     };
@@ -491,15 +509,15 @@ export function buildChronicleArraysFromBucket(
 
 export function extendChronicleArraysToTapeRight(
     source: ChronicleArrays,
-    tapeRightEdgeMs: number,
+    tapeRightEdgeMilliseconds: number,
 ): ChronicleArrays {
     const epsilonMilliseconds = 1;
     const baseMetricX = source.metricTimestampsMilliseconds;
     const extendMetric =
         baseMetricX.length > 0 &&
-        tapeRightEdgeMs > baseMetricX[baseMetricX.length - 1] + epsilonMilliseconds;
+        tapeRightEdgeMilliseconds > baseMetricX[baseMetricX.length - 1] + epsilonMilliseconds;
     const metricTimestampsMilliseconds = extendMetric
-        ? [...baseMetricX, tapeRightEdgeMs]
+        ? [...baseMetricX, tapeRightEdgeMilliseconds]
         : baseMetricX.slice();
     const appendMetricTail = (values: number[]): number[] => {
         const copy = values.slice();
@@ -509,18 +527,17 @@ export function extendChronicleArraysToTapeRight(
         return copy;
     };
 
-    const baseVolX = source.volumeBucketTimestampsMilliseconds;
-    const extendVol =
-        baseVolX.length > 0 && tapeRightEdgeMs > baseVolX[baseVolX.length - 1] + epsilonMilliseconds;
-    const volumeBucketTimestampsMilliseconds = extendVol
-        ? [...baseVolX, tapeRightEdgeMs]
-        : baseVolX.slice();
+    const baseVolumeX = source.volumeBucketTimestampsMilliseconds;
+    const extendVolume =
+        baseVolumeX.length > 0 &&
+        tapeRightEdgeMilliseconds > baseVolumeX[baseVolumeX.length - 1] + epsilonMilliseconds;
+    const volumeBucketTimestampsMilliseconds = extendVolume
+        ? [...baseVolumeX, tapeRightEdgeMilliseconds]
+        : baseVolumeX.slice();
     const volumeBucketVerdictCounts = (() => {
         const copy = source.volumeBucketVerdictCounts.slice();
-        if (extendVol) {
-            copy.push(
-                source.volumeBucketVerdictCounts[source.volumeBucketVerdictCounts.length - 1] ?? 0,
-            );
+        if (extendVolume) {
+            copy.push(source.volumeBucketVerdictCounts[source.volumeBucketVerdictCounts.length - 1] ?? 0);
         }
         return copy;
     })();
@@ -564,78 +581,7 @@ export function computeChronicleViewportWidthMilliseconds(arrays: ChronicleArray
     return spanMilliseconds * 1.08;
 }
 
-const CHRONICLE_TOOLTIP_AXIS_ORDER = ['yPct', 'yVol', 'yUsd', 'yPf', 'yVel'] as const;
-
-const CHRONICLE_TOOLTIP_AXIS_ORDER_SET = new Set<string>(CHRONICLE_TOOLTIP_AXIS_ORDER);
-
-const CHRONICLE_TOOLTIP_SECTION_TITLE: Record<string, string> = {
-    yPct: 'PnL % · win rate · verdict cloud',
-    yVol: 'verdict count per bucket',
-    yUsd: 'expected value ($ / trade)',
-    yPf: 'profit factor',
-    yVel: 'velocity (closed / hour)',
+export {
+    buildChronicleSnapshotFingerprint as buildShadowVerdictChronicleFingerprint,
+    computeChronicleRetentionFloorServerEpochMilliseconds as computeShadowVerdictChronicleVisibilityRetentionFloorServerEpochMilliseconds,
 };
-
-function formatChronicleTooltipHitLine(seriesInfo: SeriesInfo): string {
-    const rawName = seriesInfo.seriesName;
-    const label = rawName !== undefined && rawName.trim().length > 0 ? rawName.trim() : 'series';
-    const withZ = seriesInfo as SeriesInfo & { zValue?: number };
-    if (typeof withZ.zValue === 'number' && Number.isFinite(withZ.zValue)) {
-        return `${label} · ${seriesInfo.formattedYValue} · bubble ${withZ.zValue.toFixed(1)}`;
-    }
-    return `${label} · ${seriesInfo.formattedYValue}`;
-}
-
-export function formatChronicleCrosshairTooltip(seriesInfos: SeriesInfo[]): string[] {
-    const anchor = seriesInfos.find(entry => entry.isHit) ?? seriesInfos[0];
-    const lines: string[] = [];
-    if (anchor?.xValue != null && Number.isFinite(anchor.xValue)) {
-        lines.push(formatChronicleAxisLocalDateTimeMilliseconds(anchor.xValue));
-        lines.push('');
-    }
-    const hits = seriesInfos.filter(entry => entry.isHit);
-    const hitsByAxisId = new Map<string, SeriesInfo[]>();
-    for (const hit of hits) {
-        const axisId = hit.renderableSeries.yAxisId ?? '';
-        const bucket = hitsByAxisId.get(axisId);
-        if (bucket) {
-            bucket.push(hit);
-        } else {
-            hitsByAxisId.set(axisId, [hit]);
-        }
-    }
-    const orderedAxisIds: string[] = [];
-    for (const axisId of CHRONICLE_TOOLTIP_AXIS_ORDER) {
-        if (hitsByAxisId.has(axisId)) {
-            orderedAxisIds.push(axisId);
-        }
-    }
-    for (const axisId of hitsByAxisId.keys()) {
-        if (!CHRONICLE_TOOLTIP_AXIS_ORDER_SET.has(axisId)) {
-            orderedAxisIds.push(axisId);
-        }
-    }
-    let isFirstSection = true;
-    for (const axisId of orderedAxisIds) {
-        const group = hitsByAxisId.get(axisId);
-        if (!group?.length) {
-            continue;
-        }
-        if (!isFirstSection) {
-            lines.push('');
-        }
-        isFirstSection = false;
-        const sectionHeading = CHRONICLE_TOOLTIP_SECTION_TITLE[axisId] ?? axisId;
-        lines.push(sectionHeading);
-        const sortedGroup = [...group].sort((left, right) =>
-            (left.seriesName ?? '').localeCompare(right.seriesName ?? '', undefined, {sensitivity: 'base'}),
-        );
-        for (const hit of sortedGroup) {
-            lines.push(`  ${formatChronicleTooltipHitLine(hit)}`);
-        }
-    }
-    while (lines.length > 0 && lines[lines.length - 1] === '') {
-        lines.pop();
-    }
-    return lines;
-}
