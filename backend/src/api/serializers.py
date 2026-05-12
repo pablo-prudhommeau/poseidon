@@ -28,7 +28,10 @@ from src.persistence.models import TradingEvaluation, DcaOrder, DcaStrategy, Tra
 logger = get_application_logger(__name__)
 
 
-def serialize_trading_trade(trading_trade: TradingTrade) -> TradingTradePayload:
+def serialize_trading_trade(
+        trading_trade: TradingTrade,
+        linked_position: TradingPosition,
+) -> TradingTradePayload:
     return TradingTradePayload(
         id=trading_trade.id,
         evaluation_id=trading_trade.evaluation_id,
@@ -45,6 +48,7 @@ def serialize_trading_trade(trading_trade: TradingTrade) -> TradingTradePayload:
         transaction_hash=trading_trade.transaction_hash,
         dex_id=trading_trade.dex_id,
         created_at=format_datetime_to_local_iso(trading_trade.created_at),
+        linked_position=serialize_trading_position(linked_position, last_price=None),
     )
 
 
@@ -56,6 +60,7 @@ def serialize_trading_position(trading_position: TradingPosition, last_price: Op
         token_address=trading_position.token_address,
         pair_address=trading_position.pair_address,
         open_quantity=trading_position.open_quantity,
+        current_quantity=trading_position.current_quantity,
         entry_price=trading_position.entry_price,
         take_profit_tier_1_price=trading_position.take_profit_tier_1_price,
         take_profit_tier_2_price=trading_position.take_profit_tier_2_price,

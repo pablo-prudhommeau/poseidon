@@ -1,12 +1,8 @@
-import type {XyzDataSeries} from 'scichart';
 import {
     blendChronicleArrays,
     buildChronicleArraysFromBucket,
     CHRONICLE_SNAPSHOT_BLEND_MS,
     CHRONICLE_STREAM_LAG_MS_FALLBACK,
-    type ChronicleArrays,
-    type ChronicleBucketMeta,
-    type ChronicleChartModel,
     chronicleMinimumDisplayXMilliseconds,
     chronicleShouldShowTargetVerdictCloud,
     cloneChronicleArrays,
@@ -14,26 +10,36 @@ import {
     extendChronicleArraysToTapeRight,
     parseIsoTimestampToEpochMilliseconds,
     resolveChronicleStreamLagMilliseconds,
-    type SciChartModule,
-} from '../data/shadow-verdict-chronicle-chart-data';
-import {ShadowVerdictChronicleChartSurfaceBuildController} from './shadow-verdict-chronicle-chart-surface-build.controller';
+} from '../data/shadow-verdict-chronicle-arrays.utils';
+import type {ChronicleArrays, ChronicleBucketMeta, ChronicleChartModel, ChronicleGoldenZoneThresholds, ChronicleSurfaceSyncOptions,} from '../data/shadow-verdict-chronicle.models';
 import type {ShadowVerdictChronicleSciChartLoaderService} from '../services/shadow-verdict-chronicle-scichart-loader.service';
+import {applyChronicleGoldenZoneVisualState, isChronicleMovingAverageSeriesVisible, resolveChronicleGoldenZoneThresholds,} from './shadow-verdict-chronicle-golden-zone.utils';
+import type {ChronicleLegendSeriesItem} from './shadow-verdict-chronicle-legend.adapter';
+import {listChronicleLegendSeries, setChronicleSeriesVisibility} from './shadow-verdict-chronicle-legend.adapter';
+import {harmonizeChronicleRightAxes} from './shadow-verdict-chronicle-right-axis.utils';
+import {synchronizeChronicleSeriesFromArrays, synchronizeChronicleTapeBoundSeries, synchronizeChronicleVerdictCloudSeries} from './shadow-verdict-chronicle-series-sync.utils';
+import {ShadowVerdictChronicleSurfaceBuilder} from './shadow-verdict-chronicle-surface.builder';
 
-export class ShadowVerdictChronicleSurfaceController {
+export class ShadowVerdictChronicleSurfaceCoordinator {
+    private static readonly SMA_EV_SERIES_NAME = 'SMA EV per trade';
+    private static readonly SMA_PF_SERIES_NAME = 'SMA profit factor';
+    private static readonly RIGHT_AXIS_MAJOR_TICK_COUNT: number = 8;
+
     private chartModel: ChronicleChartModel | undefined;
     private sciChartSurface: ChronicleChartModel['sciChartSurface'] | undefined;
-
     private displayArrays: ChronicleArrays | null = null;
     private blendFromArrays: ChronicleArrays | null = null;
     private blendToArrays: ChronicleArrays | null = null;
     private blendStartPerformanceMs: number | null = null;
-
     private playbackRequestAnimationFrameId: number | null = null;
-    private tapeAnchorWallClockMs = 0;
+    private tapeAnchorWallClockMs: number = 0;
     private tapeAnchorPerformanceMs: number | null = null;
     private pendingTapeAnchorWallClockMs: number | undefined;
-
-    private readonly surfaceBuildController = new ShadowVerdictChronicleChartSurfaceBuildController();
+    private goldenZoneThresholds: ChronicleGoldenZoneThresholds = {
+        sparseExpectedValueThreshold: undefined,
+        chronicleProfitFactorThreshold: undefined,
+    };
+    private readonly surfaceBuilder: ShadowVerdictChronicleSurfaceBuilder = new ShadowVerdictChronicleSurfaceBuilder();
 
     constructor(private readonly sciChartLoader: ShadowVerdictChronicleSciChartLoaderService) {}
 
@@ -41,10 +47,28 @@ export class ShadowVerdictChronicleSurfaceController {
         return this.chartModel !== undefined;
     }
 
+    listLegendSeries(): ChronicleLegendSeriesItem[] {
+        const model = this.chartModel;
+        if (!model) {
+            return [];
+        }
+        return listChronicleLegendSeries(model);
+    }
+
+    setSeriesVisibility(seriesName: string, isVisible: boolean): void {
+        const model = this.chartModel;
+        if (!model) {
+            return;
+        }
+        setChronicleSeriesVisibility(model, seriesName, isVisible);
+        this.applyGoldenZoneVisualState();
+        model.sciChartSurface.invalidateElement();
+    }
+
     async synchronizeChartSurface(
         host: HTMLDivElement,
         meta: ChronicleBucketMeta,
-        options: { allowInitialBuild: boolean; snapBucketData: boolean; smaWindowBuckets: number },
+        options: ChronicleSurfaceSyncOptions,
         notifyChartReady: () => void,
     ): Promise<void> {
         try {
@@ -71,6 +95,10 @@ export class ShadowVerdictChronicleSurfaceController {
         this.blendStartPerformanceMs = null;
         this.tapeAnchorPerformanceMs = null;
         this.pendingTapeAnchorWallClockMs = undefined;
+        this.goldenZoneThresholds = {
+            sparseExpectedValueThreshold: undefined,
+            chronicleProfitFactorThreshold: undefined,
+        };
         this.chartModel = undefined;
         if (this.sciChartSurface) {
             try {
@@ -78,24 +106,6 @@ export class ShadowVerdictChronicleSurfaceController {
             } catch {
             }
             this.sciChartSurface = undefined;
-        }
-    }
-
-    private pushXy(
-        dataSeries: InstanceType<SciChartModule['XyDataSeries']>,
-        xValues: number[],
-        yValues: number[],
-    ): void {
-        dataSeries.clear();
-        if (xValues.length > 0) {
-            dataSeries.appendRange(xValues, yValues);
-        }
-    }
-
-    private pushXyz(dataSeries: XyzDataSeries, points: Array<{ x: number; y: number; z: number }>): void {
-        dataSeries.clear();
-        for (const point of points) {
-            dataSeries.append(point.x, point.y, point.z);
         }
     }
 
@@ -111,6 +121,32 @@ export class ShadowVerdictChronicleSurfaceController {
         if (parsed != null) {
             this.pendingTapeAnchorWallClockMs = parsed;
         }
+    }
+
+    private synchronizeGoldenZones(meta: ChronicleBucketMeta): void {
+        this.goldenZoneThresholds = resolveChronicleGoldenZoneThresholds(meta);
+        this.applyGoldenZoneVisualState();
+    }
+
+    private applyGoldenZoneVisualState(): void {
+        const model = this.chartModel;
+        if (!model) {
+            return;
+        }
+        const isSmaExpectedValueVisible = isChronicleMovingAverageSeriesVisible(
+            model,
+            ShadowVerdictChronicleSurfaceCoordinator.SMA_EV_SERIES_NAME,
+        );
+        const isSmaProfitFactorVisible = isChronicleMovingAverageSeriesVisible(
+            model,
+            ShadowVerdictChronicleSurfaceCoordinator.SMA_PF_SERIES_NAME,
+        );
+        applyChronicleGoldenZoneVisualState(
+            model,
+            this.goldenZoneThresholds,
+            isSmaExpectedValueVisible,
+            isSmaProfitFactorVisible,
+        );
     }
 
     private startPlaybackLoop(resetTapeAnchors: boolean): void {
@@ -145,7 +181,7 @@ export class ShadowVerdictChronicleSurfaceController {
                     );
                 }
                 if (this.displayArrays && chronicleShouldShowTargetVerdictCloud(rawAlpha)) {
-                    this.pushVerdictCloudToChart(model, this.displayArrays);
+                    synchronizeChronicleVerdictCloudSeries(model, this.displayArrays);
                 }
             }
 
@@ -154,7 +190,14 @@ export class ShadowVerdictChronicleSurfaceController {
             const rightEdgeMs = this.tapeAnchorWallClockMs + (performance.now() - performanceBase);
             if (this.displayArrays) {
                 const tapeArrays = extendChronicleArraysToTapeRight(this.displayArrays, rightEdgeMs);
-                this.pushTapeBoundSeriesToChart(model, tapeArrays);
+                synchronizeChronicleTapeBoundSeries(model, tapeArrays, this.goldenZoneThresholds);
+                this.applyGoldenZoneVisualState();
+                harmonizeChronicleRightAxes(
+                    model,
+                    tapeArrays,
+                    ShadowVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT,
+                    this.goldenZoneThresholds,
+                );
                 const earliestDisplayXMilliseconds = chronicleMinimumDisplayXMilliseconds(tapeArrays);
                 const naturalLeftEdgeMilliseconds = rightEdgeMs - model.viewportWidthMilliseconds;
                 const leftEdgeClampMilliseconds = earliestDisplayXMilliseconds - 45_000;
@@ -174,69 +217,12 @@ export class ShadowVerdictChronicleSurfaceController {
         this.playbackRequestAnimationFrameId = requestAnimationFrame(tick);
     }
 
-    private pushVerdictCloudToChart(model: ChronicleChartModel, arrays: ChronicleArrays): void {
-        this.pushXyz(model.profitableVerdictXyzDataSeries, arrays.verdictCloudProfitablePoints);
-        this.pushXyz(model.lossVerdictXyzDataSeries, arrays.verdictCloudLossPoints);
-    }
-
-    private pushTapeBoundSeriesToChart(model: ChronicleChartModel, arrays: ChronicleArrays): void {
-        this.pushXy(
-            model.volumeMountainDataSeries,
-            arrays.volumeBucketTimestampsMilliseconds,
-            arrays.volumeBucketVerdictCounts,
-        );
-        this.pushXy(
-            model.volumeColumnDataSeries,
-            arrays.volumeBucketTimestampsMilliseconds,
-            arrays.volumeBucketVerdictCounts,
-        );
-
-        const lineSeriesValues = [
-            arrays.averagePnlPercentageSeries,
-            arrays.averageWinRatePercentageSeries,
-            arrays.expectedValuePerTradeUsdSeries,
-            arrays.profitFactorSeries,
-            arrays.capitalVelocityPerHourSeries,
-        ];
-        const smaSeriesValues = [
-            arrays.movingAveragePnlSeries,
-            arrays.movingAverageWinRateSeries,
-            arrays.movingAverageExpectedValueSeries,
-            arrays.movingAverageProfitFactorSeries,
-            arrays.movingAverageVelocitySeries,
-        ];
-        for (let index = 0; index < model.metricLineRenderableSeries.length; index++) {
-            const line = model.metricLineRenderableSeries[index];
-            const lineDataSeries = line.dataSeries as InstanceType<SciChartModule['XyDataSeries']>;
-            this.pushXy(lineDataSeries, arrays.metricTimestampsMilliseconds, lineSeriesValues[index] ?? []);
-        }
-        for (let index = 0; index < model.movingAverageLineRenderableSeries.length; index++) {
-            const line = model.movingAverageLineRenderableSeries[index];
-            const lineDataSeries = line.dataSeries as InstanceType<SciChartModule['XyDataSeries']>;
-            this.pushXy(lineDataSeries, arrays.metricTimestampsMilliseconds, smaSeriesValues[index] ?? []);
-        }
-    }
-
-    private pushArraysToChart(model: ChronicleChartModel, arrays: ChronicleArrays): void {
-        this.pushTapeBoundSeriesToChart(model, arrays);
-        this.pushVerdictCloudToChart(model, arrays);
-    }
-
-    private applyUniformColumnWidthForTimeBuckets(
-        columnSeries: InstanceType<SciChartModule['FastColumnRenderableSeries']>,
-        granularitySeconds: number,
-        sci: SciChartModule,
-    ): void {
-        const bucketMilliseconds = Math.max(1000, granularitySeconds * 1000);
-        columnSeries.dataPointWidthMode = sci.EDataPointWidthMode.Range;
-        columnSeries.dataPointWidth = bucketMilliseconds * 0.88;
-    }
-
     private updateChartData(meta: ChronicleBucketMeta, snapBucketData = false, smaWindowBuckets = 0): void {
         const model = this.chartModel;
         if (!model) {
             return;
         }
+        this.synchronizeGoldenZones(meta);
         const streamLagMilliseconds = resolveChronicleStreamLagMilliseconds(meta.response.series_end_lag_seconds);
         const nextArrays = buildChronicleArraysFromBucket(meta, streamLagMilliseconds, smaWindowBuckets);
         const computedViewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(nextArrays);
@@ -249,18 +235,16 @@ export class ShadowVerdictChronicleSurfaceController {
                     ? Math.max(previousViewportWidthMilliseconds, computedViewportWidthMilliseconds)
                     : computedViewportWidthMilliseconds;
         }
-        this.applyUniformColumnWidthForTimeBuckets(
-            model.volumeColumnRenderableSeries,
-            meta.bucket.granularity_seconds,
-            model.sci,
-        );
+        const bucketMilliseconds = Math.max(1000, meta.bucket.granularity_seconds * 1000);
+        model.volumeColumnRenderableSeries.dataPointWidthMode = model.sci.EDataPointWidthMode.Range;
+        model.volumeColumnRenderableSeries.dataPointWidth = bucketMilliseconds * 0.88;
 
         if (snapBucketData) {
             this.blendFromArrays = null;
             this.blendToArrays = null;
             this.blendStartPerformanceMs = null;
             this.displayArrays = cloneChronicleArrays(nextArrays);
-            this.pushArraysToChart(model, this.displayArrays);
+            synchronizeChronicleSeriesFromArrays(model, this.displayArrays, this.goldenZoneThresholds);
             model.sciChartSurface.invalidateElement();
             this.queueTapeAnchorFromMeta(meta);
             this.startPlaybackLoop(true);
@@ -269,7 +253,7 @@ export class ShadowVerdictChronicleSurfaceController {
 
         if (!this.displayArrays) {
             this.displayArrays = cloneChronicleArrays(nextArrays);
-            this.pushArraysToChart(model, this.displayArrays);
+            synchronizeChronicleSeriesFromArrays(model, this.displayArrays, this.goldenZoneThresholds);
             model.sciChartSurface.invalidateElement();
             this.queueTapeAnchorFromMeta(meta);
             this.startPlaybackLoop(true);
@@ -283,10 +267,14 @@ export class ShadowVerdictChronicleSurfaceController {
         this.startPlaybackLoop(false);
     }
 
-    private async buildFullChartSurface(host: HTMLDivElement, meta: ChronicleBucketMeta, smaWindowBuckets: number): Promise<void> {
+    private async buildFullChartSurface(
+        host: HTMLDivElement,
+        meta: ChronicleBucketMeta,
+        smaWindowBuckets: number,
+    ): Promise<void> {
         this.teardownChartSurface();
 
-        this.chartModel = await this.surfaceBuildController.buildFullChartSurface(
+        this.chartModel = await this.surfaceBuilder.buildFullChartSurface(
             host,
             meta,
             this.sciChartLoader,

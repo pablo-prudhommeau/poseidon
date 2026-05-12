@@ -6,9 +6,21 @@ import {SelectButtonModule} from 'primeng/selectbutton';
 import {FormsModule} from '@angular/forms';
 import {WebSocketService} from '../../../../core/websocket.service';
 import type {ShadowVerdictChronicleResponse} from '../../../../core/models';
-import {buildShadowVerdictChronicleFingerprint, type ShadowVerdictChronicleBucketLabel,} from '../data/shadow-verdict-chronicle-chart-data';
+import {buildChronicleSnapshotFingerprint, type ChronicleBucketLabel,} from '../data/shadow-verdict-chronicle-arrays.utils';
+import type {ChronicleBucketMeta} from '../data/shadow-verdict-chronicle.models';
 import {ShadowVerdictChronicleSciChartLoaderService} from '../services/shadow-verdict-chronicle-scichart-loader.service';
-import {ShadowVerdictChronicleSurfaceController} from '../controllers/shadow-verdict-chronicle-chart-surface-session.controller';
+import type {ChronicleLegendSeriesItem} from '../chart/shadow-verdict-chronicle-legend.adapter';
+import {ShadowVerdictChronicleSurfaceCoordinator} from '../chart/shadow-verdict-chronicle-surface.coordinator';
+
+interface ChronicleBucketOption {
+    label: string;
+    value: ChronicleBucketLabel;
+}
+
+interface ChronicleSmaWindowOption {
+    label: string;
+    value: number;
+}
 
 @Component({
     standalone: true,
@@ -18,30 +30,34 @@ import {ShadowVerdictChronicleSurfaceController} from '../controllers/shadow-ver
     styleUrl: './shadow-verdict-chronicle.component.css',
 })
 export class ShadowVerdictChronicleComponent {
-    private readonly webSocketService = inject(WebSocketService);
-    private readonly sciChartLoader = inject(ShadowVerdictChronicleSciChartLoaderService);
+    private readonly webSocketService: WebSocketService = inject(WebSocketService);
+    private readonly sciChartLoader: ShadowVerdictChronicleSciChartLoaderService =
+        inject(ShadowVerdictChronicleSciChartLoaderService);
     private readonly chartHost = viewChild<ElementRef<HTMLDivElement>>('chartHost');
 
-    private readonly surfaceController = new ShadowVerdictChronicleSurfaceController(this.sciChartLoader);
+    private readonly surfaceCoordinator: ShadowVerdictChronicleSurfaceCoordinator =
+        new ShadowVerdictChronicleSurfaceCoordinator(this.sciChartLoader);
 
-    readonly visible = signal(false);
+    readonly visible = signal<boolean>(false);
     readonly error = signal<string | null>(null);
     readonly payload = signal<ShadowVerdictChronicleResponse | null>(null);
 
-    readonly chartReady = signal(false);
+    readonly chartReady = signal<boolean>(false);
+    readonly showLegendPanel = signal<boolean>(true);
+    readonly legendItems = signal<ChronicleLegendSeriesItem[]>([]);
 
-    readonly showChronicleLoader = computed(
+    readonly showChronicleLoader = computed<boolean>(
         () => this.visible() && !this.error() && (!this.payload() || !this.chartReady()),
     );
 
-    readonly bucketOptions = [
-        {label: '30m · 1m', value: 'last_30m_1m' satisfies ShadowVerdictChronicleBucketLabel},
-        {label: '24h · 1h', value: 'last_24h_1h' satisfies ShadowVerdictChronicleBucketLabel},
-        {label: '7d · 5m', value: 'last_7d_5m' satisfies ShadowVerdictChronicleBucketLabel},
-        {label: '30d · 30m', value: 'last_30d_30m' satisfies ShadowVerdictChronicleBucketLabel},
+    readonly bucketOptions: ChronicleBucketOption[] = [
+        {label: '30m · 1m', value: 'last_30m_1m' satisfies ChronicleBucketLabel},
+        {label: '24h · 1h', value: 'last_24h_1h' satisfies ChronicleBucketLabel},
+        {label: '7d · 5m', value: 'last_7d_5m' satisfies ChronicleBucketLabel},
+        {label: '30d · 30m', value: 'last_30d_30m' satisfies ChronicleBucketLabel},
     ];
 
-    readonly smaWindowOptions = [
+    readonly smaWindowOptions: ChronicleSmaWindowOption[] = [
         {label: 'SMA (Range)', value: 0},
         {label: 'SMA (10)', value: 10},
         {label: 'SMA (30)', value: 30},
@@ -51,17 +67,25 @@ export class ShadowVerdictChronicleComponent {
         {label: 'SMA (400)', value: 400}
     ];
 
-    selectedBucket = signal<ShadowVerdictChronicleBucketLabel>('last_30m_1m');
-    selectedSmaWindow = signal<number>(0);
+    selectedBucket = signal<ChronicleBucketLabel>('last_7d_5m');
+    selectedSmaWindow = signal<number>(50);
 
-    readonly bucketMeta = computed(() => {
-        const response = this.payload();
-        const bucketId = this.selectedBucket();
+    readonly bucketMeta = computed<ChronicleBucketMeta | null>(() => {
+        const response: ShadowVerdictChronicleResponse | null = this.payload();
+        const shadowMeta = this.webSocketService.shadowMeta();
+        const bucketId: ChronicleBucketLabel = this.selectedBucket();
         if (!response) {
             return null;
         }
-        const bucket = response.buckets.find(b => b.bucket_label === bucketId);
-        return bucket ? {bucket, response} : null;
+        const bucket = response.buckets.find((entry) => entry.bucket_label === bucketId);
+        return bucket
+            ? {
+                bucket,
+                response,
+                sparseExpectedValueUsdThreshold: shadowMeta?.sparse_expected_value_usd_threshold,
+                chronicleProfitFactorThreshold: shadowMeta?.chronicle_profit_factor_threshold,
+            }
+            : null;
     });
 
     constructor() {
@@ -73,6 +97,19 @@ export class ShadowVerdictChronicleComponent {
             }
             untracked(() => {
                 void this.applySnapshot(hist);
+            });
+        });
+
+        effect(() => {
+            const open = this.visible();
+            const payload = this.payload();
+            const shadowMeta = this.webSocketService.shadowMeta();
+            const chartReady = this.chartReady();
+            if (!open || !payload || !shadowMeta || !chartReady) {
+                return;
+            }
+            untracked(() => {
+                void this.synchronizeChart(false, false);
             });
         });
     }
@@ -94,9 +131,11 @@ export class ShadowVerdictChronicleComponent {
     }
 
     handleDialogHide(): void {
-        this.surfaceController.teardownChartSurface();
+        this.surfaceCoordinator.teardownChartSurface();
         this.payload.set(null);
         this.chartReady.set(false);
+        this.legendItems.set([]);
+        this.showLegendPanel.set(true);
     }
 
     onBucketChange(): void {
@@ -116,12 +155,21 @@ export class ShadowVerdictChronicleComponent {
         this.webSocketService.requestCachedStateRefresh();
     }
 
+    onLegendItemToggle(seriesName: string, nextVisible: boolean): void {
+        this.surfaceCoordinator.setSeriesVisibility(seriesName, nextVisible);
+        this.syncLegendFromChart();
+    }
+
+    toggleLegendPanel(): void {
+        this.showLegendPanel.update(value => !value);
+    }
+
     private async applySnapshot(hist: ShadowVerdictChronicleResponse): Promise<void> {
         const existing = this.payload();
         if (
-            this.surfaceController.hasChartModel() &&
+            this.surfaceCoordinator.hasChartModel() &&
             existing &&
-            buildShadowVerdictChronicleFingerprint(existing) === buildShadowVerdictChronicleFingerprint(hist)
+            buildChronicleSnapshotFingerprint(existing) === buildChronicleSnapshotFingerprint(hist)
         ) {
             return;
         }
@@ -148,11 +196,20 @@ export class ShadowVerdictChronicleComponent {
             return;
         }
 
-        await this.surfaceController.synchronizeChartSurface(
+        await this.surfaceCoordinator.synchronizeChartSurface(
             host,
             meta,
-            {allowInitialBuild, snapBucketData, smaWindowBuckets: this.selectedSmaWindow()},
+            {
+                allowInitialBuild: allowInitialBuild,
+                snapBucketData: snapBucketData,
+                smaWindowBuckets: this.selectedSmaWindow(),
+            },
             () => this.chartReady.set(true),
         );
+        this.syncLegendFromChart();
+    }
+
+    private syncLegendFromChart(): void {
+        this.legendItems.set(this.surfaceCoordinator.listLegendSeries());
     }
 }

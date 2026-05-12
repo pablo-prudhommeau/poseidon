@@ -19,6 +19,8 @@ except Exception:
     SendTransactionResp = object
 
 from src.configuration.config import settings
+from src.integrations.blockchain.solana.solana_structures import SolanaTransactionFeeBreakdown
+from src.integrations.blockchain.solana.solana_rpc_client import resolve_sol_usd_price
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -44,12 +46,106 @@ class SolanaSigner:
         derived_node = bip32_node.DerivePath(derivation_path)
         raw_private_key = derived_node.PrivateKey().Raw().ToBytes()
         self.keypair = Keypair.from_seed(raw_private_key)
+        self._rpc_url = configuration.rpc_url
 
         logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Initialized signer. Address=%s", self.keypair.pubkey())
 
     @property
     def address(self) -> str:
         return str(self.keypair.pubkey())
+
+    def fetch_confirmed_transaction_fee_breakdown_usd(self, signature_text: str) -> Optional[SolanaTransactionFeeBreakdown]:
+        from solana.rpc.commitment import Confirmed
+        from solders.transaction_status import EncodedConfirmedTransactionWithStatusMeta
+
+        try:
+            signature_object = Signature.from_string(signature_text)
+        except Exception as exception:
+            logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] Invalid signature for fee fetch — %s", exception)
+            return None
+
+        try:
+            response = self.client.get_transaction(
+                signature_object,
+                encoding="json",
+                commitment=Confirmed,
+                max_supported_transaction_version=0,
+            )
+        except Exception as exception:
+            logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] get_transaction failed for %s — %s", signature_text, exception)
+            return None
+
+        confirmed = response.value
+        if confirmed is None:
+            logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] No transaction value for signature=%s", signature_text)
+            return None
+
+        if not isinstance(confirmed, EncodedConfirmedTransactionWithStatusMeta):
+            logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] Unexpected confirmed transaction type=%s", type(confirmed))
+            return None
+
+        encoded_with_meta = confirmed.transaction
+        meta = encoded_with_meta.meta
+        if meta is None:
+            logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] Missing meta for signature=%s", signature_text)
+            return None
+
+        ui_transaction = encoded_with_meta.transaction
+        message = ui_transaction.message
+        account_key_objects: list = list(message.account_keys)
+        loaded = meta.loaded_addresses
+        if loaded is not None:
+            account_key_objects.extend(list(loaded.writable))
+            account_key_objects.extend(list(loaded.readonly))
+
+        signer_text = str(self.keypair.pubkey())
+        account_key_texts = [str(key_entry) for key_entry in account_key_objects]
+
+        pre_balances = list(meta.pre_balances)
+        post_balances = list(meta.post_balances)
+        account_count = min(len(pre_balances), len(post_balances), len(account_key_texts))
+        if account_count == 0:
+            logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] Empty balance arrays for signature=%s", signature_text)
+            return None
+
+        base_fee_lamports = int(meta.fee)
+        account_rent_lamports = 0
+        for index in range(account_count):
+            if account_key_texts[index] == signer_text:
+                continue
+            if pre_balances[index] == 0 and post_balances[index] > 0:
+                account_rent_lamports += int(post_balances[index])
+
+        total_lamports = base_fee_lamports + account_rent_lamports
+        total_sol = total_lamports / 1_000_000_000.0
+        sol_usd = resolve_sol_usd_price(self._rpc_url)
+        if sol_usd is None or sol_usd <= 0.0:
+            logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] SOL/USD unavailable; fee USD set to 0 for signature=%s", signature_text)
+            total_usd = 0.0
+        else:
+            total_usd = total_sol * sol_usd
+
+        breakdown = SolanaTransactionFeeBreakdown(
+            base_fee_lamports=base_fee_lamports,
+            account_rent_lamports=account_rent_lamports,
+            total_lamports=total_lamports,
+            total_sol=total_sol,
+            total_usd=total_usd,
+        )
+        logger.info(
+            "[BLOCKCHAIN][SOLANA][SIGNER][FEE] signature=%s base_lamports=%d rent_lamports=%d total_usd=%.6f",
+            signature_text,
+            base_fee_lamports,
+            account_rent_lamports,
+            total_usd,
+        )
+        logger.debug(
+            "[BLOCKCHAIN][SOLANA][SIGNER][FEE][VERBOSE] signature=%s total_sol=%.9f sol_usd=%s",
+            signature_text,
+            total_sol,
+            sol_usd,
+        )
+        return breakdown
 
     @staticmethod
     def _extract_signature(response: object) -> str:

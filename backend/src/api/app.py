@@ -64,7 +64,7 @@ def create_app() -> FastAPI:
 
     @application.on_event("shutdown")
     async def on_shutdown() -> None:
-        from src.integrations.aave.aave_sentinel import sentinel
+        from src.core.aavesentinel.aave_sentinel_service import sentinel
         await sentinel.stop()
 
     @application.get("/api/status", response_model=ApiStatusResponse)

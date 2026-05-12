@@ -75,7 +75,11 @@ class TradingEvaluationRecorder:
             order_notional_value_usd=order_notional_usd or 0.0,
             free_cash_before_execution_usd=free_cash_before_usd or 0.0,
             free_cash_after_execution_usd=free_cash_after_usd or 0.0,
-            shadow_intelligence_snapshot=candidate.shadow_diagnostics.intelligence_snapshot.model_dump(mode="json"),
+            shadow_intelligence_snapshot=(
+                candidate.shadow_diagnostics.intelligence_snapshot.model_dump(mode="json")
+                if candidate.shadow_diagnostics.intelligence_snapshot is not None
+                else None
+            ),
             raw_dexscreener_payload=candidate.dexscreener_token_information.model_dump(mode="json"),
             raw_configuration_settings=_to_dict(settings),
         )

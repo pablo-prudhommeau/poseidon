@@ -11,6 +11,7 @@ class BackgroundJobsRuntimeStatus(BaseModel):
     trading_interval_seconds: int
     position_guard_interval_seconds: int
     shadowing_enabled: bool
+    aave_sentinel_enabled: bool
 
 
 class ApiStatusResponse(BaseModel):

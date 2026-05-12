@@ -6,6 +6,7 @@ from enum import Enum
 class CacheRealm(str, Enum):
     PRICES = "prices"
     POSITIONS = "positions"
+    POSITION_PRICES = "position_prices"
     TRADES = "trades"
     AVAILABLE_CASH = "available_cash"
     PORTFOLIO = "portfolio"

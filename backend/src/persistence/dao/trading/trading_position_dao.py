@@ -31,3 +31,10 @@ class TradingPositionDao:
     def retrieve_by_phase(self, target_phase: PositionPhase) -> List[TradingPosition]:
         database_query = select(TradingPosition).where(TradingPosition.position_phase == target_phase)
         return list(self.database_session.execute(database_query).scalars().all())
+
+    def retrieve_by_evaluation_ids(self, evaluation_ids: List[int]) -> List[TradingPosition]:
+        normalized_ids = [evaluation_id for evaluation_id in evaluation_ids if evaluation_id is not None]
+        if not normalized_ids:
+            return []
+        database_query = select(TradingPosition).where(TradingPosition.evaluation_id.in_(normalized_ids))
+        return list(self.database_session.execute(database_query).scalars().all())

@@ -9,8 +9,8 @@ from src.api.websocket.telemetry import TelemetryService
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.execution.trading_executor import TradingExecutor
-from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
 from src.core.trading.execution.trading_order_builder import build_route_for_live_sell
+from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
 from src.core.trading.trading_structures import AutosellTriggerReason
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
@@ -117,7 +117,7 @@ def _execute_sell_operation(
             return None
 
         executor = TradingExecutor()
-        transaction_hash_or_sig = executor.run_live_sell_blocking(
+        execution_outcome = executor.run_live_sell_blocking(
             token_symbol=position.token_symbol,
             token_address=position.token_address,
             pair_address=position.pair_address,
@@ -129,12 +129,17 @@ def _execute_sell_operation(
             origin_evaluation_id=position.evaluation_id,
         )
 
-        if transaction_hash_or_sig is None:
+        if execution_outcome is None:
             logger.warning("[TRADING][AUTOSELL][LIVE] Execution failed or aborted by slippage guard for %s. Ignoring autosell tick.", position.token_symbol)
             return None
 
     trade_dao = TradingTradeDao(database_session)
     execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
+    live_transaction_fee_usd = 0.0
+    live_transaction_hash: Optional[str] = None
+    if not settings.PAPER_MODE:
+        live_transaction_fee_usd = execution_outcome.transaction_fee_usd
+        live_transaction_hash = execution_outcome.transaction_hash_or_signature
     sell_trade = TradingTrade(
         evaluation_id=position.evaluation_id,
         trade_side=TradeSide.SELL,
@@ -142,12 +147,13 @@ def _execute_sell_operation(
         blockchain_network=position.blockchain_network,
         execution_price=execution_price,
         execution_quantity=sell_quantity,
-        transaction_fee=0.0,
+        transaction_fee=live_transaction_fee_usd,
         realized_profit_and_loss=0.0,
         execution_status=execution_status,
         token_address=position.token_address,
         pair_address=position.pair_address,
         dex_id=position.dex_id,
+        transaction_hash=live_transaction_hash,
     )
     trade_dao.save(sell_trade)
 

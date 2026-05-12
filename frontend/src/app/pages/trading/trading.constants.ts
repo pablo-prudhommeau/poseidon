@@ -28,6 +28,38 @@ export const EXPLORATION_CATEGORIES: MetricCategory[] = [
         id: 'quality',
         label: 'Quality & Value',
         icon: 'fa-diamond',
-        metricKeys: ['quality_score', 'market_cap_usd', 'fully_diluted_valuation', 'dexscreener_boost']
+        metricKeys: ['quality_score', 'market_cap_usd', 'fully_diluted_valuation_usd', 'dexscreener_boost']
     }
 ];
+export const tradingGridsLeadingColumnLayout = {
+    symbol: {
+        flex: 0,
+        width: 170,
+        minWidth: 170,
+        maxWidth: 170
+    },
+    dateTime: {
+        flex: 0,
+        width: 144,
+        minWidth: 144,
+        maxWidth: 144
+    },
+    phaseOrSide: {
+        flex: 0,
+        width: 124,
+        minWidth: 124,
+        maxWidth: 124
+    },
+    qty: {
+        flex: 0,
+        width: 100,
+        minWidth: 100,
+        maxWidth: 100
+    },
+    leadingFifthNumeric: {
+        flex: 0,
+        width: 112,
+        minWidth: 112,
+        maxWidth: 112
+    }
+} as const;

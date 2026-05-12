@@ -3,40 +3,391 @@
 
 @plugin "tailwindcss-primeui";
 
-@keyframes flashUp {
+:root {
+    --tick-positive: #34d399;
+    --tick-negative: #fb7185;
+}
+
+@keyframes lastPriceArrowRise {
     0% {
-        background: rgba(34, 197, 94, 0.25);
+        opacity: 0;
+        transform: translate3d(0, 10px, 0) scale(0.9);
+    }
+    22% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
     }
     100% {
-        background: transparent;
+        opacity: 0;
+        transform: translate3d(0, -14px, 0) scale(0.96);
     }
 }
 
-@keyframes flashDown {
+@keyframes lastPriceArrowFall {
     0% {
-        background: rgba(239, 68, 68, 0.25);
+        opacity: 0;
+        transform: translate3d(0, -10px, 0) scale(0.9);
+    }
+    22% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
     }
     100% {
-        background: transparent;
+        opacity: 0;
+        transform: translate3d(0, 14px, 0) scale(0.96);
     }
 }
 
-.price-up {
-    color: #22c55e;
-    animation: flashUp 500ms ease-out;
+@keyframes lastPriceRipplePulse {
+    0% {
+        opacity: 0;
+        transform: scaleX(0.92) scaleY(0.92);
+    }
+    25% {
+        opacity: 0.42;
+        transform: scaleX(1.02) scaleY(1.04);
+    }
+    68% {
+        opacity: 0.2;
+        transform: scaleX(1.08) scaleY(1.14);
+    }
+    100% {
+        opacity: 0;
+        transform: scaleX(1.14) scaleY(1.2);
+    }
 }
 
-.price-down {
-    color: #ef4444;
-    animation: flashDown 500ms ease-out;
+@keyframes deltaArrowRise {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 8px, 0) scale(0.9);
+    }
+    24% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(0, -12px, 0) scale(0.96);
+    }
 }
 
-.pct-up {
-    color: #22c55e;
+@keyframes deltaArrowFall {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, -8px, 0) scale(0.9);
+    }
+    24% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(0, 12px, 0) scale(0.96);
+    }
 }
 
-.pct-down {
-    color: #ef4444;
+.last-price-static {
+    display: inline-flex;
+    width: 100%;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+.last-price-tick {
+    display: inline-flex;
+    position: relative;
+    width: 100%;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+    padding: 0 0.1rem;
+    overflow: visible;
+}
+
+.last-price-value {
+    position: relative;
+    z-index: 2;
+}
+
+.last-price-arrow {
+    position: relative;
+    z-index: 2;
+    font-size: 0.76rem;
+    line-height: 1;
+    font-weight: 700;
+    animation-duration: 1450ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    animation-fill-mode: both;
+    pointer-events: none;
+}
+
+.last-price-ripple {
+    position: absolute;
+    inset: -0.16rem -0.35rem;
+    border-radius: 0.38rem;
+    z-index: 1;
+    animation: lastPriceRipplePulse 1700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    pointer-events: none;
+}
+
+.last-price-tick-up {
+    color: var(--tick-positive);
+}
+
+.last-price-tick-up .last-price-arrow {
+    color: var(--tick-positive);
+    animation-name: lastPriceArrowRise;
+}
+
+.last-price-tick-up .last-price-ripple {
+    background: radial-gradient(ellipse at center, rgba(52, 211, 153, 0.28) 0%, rgba(52, 211, 153, 0.06) 58%, rgba(52, 211, 153, 0) 100%);
+}
+
+.last-price-tick-down {
+    color: var(--tick-negative);
+}
+
+.last-price-tick-down .last-price-arrow {
+    color: var(--tick-negative);
+    animation-name: lastPriceArrowFall;
+}
+
+.last-price-tick-down .last-price-ripple {
+    background: radial-gradient(ellipse at center, rgba(251, 113, 133, 0.28) 0%, rgba(251, 113, 133, 0.06) 58%, rgba(251, 113, 133, 0) 100%);
+}
+
+.delta-static {
+    display: inline-flex;
+    width: 100%;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+.delta-tick {
+    display: inline-flex;
+    width: 100%;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.28rem;
+    white-space: nowrap;
+}
+
+.delta-arrow {
+    font-size: 0.68rem;
+    line-height: 1;
+    font-weight: 700;
+    pointer-events: none;
+    animation-duration: 1350ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    animation-fill-mode: both;
+}
+
+.delta-tick-up {
+    color: var(--tick-positive);
+}
+
+.delta-tick-up .delta-arrow {
+    color: var(--tick-positive);
+    animation-name: deltaArrowRise;
+}
+
+.delta-tick-down {
+    color: var(--tick-negative);
+}
+
+.delta-tick-down .delta-arrow {
+    color: var(--tick-negative);
+    animation-name: deltaArrowFall;
+}
+
+.poseidon-grid-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.24rem 0.51rem;
+    border-radius: 0.25rem;
+    font-size: 0.719rem;
+    font-weight: 700;
+    letter-spacing: 0.025em;
+    line-height: 1.2;
+    white-space: nowrap;
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.poseidon-grid-pill--info {
+    background-color: #2563eb;
+    border-color: rgba(37, 99, 235, 0.55);
+}
+
+.poseidon-grid-pill--warn {
+    background-color: #ca8a04;
+    color: #0f172a;
+    border-color: rgba(15, 23, 42, 0.12);
+    font-weight: 800;
+}
+
+.poseidon-grid-pill--neutral {
+    background-color: #64748b;
+    border-color: rgba(100, 116, 139, 0.6);
+}
+
+.poseidon-grid-pill--buy {
+    background-color: #059669;
+    border-color: rgba(5, 150, 105, 0.55);
+}
+
+.poseidon-grid-pill--sell {
+    background-color: #4f46e5;
+    border-color: rgba(79, 70, 229, 0.55);
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell-comp-wrapper {
+    width: 100%;
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell.poseidon-header-align-end .ag-header-cell-comp-wrapper {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell.poseidon-header-align-end app-icon-header-renderer {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell.poseidon-header-align-center .ag-header-cell-comp-wrapper {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell.poseidon-header-align-center app-icon-header-renderer {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.poseidon-grid-emphasized-metric {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.poseidon-grid-notional-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    line-height: 1.12;
+    gap: 1px;
+}
+
+.poseidon-grid-notional-entry-struck {
+    text-decoration: line-through;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(148, 163, 184, 0.78);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.poseidon-grid-notional-live {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.poseidon-grid-notional-live--positive {
+    color: rgb(52 211 153);
+}
+
+.poseidon-grid-notional-live--negative {
+    color: rgb(251 113 133);
+}
+
+.poseidon-grid-notional-live--neutral {
+    color: rgb(203 213 225);
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.poseidon-grid-price-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0;
+    line-height: 1;
+}
+
+.poseidon-grid-price-stack-main {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 1.2rem;
+    line-height: 1.2rem;
+    white-space: nowrap;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.poseidon-grid-price-stack-entry-relative-percent {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 0.95rem;
+    line-height: 0.95rem;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: rgba(148, 163, 184, 0.82);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.poseidon-grid-tx-hash-link {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgb(125 211 252);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.poseidon-grid-tx-hash-link:hover {
+    color: rgb(186 230 253);
+}
+
+.poseidon-grid-tx-hash-muted {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: rgba(148, 163, 184, 0.88);
+}
+
+.poseidon-grid-price-stack-main--take-profit-tier-one {
+    color: rgb(167 243 208);
+}
+
+.poseidon-grid-price-stack-main--take-profit-tier-two {
+    color: rgb(209 250 229);
+}
+
+.poseidon-grid-price-stack-main--stop-loss {
+    color: rgb(254 202 202);
 }
 
 .img-fade {

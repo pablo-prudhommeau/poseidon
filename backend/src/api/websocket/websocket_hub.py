@@ -32,6 +32,11 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
             "type": WebsocketMessageType.POSITIONS.value,
             "payload": jsonable_encoder(trading_state.positions),
         })
+    if trading_state.position_prices is not None:
+        await websocket_connection.send_json({
+            "type": WebsocketMessageType.POSITION_PRICES.value,
+            "payload": jsonable_encoder(trading_state.position_prices),
+        })
     if trading_state.trades is not None:
         await websocket_connection.send_json({
             "type": WebsocketMessageType.TRADES.value,

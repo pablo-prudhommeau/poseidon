@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from src.api.http.api_schemas import (
     TradingPositionPayload,
+    TradingPositionPricePayload,
     TradingTradePayload,
     TradingPortfolioPayload,
     TradingLiquidityPayload,
@@ -14,6 +15,7 @@ from src.api.http.api_schemas import (
 
 class TradingState(BaseModel):
     positions: Optional[list[TradingPositionPayload]] = None
+    position_prices: Optional[list[TradingPositionPricePayload]] = None
     trades: Optional[list[TradingTradePayload]] = None
     portfolio: Optional[TradingPortfolioPayload] = None
     liquidity: Optional[TradingLiquidityPayload] = None

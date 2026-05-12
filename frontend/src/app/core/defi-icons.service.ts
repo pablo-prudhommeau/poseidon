@@ -78,6 +78,14 @@ export class DefiIconsService {
         console.info('[UI][ICONS] DefiIconsService initialized');
     }
 
+    public getChainIconCandidates(chainName: string | null | undefined): string[] {
+        return this.buildChainIconCandidates(String(chainName ?? '').toLowerCase());
+    }
+
+    public getProtocolIconCandidates(dexscreenerId: string | null | undefined): string[] {
+        return this.buildProtocolIconCandidates(String(dexscreenerId ?? '').toLowerCase());
+    }
+
     public readonly tokenChainChipRenderer = (params: ICellRendererParams): HTMLElement => {
         const row = params.data ?? {};
         const chainName = String(row.blockchain_network ?? '').toLowerCase();

@@ -4,7 +4,7 @@ import {ApexAxisChartSeries, ApexChart, ApexDataLabels, ApexFill, ApexGrid, Apex
 import {baseTheme, POSEIDON_COLORS} from '../../../apex.theme';
 import {AnalyticsHeatmapSeriesPayload, AnalyticsScatterSeriesPayload} from "../../../core/models";
 
-import {EXPLORATION_CATEGORIES, MetricCategory} from "../../../core/constants";
+import {EXPLORATION_CATEGORIES, MetricCategory} from "../../trading/trading.constants";
 
 interface ExplorerChartConfig {
     metricLabel: string;

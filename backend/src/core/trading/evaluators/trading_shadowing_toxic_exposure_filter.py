@@ -3,7 +3,7 @@ from __future__ import annotations
 from src.configuration.config import settings
 from src.core.trading.shadowing.trading_shadowing_intelligence_service import find_bucket_index_for_value, extract_metric_value_from_candidate
 from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot, \
-    ShadowIntelligenceSnapshotMetricPayload
+    ShadowIntelligenceSnapshotMetricPayload, ShadowIntelligenceSnapshotPayload, ShadowIntelligenceSnapshotSummaryPayload
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.log_utils import get_visual_width
 from src.logging.logger import get_application_logger, console_color_codes
@@ -17,6 +17,8 @@ def apply_shadowing_toxic_exposure_filter(
 ) -> list[TradingCandidate]:
     if not snapshot.is_activated:
         logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shadow intelligence not activated, bypassing filter")
+        for candidate in candidates:
+            _assign_frozen_shadow_intelligence_summary(candidate, snapshot)
         return candidates
 
     toxic_win_rate_threshold = snapshot.meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
@@ -31,6 +33,7 @@ def apply_shadowing_toxic_exposure_filter(
     for candidate in candidates:
         if candidate.token.symbol == "RUNNER":
             logger.info("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shunting toxicity for %s", candidate.token.symbol)
+            _assign_frozen_shadow_intelligence_summary(candidate, snapshot)
             retained.append(candidate)
             continue
 
@@ -80,6 +83,7 @@ def apply_shadowing_toxic_exposure_filter(
                     is_golden=is_golden,
                 ))
 
+        _assign_frozen_shadow_intelligence_summary(candidate, snapshot)
         candidate.shadow_diagnostics.intelligence_snapshot.evaluated_metrics = evaluated_metrics_snapshot
 
         candidate.shadow_diagnostics.toxic_metric_count = toxic_metric_count
@@ -177,3 +181,27 @@ def apply_shadowing_toxic_exposure_filter(
         logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] All %d candidates passed — %s", len(candidates), meta_summary)
 
     return retained
+
+
+def _assign_frozen_shadow_intelligence_summary(candidate: TradingCandidate, snapshot: ShadowIntelligenceSnapshot) -> None:
+    summary_payload = ShadowIntelligenceSnapshotSummaryPayload(
+        is_activated=snapshot.is_activated,
+        total_outcomes_analyzed=snapshot.total_outcomes_analyzed,
+        resolved_outcome_count=snapshot.resolved_outcome_count,
+        elapsed_hours=snapshot.elapsed_hours,
+        meta_win_rate=snapshot.meta_win_rate,
+        meta_average_pnl=snapshot.meta_average_pnl,
+        meta_average_holding_time_hours=snapshot.meta_average_holding_time_hours,
+        meta_capital_velocity=snapshot.meta_capital_velocity,
+        meta_profit_factor=snapshot.meta_profit_factor,
+        meta_expected_value_usd=snapshot.meta_expected_value_usd,
+        empirical_profit_factor=snapshot.empirical_profit_factor,
+        chronicle_profit_factor=snapshot.chronicle_profit_factor,
+        chronicle_profit_factor_threshold=snapshot.chronicle_profit_factor_threshold,
+        sparse_expected_value_usd=snapshot.sparse_expected_value_usd,
+    )
+    existing_snapshot = candidate.shadow_diagnostics.intelligence_snapshot
+    if existing_snapshot is None:
+        candidate.shadow_diagnostics.intelligence_snapshot = ShadowIntelligenceSnapshotPayload(summary=summary_payload)
+    else:
+        existing_snapshot.summary = summary_payload

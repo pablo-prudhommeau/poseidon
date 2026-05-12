@@ -75,6 +75,7 @@ class WebsocketMessageType(str, Enum):
     SHADOW_VERDICT_CHRONICLE = "shadow_verdict_chronicle"
     SHADOW_VERDICT_CHRONICLE_DELTA = "shadow_verdict_chronicle_delta"
     POSITIONS = "positions"
+    POSITION_PRICES = "position_prices"
     TRADES = "trades"
     DCA_STRATEGIES = "dca_strategies"
     PONG = "pong"

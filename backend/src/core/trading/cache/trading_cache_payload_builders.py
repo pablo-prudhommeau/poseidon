@@ -9,6 +9,7 @@ from src.api.http.api_schemas import (
     TradingLiquidityPayload,
     TradingTradePayload,
     TradingPositionPayload,
+    TradingPositionPricePayload,
 )
 from src.api.serializers import (
     serialize_trading_portfolio_snapshot,
@@ -180,8 +181,25 @@ def holdings_and_unrealized_from_positions(
 def build_trading_trades_payloads() -> list[TradingTradePayload]:
     with get_database_session() as database_session:
         trade_dao = TradingTradeDao(database_session)
+        position_dao = TradingPositionDao(database_session)
         recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
-        return [serialize_trading_trade(trade_record) for trade_record in recent_trade_records]
+        evaluation_ids = [trade_record.evaluation_id for trade_record in recent_trade_records]
+        linked_positions = position_dao.retrieve_by_evaluation_ids(evaluation_ids)
+        positions_by_evaluation_id: dict[int, TradingPosition] = {}
+        for linked_position in linked_positions:
+            existing = positions_by_evaluation_id.get(linked_position.evaluation_id)
+            if existing is None or linked_position.id > existing.id:
+                positions_by_evaluation_id[linked_position.evaluation_id] = linked_position
+
+        payloads: list[TradingTradePayload] = []
+        for trade_record in recent_trade_records:
+            linked_position = positions_by_evaluation_id.get(trade_record.evaluation_id)
+            if linked_position is None:
+                raise ValueError(
+                    f"Missing linked trading position for trade_id={trade_record.id} evaluation_id={trade_record.evaluation_id}"
+                )
+            payloads.append(serialize_trading_trade(trade_record, linked_position))
+        return payloads
 
 
 def build_trading_liquidity_payload() -> TradingLiquidityPayload:
@@ -229,6 +247,38 @@ def build_trading_positions_payloads(prices_by_pair_address: dict[str, float]) -
                 if pair_address_value in prices_by_pair_address:
                     last_price_candidate = prices_by_pair_address[pair_address_value]
             payloads.append(serialize_trading_position(position_record, last_price=last_price_candidate))
+        return payloads
+
+
+def build_trading_position_prices_payloads(
+        prices_by_pair_address: dict[str, float],
+) -> list[TradingPositionPricePayload]:
+    with get_database_session() as database_session:
+        position_dao = TradingPositionDao(database_session)
+        open_position_records = position_dao.retrieve_open_positions()
+        payloads: list[TradingPositionPricePayload] = []
+        for position_record in open_position_records:
+            pair_address_value = position_record.pair_address
+            last_price_candidate: Optional[float] = None
+            if pair_address_value is not None and pair_address_value != "":
+                if pair_address_value in prices_by_pair_address:
+                    last_price_candidate = prices_by_pair_address[pair_address_value]
+
+            delta_percent_candidate: Optional[float] = None
+            entry_price_value = position_record.entry_price if position_record.entry_price is not None else 0.0
+            if (
+                    last_price_candidate is not None
+                    and entry_price_value is not None
+                    and entry_price_value != 0.0
+            ):
+                delta_percent_candidate = ((last_price_candidate - entry_price_value) / abs(entry_price_value)) * 100.0
+
+            payloads.append(TradingPositionPricePayload(
+                position_id=position_record.id,
+                pair_address=pair_address_value or "",
+                last_price=last_price_candidate,
+                delta_percent=delta_percent_candidate,
+            ))
         return payloads
 
 

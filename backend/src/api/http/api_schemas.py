@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshotSummaryPayload
 
 
 class SystemHealthComponentPayload(BaseModel):
@@ -158,6 +159,27 @@ class DcaOrdersResponse(BaseModel):
     orders: List[DcaOrderPayload]
 
 
+class TradingPositionPayload(BaseModel):
+    id: int
+    evaluation_id: int
+    token_symbol: str
+    token_address: str
+    pair_address: str
+    open_quantity: float
+    current_quantity: float
+    entry_price: float
+    take_profit_tier_1_price: float
+    take_profit_tier_2_price: float
+    stop_loss_price: float
+    position_phase: str
+    blockchain_network: BlockchainNetwork
+    dex_id: str
+    opened_at: str
+    updated_at: str
+    closed_at: Optional[str] = None
+    last_price: Optional[float] = None
+
+
 class TradingTradePayload(BaseModel):
     id: int
     evaluation_id: int
@@ -174,26 +196,14 @@ class TradingTradePayload(BaseModel):
     dex_id: str
     realized_profit_and_loss: Optional[float] = None
     transaction_hash: Optional[str] = None
+    linked_position: TradingPositionPayload
 
 
-class TradingPositionPayload(BaseModel):
-    id: int
-    evaluation_id: int
-    token_symbol: str
-    token_address: str
+class TradingPositionPricePayload(BaseModel):
+    position_id: int
     pair_address: str
-    open_quantity: float
-    entry_price: float
-    take_profit_tier_1_price: float
-    take_profit_tier_2_price: float
-    stop_loss_price: float
-    position_phase: str
-    blockchain_network: BlockchainNetwork
-    dex_id: str
-    opened_at: str
-    updated_at: str
-    closed_at: Optional[str] = None
     last_price: Optional[float] = None
+    delta_percent: Optional[float] = None
 
 
 class TradingEquityCurvePointPayload(BaseModel):
@@ -294,6 +304,7 @@ class TradingEvaluationShadowIntelligenceSnapshotMetricPayload(BaseModel):
 
 
 class TradingEvaluationShadowIntelligenceSnapshotPayload(BaseModel):
+    summary: ShadowIntelligenceSnapshotSummaryPayload
     evaluated_metrics: List[TradingEvaluationShadowIntelligenceSnapshotMetricPayload] = Field(default_factory=list)
 
 

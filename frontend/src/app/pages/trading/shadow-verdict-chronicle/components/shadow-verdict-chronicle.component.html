@@ -52,10 +52,42 @@
 					<div class="chronicle-aurora pointer-events-none absolute inset-0 opacity-70"></div>
 					<div class="chronicle-grid pointer-events-none absolute inset-0 opacity-90"></div>
 					<div class="chronicle-loader-ring relative z-[1]"></div>
-					<div class="relative z-[1] text-[10px] uppercase font-black tracking-[0.4em] text-fuchsia-300/80">waiting for shadow verdict chronicle stream…</div>
+					<div class="relative z-[1] text-[12px] uppercase font-black tracking-[0.25em] text-fuchsia-300/80">waiting for shadow verdict chronicle stream…</div>
 				</div>
 			}
 			<div #chartHost class="chronicle-chart-host relative z-[1] w-full min-h-[520px] rounded-lg bg-[#050914]"></div>
+			@if (legendItems().length > 0) {
+				<button
+						type="button"
+						class="chronicle-legend-toggle"
+						[class.is-open]="showLegendPanel()"
+						(click)="toggleLegendPanel()"
+				>
+					{{ showLegendPanel() ? 'Hide legend' : 'Show legend' }}
+				</button>
+			}
+			@if (legendItems().length > 0 && showLegendPanel()) {
+				<div class="chronicle-custom-legend">
+					@for (item of legendItems(); track item.name) {
+						<label class="chronicle-custom-legend-item">
+							<input
+									type="checkbox"
+									[checked]="item.visible"
+									(change)="onLegendItemToggle(item.name, $any($event.target).checked)"
+							/>
+							<span
+									class="chronicle-legend-swatch"
+									[class.is-dashed]="item.dashed"
+									[class.is-area]="item.swatchKind === 'area'"
+									[class.is-column]="item.swatchKind === 'column'"
+									[class.is-verdict]="item.swatchKind === 'verdict'"
+									[style.--legend-color]="item.stroke"
+							></span>
+							<span class="chronicle-legend-label">{{ item.name }}</span>
+						</label>
+					}
+				</div>
+			}
 		</div>
 	</div>
 </p-dialog>
