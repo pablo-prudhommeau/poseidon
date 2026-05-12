@@ -1,7 +1,7 @@
-import {CommonModule} from '@angular/common';
-import {Component, TemplateRef} from '@angular/core';
-import {ICellRendererAngularComp} from 'ag-grid-angular';
-import {ICellRendererParams} from 'ag-grid-community';
+import { CommonModule } from '@angular/common';
+import { Component, TemplateRef } from '@angular/core';
+import { ICellRendererAngularComp } from 'ag-grid-angular';
+import { ICellRendererParams } from 'ag-grid-community';
 
 @Component({
     standalone: true,
@@ -13,11 +13,11 @@ import {ICellRendererParams} from 'ag-grid-community';
 				[ngTemplateOutlet]="template"
 				[ngTemplateOutletContext]="context">
 		</ng-container>
-    `,
+    `
 })
 export class TemplateCellRendererComponent implements ICellRendererAngularComp {
-    public template?: TemplateRef<unknown>;
     public context: Record<string, unknown> = {};
+    public template?: TemplateRef<unknown>;
 
     agInit(params: ICellRendererParams & { template?: TemplateRef<unknown> }): void {
         this.template = params.template;
@@ -26,7 +26,7 @@ export class TemplateCellRendererComponent implements ICellRendererAngularComp {
             value: params.value,
             row: params.data,
             data: params.data,
-            params,
+            params
         };
     }
 

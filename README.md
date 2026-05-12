@@ -76,7 +76,7 @@ An autonomous monitoring brick dedicated to capital preservation and liquidation
 | Component      | Stack                                             |
 |:---------------|:--------------------------------------------------|
 | **Frontend**   | Angular 20, PrimeNG 20, TailwindCSS 4, ApexCharts |
-| **Backend**    | FastAPI (Python 3.11+), SQLAlchemy 2.0, Uvicorn   |
+| **Backend**    | FastAPI (Python 3.11+), SQLAlchemy 2.0, Alembic, Uvicorn |
 | **Automation** | Playwright (headless browser), OpenAI SDK         |
 | **Web3**       | Web3.py, Solana-py, Li.Fi integration             |
 | **Monitoring** | Telegram Bot API, structured logging with tags    |
@@ -105,21 +105,53 @@ SOLANA_RPC_URL=https://your-solana-rpc-url
 # === DCA ===
 AAVE_INITIAL_DEPOSIT_USD=10000
 
+# === DATABASE ===
+DATABASE_NAME=poseidon
+DATABASE_USER=poseidon
+DATABASE_PASSWORD=change_me
+DATABASE_URL="postgresql+psycopg://poseidon:<hostname>@postgres:5432/poseidon"
+
+# === RUNTIME FLAGS ===
+TRADING_ENABLED=false
+TRADING_SHADOWING_ENABLED=false
+DCA_ENABLED=true
+AAVE_SENTINEL_ENABLED=false
+DATABASE_AUTO_MIGRATE=true
+
 # === PATHS ===
-DATABASE_URL="/app/db/poseidon.db"
 SCREENSHOT_DIR="/app/data/screenshots"
 
 # === TRADING ===
 # ⚠️ DANGEROUS SECTION ⚠️
-# Activates the trading engine
+# Activates the trading engine when needed
 TRADING_ENABLED=true
 ```
 
 ### 2. Launch with docker
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
+
+The local Docker stack now starts:
+- a PostgreSQL service
+- a single `poseidon` container built from the root `Dockerfile`
+- automatic Alembic migration during container startup
+- an internal FastAPI backend proxied by nginx and supervised by `supervisord`
+
+### 3. Production-style single image
+
+For integration / production-style deployments, the repository now ships a single multi-stage `Dockerfile` at the root.
+
+It builds the Angular frontend, packages the FastAPI backend, serves static assets through nginx, launches nginx and the backend through `supervisord`, and expects PostgreSQL to be provided externally.
+
+The generic single-image compose file for remote hosts lives at:
+
+```bash
+deploy/docker-compose.integration.yml
+```
+
+This file is intentionally generic: the same image can be deployed multiple times with different `.env` files, secrets, flags, and database URLs.
 
 ---
 

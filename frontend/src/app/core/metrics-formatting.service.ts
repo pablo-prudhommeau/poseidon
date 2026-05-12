@@ -1,5 +1,5 @@
-import {inject, Injectable} from '@angular/core';
-import {NumberFormattingService} from './number-formatting.service';
+import { Injectable, inject } from '@angular/core';
+import { NumberFormattingService } from './number-formatting.service';
 
 @Injectable({
     providedIn: 'root'
@@ -8,7 +8,8 @@ export class MetricsFormattingService {
     private readonly numberFormattingService = inject(NumberFormattingService);
 
     public formatMetricLabel(key: string): string {
-        return key.toUpperCase()
+        return key
+            .toUpperCase()
             .replace(/_USD$/, ' ($)')
             .replace(/_H24$/, ' 24H')
             .replace(/_H6$/, ' 6H')

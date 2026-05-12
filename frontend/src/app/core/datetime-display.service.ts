@@ -1,6 +1,6 @@
-import {Inject, Injectable, LOCALE_ID} from '@angular/core';
+import { Inject, Injectable, LOCALE_ID } from '@angular/core';
 
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class DatetimeDisplayService {
     private readonly shortFormatter: Intl.DateTimeFormat;
 
@@ -13,6 +13,22 @@ export class DatetimeDisplayService {
             second: '2-digit',
             hour12: false
         });
+    }
+
+    formatIsoForTooltip(value: unknown): string {
+        const date = this.parseToDate(value);
+        if (date === null) {
+            return '';
+        }
+        return date.toISOString();
+    }
+
+    formatShortForGrid(value: unknown): string {
+        const date = this.parseToDate(value);
+        if (date === null) {
+            return '';
+        }
+        return this.shortFormatter.format(date);
     }
 
     parseToDate(value: unknown): Date | null {
@@ -31,21 +47,5 @@ export class DatetimeDisplayService {
             return Number.isNaN(parsed.getTime()) ? null : parsed;
         }
         return null;
-    }
-
-    formatShortForGrid(value: unknown): string {
-        const date = this.parseToDate(value);
-        if (date === null) {
-            return '';
-        }
-        return this.shortFormatter.format(date);
-    }
-
-    formatIsoForTooltip(value: unknown): string {
-        const date = this.parseToDate(value);
-        if (date === null) {
-            return '';
-        }
-        return date.toISOString();
     }
 }

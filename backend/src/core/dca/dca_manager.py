@@ -19,8 +19,8 @@ from src.integrations.telegram.telegram_structures import (
     TelegramInlineKeyboardMarkup,
 )
 from src.logging.logger import get_application_logger
-from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
-from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
+from src.persistence.dao.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
 from src.persistence.models import DcaOrder, DcaStrategy
 
 logger = get_application_logger(__name__)
@@ -407,7 +407,7 @@ class DcaManager:
     def resync_waiting_approvals(self) -> None:
         logger.info("[DCA][MANAGER][RESYNC] Resynchronizing pending approval requests after startup")
 
-        from src.persistence.db import get_database_session
+        from src.persistence.database_session_manager import get_database_session
         with get_database_session() as session_instance:
             strategy_dao_instance = DcaStrategyDao(session_instance)
             order_dao_instance = DcaOrderDao(session_instance)

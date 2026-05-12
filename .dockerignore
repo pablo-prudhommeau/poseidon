@@ -1,0 +1,12 @@
+.git
+.cursor
+.idea
+.venv
+venv
+**/__pycache__
+**/*.pyc
+frontend/node_modules
+frontend/dist
+backend/data
+examples
+*.log

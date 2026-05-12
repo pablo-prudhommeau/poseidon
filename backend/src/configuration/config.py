@@ -36,12 +36,20 @@ def _parse_csv_values(raw_value: str) -> list[str]:
 class Settings:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
+    API_RELOAD: bool = _as_bool(os.getenv("API_RELOAD"), False)
 
     PAPER_MODE: bool = _as_bool(os.getenv("PAPER_MODE"), True)
     PAPER_STARTING_CASH: float = float(os.getenv("PAPER_STARTING_CASH", "10000"))
     BASE_CURRENCY: str = os.getenv("BASE_CURRENCY", "EUR")
 
-    DATABASE_URL: str = os.getenv("DATABASE_URL", str(Path(__file__).resolve().parents[2] / "data" / "poseidon.db"))
+    DATABASE_MODE: str = os.getenv("DATABASE_MODE", "sqlite")
+    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "127.0.0.1")
+    DATABASE_PORT: int = int(os.getenv("DATABASE_PORT", "5432"))
+    DATABASE_SQLITE_DIRECTORY: str = os.getenv("DATABASE_SQLITE_DIRECTORY", str(Path(__file__).resolve().parents[2] / "data"))
+    DATABASE_AUTO_MIGRATE: bool = _as_bool(os.getenv("DATABASE_AUTO_MIGRATE"), False)
+    DATABASE_NAME: str = os.getenv("DATABASE_NAME", "poseidon")
+    DATABASE_USER: str = os.getenv("DATABASE_USER", "poseidon")
+    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "WARNING").upper()
     LOG_LEVEL_POSEIDON: str = os.getenv("LOG_LEVEL_POSEIDON", "DEBUG").upper()
@@ -170,6 +178,7 @@ class Settings:
     AAVE_INITIAL_DEPOSIT_USD: float = float(os.getenv("AAVE_INITIAL_DEPOSIT_USD", "0.0"))
     AAVE_REPORTING_INTERVAL_SECONDS: int = int(os.getenv("AAVE_REPORTING_INTERVAL_SECONDS", "60"))
     AAVE_MAX_CONCURRENT_ASSET_SCANS: int = int(os.getenv("AAVE_MAX_CONCURRENT_ASSET_SCANS", "5"))
+    DCA_ENABLED: bool = _as_bool(os.getenv("DCA_ENABLED"), True)
 
     AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD", "1.45"))
     AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD: float = float(os.getenv("AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD", "1.35"))

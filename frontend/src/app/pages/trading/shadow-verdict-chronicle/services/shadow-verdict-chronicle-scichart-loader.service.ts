@@ -1,5 +1,5 @@
-import {Injectable} from '@angular/core';
-import type {SciChartModule} from '../data/shadow-verdict-chronicle.models';
+import { Injectable } from '@angular/core';
+import type { SciChartModule } from '../data/shadow-verdict-chronicle.models';
 
 function unwrapSciChartModule(imported: unknown): SciChartModule {
     const ns = imported as SciChartModule & { default?: SciChartModule };
@@ -10,13 +10,11 @@ function unwrapSciChartModule(imported: unknown): SciChartModule {
     if (fromDefault && typeof fromDefault.SciChartSurface?.UseCommunityLicense === 'function') {
         return fromDefault;
     }
-    throw new Error(
-        'SciChart: dynamic import did not expose SciChartSurface (CommonJS / production interop).',
-    );
+    throw new Error('SciChart: dynamic import did not expose SciChartSurface (CommonJS / production interop).');
 }
 
 @Injectable({
-    providedIn: 'root',
+    providedIn: 'root'
 })
 export class ShadowVerdictChronicleSciChartLoaderService {
     private static runtimeConfigured: boolean = false;
@@ -31,7 +29,7 @@ export class ShadowVerdictChronicleSciChartLoaderService {
                     sci.SciChartSurface.UseCommunityLicense();
                     sci.SciChartSurface.configure({
                         wasmUrl: '/scichart-wasm/scichart2d.wasm',
-                        wasmNoSimdUrl: '/scichart-wasm/scichart2d-nosimd.wasm',
+                        wasmNoSimdUrl: '/scichart-wasm/scichart2d-nosimd.wasm'
                     });
                     ShadowVerdictChronicleSciChartLoaderService.runtimeConfigured = true;
                 }

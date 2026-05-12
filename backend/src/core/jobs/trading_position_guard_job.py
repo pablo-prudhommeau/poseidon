@@ -10,8 +10,8 @@ from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_position_dao import TradingPositionDao
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 

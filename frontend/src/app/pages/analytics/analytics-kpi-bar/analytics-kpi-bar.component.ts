@@ -1,8 +1,8 @@
-import {Component, Input, OnChanges, SimpleChanges} from '@angular/core';
-import {CommonModule} from '@angular/common';
-import {ApexAxisChartSeries, ApexChart, ApexFill, ApexStroke, ApexTooltip, NgApexchartsModule} from 'ng-apexcharts';
-import {POSEIDON_COLORS} from '../../../apex.theme';
-import {AnalyticsKpiPayload, AnalyticsTimelinePointPayload} from "../../../core/models";
+import { CommonModule } from '@angular/common';
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { ApexAxisChartSeries, ApexChart, ApexFill, ApexStroke, ApexTooltip, NgApexchartsModule } from 'ng-apexcharts';
+import { POSEIDON_COLORS } from '../../../apex.theme';
+import { AnalyticsKpiPayload, AnalyticsTimelinePointPayload } from '../../../core/models';
 
 @Component({
     selector: 'app-analytics-kpi-bar',
@@ -15,14 +15,12 @@ export class AnalyticsKpiBarComponent implements OnChanges {
     @Input() kpis: AnalyticsKpiPayload | null = null;
     @Input() timeline: AnalyticsTimelinePointPayload[] = [];
 
-    sparklineSeries: ApexAxisChartSeries = [];
     sparklineChart: ApexChart = {
         type: 'area',
         height: 80,
-        sparkline: {enabled: true},
-        animations: {enabled: false}
+        sparkline: { enabled: true },
+        animations: { enabled: false }
     };
-    sparklineStroke: ApexStroke = {curve: 'smooth', width: 2, colors: [POSEIDON_COLORS.accent]};
     sparklineFill: ApexFill = {
         type: 'gradient',
         gradient: {
@@ -33,12 +31,14 @@ export class AnalyticsKpiBarComponent implements OnChanges {
         },
         colors: [POSEIDON_COLORS.accent]
     };
+    sparklineSeries: ApexAxisChartSeries = [];
+    sparklineStroke: ApexStroke = { curve: 'smooth', width: 2, colors: [POSEIDON_COLORS.accent] };
     sparklineTooltip: ApexTooltip = {
         theme: 'dark',
-        fixed: {enabled: false},
-        x: {show: false},
-        y: {title: {formatter: () => 'Cumulative PnL: '}},
-        marker: {show: false}
+        fixed: { enabled: false },
+        x: { show: false },
+        y: { title: { formatter: () => 'Cumulative PnL: ' } },
+        marker: { show: false }
     };
 
     ngOnChanges(changes: SimpleChanges): void {
@@ -47,18 +47,17 @@ export class AnalyticsKpiBarComponent implements OnChanges {
         }
     }
 
-    private buildSparkline(): void {
-        const data = this.timeline.map(t => t.cumulative_pnl_usd);
-        const isOverallPositive = data[data.length - 1] >= 0;
-        const color = isOverallPositive ? POSEIDON_COLORS.success : POSEIDON_COLORS.danger;
-
-        this.sparklineStroke = {...this.sparklineStroke, colors: [color]};
-        this.sparklineFill = {...this.sparklineFill, colors: [color]};
-
-        this.sparklineSeries = [{
-            name: 'Cumulative PnL',
-            data: data as never[]
-        }];
+    formatDuration(minutes: number): string {
+        if (!minutes) {
+            return '0m';
+        }
+        if (minutes >= 1440) {
+            return `${(minutes / 1440).toFixed(1)}d`;
+        }
+        if (minutes >= 60) {
+            return `${(minutes / 60).toFixed(1)}h`;
+        }
+        return `${minutes.toFixed(0)}m`;
     }
 
     formatUsd(value: number): string {
@@ -76,16 +75,19 @@ export class AnalyticsKpiBarComponent implements OnChanges {
         return `${sign}$${absoluteValue.toFixed(2)}`;
     }
 
-    formatDuration(minutes: number): string {
-        if (!minutes) {
-            return '0m';
-        }
-        if (minutes >= 1440) {
-            return `${(minutes / 1440).toFixed(1)}d`;
-        }
-        if (minutes >= 60) {
-            return `${(minutes / 60).toFixed(1)}h`;
-        }
-        return `${minutes.toFixed(0)}m`;
+    private buildSparkline(): void {
+        const data = this.timeline.map((t) => t.cumulative_pnl_usd);
+        const isOverallPositive = data[data.length - 1] >= 0;
+        const color = isOverallPositive ? POSEIDON_COLORS.success : POSEIDON_COLORS.danger;
+
+        this.sparklineStroke = { ...this.sparklineStroke, colors: [color] };
+        this.sparklineFill = { ...this.sparklineFill, colors: [color] };
+
+        this.sparklineSeries = [
+            {
+                name: 'Cumulative PnL',
+                data: data as never[]
+            }
+        ];
     }
 }

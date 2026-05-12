@@ -17,33 +17,33 @@ export function baseTheme() {
             type: 'line' as const,
             background: 'transparent',
             foreColor: POSEIDON_COLORS.text,
-            toolbar: {show: false},
-            dropShadow: {enabled: false},
-            animations: {enabled: false},
-            zoom: {enabled: false},
+            toolbar: { show: false },
+            dropShadow: { enabled: false },
+            animations: { enabled: false },
+            zoom: { enabled: false },
             fontFamily: 'inherit'
         },
         grid: {
             borderColor: 'rgba(255,255,255,0.06)',
             strokeDashArray: 3,
-            xaxis: {lines: {show: false}},
-            padding: {left: 6, right: 6, top: 8, bottom: 0}
+            xaxis: { lines: { show: false } },
+            padding: { left: 6, right: 6, top: 8, bottom: 0 }
         },
         legend: {
             show: true,
             fontSize: '12px',
-            labels: {colors: POSEIDON_COLORS.text, useSeriesColors: false},
-            itemMargin: {horizontal: 12, vertical: 6}
+            labels: { colors: POSEIDON_COLORS.text, useSeriesColors: false },
+            itemMargin: { horizontal: 12, vertical: 6 }
         },
-        tooltip: {theme: 'dark', fillSeriesColor: false, shared: false, intersect: true},
-        dataLabels: {enabled: false, style: {fontSize: '12px'}},
+        tooltip: { theme: 'dark', fillSeriesColor: false, shared: false, intersect: true },
+        dataLabels: { enabled: false, style: { fontSize: '12px' } },
         states: {
-            hover: {filter: {type: 'none', value: 0}},
-            active: {filter: {type: 'none', value: 0}}
+            hover: { filter: { type: 'none', value: 0 } },
+            active: { filter: { type: 'none', value: 0 } }
         },
-        markers: {size: 2, strokeWidth: 0, strokeOpacity: 0},
-        stroke: {width: 2, curve: 'straight' as const},
-        fill: {opacity: 1},
+        markers: { size: 2, strokeWidth: 0, strokeOpacity: 0 },
+        stroke: { width: 2, curve: 'straight' as const },
+        fill: { opacity: 1 },
         colors: [
             POSEIDON_COLORS.primary,
             POSEIDON_COLORS.accent,
@@ -55,8 +55,14 @@ export function baseTheme() {
     };
 }
 
-export function areaStyle() { return {...baseTheme(), chart: {...baseTheme().chart, type: 'area' as const}}; }
+export function areaStyle() {
+    return { ...baseTheme(), chart: { ...baseTheme().chart, type: 'area' as const } };
+}
 
-export function columnStyle() { return {...baseTheme(), chart: {...baseTheme().chart, type: 'bar' as const}}; }
+export function columnStyle() {
+    return { ...baseTheme(), chart: { ...baseTheme().chart, type: 'bar' as const } };
+}
 
-export function heatmapStyle() { return {...baseTheme(), chart: {...baseTheme().chart, type: 'heatmap' as const}}; }
+export function heatmapStyle() {
+    return { ...baseTheme(), chart: { ...baseTheme().chart, type: 'heatmap' as const } };
+}

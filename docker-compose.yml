@@ -1,41 +1,25 @@
 services:
-  backend:
+  poseidon:
     build:
       context: .
-      dockerfile: backend.Dockerfile
-    container_name: poseidon-backend
-    environment:
-      DATABASE_URL: "/app/db/poseidon.db"
-      SCREENSHOT_DIR: "/app/data/screenshots"
+      dockerfile: Dockerfile
+    image: poseidon:local
+    container_name: poseidon
+    restart: unless-stopped
     env_file:
       - .env
-    volumes:
-      - ./db:/app/db
-      - ./screenshots:/app/data/screenshots
     ports:
-      - "8000:8000"
+      - "8080:80"
+    volumes:
+      - ./screenshots:/app/data/screenshots
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/api/health"]
       interval: 20s
       timeout: 5s
       retries: 5
+      start_period: 20s
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend.Dockerfile
-    container_name: poseidon-frontend
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "8080:80"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/"]
-      interval: 20s
-      timeout: 5s
-      retries: 5

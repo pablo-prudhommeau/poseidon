@@ -1,21 +1,10 @@
-import {Inject, Injectable, LOCALE_ID} from '@angular/core';
+import { Inject, Injectable, LOCALE_ID } from '@angular/core';
 
 const SUBSCRIPT_DIGITS = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'] as const;
 
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class NumberFormattingService {
     constructor(@Inject(LOCALE_ID) private readonly localeId: string) {}
-
-    formatNumber(value: unknown, min: number, max: number): string {
-        const number = this.toNumberSafe(value);
-        if (number === null) {
-            return '';
-        }
-        return new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: min,
-            maximumFractionDigits: max
-        }).format(number);
-    }
 
     formatCurrency(value: unknown, currency: string, min: number, max: number): string {
         const number = this.toNumberSafe(value);
@@ -30,12 +19,35 @@ export class NumberFormattingService {
         }).format(number);
     }
 
-    toNumberSafe(value: unknown): number | null {
-        if (value == null) {
-            return null;
+    formatNumber(value: unknown, min: number, max: number): string {
+        const number = this.toNumberSafe(value);
+        if (number === null) {
+            return '';
         }
-        const n = Number(value);
-        return Number.isFinite(n) ? n : null;
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: min,
+            maximumFractionDigits: max
+        }).format(number);
+    }
+
+    formatNumberCompactForGrid(value: unknown, minimumLeadingZeroRun: number = 4): string {
+        const number = this.toNumberSafe(value);
+        if (number === null) {
+            return '';
+        }
+        if (number === 0) {
+            return '0';
+        }
+        const sign = number < 0 ? '-' : '';
+        const abs = Math.abs(number);
+        if (abs >= 1) {
+            return sign + this.formatNumber(abs, 2, 6);
+        }
+        const compact = this.formatPositiveFractionalWithLeadingZeroSubscript(abs, minimumLeadingZeroRun);
+        if (compact === null) {
+            return sign + this.formatNumber(abs, 2, 8);
+        }
+        return sign + compact;
     }
 
     formatQuantityHumanReadable(value: unknown): string {
@@ -73,30 +85,15 @@ export class NumberFormattingService {
         return sign + '$' + compact;
     }
 
-    formatNumberCompactForGrid(value: unknown, minimumLeadingZeroRun: number = 4): string {
-        const number = this.toNumberSafe(value);
-        if (number === null) {
-            return '';
+    toNumberSafe(value: unknown): number | null {
+        if (value == null) {
+            return null;
         }
-        if (number === 0) {
-            return '0';
-        }
-        const sign = number < 0 ? '-' : '';
-        const abs = Math.abs(number);
-        if (abs >= 1) {
-            return sign + this.formatNumber(abs, 2, 6);
-        }
-        const compact = this.formatPositiveFractionalWithLeadingZeroSubscript(abs, minimumLeadingZeroRun);
-        if (compact === null) {
-            return sign + this.formatNumber(abs, 2, 8);
-        }
-        return sign + compact;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
     }
 
-    private formatPositiveFractionalWithLeadingZeroSubscript(
-        positiveFraction: number,
-        minimumLeadingZeroRun: number
-    ): string | null {
+    private formatPositiveFractionalWithLeadingZeroSubscript(positiveFraction: number, minimumLeadingZeroRun: number): string | null {
         if (positiveFraction <= 0 || positiveFraction >= 1) {
             return null;
         }

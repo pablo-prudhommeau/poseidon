@@ -1,9 +1,14 @@
-import {Injectable} from '@angular/core';
+import { Injectable } from '@angular/core';
 
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class LoggingService {
-    private buildPrefix(tags: string[]): string {
-        return tags.map((t) => `[${t}]`).join('');
+    public error(tags: string[], message: string, details?: unknown): void {
+        const prefix = this.buildPrefix(tags);
+        if (details !== undefined) {
+            console.error(`${prefix} ${message}`, details);
+            return;
+        }
+        console.error(`${prefix} ${message}`);
     }
 
     public info(tags: string[], message: string, details?: unknown): void {
@@ -33,12 +38,7 @@ export class LoggingService {
         console.warn(`${prefix} ${message}`);
     }
 
-    public error(tags: string[], message: string, details?: unknown): void {
-        const prefix = this.buildPrefix(tags);
-        if (details !== undefined) {
-            console.error(`${prefix} ${message}`, details);
-            return;
-        }
-        console.error(`${prefix} ${message}`);
+    private buildPrefix(tags: string[]): string {
+        return tags.map((t) => `[${t}]`).join('');
     }
 }

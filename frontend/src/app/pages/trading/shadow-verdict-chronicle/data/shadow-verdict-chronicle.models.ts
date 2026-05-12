@@ -1,5 +1,5 @@
-import type {SciChartSurface, TSciChart, XyzDataSeries} from 'scichart';
-import type {ShadowVerdictChronicleBucketPayload, ShadowVerdictChronicleResponse} from '../../../../core/models';
+import type { SciChartSurface, TSciChart, XyzDataSeries } from 'scichart';
+import type { ShadowVerdictChronicleBucketPayload, ShadowVerdictChronicleResponse } from '../../../../core/models';
 
 export type SciChartModule = typeof import('scichart');
 

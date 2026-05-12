@@ -1,4 +1,4 @@
-import type {ChronicleAdjustTooltipPositionHost, ChronicleTooltipSeriesInfoLike,} from './shadow-verdict-chronicle.models';
+import type { ChronicleAdjustTooltipPositionHost, ChronicleTooltipSeriesInfoLike } from './shadow-verdict-chronicle.models';
 
 export type ChronicleTooltipSwatchKind = 'line' | 'area' | 'column' | 'verdict';
 
@@ -18,7 +18,7 @@ export const CHRONICLE_TOOLTIP_SERIES_ALIAS: Record<string, string> = {
     'Volume · area': 'Volume area',
     'Volume · columns': 'Volume columns',
     'SMA EV per trade (area)': 'SMA EV area',
-    'SMA profit factor (area)': 'SMA PF area',
+    'SMA profit factor (area)': 'SMA PF area'
 };
 
 export const CHRONICLE_TOOLTIP_PREFERRED_ORDER = [
@@ -31,16 +31,11 @@ export const CHRONICLE_TOOLTIP_PREFERRED_ORDER = [
     'Velocity (closed / hour, bucket)',
     'Volume · columns',
     'Non-staled verdict · win (PnL %)',
-    'Non-staled verdict · loss (PnL %)',
+    'Non-staled verdict · loss (PnL %)'
 ] as const;
 
 function escapeSvgText(value: string): string {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
 export function chronicleTooltipAlias(seriesName: string): string {
@@ -64,12 +59,12 @@ export function chronicleTooltipSwatchKind(seriesName: string): ChronicleTooltip
 export function buildChronicleCursorTooltipSvg(
     sci: ChronicleAdjustTooltipPositionHost,
     seriesInfos: ChronicleTooltipSeriesInfoLike[],
-    svgAnnotation: unknown,
+    svgAnnotation: unknown
 ): string {
     const hits = seriesInfos
-        .filter(entry => entry.isHit)
-        .filter(entry => (entry.seriesName ?? '').trim().length > 0)
-        .filter(entry => !(entry.seriesName ?? '').includes('(area)'));
+        .filter((entry) => entry.isHit)
+        .filter((entry) => (entry.seriesName ?? '').trim().length > 0)
+        .filter((entry) => !(entry.seriesName ?? '').includes('(area)'));
     if (hits.length === 0) {
         return '<svg width="1" height="1" xmlns="http://www.w3.org/2000/svg"></svg>';
     }
@@ -90,22 +85,19 @@ export function buildChronicleCursorTooltipSvg(
         ordered.push(leftover);
     }
 
-    const rows = ordered.slice(0, 10).map(entry => {
+    const rows = ordered.slice(0, 10).map((entry) => {
         const seriesName = (entry.seriesName ?? '').trim();
         const label = chronicleTooltipAlias(seriesName);
         const value = entry.formattedYValue ?? '';
-        const bubble = typeof entry.zValue === 'number' && Number.isFinite(entry.zValue)
-            ? ` | bubble ${entry.zValue.toFixed(1)}`
-            : '';
+        const bubble = typeof entry.zValue === 'number' && Number.isFinite(entry.zValue) ? ` | bubble ${entry.zValue.toFixed(1)}` : '';
         const stroke = entry.stroke ?? '#94a3b8';
-        const isDashed = Array.isArray(entry.renderableSeries?.strokeDashArray)
-            && (entry.renderableSeries?.strokeDashArray?.length ?? 0) > 0;
+        const isDashed = Array.isArray(entry.renderableSeries?.strokeDashArray) && (entry.renderableSeries?.strokeDashArray?.length ?? 0) > 0;
         return {
             label: escapeSvgText(label),
             text: escapeSvgText(`${value}${bubble}`),
             stroke,
             dashed: isDashed,
-            kind: chronicleTooltipSwatchKind(seriesName),
+            kind: chronicleTooltipSwatchKind(seriesName)
         };
     });
 
@@ -117,25 +109,29 @@ export function buildChronicleCursorTooltipSvg(
     sci.adjustTooltipPosition?.(width, height, svgAnnotation);
 
     const timeLabel = escapeSvgText(`Time: ${hits[0]?.formattedXValue ?? ''}`);
-    const swatchSvg = rows.map((row, index) => {
-        const y = paddingTop + 22 + index * lineHeight;
-        const x = 12;
-        if (row.kind === 'area') {
-            return `<rect x="${x}" y="${y - 8}" width="12" height="8" rx="1.5" fill="${row.stroke}" fill-opacity="0.35" stroke="${row.stroke}" stroke-width="1"/>`;
-        }
-        if (row.kind === 'column') {
-            return `<rect x="${x + 1}" y="${y - 9}" width="8" height="9" rx="1.2" fill="${row.stroke}" fill-opacity="0.62" stroke="${row.stroke}" stroke-width="1"/>`;
-        }
-        if (row.kind === 'verdict') {
-            return `<circle cx="${x + 6}" cy="${y - 4}" r="3.2" fill="${row.stroke}" fill-opacity="0.7" stroke="${row.stroke}" stroke-width="1"/>`;
-        }
-        return `<line x1="${x}" y1="${y - 4}" x2="${x + 12}" y2="${y - 4}" stroke="${row.stroke}" stroke-width="2" stroke-dasharray="${row.dashed ? '4,3' : '0'}"/>`;
-    }).join('');
+    const swatchSvg = rows
+        .map((row, index) => {
+            const y = paddingTop + 22 + index * lineHeight;
+            const x = 12;
+            if (row.kind === 'area') {
+                return `<rect x="${x}" y="${y - 8}" width="12" height="8" rx="1.5" fill="${row.stroke}" fill-opacity="0.35" stroke="${row.stroke}" stroke-width="1"/>`;
+            }
+            if (row.kind === 'column') {
+                return `<rect x="${x + 1}" y="${y - 9}" width="8" height="9" rx="1.2" fill="${row.stroke}" fill-opacity="0.62" stroke="${row.stroke}" stroke-width="1"/>`;
+            }
+            if (row.kind === 'verdict') {
+                return `<circle cx="${x + 6}" cy="${y - 4}" r="3.2" fill="${row.stroke}" fill-opacity="0.7" stroke="${row.stroke}" stroke-width="1"/>`;
+            }
+            return `<line x1="${x}" y1="${y - 4}" x2="${x + 12}" y2="${y - 4}" stroke="${row.stroke}" stroke-width="2" stroke-dasharray="${row.dashed ? '4,3' : '0'}"/>`;
+        })
+        .join('');
 
-    const textSvg = rows.map((row, index) => {
-        const y = paddingTop + 22 + index * lineHeight;
-        return `<text x="30" y="${y}" font-size="11" fill="#f8fafc">${row.label}: ${row.text}</text>`;
-    }).join('');
+    const textSvg = rows
+        .map((row, index) => {
+            const y = paddingTop + 22 + index * lineHeight;
+            return `<text x="30" y="${y}" font-size="11" fill="#f8fafc">${row.label}: ${row.text}</text>`;
+        })
+        .join('');
 
     return `
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">

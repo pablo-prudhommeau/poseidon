@@ -1,242 +1,220 @@
 <p-card styleClass="lg:col-span-2 sm:col-span-1 h-full">
-	<ng-template pTemplate="title">
-		<div class="flex justify-between items-center">
-			<span>Deployed budget</span>
-			<i class="fa fa-vault text-blue-400"></i>
-		</div>
-	</ng-template>
-	<div class="flex flex-col gap-4 mt-1">
-		<div class="flex flex-col">
-			<div class="text-3xl font-black text-white tracking-tight">
-				{{ strategy().source_asset_currency_symbol }} {{ deployedAmount() | number:'1.2-2' }}
-			</div>
-			<div class="flex text-[11px] uppercase tracking-tight gap-1 mt-1">
-				<span class="text-slate-500">
-					of
-				</span>
-				<span class="text-slate-300 font-bold">
-					{{ strategy().source_asset_currency_symbol }} {{ totalBudget() | number:'1.2-2' }}
-				</span>
-				<span class="text-slate-500">
-					total allocation
-				</span>
-			</div>
-		</div>
+    <ng-template pTemplate="title">
+        <div class="flex justify-between items-center">
+            <span>Deployed budget</span>
+            <i class="fa fa-vault text-blue-400"></i>
+        </div>
+    </ng-template>
+    <div class="flex flex-col gap-4 mt-1">
+        <div class="flex flex-col">
+            <div class="text-3xl font-black text-white tracking-tight">{{ strategy().source_asset_currency_symbol }} {{ deployedAmount() | number: '1.2-2' }}</div>
+            <div class="flex text-[11px] uppercase tracking-tight gap-1 mt-1">
+                <span class="text-slate-500"> of </span>
+                <span class="text-slate-300 font-bold"> {{ strategy().source_asset_currency_symbol }} {{ totalBudget() | number: '1.2-2' }} </span>
+                <span class="text-slate-500"> total allocation </span>
+            </div>
+        </div>
 
-		<div class="grid grid-cols-2 gap-2">
-			<div class="p-2 rounded bg-black/20 border border-blue-500/20 flex flex-col gap-0.5">
-				<span class="text-[9px] uppercase font-bold text-blue-400/70 tracking-widest">Nominal Order</span>
-				<span class="text-sm font-semibold text-blue-100">{{ strategy().source_asset_currency_symbol }} {{ nominalMonthlyInstallment() | number:'1.0-0' }}</span>
-			</div>
-			<div class="p-2 rounded bg-black/20 border border-emerald-500/20 flex flex-col gap-0.5">
-				<span class="text-[9px] uppercase font-bold text-emerald-400/70 tracking-widest">Dry Powder</span>
-				<span class="text-sm font-semibold text-emerald-100">{{ strategy().source_asset_currency_symbol }} {{ availableDryPowder() | number:'1.0-0' }}</span>
-			</div>
-		</div>
+        <div class="grid grid-cols-2 gap-2">
+            <div class="p-2 rounded bg-black/20 border border-blue-500/20 flex flex-col gap-0.5">
+                <span class="text-[9px] uppercase font-bold text-blue-400/70 tracking-widest">Nominal Order</span>
+                <span class="text-sm font-semibold text-blue-100">{{ strategy().source_asset_currency_symbol }} {{ nominalMonthlyInstallment() | number: '1.0-0' }}</span>
+            </div>
+            <div class="p-2 rounded bg-black/20 border border-emerald-500/20 flex flex-col gap-0.5">
+                <span class="text-[9px] uppercase font-bold text-emerald-400/70 tracking-widest">Dry Powder</span>
+                <span class="text-sm font-semibold text-emerald-100">{{ strategy().source_asset_currency_symbol }} {{ availableDryPowder() | number: '1.0-0' }}</span>
+            </div>
+        </div>
 
-		<div class="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-			<div class="flex gap-5">
-				<div class="flex items-center gap-1" title="Duration">
-					<i class="fa fa-calendar-alt text-slate-700"></i>
-					<span class="text-slate-300">{{ durationSummary().totalMonths }}</span>
-					<span class="text-slate-500">month(s)</span>
-					<span class="text-slate-500 px-1">|</span>
-					<span class="text-slate-300">{{ durationSummary().totalWeeks }}</span>
-					<span class="text-slate-500">week(s)</span>
-				</div>
-				<div class="flex items-center gap-1" title="Execution steps">
-					<i class="fa fa-repeat text-slate-700"></i>
-					<span class="text-slate-300">{{ durationSummary().totalInstallments }}</span>
-					<span class="text-slate-500">steps</span>
-				</div>
-			</div>
-			<div class="flex items-center gap-1 text-blue-400/80 font-bold uppercase tracking-tight">
-				<span>{{ durationSummary().daysRemaining }} day(s) Left</span>
-			</div>
-		</div>
+        <div class="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+            <div class="flex gap-5">
+                <div class="flex items-center gap-1" title="Duration">
+                    <i class="fa fa-calendar-alt text-slate-700"></i>
+                    <span class="text-slate-300">{{ durationSummary().totalMonths }}</span>
+                    <span class="text-slate-500">month(s)</span>
+                    <span class="text-slate-500 px-1">|</span>
+                    <span class="text-slate-300">{{ durationSummary().totalWeeks }}</span>
+                    <span class="text-slate-500">week(s)</span>
+                </div>
+                <div class="flex items-center gap-1" title="Execution steps">
+                    <i class="fa fa-repeat text-slate-700"></i>
+                    <span class="text-slate-300">{{ durationSummary().totalInstallments }}</span>
+                    <span class="text-slate-500">steps</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-1 text-blue-400/80 font-bold uppercase tracking-tight">
+                <span>{{ durationSummary().daysRemaining }} day(s) Left</span>
+            </div>
+        </div>
 
-		<div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
-			<div class="bg-blue-400 h-1.5 rounded-full" [style.width.%]="progressPercentage()"></div>
-		</div>
-	</div>
+        <div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-blue-400 h-1.5 rounded-full" [style.width.%]="progressPercentage()"></div>
+        </div>
+    </div>
 </p-card>
 
 <p-card styleClass="lg:col-span-2 sm:col-span-1 h-full">
-	<ng-template pTemplate="title">
-		<div class="flex justify-between items-center">
-			<span>Smart PRU</span>
-			<i class="fa fa-crosshairs text-emerald-400"></i>
-		</div>
-	</ng-template>
-	<div class="flex flex-col gap-4 mt-1">
-		<div class="flex flex-col">
-			<div class="text-3xl font-black text-white tracking-tight">
-				{{ strategy().source_asset_currency_symbol }} {{ currentAveragePurchasePrice() | number:'1.2-2' }}
-			</div>
-		</div>
+    <ng-template pTemplate="title">
+        <div class="flex justify-between items-center">
+            <span>Smart PRU</span>
+            <i class="fa fa-crosshairs text-emerald-400"></i>
+        </div>
+    </ng-template>
+    <div class="flex flex-col gap-4 mt-1">
+        <div class="flex flex-col">
+            <div class="text-3xl font-black text-white tracking-tight">{{ strategy().source_asset_currency_symbol }} {{ currentAveragePurchasePrice() | number: '1.2-2' }}</div>
+        </div>
 
-		<div class="h-8 py-1">
-			<sparkline *ngIf="(purchasePriceSparkline()?.length ?? 0) > 1" [points]="purchasePriceSparkline()"></sparkline>
-		</div>
+        <div class="h-8 py-1">
+            <sparkline *ngIf="(purchasePriceSparkline()?.length ?? 0) > 1" [points]="purchasePriceSparkline()"></sparkline>
+        </div>
 
-		<div class="grid grid-cols-1 gap-1.5 border-t border-white/5 pt-3">
-			<div class="flex items-center justify-between text-[11px]">
-				<span class="text-slate-400">Projected Smart PRU</span>
-				<span class="text-emerald-400 text-sm font-bold">
-                    {{ strategy().source_asset_currency_symbol }} {{ finalProjections().smartPru | number:'1.0-0' }}
-                </span>
-			</div>
-			<div class="flex items-center justify-between text-[11px]">
-				<span class="text-slate-600 italic">Comparison (Standard DCA)</span>
-				<span class="text-slate-600 line-through text-sm font-bold decoration-slate-700">
-                    {{ strategy().source_asset_currency_symbol }} {{ finalProjections().standardPru | number:'1.0-0' }}
-                </span>
-			</div>
-			<div class="flex items-center justify-between text-[11px] mt-1 pt-2 border-t border-white/5">
-				<span class="text-slate-400 font-bold uppercase tracking-tight">Target Accumulation</span>
-				<div class="flex items-baseline gap-1">
-					<span class="text-sm text-emerald-500/50 font-bold uppercase">{{ strategy().target_asset_currency_symbol }}</span>
-					<span class="text-sm font-bold text-white">{{ finalProjections().accumulatedAsset | number:'1.2-4' }}</span>
-				</div>
-			</div>
-		</div>
-	</div>
+        <div class="grid grid-cols-1 gap-1.5 border-t border-white/5 pt-3">
+            <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400">Projected Smart PRU</span>
+                <span class="text-emerald-400 text-sm font-bold"> {{ strategy().source_asset_currency_symbol }} {{ finalProjections().smartPru | number: '1.0-0' }} </span>
+            </div>
+            <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-600 italic">Comparison (Standard DCA)</span>
+                <span class="text-slate-600 line-through text-sm font-bold decoration-slate-700"> {{ strategy().source_asset_currency_symbol }} {{ finalProjections().standardPru | number: '1.0-0' }} </span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] mt-1 pt-2 border-t border-white/5">
+                <span class="text-slate-400 font-bold uppercase tracking-tight">Target Accumulation</span>
+                <div class="flex items-baseline gap-1">
+                    <span class="text-sm text-emerald-500/50 font-bold uppercase">{{ strategy().target_asset_currency_symbol }}</span>
+                    <span class="text-sm font-bold text-white">{{ finalProjections().accumulatedAsset | number: '1.2-4' }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
 </p-card>
 
 <p-card styleClass="lg:col-span-3 sm:col-span-2 h-full">
-	<ng-template pTemplate="title">
-		<div class="flex justify-between items-center">
-			<span>Projections</span>
-			<i class="fa fa-chart-line text-purple-400"></i>
-		</div>
-	</ng-template>
+    <ng-template pTemplate="title">
+        <div class="flex justify-between items-center">
+            <span>Projections</span>
+            <i class="fa fa-chart-line text-purple-400"></i>
+        </div>
+    </ng-template>
 
-	<div class="flex flex-col gap-4 mt-1" *ngIf="projectedSavings() as proj; else noProj">
-		<div class="flex items-center justify-between gap-6 pb-2 border-b border-white/5">
-			<div class="flex flex-col">
-				<div class="text-3xl font-black text-white tracking-tight">
-					{{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().totalValue | number:'1.0-0' }}
-				</div>
-				<div class="flex items-center gap-2 mt-1 tracking-tight">
-					<span class="text-[11px] text-slate-500 uppercase">Target ROI :</span>
-					<div class="flex items-center gap-1 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20">
-						<span class="text-emerald-400 text-[11px] font-bold">× {{ bullPortfolioProjections().multiplier | number:'1.1-1' }}</span>
-					</div>
-					<div class="flex items-center">
-						<div class="flex gap-1">
-							<span class="text-[11px] text-slate-500 font-medium uppercase">(of </span>
-							<span class="text-[11px] text-slate-300 font-bold uppercase">{{ strategy().source_asset_currency_symbol }} {{ totalBudget() | number:'1.2-2' }}</span>
-						</div>
-						<span class="text-[11px] text-slate-500 font-medium uppercase">)</span>
-					</div>
-				</div>
-			</div>
+    <div class="flex flex-col gap-4 mt-1" *ngIf="projectedSavings() as proj; else noProj">
+        <div class="flex items-center justify-between gap-6 pb-2 border-b border-white/5">
+            <div class="flex flex-col">
+                <div class="text-3xl font-black text-white tracking-tight">{{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().totalValue | number: '1.0-0' }}</div>
+                <div class="flex items-center gap-2 mt-1 tracking-tight">
+                    <span class="text-[11px] text-slate-500 uppercase">Target ROI :</span>
+                    <div class="flex items-center gap-1 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20">
+                        <span class="text-emerald-400 text-[11px] font-bold">× {{ bullPortfolioProjections().multiplier | number: '1.1-1' }}</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="flex gap-1">
+                            <span class="text-[11px] text-slate-500 font-medium uppercase">(of </span>
+                            <span class="text-[11px] text-slate-300 font-bold uppercase">{{ strategy().source_asset_currency_symbol }} {{ totalBudget() | number: '1.2-2' }}</span>
+                        </div>
+                        <span class="text-[11px] text-slate-500 font-medium uppercase">)</span>
+                    </div>
+                </div>
+            </div>
 
-			<div class="flex gap-4">
-				<div class="flex flex-col items-end pr-4 border-r border-white/5">
-					<span class="text-[10px] text-orange-500/70 font-bold uppercase tracking-wider mb-1">Dumb DCA</span>
-					<span class="text-sm font-bold text-orange-400 text-right">
-                        {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().standardTotalValue | number:'1.0-0' }}
-                    </span>
-					<div class="text-[10px] text-slate-500 font-medium italic mt-0.5 flex flex-col items-end">
-						<span>Average Entry</span>
-						<span class="text-orange-500/50 font-bold">{{ bullPortfolioProjections().dumbVariancePercentage | number:'1.1-1' }}% vs Smart</span>
-					</div>
-				</div>
-				<div class="flex flex-col items-end">
-					<span class="text-[10px] text-red-500/70 font-bold uppercase tracking-wider mb-1">Lump Sum</span>
-					<span class="text-sm font-bold text-red-500 text-right">
-                        {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().lumpSumTotalValue | number:'1.0-0' }}
-                    </span>
-					<div class="text-[10px] text-slate-500 font-medium italic mt-0.5 flex flex-col items-end">
-						<span>Max Risk Entry</span>
-						<span class="text-red-500/50 font-bold">{{ bullPortfolioProjections().lumpSumVariancePercentage | number:'1.1-1' }}% vs Smart</span>
-					</div>
-				</div>
-			</div>
-		</div>
+            <div class="flex gap-4">
+                <div class="flex flex-col items-end pr-4 border-r border-white/5">
+                    <span class="text-[10px] text-orange-500/70 font-bold uppercase tracking-wider mb-1">Dumb DCA</span>
+                    <span class="text-sm font-bold text-orange-400 text-right"> {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().standardTotalValue | number: '1.0-0' }} </span>
+                    <div class="text-[10px] text-slate-500 font-medium italic mt-0.5 flex flex-col items-end">
+                        <span>Average Entry</span>
+                        <span class="text-orange-500/50 font-bold">{{ bullPortfolioProjections().dumbVariancePercentage | number: '1.1-1' }}% vs Smart</span>
+                    </div>
+                </div>
+                <div class="flex flex-col items-end">
+                    <span class="text-[10px] text-red-500/70 font-bold uppercase tracking-wider mb-1">Lump Sum</span>
+                    <span class="text-sm font-bold text-red-500 text-right"> {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().lumpSumTotalValue | number: '1.0-0' }} </span>
+                    <div class="text-[10px] text-slate-500 font-medium italic mt-0.5 flex flex-col items-end">
+                        <span>Max Risk Entry</span>
+                        <span class="text-red-500/50 font-bold">{{ bullPortfolioProjections().lumpSumVariancePercentage | number: '1.1-1' }}% vs Smart</span>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-		<div class="grid grid-cols-3 gap-2">
-			<div class="p-2 rounded bg-black/20 border border-emerald-500/20 flex flex-col gap-0.5">
-				<span class="text-[9px] uppercase font-bold text-emerald-400/80 tracking-widest">Smart Alpha ($)</span>
-				<span class="text-sm font-semibold text-emerald-100">+ {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().smartAlphaUsd | number:'1.0-0' }}</span>
-			</div>
-			<div class="p-2 rounded bg-black/20 border border-purple-500/20 flex flex-col gap-0.5" title="Additional crypto accumulated vs standard DCA">
-				<span class="text-[9px] uppercase font-bold text-purple-400/80 tracking-widest">Extra Asset</span>
-				<div class="flex items-baseline gap-1">
-					<span class="text-sm text-purple-400 font-bold uppercase">{{ strategy().target_asset_currency_symbol }}</span>
-					<span class="text-sm font-semibold text-slate-100">{{ proj.cryptoAmount | number:'1.2-6' }}</span>
-				</div>
-			</div>
-			<div class="p-2 rounded bg-black/20 border border-red-500/10 flex flex-col gap-0.5" title="Portfolio value if we re-test bear bottom">
-				<span class="text-[9px] uppercase font-bold text-red-400/80 tracking-widest">Bear Value</span>
-				<span class="text-sm font-semibold text-red-100">{{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().bearValue | number:'1.0-0' }}</span>
-			</div>
-		</div>
+        <div class="grid grid-cols-3 gap-2">
+            <div class="p-2 rounded bg-black/20 border border-emerald-500/20 flex flex-col gap-0.5">
+                <span class="text-[9px] uppercase font-bold text-emerald-400/80 tracking-widest">Smart Alpha ($)</span>
+                <span class="text-sm font-semibold text-emerald-100">+ {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().smartAlphaUsd | number: '1.0-0' }}</span>
+            </div>
+            <div class="p-2 rounded bg-black/20 border border-purple-500/20 flex flex-col gap-0.5" title="Additional crypto accumulated vs standard DCA">
+                <span class="text-[9px] uppercase font-bold text-purple-400/80 tracking-widest">Extra Asset</span>
+                <div class="flex items-baseline gap-1">
+                    <span class="text-sm text-purple-400 font-bold uppercase">{{ strategy().target_asset_currency_symbol }}</span>
+                    <span class="text-sm font-semibold text-slate-100">{{ proj.cryptoAmount | number: '1.2-6' }}</span>
+                </div>
+            </div>
+            <div class="p-2 rounded bg-black/20 border border-red-500/10 flex flex-col gap-0.5" title="Portfolio value if we re-test bear bottom">
+                <span class="text-[9px] uppercase font-bold text-red-400/80 tracking-widest">Bear Value</span>
+                <span class="text-sm font-semibold text-red-100">{{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().bearValue | number: '1.0-0' }}</span>
+            </div>
+        </div>
 
-		<div class="flex items-center justify-between text-[11px] pt-1">
-			<div class="flex gap-8">
-				<div class="flex flex-col ">
-					<span class="text-[9px] text-slate-600 uppercase font-bold">Bear Price</span>
-					<span class="text-slate-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ proj.bearPriceTarget | number:'1.0-0' }}</span>
-				</div>
-				<div class="flex flex-col border-l border-white/5 pl-4">
-					<span class="text-[9px] text-blue-500/50 uppercase font-bold">Live Price</span>
-					<span class="text-blue-300/80 font-black">{{ strategy().source_asset_currency_symbol }} {{ strategy().live_market_price | number:'1.0-0' }}</span>
-				</div>
-				<div class="flex flex-col border-l border-white/5 pl-4">
-					<span class="text-[9px] text-emerald-500/50 uppercase font-bold">Bull Target</span>
-					<span class="text-emerald-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ proj.bullPriceTarget | number:'1.0-0' }}</span>
-				</div>
-			</div>
-		</div>
-	</div>
-	<ng-template #noProj>
-		<div class="text-xs text-slate-400 mt-2">Waiting for strategy projection...</div>
-	</ng-template>
+        <div class="flex items-center justify-between text-[11px] pt-1">
+            <div class="flex gap-8">
+                <div class="flex flex-col">
+                    <span class="text-[9px] text-slate-600 uppercase font-bold">Bear Price</span>
+                    <span class="text-slate-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ proj.bearPriceTarget | number: '1.0-0' }}</span>
+                </div>
+                <div class="flex flex-col border-l border-white/5 pl-4">
+                    <span class="text-[9px] text-blue-500/50 uppercase font-bold">Live Price</span>
+                    <span class="text-blue-300/80 font-black">{{ strategy().source_asset_currency_symbol }} {{ strategy().live_market_price | number: '1.0-0' }}</span>
+                </div>
+                <div class="flex flex-col border-l border-white/5 pl-4">
+                    <span class="text-[9px] text-emerald-500/50 uppercase font-bold">Bull Target</span>
+                    <span class="text-emerald-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ proj.bullPriceTarget | number: '1.0-0' }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <ng-template #noProj>
+        <div class="text-xs text-slate-400 mt-2">Waiting for strategy projection...</div>
+    </ng-template>
 </p-card>
 
 <p-card styleClass="lg:col-span-2 sm:col-span-2 h-full">
-	<ng-template pTemplate="title">
-		<div class="flex justify-between items-center">
-			<span>AAVE yield</span>
-			<i class="fa fa-ghost text-amber-400"></i>
-		</div>
-	</ng-template>
+    <ng-template pTemplate="title">
+        <div class="flex justify-between items-center">
+            <span>AAVE yield</span>
+            <i class="fa fa-ghost text-amber-400"></i>
+        </div>
+    </ng-template>
 
-	<div class="flex flex-col gap-4 mt-1">
-		<div class="flex flex-col">
-			<div class="text-3xl font-black text-white tracking-tight">
-				{{ strategy().source_asset_currency_symbol }} {{ (yieldMetrics().realized + yieldMetrics().projectedRemaining) | number:'1.2-2' }}
-			</div>
-			<div class="flex items-center gap-1.5 mt-0.5 text-[11px] uppercase tracking-tight">
-				<span class="text-slate-500">Projected Lifetime Accrual</span>
-				<span class="text-amber-400">Active Yield</span>
-			</div>
-		</div>
+    <div class="flex flex-col gap-4 mt-1">
+        <div class="flex flex-col">
+            <div class="text-3xl font-black text-white tracking-tight">{{ strategy().source_asset_currency_symbol }} {{ yieldMetrics().realized + yieldMetrics().projectedRemaining | number: '1.2-2' }}</div>
+            <div class="flex items-center gap-1.5 mt-0.5 text-[11px] uppercase tracking-tight">
+                <span class="text-slate-500">Projected Lifetime Accrual</span>
+                <span class="text-amber-400">Active Yield</span>
+            </div>
+        </div>
 
-		<div class="grid grid-cols-2 gap-2">
-			<div class="p-2 rounded bg-black/20 border border-amber-500/20 flex flex-col gap-0.5" title="Average projected daily accrual">
-				<span class="text-[9px] uppercase font-bold text-amber-400 tracking-widest">Avg Daily Yield</span>
-				<span class="text-sm font-bold text-amber-100">{{ strategy().source_asset_currency_symbol }} {{ yieldAccrualMetrics().dailyYield | number:'1.2-4' }}</span>
-			</div>
-			<div class="p-2 rounded bg-black/20 border border-slate-500/20 flex flex-col gap-0.5" title="Cumulative yield covers X orders">
-				<span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Yield Funding</span>
-				<span class="text-sm font-bold text-slate-100">+ {{ yieldAccrualMetrics().extraStepsFunded | number:'1.1-1' }} steps</span>
-			</div>
-		</div>
+        <div class="grid grid-cols-2 gap-2">
+            <div class="p-2 rounded bg-black/20 border border-amber-500/20 flex flex-col gap-0.5" title="Average projected daily accrual">
+                <span class="text-[9px] uppercase font-bold text-amber-400 tracking-widest">Avg Daily Yield</span>
+                <span class="text-sm font-bold text-amber-100">{{ strategy().source_asset_currency_symbol }} {{ yieldAccrualMetrics().dailyYield | number: '1.2-4' }}</span>
+            </div>
+            <div class="p-2 rounded bg-black/20 border border-slate-500/20 flex flex-col gap-0.5" title="Cumulative yield covers X orders">
+                <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Yield Funding</span>
+                <span class="text-sm font-bold text-slate-100">+ {{ yieldAccrualMetrics().extraStepsFunded | number: '1.1-1' }} steps</span>
+            </div>
+        </div>
 
-		<div class="flex items-center justify-between text-[11px] pt-1">
-			<div class="flex gap-8">
-				<div class="flex flex-col">
-					<span class="text-[9px] text-emerald-500/50 uppercase font-bold">Realized</span>
-					<span class="text-emerald-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ yieldMetrics().realized | number:'1.2-2' }}</span>
-				</div>
-				<div class="flex flex-col border-l border-white/5 pl-4">
-					<span class="text-[9px] text-amber-500/50 uppercase font-bold">Current APY</span>
-					<span class="text-amber-400 font-black">{{ yieldMetrics().apy | number:'1.2-2' }} %</span>
-				</div>
-			</div>
-		</div>
-	</div>
+        <div class="flex items-center justify-between text-[11px] pt-1">
+            <div class="flex gap-8">
+                <div class="flex flex-col">
+                    <span class="text-[9px] text-emerald-500/50 uppercase font-bold">Realized</span>
+                    <span class="text-emerald-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ yieldMetrics().realized | number: '1.2-2' }}</span>
+                </div>
+                <div class="flex flex-col border-l border-white/5 pl-4">
+                    <span class="text-[9px] text-amber-500/50 uppercase font-bold">Current APY</span>
+                    <span class="text-amber-400 font-black">{{ yieldMetrics().apy | number: '1.2-2' }} %</span>
+                </div>
+            </div>
+        </div>
+    </div>
 </p-card>

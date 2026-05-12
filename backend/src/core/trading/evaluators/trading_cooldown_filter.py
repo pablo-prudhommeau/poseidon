@@ -8,7 +8,7 @@ from src.configuration.config import settings
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.db import get_database_session
+from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingTrade
 
 logger = get_application_logger(__name__)

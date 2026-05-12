@@ -41,3 +41,5 @@ Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un 
 * Tu dois proscrire la typographie "Title Case" (majuscule à chaque mot) dans les wordings côté frontend, mais garder une majuscule initiale au premier mot
 
 * Lorsque tu `except` une exception, tu dois utiliser logger.exception pour pouvoir afficher la stacktrace
+
+* Après un chantier agentique IA sur le frontend, relance systématiquement `npm run format:prettier`, `npm run format:biome` puis `npm run lint` avant de considérer le travail comme livrable

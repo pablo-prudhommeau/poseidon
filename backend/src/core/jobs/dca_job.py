@@ -6,8 +6,8 @@ from src.configuration.config import settings
 from src.core.dca.dca_manager import DcaManager
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
-from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
+from src.persistence.dao.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
 
 logger = get_application_logger(__name__)
 
@@ -34,7 +34,7 @@ class DcaJob:
         logger.info("[DCA][JOB] Background monitoring stopped.")
 
     async def _process_tick(self) -> None:
-        from src.persistence.db import get_database_session
+        from src.persistence.database_session_manager import get_database_session
 
         due_order_ids: list[int] = []
 

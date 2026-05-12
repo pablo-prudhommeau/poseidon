@@ -1,6 +1,6 @@
-import {Component} from '@angular/core';
-import {RouterOutlet} from '@angular/router';
-import {NavigationComponent} from './components/navigation.component';
+import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+import { NavigationComponent } from './components/navigation.component';
 
 @Component({
     standalone: true,

@@ -1,7 +1,13 @@
 .env
 venv/
 .venv
-.idea/
+__pycache__/
+*.py[cod]
+.idea/*
+!.idea/prettier.xml
+!.idea/biome.xml
 *.iws
 backend/data
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json

@@ -1,19 +1,23 @@
-import {ChangeDetectionStrategy, Component, computed, input} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
-export type SparklinePoint = number | string | null | undefined | [number, number] | { equity: number, [k: string]: any } | { total_equity_value: number, [k: string]: any };
+export type SparklinePoint =
+    | number
+    | string
+    | null
+    | undefined
+    | [number, number]
+    | { equity: number; [k: string]: any }
+    | { total_equity_value: number; [k: string]: any };
 
 @Component({
     standalone: true,
     selector: 'sparkline',
     templateUrl: './sparkline.component.html',
-    changeDetection: ChangeDetectionStrategy.OnPush,
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SparklineComponent {
-    public readonly points = input<SparklinePoint[]>([]);
-    public readonly width = input<number>(120);
     public readonly height = input<number>(36);
-    public readonly padding = input<number>(2);
-
+    public readonly points = input<SparklinePoint[]>([]);
     public readonly normalizedPoints = computed<number[]>(() => {
         const rawPoints = this.points() ?? [];
         const extractedValues: number[] = [];
@@ -64,7 +68,8 @@ export class SparklineComponent {
 
         return extractedValues;
     });
-
+    public readonly padding = input<number>(2);
+    public readonly width = input<number>(120);
     public readonly svgPathDefinition = computed<string>(() => {
         const points = this.normalizedPoints();
         const canvasWidth = Math.max(1, Math.floor(this.width()));
@@ -80,11 +85,7 @@ export class SparklineComponent {
         const maximumValue = Math.max(...points);
 
         if (maximumValue === minimumValue) {
-            const verticalCenter = this.clampValue(
-                Math.round(canvasHeight / 2),
-                innerPadding,
-                canvasHeight - innerPadding
-            );
+            const verticalCenter = this.clampValue(Math.round(canvasHeight / 2), innerPadding, canvasHeight - innerPadding);
             return `M ${innerPadding} ${verticalCenter} L ${canvasWidth - innerPadding} ${verticalCenter}`;
         }
 
@@ -96,11 +97,7 @@ export class SparklineComponent {
         const calculateVerticalPosition = (value: number): number => {
             const normalizedValue = (value - minimumValue) / range;
             const verticalCoordinate = canvasHeight - innerPadding - normalizedValue * drawableHeight;
-            return this.clampValue(
-                this.roundToTwoDecimalPlaces(verticalCoordinate),
-                innerPadding,
-                canvasHeight - innerPadding
-            );
+            return this.clampValue(this.roundToTwoDecimalPlaces(verticalCoordinate), innerPadding, canvasHeight - innerPadding);
         };
 
         const pathCommands = points.map((value, index) => {

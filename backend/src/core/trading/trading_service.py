@@ -13,7 +13,7 @@ from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import RealizedProfitAndLoss, Token, CashFromTrades
 from src.core.trading.trading_structures import InventoryLot, TradingCandidate
-from src.core.trading.trading_utils import normalize_side_to_upper, run_awaitable_in_fresh_loop, candidate_from_dexscreener_token_information, logger
+from src.core.trading.trading_utils import normalize_side_to_upper, run_awaitable_in_fresh_loop, candidate_from_dexscreener_token_information
 from src.core.utils.date_utils import get_current_local_datetime, parse_iso_datetime_to_local
 from src.core.utils.math_utils import quantize_2dp, decimal_from_primitive
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
@@ -175,7 +175,7 @@ def invalidate_trading_positions_and_trades_cache() -> None:
 
 
 def _paper_available_cash_from_trades(database_session: Session, starting_cash_usd: float) -> float:
-    from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
+    from src.persistence.dao.trading_trade_dao import TradingTradeDao
 
     trade_dao = TradingTradeDao(database_session)
     all_trades = trade_dao.retrieve_recent_trades(limit_count=100000)
@@ -202,7 +202,7 @@ def _compute_live_available_cash_usd() -> float:
 
 
 def _compute_paper_available_cash_usd(starting_cash_usd: float) -> float:
-    from src.persistence.db import get_database_session
+    from src.persistence.database_session_manager import get_database_session
 
     with get_database_session() as database_session:
         return _paper_available_cash_from_trades(database_session, starting_cash_usd)

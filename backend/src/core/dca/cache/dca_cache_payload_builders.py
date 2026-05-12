@@ -5,8 +5,8 @@ from src.api.serializers import serialize_dca_strategy
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.trading_utils import run_awaitable_in_fresh_loop
 from src.integrations.aave.aave_executor import AaveExecutor
-from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
+from src.persistence.database_session_manager import get_database_session
 
 _aave_executor = AaveExecutor()
 

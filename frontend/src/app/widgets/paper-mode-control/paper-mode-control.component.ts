@@ -1,8 +1,8 @@
-import {CommonModule} from '@angular/common';
-import {Component, computed, inject, OnInit, signal} from '@angular/core';
-import {ApiService, AppStatusResponse} from '../../api.service';
-import {TradeMode} from '../../core/models';
-import {WebSocketService} from '../../core/websocket.service';
+import { CommonModule } from '@angular/common';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { ApiService, AppStatusResponse } from '../../api.service';
+import { TradeMode } from '../../core/models';
+import { WebSocketService } from '../../core/websocket.service';
 
 @Component({
     standalone: true,
@@ -11,8 +11,7 @@ import {WebSocketService} from '../../core/websocket.service';
     templateUrl: 'paper-mode-control.component.html'
 })
 export class PaperModeControlComponent implements OnInit {
-    private readonly apiService = inject(ApiService);
-    private readonly webSocketService = inject(WebSocketService);
+    public readonly isApplicationInitialLoading = signal<boolean>(true);
 
     private readonly tradingMode = signal<TradeMode>('LIVE');
 
@@ -20,24 +19,13 @@ export class PaperModeControlComponent implements OnInit {
         return this.tradingMode() === 'PAPER';
     });
 
-    public readonly isApplicationInitialLoading = signal<boolean>(true);
     public readonly isPortfolioResetInProgress = signal<boolean>(false);
+
+    private readonly apiService = inject(ApiService);
+    private readonly webSocketService = inject(WebSocketService);
 
     public ngOnInit(): void {
         this.fetchApplicationStatus();
-    }
-
-    private fetchApplicationStatus(): void {
-        this.apiService.getStatus().subscribe({
-            next: (response: AppStatusResponse) => {
-                this.tradingMode.set(response.status.mode);
-                this.isApplicationInitialLoading.set(false);
-            },
-            error: (error: unknown) => {
-                this.isApplicationInitialLoading.set(false);
-                console.error('Failed to synchronize application status', error);
-            }
-        });
     }
 
     public resetPaperPortfolioToInitialState(): void {
@@ -56,11 +44,24 @@ export class PaperModeControlComponent implements OnInit {
         });
     }
 
+    private fetchApplicationStatus(): void {
+        this.apiService.getStatus().subscribe({
+            next: (response: AppStatusResponse) => {
+                this.tradingMode.set(response.status.mode);
+                this.isApplicationInitialLoading.set(false);
+            },
+            error: (error: unknown) => {
+                this.isApplicationInitialLoading.set(false);
+                console.error('Failed to synchronize application status', error);
+            }
+        });
+    }
+
     private notifyWebSocketRefresh(): void {
         const socketReference = (this.webSocketService as any)['socket'];
 
         if (socketReference && socketReference.readyState === WebSocket.OPEN) {
-            socketReference.send(JSON.stringify({type: 'refresh'}));
+            socketReference.send(JSON.stringify({ type: 'refresh' }));
             return;
         }
         console.debug('[WEBSOCKET][REFRESH] Refresh skipped because websocket is not open');

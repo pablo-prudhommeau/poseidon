@@ -1,147 +1,127 @@
 <div class="space-y-5">
-	<app-shadow-verdict-chronicle #shadowChronicle></app-shadow-verdict-chronicle>
-	<p-tabs [value]="activeTabValue()" (valueChange)="onTabChange($event)">
-		<p-tablist>
-			<p-tab value="overview">
-				<div class="flex items-center gap-2">
-					<i class="fa fa-chart-line text-xs"></i>
-					<span>Overview</span>
-				</div>
-			</p-tab>
-			<p-tab value="analytics-qualified">
-				<div class="flex items-center gap-2">
-					<i class="fa fa-crosshairs text-xs"></i>
-					<span>Analytics</span>
-				</div>
-			</p-tab>
-			<p-tab value="analytics-shadow">
-				<div class="flex items-center gap-2">
-					<i class="fa fa-ghost text-xs opacity-70"></i>
-					<span>Shadow Analytics</span>
-				</div>
-			</p-tab>
-		</p-tablist>
+    <app-shadow-verdict-chronicle #shadowChronicle></app-shadow-verdict-chronicle>
+    <p-tabs [value]="activeTabValue()" (valueChange)="onTabChange($event)">
+        <p-tablist>
+            <p-tab value="overview">
+                <div class="flex items-center gap-2">
+                    <i class="fa fa-chart-line text-xs"></i>
+                    <span>Overview</span>
+                </div>
+            </p-tab>
+            <p-tab value="analytics-qualified">
+                <div class="flex items-center gap-2">
+                    <i class="fa fa-crosshairs text-xs"></i>
+                    <span>Analytics</span>
+                </div>
+            </p-tab>
+            <p-tab value="analytics-shadow">
+                <div class="flex items-center gap-2">
+                    <i class="fa fa-ghost text-xs opacity-70"></i>
+                    <span>Shadow Analytics</span>
+                </div>
+            </p-tab>
+        </p-tablist>
 
-		<p-tabpanels>
-			<p-tabpanel value="overview">
-				<app-trading-overview (openShadowChronicle)="shadowChronicle.open()"></app-trading-overview>
-			</p-tabpanel>
+        <p-tabpanels>
+            <p-tabpanel value="overview">
+                <app-trading-overview (openShadowChronicle)="shadowChronicle.open()"></app-trading-overview>
+            </p-tabpanel>
 
-			<p-tabpanel value="analytics-qualified">
-				@if (qualifiedLoading()) {
-					<div class="analytics-loading">
-						<div class="analytics-loading-spinner"></div>
-						Loading analytics data...
-					</div>
-				} @else if (qualifiedError()) {
-					<div class="analytics-error">
-						<i class="pi pi-exclamation-triangle" style="margin-right: 8px;"></i>
-						{{ qualifiedError() }}
-					</div>
-				} @else if (qualifiedAnalytics(); as data) {
-					<div class="space-y-5">
-						<div class="flex items-center justify-between mb-2">
-							<div class="flex items-center gap-2">
-								<div class="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">
-									<i class="fa fa-crosshairs text-blue-400 text-xs"></i>
-									<span class="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Qualified Realm</span>
-								</div>
-								<span class="text-[10px] text-slate-500">Only candidates that successfully passed the evaluation pipeline</span>
-							</div>
-							<button pButton icon="fa fa-refresh" label="Refresh"
-							        class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs"
-							        (click)="refreshQualifiedAnalytics()"></button>
-						</div>
-						<app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>
+            <p-tabpanel value="analytics-qualified">
+                @if (qualifiedLoading()) {
+                    <div class="analytics-loading">
+                        <div class="analytics-loading-spinner"></div>
+                        Loading analytics data...
+                    </div>
+                } @else if (qualifiedError()) {
+                    <div class="analytics-error">
+                        <i class="pi pi-exclamation-triangle" style="margin-right: 8px"></i>
+                        {{ qualifiedError() }}
+                    </div>
+                } @else if (qualifiedAnalytics(); as data) {
+                    <div class="space-y-5">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">
+                                    <i class="fa fa-crosshairs text-blue-400 text-xs"></i>
+                                    <span class="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Qualified Realm</span>
+                                </div>
+                                <span class="text-[10px] text-slate-500">Only candidates that successfully passed the evaluation pipeline</span>
+                            </div>
+                            <button pButton icon="fa fa-refresh" label="Refresh" class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs" (click)="refreshQualifiedAnalytics()"></button>
+                        </div>
+                        <app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>
 
-						<p-tabs [value]="qualifiedAnalyticsSubTab()" (valueChange)="onQualifiedSubTabChange($event)">
-							<p-tablist>
-								<p-tab value="synthesis">Synthesis</p-tab>
-								<p-tab value="exploration">Exploration</p-tab>
-							</p-tablist>
-							<p-tabpanels>
-								<p-tabpanel value="synthesis">
-									<app-analytics-synthesis
-											[pnlDriversSeries]="data.pnl_drivers_series"
-											[scatterData]="data.scatter_series"
-									></app-analytics-synthesis>
-								</p-tabpanel>
-								<p-tabpanel value="exploration">
-									<app-analytics-exploration
-											[heatmapData]="data.pnl_drivers_series"
-											[scatterData]="data.scatter_series"
-											[isActive]="qualifiedAnalyticsSubTab() === 'exploration'"
-									></app-analytics-exploration>
-								</p-tabpanel>
-							</p-tabpanels>
-						</p-tabs>
-					</div>
-				}
-			</p-tabpanel>
+                        <p-tabs [value]="qualifiedAnalyticsSubTab()" (valueChange)="onQualifiedSubTabChange($event)">
+                            <p-tablist>
+                                <p-tab value="synthesis">Synthesis</p-tab>
+                                <p-tab value="exploration">Exploration</p-tab>
+                            </p-tablist>
+                            <p-tabpanels>
+                                <p-tabpanel value="synthesis">
+                                    <app-analytics-synthesis [pnlDriversSeries]="data.pnl_drivers_series" [scatterData]="data.scatter_series"></app-analytics-synthesis>
+                                </p-tabpanel>
+                                <p-tabpanel value="exploration">
+                                    <app-analytics-exploration [heatmapData]="data.pnl_drivers_series" [scatterData]="data.scatter_series" [isActive]="qualifiedAnalyticsSubTab() === 'exploration'"></app-analytics-exploration>
+                                </p-tabpanel>
+                            </p-tabpanels>
+                        </p-tabs>
+                    </div>
+                }
+            </p-tabpanel>
 
-			<p-tabpanel value="analytics-shadow">
-				@if (shadowLoading()) {
-					<div class="analytics-loading">
-						<div class="analytics-loading-spinner"></div>
-						Loading shadow analytics data...
-					</div>
-				} @else if (shadowError()) {
-					<div class="analytics-error">
-						<i class="pi pi-exclamation-triangle" style="margin-right: 8px;"></i>
-						{{ shadowError() }}
-					</div>
-				} @else if (shadowAnalytics(); as data) {
-					<div class="space-y-5">
-						<div class="flex items-center justify-between mb-2">
-							<div class="flex items-center gap-2">
-								<div class="flex items-center gap-1.5 bg-purple-500/10 border border-purple-500/20 rounded-full px-3 py-1">
-									<i class="fa fa-ghost text-purple-400 text-xs"></i>
-									<span class="text-[10px] uppercase font-bold text-purple-400 tracking-widest">Shadow Realm</span>
-								</div>
-								<span class="text-[10px] text-slate-500">All candidates evaluated without filters — statistical exhaustivity</span>
-							</div>
-							<div class="flex items-center gap-1.5">
-								<button pButton icon="fa fa-bolt" label="Chronicle"
-								        class="p-button-sm h-8 text-xs chronicle-glow-btn"
-								        (click)="shadowChronicle.open()"></button>
-								<button pButton icon="fa fa-refresh" label="Refresh"
-								        class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs"
-								        (click)="refreshShadowAnalytics()"></button>
-							</div>
-						</div>
+            <p-tabpanel value="analytics-shadow">
+                @if (shadowLoading()) {
+                    <div class="analytics-loading">
+                        <div class="analytics-loading-spinner"></div>
+                        Loading shadow analytics data...
+                    </div>
+                } @else if (shadowError()) {
+                    <div class="analytics-error">
+                        <i class="pi pi-exclamation-triangle" style="margin-right: 8px"></i>
+                        {{ shadowError() }}
+                    </div>
+                } @else if (shadowAnalytics(); as data) {
+                    <div class="space-y-5">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-1.5 bg-purple-500/10 border border-purple-500/20 rounded-full px-3 py-1">
+                                    <i class="fa fa-ghost text-purple-400 text-xs"></i>
+                                    <span class="text-[10px] uppercase font-bold text-purple-400 tracking-widest">Shadow Realm</span>
+                                </div>
+                                <span class="text-[10px] text-slate-500">All candidates evaluated without filters — statistical exhaustivity</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <button pButton icon="fa fa-bolt" label="Chronicle" class="p-button-sm h-8 text-xs chronicle-glow-btn" (click)="shadowChronicle.open()"></button>
+                                <button pButton icon="fa fa-refresh" label="Refresh" class="p-button-sm p-button-outlined p-button-secondary h-8 text-xs" (click)="refreshShadowAnalytics()"></button>
+                            </div>
+                        </div>
 
-						<app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>
+                        <app-analytics-kpi-bar [kpis]="data.kpis" [timeline]="data.timeline"></app-analytics-kpi-bar>
 
-						<p-tabs [value]="shadowAnalyticsSubTab()" (valueChange)="onShadowSubTabChange($event)">
-							<p-tablist>
-								<p-tab value="synthesis">Synthesis</p-tab>
-								<p-tab value="exploration">Exploration</p-tab>
-							</p-tablist>
-							<p-tabpanels>
-								<p-tabpanel value="synthesis">
-									<app-analytics-synthesis
-											[pnlDriversSeries]="data.pnl_drivers_series"
-											[scatterData]="data.scatter_series"
-									></app-analytics-synthesis>
-								</p-tabpanel>
-								<p-tabpanel value="exploration">
-									<app-analytics-exploration
-											[heatmapData]="data.pnl_drivers_series"
-											[scatterData]="data.scatter_series"
-											[isActive]="shadowAnalyticsSubTab() === 'exploration'"
-									></app-analytics-exploration>
-								</p-tabpanel>
-							</p-tabpanels>
-						</p-tabs>
-					</div>
-				} @else {
-					<div class="flex flex-col items-center justify-center py-20 text-slate-600">
-						<i class="fa fa-ghost text-5xl mb-4 opacity-20 animate-pulse"></i>
-						<h3 class="text-xl font-medium text-slate-400">Shadow analytics not available yet</h3>
-						<p class="text-sm text-slate-500 mt-2">The shadow pipeline needs to accumulate enough data before analytics become available</p>
-					</div>
-				}
-			</p-tabpanel>
-		</p-tabpanels>
-	</p-tabs>
+                        <p-tabs [value]="shadowAnalyticsSubTab()" (valueChange)="onShadowSubTabChange($event)">
+                            <p-tablist>
+                                <p-tab value="synthesis">Synthesis</p-tab>
+                                <p-tab value="exploration">Exploration</p-tab>
+                            </p-tablist>
+                            <p-tabpanels>
+                                <p-tabpanel value="synthesis">
+                                    <app-analytics-synthesis [pnlDriversSeries]="data.pnl_drivers_series" [scatterData]="data.scatter_series"></app-analytics-synthesis>
+                                </p-tabpanel>
+                                <p-tabpanel value="exploration">
+                                    <app-analytics-exploration [heatmapData]="data.pnl_drivers_series" [scatterData]="data.scatter_series" [isActive]="shadowAnalyticsSubTab() === 'exploration'"></app-analytics-exploration>
+                                </p-tabpanel>
+                            </p-tabpanels>
+                        </p-tabs>
+                    </div>
+                } @else {
+                    <div class="flex flex-col items-center justify-center py-20 text-slate-600">
+                        <i class="fa fa-ghost text-5xl mb-4 opacity-20 animate-pulse"></i>
+                        <h3 class="text-xl font-medium text-slate-400">Shadow analytics not available yet</h3>
+                        <p class="text-sm text-slate-500 mt-2">The shadow pipeline needs to accumulate enough data before analytics become available</p>
+                    </div>
+                }
+            </p-tabpanel>
+        </p-tabpanels>
+    </p-tabs>
 </div>

@@ -1,12 +1,10 @@
-import {Component, computed, input} from '@angular/core';
-import {CurrencyPipe, DatePipe, DecimalPipe, NgClass} from '@angular/common';
-import {CardModule} from 'primeng/card';
-import {PopoverModule} from 'primeng/popover';
-import {DcaOrderPayload, DcaStrategyPayload, OrderDueDateMarker, TimelineNode} from '../../../core/models';
+import { CurrencyPipe, DatePipe, DecimalPipe, NgClass } from '@angular/common';
+import { Component, computed, input } from '@angular/core';
+import { CardModule } from 'primeng/card';
+import { PopoverModule } from 'primeng/popover';
+import { DcaOrderPayload, DcaStrategyPayload, OrderDueDateMarker, TimelineNode } from '../../../core/models';
 
-const PROCESSING_STATUS_LIST: string[] = [
-    'WAITING_USER_APPROVAL', 'APPROVED', 'WITHDRAWN_FROM_AAVE', 'SWAPPED', 'PROCESSING'
-];
+const PROCESSING_STATUS_LIST: string[] = ['WAITING_USER_APPROVAL', 'APPROVED', 'WITHDRAWN_FROM_AAVE', 'SWAPPED', 'PROCESSING'];
 
 @Component({
     standalone: true,
@@ -24,8 +22,8 @@ export class DcaStrategyExecutionTimelineComponent {
             return null;
         }
 
-        const sortedOrders = [...strategyEntity.execution_orders].sort((orderA, orderB) =>
-            new Date(orderA.planned_execution_date).getTime() - new Date(orderB.planned_execution_date).getTime()
+        const sortedOrders = [...strategyEntity.execution_orders].sort(
+            (orderA, orderB) => new Date(orderA.planned_execution_date).getTime() - new Date(orderB.planned_execution_date).getTime()
         );
 
         let lastNonPendingTimestamp: number | null = null;
@@ -52,15 +50,13 @@ export class DcaStrategyExecutionTimelineComponent {
             return [];
         }
 
-        const allOrders = [...strategyEntity.execution_orders].sort((orderA, orderB) =>
-            new Date(orderA.planned_execution_date).getTime() - new Date(orderB.planned_execution_date).getTime()
+        const allOrders = [...strategyEntity.execution_orders].sort(
+            (orderA, orderB) => new Date(orderA.planned_execution_date).getTime() - new Date(orderB.planned_execution_date).getTime()
         );
 
         const rulerNodes = this.generateCalendarRulerNodes(startTimestamp, endTimestamp, totalDuration);
 
-        const nodesByIdentifier = new Map<string, TimelineNode>(
-            rulerNodes.map(node => [node.identifier, {...node, orders: [] as DcaOrderPayload[]}])
-        );
+        const nodesByIdentifier = new Map<string, TimelineNode>(rulerNodes.map((node) => [node.identifier, { ...node, orders: [] as DcaOrderPayload[] }]));
 
         for (const order of allOrders) {
             const orderTimestamp = new Date(order.planned_execution_date).getTime();
@@ -69,11 +65,14 @@ export class DcaStrategyExecutionTimelineComponent {
         }
 
         const nodesWithOrders = rulerNodes
-            .filter(node => {
+            .filter((node) => {
                 const nodeWithOrders = nodesByIdentifier.get(node.identifier)!;
                 return nodeWithOrders.isProcessing || nodeWithOrders.orders.length > 0 || node.isMonthBoundary || node.isMinor;
             })
-            .map(node => ({...nodesByIdentifier.get(node.identifier)!, orders: nodesByIdentifier.get(node.identifier)!.orders}));
+            .map((node) => ({
+                ...nodesByIdentifier.get(node.identifier)!,
+                orders: nodesByIdentifier.get(node.identifier)!.orders
+            }));
 
         const frontier = this.lastNonPendingOrderTimestamp() ?? 0;
 
@@ -85,12 +84,19 @@ export class DcaStrategyExecutionTimelineComponent {
             const previousNode = index > 0 ? nodesWithOrders[index - 1] : null;
             enriched.periodStartDate = previousNode ? previousNode.timestamp : node.timestamp;
 
-            const startLabel = new Date(enriched.periodStartDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-            const endLabel = new Date(node.timestamp).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+            const startLabel = new Date(enriched.periodStartDate).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric'
+            });
+            const endLabel = new Date(node.timestamp).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
             enriched.periodLabel = enriched.periodStartDate === node.timestamp ? endLabel : `${startLabel} - ${endLabel}`;
 
             if (isBeforeFrontier) {
-                const previousOrders = allOrders.filter(o => new Date(o.planned_execution_date).getTime() <= node.timestamp);
+                const previousOrders = allOrders.filter((o) => new Date(o.planned_execution_date).getTime() <= node.timestamp);
                 if (previousOrders.length > 0) {
                     enriched.representativeStatus = this.calculateSyntheticStatus(previousOrders);
                 } else if (enriched.orders.length === 0) {
@@ -100,8 +106,26 @@ export class DcaStrategyExecutionTimelineComponent {
                 enriched.representativeStatus = 'PENDING';
             }
 
-            return {...enriched, leftPositionPercent};
+            return { ...enriched, leftPositionPercent };
         });
+    });
+
+    public readonly currentProgressPercent = computed(() => {
+        const nodes = this.timelineNodes();
+        const frontier = this.lastNonPendingOrderTimestamp();
+
+        if (nodes.length < 2 || frontier === null) {
+            return 0;
+        }
+
+        let latestActiveIndex = 0;
+        for (let i = 0; i < nodes.length; i++) {
+            if (nodes[i].timestamp <= frontier) {
+                latestActiveIndex = i;
+            }
+        }
+
+        return (latestActiveIndex / (nodes.length - 1)) * 100;
     });
 
     public readonly orderDueDateMarkers = computed<OrderDueDateMarker[]>(() => {
@@ -111,7 +135,7 @@ export class DcaStrategyExecutionTimelineComponent {
             return [];
         }
 
-        return strategyEntity.execution_orders.map(order => {
+        return strategyEntity.execution_orders.map((order) => {
             const orderTimestamp = new Date(order.planned_execution_date).getTime();
 
             let segmentStartIndex = 0;
@@ -143,27 +167,9 @@ export class DcaStrategyExecutionTimelineComponent {
         });
     });
 
-    public readonly currentProgressPercent = computed(() => {
-        const nodes = this.timelineNodes();
-        const frontier = this.lastNonPendingOrderTimestamp();
-
-        if (nodes.length < 2 || frontier === null) {
-            return 0;
-        }
-
-        let latestActiveIndex = 0;
-        for (let i = 0; i < nodes.length; i++) {
-            if (nodes[i].timestamp <= frontier) {
-                latestActiveIndex = i;
-            }
-        }
-
-        return (latestActiveIndex / (nodes.length - 1)) * 100;
-    });
-
     public readonly progressGradientClass = computed(() => {
         const nodes = this.timelineNodes();
-        const activeNodes = nodes.filter(node => node.representativeStatus !== 'PENDING' || node.isProcessing);
+        const activeNodes = nodes.filter((node) => node.representativeStatus !== 'PENDING' || node.isProcessing);
         if (activeNodes.length === 0) {
             return 'from-slate-600 to-transparent';
         }
@@ -171,8 +177,8 @@ export class DcaStrategyExecutionTimelineComponent {
         const lastActiveNode = activeNodes[activeNodes.length - 1];
         const status = lastActiveNode.representativeStatus;
 
-        const hasHistory = activeNodes.some(node => ['EXECUTED', 'SKIPPED', 'REJECTED'].includes(node.representativeStatus));
-        const startColor = hasHistory ? 'emerald-500' : (status === 'PENDING' ? 'slate-600' : 'blue-500');
+        const hasHistory = activeNodes.some((node) => ['EXECUTED', 'SKIPPED', 'REJECTED'].includes(node.representativeStatus));
+        const startColor = hasHistory ? 'emerald-500' : status === 'PENDING' ? 'slate-600' : 'blue-500';
 
         if (PROCESSING_STATUS_LIST.includes(status)) {
             return `from-${startColor} via-blue-500 to-blue-400`;
@@ -188,6 +194,29 @@ export class DcaStrategyExecutionTimelineComponent {
         }
         return `from-${startColor} to-transparent`;
     });
+
+    public isProtectedByPurchasePriceGuard(order: DcaOrderPayload): boolean {
+        return (
+            order.transaction_hash === 'AVERAGE_PRICE_PROTECTION_BYPASS' ||
+            (order.allocation_decision_description?.includes('AVERAGE_PRICE_PROTECTION') ?? false)
+        );
+    }
+
+    public resolveAllocationDecisionColor(allocationDecision: string): string {
+        if (allocationDecision.includes('AGGRESSIVE_DIP_ACCUMULATION')) {
+            return 'text-emerald-400';
+        }
+        if (allocationDecision.includes('CONSERVATIVE_RETENTION')) {
+            return 'text-amber-400';
+        }
+        if (allocationDecision.includes('FINAL_FULL_DEPLOYMENT')) {
+            return 'text-purple-400';
+        }
+        if (allocationDecision.includes('AVERAGE_PRICE_PROTECTION')) {
+            return 'text-rose-400';
+        }
+        return 'text-slate-400';
+    }
 
     public resolveAllocationDecisionLabel(allocationDecision: string): string {
         if (allocationDecision.includes('AGGRESSIVE_DIP_ACCUMULATION')) {
@@ -208,136 +237,30 @@ export class DcaStrategyExecutionTimelineComponent {
         return allocationDecision;
     }
 
-    public resolveAllocationDecisionColor(allocationDecision: string): string {
-        if (allocationDecision.includes('AGGRESSIVE_DIP_ACCUMULATION')) {
-            return 'text-emerald-400';
+    private calculateSyntheticStatus(orders: DcaOrderPayload[]): string {
+        if (orders.some((o) => PROCESSING_STATUS_LIST.includes(o.order_status))) {
+            return 'PROCESSING';
         }
-        if (allocationDecision.includes('CONSERVATIVE_RETENTION')) {
-            return 'text-amber-400';
+        if (orders.some((o) => o.order_status === 'REJECTED' || o.order_status === 'FAILED')) {
+            return 'REJECTED';
         }
-        if (allocationDecision.includes('FINAL_FULL_DEPLOYMENT')) {
-            return 'text-purple-400';
+        if (orders.some((o) => o.order_status === 'EXECUTED')) {
+            return 'EXECUTED';
         }
-        if (allocationDecision.includes('AVERAGE_PRICE_PROTECTION')) {
-            return 'text-rose-400';
+        if (orders.some((o) => o.order_status === 'SKIPPED')) {
+            return 'SKIPPED';
         }
-        return 'text-slate-400';
+        return 'PENDING';
     }
 
-    public isProtectedByPurchasePriceGuard(order: DcaOrderPayload): boolean {
-        return order.transaction_hash === 'AVERAGE_PRICE_PROTECTION_BYPASS'
-            || (order.allocation_decision_description?.includes('AVERAGE_PRICE_PROTECTION') ?? false);
-    }
-
-    private generateCalendarRulerNodes(startTimestamp: number, endTimestamp: number, totalDuration: number): TimelineNode[] {
-        const rulerNodes: TimelineNode[] = [];
-        const startDate = new Date(startTimestamp);
-        const endDate = new Date(endTimestamp);
-
-        rulerNodes.push(this.createTimelineNode({
-            identifier: 'strategy-start',
-            timestamp: startTimestamp,
-            leftPositionPercent: 0,
-            isMajor: startDate.getDate() === 1,
-            isMinor: startDate.getDate() !== 1,
-            isMonthBoundary: startDate.getDate() === 1,
-            label: startDate.getDate() === 1
-                ? startDate.toLocaleDateString('en-US', {month: 'short', year: 'numeric'})
-                : startDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric'})
-        }));
-
-        let currentMonthPointer = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
-
-        while (currentMonthPointer.getTime() < endTimestamp) {
-            const monthTimestamp = currentMonthPointer.getTime();
-            const monthLeftPosition = ((monthTimestamp - startTimestamp) / totalDuration) * 100;
-            const monthLabel = currentMonthPointer.toLocaleDateString('en-US', {month: 'short', year: 'numeric'});
-
-            rulerNodes.push(this.createTimelineNode({
-                identifier: `month-${currentMonthPointer.getFullYear()}-${currentMonthPointer.getMonth()}`,
-                timestamp: monthTimestamp,
-                leftPositionPercent: monthLeftPosition,
-                isMajor: true,
-                isMinor: false,
-                isMonthBoundary: true,
-                label: monthLabel
-            }));
-
-            currentMonthPointer = new Date(currentMonthPointer.getFullYear(), currentMonthPointer.getMonth() + 1, 1);
+    private createTimelineNode(
+        partial: Partial<TimelineNode> & {
+            identifier: string;
+            timestamp: number;
+            leftPositionPercent: number;
+            label: string;
         }
-
-        if (!rulerNodes.some(n => n.timestamp === endTimestamp)) {
-            rulerNodes.push(this.createTimelineNode({
-                identifier: 'strategy-end',
-                timestamp: endTimestamp,
-                leftPositionPercent: 100,
-                isMajor: endDate.getDate() === 1,
-                isMinor: endDate.getDate() !== 1,
-                isMonthBoundary: endDate.getDate() === 1,
-                label: endDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric'})
-            }));
-        }
-
-        const sortedNodes = [...rulerNodes].sort((a, b) => a.timestamp - b.timestamp);
-        const finalNodes: TimelineNode[] = [];
-
-        for (let i = 0; i < sortedNodes.length - 1; i++) {
-            const current = sortedNodes[i];
-            const next = sortedNodes[i + 1];
-            finalNodes.push(current);
-
-            const durationSegment = next.timestamp - current.timestamp;
-            if (durationSegment > 10 * 24 * 60 * 60 * 1000) {
-                const currentMonth = new Date(current.timestamp).getMonth();
-                const nextMonth = new Date(next.timestamp).getMonth();
-                const isSameMonth = currentMonth === nextMonth;
-
-                const startWeek = Math.min(4, Math.floor(new Date(current.timestamp).getDate() / 7) + 1);
-                const endWeek = isSameMonth
-                    ? Math.min(4, Math.floor(new Date(next.timestamp).getDate() / 7) + 1)
-                    : 5;
-
-                const missingWeeks: number[] = [];
-                for (let w = startWeek + 1; w < endWeek; w++) {
-                    missingWeeks.push(w);
-                }
-
-                if (missingWeeks.length > 0) {
-                    missingWeeks.forEach((_, index) => {
-                        const fraction = (index + 1) / (missingWeeks.length + 1);
-                        const timestamp = current.timestamp + durationSegment * fraction;
-                        const date = new Date(timestamp);
-                        const weekNumber = this.getIsoWeekNumber(date);
-
-                        finalNodes.push(this.createTimelineNode({
-                            identifier: `week-${date.getFullYear()}-w${weekNumber}`,
-                            timestamp,
-                            leftPositionPercent: current.leftPositionPercent + (next.leftPositionPercent - current.leftPositionPercent) * fraction,
-                            isMajor: false,
-                            isMinor: true,
-                            label: `W.${weekNumber}`
-                        }));
-                    });
-                }
-            }
-        }
-
-        finalNodes.push(sortedNodes[sortedNodes.length - 1]);
-
-        finalNodes.sort((a, b) => a.timestamp - b.timestamp);
-        return finalNodes;
-    }
-
-    private findContainingPeriodNode(sortedRulerNodes: TimelineNode[], orderTimestamp: number): TimelineNode {
-        for (const node of sortedRulerNodes) {
-            if (orderTimestamp <= node.timestamp) {
-                return node;
-            }
-        }
-        return sortedRulerNodes[sortedRulerNodes.length - 1];
-    }
-
-    private createTimelineNode(partial: Partial<TimelineNode> & { identifier: string; timestamp: number; leftPositionPercent: number; label: string }): TimelineNode {
+    ): TimelineNode {
         return {
             identifier: partial.identifier,
             timestamp: partial.timestamp,
@@ -360,29 +283,13 @@ export class DcaStrategyExecutionTimelineComponent {
         };
     }
 
-    private calculateSyntheticStatus(orders: DcaOrderPayload[]): string {
-        if (orders.some(o => PROCESSING_STATUS_LIST.includes(o.order_status))) {
-            return 'PROCESSING';
-        }
-        if (orders.some(o => o.order_status === 'REJECTED' || o.order_status === 'FAILED')) {
-            return 'REJECTED';
-        }
-        if (orders.some(o => o.order_status === 'EXECUTED')) {
-            return 'EXECUTED';
-        }
-        if (orders.some(o => o.order_status === 'SKIPPED')) {
-            return 'SKIPPED';
-        }
-        return 'PENDING';
-    }
-
     private enrichTimelineNode(node: TimelineNode): TimelineNode {
         const totalPlannedAmount = node.orders.reduce((sum, order) => sum + (order.planned_source_asset_amount || 0), 0);
-        const executedOrders = node.orders.filter(order => order.order_status === 'EXECUTED');
+        const executedOrders = node.orders.filter((order) => order.order_status === 'EXECUTED');
         const totalExecutedAmount = executedOrders.reduce((sum, order) => sum + (order.executed_source_asset_amount || 0), 0);
         const totalAcquiredTargetAssetAmount = executedOrders.reduce((sum, order) => sum + (order.executed_target_asset_amount || 0), 0);
-        const protectedOrderCount = node.orders.filter(order => this.isProtectedByPurchasePriceGuard(order)).length;
-        const skippedOrderCount = node.orders.filter(order => order.order_status === 'SKIPPED').length;
+        const protectedOrderCount = node.orders.filter((order) => this.isProtectedByPurchasePriceGuard(order)).length;
+        const skippedOrderCount = node.orders.filter((order) => order.order_status === 'SKIPPED').length;
 
         const representativeStatus = this.calculateSyntheticStatus(node.orders);
 
@@ -399,11 +306,126 @@ export class DcaStrategyExecutionTimelineComponent {
         };
     }
 
+    private findContainingPeriodNode(sortedRulerNodes: TimelineNode[], orderTimestamp: number): TimelineNode {
+        for (const node of sortedRulerNodes) {
+            if (orderTimestamp <= node.timestamp) {
+                return node;
+            }
+        }
+        return sortedRulerNodes[sortedRulerNodes.length - 1];
+    }
+
+    private generateCalendarRulerNodes(startTimestamp: number, endTimestamp: number, totalDuration: number): TimelineNode[] {
+        const rulerNodes: TimelineNode[] = [];
+        const startDate = new Date(startTimestamp);
+        const endDate = new Date(endTimestamp);
+
+        rulerNodes.push(
+            this.createTimelineNode({
+                identifier: 'strategy-start',
+                timestamp: startTimestamp,
+                leftPositionPercent: 0,
+                isMajor: startDate.getDate() === 1,
+                isMinor: startDate.getDate() !== 1,
+                isMonthBoundary: startDate.getDate() === 1,
+                label:
+                    startDate.getDate() === 1
+                        ? startDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                        : startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            })
+        );
+
+        let currentMonthPointer = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
+
+        while (currentMonthPointer.getTime() < endTimestamp) {
+            const monthTimestamp = currentMonthPointer.getTime();
+            const monthLeftPosition = ((monthTimestamp - startTimestamp) / totalDuration) * 100;
+            const monthLabel = currentMonthPointer.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+            rulerNodes.push(
+                this.createTimelineNode({
+                    identifier: `month-${currentMonthPointer.getFullYear()}-${currentMonthPointer.getMonth()}`,
+                    timestamp: monthTimestamp,
+                    leftPositionPercent: monthLeftPosition,
+                    isMajor: true,
+                    isMinor: false,
+                    isMonthBoundary: true,
+                    label: monthLabel
+                })
+            );
+
+            currentMonthPointer = new Date(currentMonthPointer.getFullYear(), currentMonthPointer.getMonth() + 1, 1);
+        }
+
+        if (!rulerNodes.some((n) => n.timestamp === endTimestamp)) {
+            rulerNodes.push(
+                this.createTimelineNode({
+                    identifier: 'strategy-end',
+                    timestamp: endTimestamp,
+                    leftPositionPercent: 100,
+                    isMajor: endDate.getDate() === 1,
+                    isMinor: endDate.getDate() !== 1,
+                    isMonthBoundary: endDate.getDate() === 1,
+                    label: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                })
+            );
+        }
+
+        const sortedNodes = [...rulerNodes].sort((a, b) => a.timestamp - b.timestamp);
+        const finalNodes: TimelineNode[] = [];
+
+        for (let i = 0; i < sortedNodes.length - 1; i++) {
+            const current = sortedNodes[i];
+            const next = sortedNodes[i + 1];
+            finalNodes.push(current);
+
+            const durationSegment = next.timestamp - current.timestamp;
+            if (durationSegment > 10 * 24 * 60 * 60 * 1000) {
+                const currentMonth = new Date(current.timestamp).getMonth();
+                const nextMonth = new Date(next.timestamp).getMonth();
+                const isSameMonth = currentMonth === nextMonth;
+
+                const startWeek = Math.min(4, Math.floor(new Date(current.timestamp).getDate() / 7) + 1);
+                const endWeek = isSameMonth ? Math.min(4, Math.floor(new Date(next.timestamp).getDate() / 7) + 1) : 5;
+
+                const missingWeeks: number[] = [];
+                for (let w = startWeek + 1; w < endWeek; w++) {
+                    missingWeeks.push(w);
+                }
+
+                if (missingWeeks.length > 0) {
+                    missingWeeks.forEach((_, index) => {
+                        const fraction = (index + 1) / (missingWeeks.length + 1);
+                        const timestamp = current.timestamp + durationSegment * fraction;
+                        const date = new Date(timestamp);
+                        const weekNumber = this.getIsoWeekNumber(date);
+
+                        finalNodes.push(
+                            this.createTimelineNode({
+                                identifier: `week-${date.getFullYear()}-w${weekNumber}`,
+                                timestamp,
+                                leftPositionPercent: current.leftPositionPercent + (next.leftPositionPercent - current.leftPositionPercent) * fraction,
+                                isMajor: false,
+                                isMinor: true,
+                                label: `W.${weekNumber}`
+                            })
+                        );
+                    });
+                }
+            }
+        }
+
+        finalNodes.push(sortedNodes[sortedNodes.length - 1]);
+
+        finalNodes.sort((a, b) => a.timestamp - b.timestamp);
+        return finalNodes;
+    }
+
     private getIsoWeekNumber(date: Date): number {
         const tempDate = new Date(date.getTime());
         tempDate.setHours(0, 0, 0, 0);
-        tempDate.setDate(tempDate.getDate() + 3 - (tempDate.getDay() + 6) % 7);
+        tempDate.setDate(tempDate.getDate() + 3 - ((tempDate.getDay() + 6) % 7));
         const week1 = new Date(tempDate.getFullYear(), 0, 4);
-        return 1 + Math.round(((tempDate.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+        return 1 + Math.round(((tempDate.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
     }
 }

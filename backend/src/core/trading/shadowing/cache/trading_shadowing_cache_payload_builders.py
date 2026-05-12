@@ -20,8 +20,8 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleVerdict,
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso
-from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
+from src.persistence.database_session_manager import get_database_session
 
 
 def build_shadow_intelligence_status_payload() -> ShadowIntelligenceStatusPayload:

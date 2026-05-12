@@ -319,9 +319,9 @@ class TradingPipeline:
 
     def _step_execute(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> None:
         from sqlalchemy import select, func
-        from src.persistence.db import get_database_session
+        from src.persistence.database_session_manager import get_database_session
         from src.persistence.models import TradingPosition, PositionPhase
-        from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
+        from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 
         with get_database_session() as database_session:
             current_open_count = database_session.execute(

@@ -5,7 +5,7 @@ import type {
     ChronicleChartModel,
     ChronicleConfigurableAxisOptions,
     ChronicleGoldenZoneThresholds,
-    ChronicleNumericBounds,
+    ChronicleNumericBounds
 } from '../data/shadow-verdict-chronicle.models';
 
 const CHRONICLE_AXIS_PADDING_RATIO = 0.01;
@@ -30,9 +30,9 @@ function computeFiniteBounds(values: number[]): ChronicleNumericBounds | null {
     }
     if (minimum === maximum) {
         const epsilon = Math.max(1e-6, Math.abs(minimum) * 0.05);
-        return {min: minimum - epsilon, max: maximum + epsilon};
+        return { min: minimum - epsilon, max: maximum + epsilon };
     }
-    return {min: minimum, max: maximum};
+    return { min: minimum, max: maximum };
 }
 
 function computeAdaptiveSplineOvershootPadding(values: number[], bounds: ChronicleNumericBounds): number {
@@ -79,15 +79,10 @@ function normalizeBoundsToTickCount(minimum: number, maximum: number, targetTick
         normalizedMinimum -= stepsToLower * majorDelta;
         normalizedMaximum -= stepsToLower * majorDelta;
     }
-    return {min: normalizedMinimum, max: normalizedMaximum, majorDelta};
+    return { min: normalizedMinimum, max: normalizedMaximum, majorDelta };
 }
 
-function normalizeBoundsToStep(
-    minimum: number,
-    maximum: number,
-    targetTicks: number,
-    step: number,
-): ChronicleAxisTickBounds {
+function normalizeBoundsToStep(minimum: number, maximum: number, targetTicks: number, step: number): ChronicleAxisTickBounds {
     const safeStep = Math.max(1e-9, step);
     const span = Math.max(safeStep, maximum - minimum);
     const paddedMinimum = minimum - span * CHRONICLE_AXIS_PADDING_RATIO;
@@ -109,7 +104,7 @@ function normalizeBoundsToStep(
         normalizedMinimum -= stepsToLower * majorDelta;
         normalizedMaximum -= stepsToLower * majorDelta;
     }
-    return {min: normalizedMinimum, max: normalizedMaximum, majorDelta};
+    return { min: normalizedMinimum, max: normalizedMaximum, majorDelta };
 }
 
 function normalizeBoundsToStepFromZero(maximum: number, targetTicks: number, step: number): ChronicleAxisTickBounds {
@@ -119,43 +114,39 @@ function normalizeBoundsToStepFromZero(maximum: number, targetTicks: number, ste
     const paddedMaximum = maximum + span * CHRONICLE_VOLUME_AXIS_TOP_PADDING_RATIO;
     const rawDelta = Math.max(safeStep, (paddedMaximum - minimum) / Math.max(1, targetTicks - 1));
     const majorDelta = Math.ceil(rawDelta / safeStep) * safeStep;
-    return {min: minimum, max: minimum + majorDelta * (targetTicks - 1), majorDelta};
+    return { min: minimum, max: minimum + majorDelta * (targetTicks - 1), majorDelta };
 }
 
 export function harmonizeChronicleRightAxes(
     model: ChronicleChartModel,
     arrays: ChronicleArrays,
     rightAxisMajorTickCount: number,
-    goldenZoneThresholds?: ChronicleGoldenZoneThresholds,
+    goldenZoneThresholds?: ChronicleGoldenZoneThresholds
 ): void {
     const targetTicks = Math.max(3, rightAxisMajorTickCount);
-    const {NumberRange, EAutoRange} = model.sci;
+    const { NumberRange, EAutoRange } = model.sci;
     const axisDescriptors: Array<ChronicleAxisDescriptor<ChronicleChartModel['yVolumeAxis']>> = [
-        {axis: model.yVolumeAxis, values: arrays.volumeBucketVerdictCounts},
+        { axis: model.yVolumeAxis, values: arrays.volumeBucketVerdictCounts },
         {
             axis: model.yExpectedValueAxis,
             values: [
                 ...arrays.expectedValuePerTradeUsdSeries,
                 ...arrays.movingAverageExpectedValueSeries,
-                ...(goldenZoneThresholds?.sparseExpectedValueThreshold != null
-                    ? [goldenZoneThresholds.sparseExpectedValueThreshold]
-                    : []),
-            ],
+                ...(goldenZoneThresholds?.sparseExpectedValueThreshold != null ? [goldenZoneThresholds.sparseExpectedValueThreshold] : [])
+            ]
         },
         {
             axis: model.yProfitFactorAxis,
             values: [
                 ...arrays.profitFactorSeries,
                 ...arrays.movingAverageProfitFactorSeries,
-                ...(goldenZoneThresholds?.chronicleProfitFactorThreshold != null
-                    ? [goldenZoneThresholds.chronicleProfitFactorThreshold]
-                    : []),
-            ],
+                ...(goldenZoneThresholds?.chronicleProfitFactorThreshold != null ? [goldenZoneThresholds.chronicleProfitFactorThreshold] : [])
+            ]
         },
         {
             axis: model.yVelocityAxis,
-            values: [...arrays.capitalVelocityPerHourSeries, ...arrays.movingAverageVelocitySeries],
-        },
+            values: [...arrays.capitalVelocityPerHourSeries, ...arrays.movingAverageVelocitySeries]
+        }
     ];
 
     for (const descriptor of axisDescriptors) {
@@ -164,21 +155,19 @@ export function harmonizeChronicleRightAxes(
             continue;
         }
         const usesSplineLineHeadroom =
-            descriptor.axis === model.yExpectedValueAxis
-            || descriptor.axis === model.yProfitFactorAxis
-            || descriptor.axis === model.yVelocityAxis;
+            descriptor.axis === model.yExpectedValueAxis || descriptor.axis === model.yProfitFactorAxis || descriptor.axis === model.yVelocityAxis;
         const normalizedBounds = usesSplineLineHeadroom
             ? {
-                min: bounds.min,
-                max: bounds.max + computeAdaptiveSplineOvershootPadding(descriptor.values, bounds),
-            }
+                  min: bounds.min,
+                  max: bounds.max + computeAdaptiveSplineOvershootPadding(descriptor.values, bounds)
+              }
             : bounds;
         const normalized =
             descriptor.axis === model.yVolumeAxis
                 ? normalizeBoundsToStepFromZero(bounds.max, targetTicks, 5)
                 : descriptor.axis === model.yExpectedValueAxis || descriptor.axis === model.yVelocityAxis
-                    ? normalizeBoundsToStep(normalizedBounds.min, normalizedBounds.max, targetTicks, 1)
-                    : normalizeBoundsToTickCount(normalizedBounds.min, normalizedBounds.max, targetTicks);
+                  ? normalizeBoundsToStep(normalizedBounds.min, normalizedBounds.max, targetTicks, 1)
+                  : normalizeBoundsToTickCount(normalizedBounds.min, normalizedBounds.max, targetTicks);
         descriptor.axis.autoRange = EAutoRange.Never;
         descriptor.axis.visibleRange = new NumberRange(normalized.min, normalized.max);
         const axisOptions = descriptor.axis as unknown as ChronicleConfigurableAxisOptions;
@@ -188,7 +177,7 @@ export function harmonizeChronicleRightAxes(
             descriptor.axis === model.yVolumeAxis
                 ? Math.max(1, normalized.majorDelta / 5)
                 : descriptor.axis === model.yExpectedValueAxis || descriptor.axis === model.yVelocityAxis
-                    ? Math.max(1, normalized.majorDelta / 5)
-                    : normalized.majorDelta / 4;
+                  ? Math.max(1, normalized.majorDelta / 5)
+                  : normalized.majorDelta / 4;
     }
 }

@@ -1,7 +1,7 @@
-import {CommonModule} from '@angular/common';
-import {Component, TemplateRef} from '@angular/core';
-import {IHeaderAngularComp} from 'ag-grid-angular';
-import {IHeaderParams} from 'ag-grid-community';
+import { CommonModule } from '@angular/common';
+import { Component, TemplateRef } from '@angular/core';
+import { IHeaderAngularComp } from 'ag-grid-angular';
+import { IHeaderParams } from 'ag-grid-community';
 
 @Component({
     standalone: true,
@@ -13,11 +13,11 @@ import {IHeaderParams} from 'ag-grid-community';
 				[ngTemplateOutlet]="template"
 				[ngTemplateOutletContext]="context">
 		</ng-container>
-    `,
+    `
 })
 export class TemplateHeaderRendererComponent implements IHeaderAngularComp {
-    public template?: TemplateRef<unknown>;
     public context: Record<string, unknown> = {};
+    public template?: TemplateRef<unknown>;
 
     agInit(params: IHeaderParams & { template?: TemplateRef<unknown> }): void {
         this.template = params.template;
@@ -27,7 +27,7 @@ export class TemplateHeaderRendererComponent implements IHeaderAngularComp {
             enableMenu: params.enableMenu,
             showColumnMenu: (sourceEl: HTMLElement) => params.showColumnMenu(sourceEl),
             column: params.column,
-            params,
+            params
         };
     }
 

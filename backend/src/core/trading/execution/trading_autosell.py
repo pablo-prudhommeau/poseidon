@@ -14,7 +14,7 @@ from src.core.trading.trading_service import invalidate_trading_positions_and_tr
 from src.core.trading.trading_structures import AutosellTriggerReason
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
+from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.models import TradingPosition, TradingTrade, ExecutionStatus, PositionPhase, TradeSide
 
 logger = get_application_logger(__name__)

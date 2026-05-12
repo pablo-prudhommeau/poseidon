@@ -1,498 +1,445 @@
-<ag-grid-angular
-		class="w-full poseidon-ag-grid-surface"
-		domLayout="autoHeight"
-		[columnDefs]="columnDefinitions"
-		[defaultColDef]="defaultColumnDefinition"
-		[rowData]="positionsRowData()"
-		[getRowId]="getRowId"
-		[theme]="agGridTheme"
-		(gridReady)="onPositionsGridReady($event)">
-</ag-grid-angular>
+<ag-grid-angular class="w-full poseidon-ag-grid-surface" domLayout="autoHeight" [columnDefs]="columnDefinitions" [defaultColDef]="defaultColumnDefinition" [rowData]="positionsRowData()" [getRowId]="getRowId" [theme]="agGridTheme" (gridReady)="onPositionsGridReady($event)"> </ag-grid-angular>
 
 <ng-template #actionsTemplate let-row="row">
-	<div class="flex items-center justify-center gap-1.5 h-full">
-		<button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400"
-		        title="View details" (click)="openDetails(row)">
-			<i class="fas fa-expand"></i>
-		</button>
-		<a [href]="dexUrlForPair(row)" target="_blank" rel="noopener"
-		   class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400"
-		   title="Open on DexScreener">
-			<i class="fas fa-arrow-up-right-from-square"></i>
-		</a>
-	</div>
+    <div class="flex items-center justify-center gap-1.5 h-full">
+        <button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400" title="View details" (click)="openDetails(row)">
+            <i class="fas fa-expand"></i>
+        </button>
+        <a [href]="dexUrlForPair(row)" target="_blank" rel="noopener" class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400" title="Open on DexScreener">
+            <i class="fas fa-arrow-up-right-from-square"></i>
+        </a>
+    </div>
 </ng-template>
 
-<p-dialog
-		[visible]="detailsVisible()"
-		(visibleChange)="detailsVisible.set($event)"
-		(onHide)="detailsVisible.set(false)"
-		[modal]="true"
-		[draggable]="false"
-		[dismissableMask]="true"
-		appendTo="body"
-		[breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }"
-		[style]="{ width: '90rem' }"
-		styleClass="positions-table-dialog"
-		[contentStyle]="{ padding: '0' }">
+<p-dialog [visible]="detailsVisible()" (visibleChange)="detailsVisible.set($event)" (onHide)="detailsVisible.set(false)" [modal]="true" [draggable]="false" [dismissableMask]="true" appendTo="body" [breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }" [style]="{ width: '90rem' }" styleClass="positions-table-dialog" [contentStyle]="{ padding: '0' }">
+    <ng-template pTemplate="header">
+        <div class="flex w-full flex-col gap-3">
+            <div class="flex w-full items-center justify-between gap-4">
+                <div class="flex min-w-0 items-center gap-3">
+                    <div class="min-w-0">
+                        <div class="text-xl font-black text-white tracking-tight">{{ selectedPosition()?.token_symbol }}</div>
+                    </div>
+                </div>
+                <div class="position-modal-header-actions flex flex-wrap items-center justify-end gap-2">
+                    <a [href]="dexUrlForPair(selectedPosition())" target="_blank" rel="noopener" class="position-modal-header-action" title="Open on DexScreener">
+                        <i class="fas fa-chart-line text-[11px]"></i>
+                        <span>Open Dex</span>
+                    </a>
+                    <button type="button" class="position-modal-header-action" title="Open previous position" (click)="openPreviousPosition()" [disabled]="!previousPositionForSelected()" [class.opacity-40]="!previousPositionForSelected()" [class.pointer-events-none]="!previousPositionForSelected()">
+                        <i class="fas fa-chevron-left text-[11px]"></i>
+                        <span>Prev</span>
+                    </button>
+                    <button type="button" class="position-modal-header-action" title="Open next position" (click)="openNextPosition()" [disabled]="!nextPositionForSelected()" [class.opacity-40]="!nextPositionForSelected()" [class.pointer-events-none]="!nextPositionForSelected()">
+                        <i class="fas fa-chevron-right text-[11px]"></i>
+                        <span>Next</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </ng-template>
 
-	<ng-template pTemplate="header">
-		<div class="flex w-full flex-col gap-3">
-			<div class="flex w-full items-center justify-between gap-4">
-				<div class="flex min-w-0 items-center gap-3">
-					<div class="min-w-0">
-						<div class="text-xl font-black text-white tracking-tight">{{ selectedPosition()?.token_symbol }}</div>
-					</div>
-				</div>
-				<div class="position-modal-header-actions flex flex-wrap items-center justify-end gap-2">
-					<a [href]="dexUrlForPair(selectedPosition())" target="_blank" rel="noopener"
-					   class="position-modal-header-action" title="Open on DexScreener">
-						<i class="fas fa-chart-line text-[11px]"></i>
-						<span>Open Dex</span>
-					</a>
-					<button
-							type="button"
-							class="position-modal-header-action"
-							title="Open previous position"
-							(click)="openPreviousPosition()"
-							[disabled]="!previousPositionForSelected()"
-							[class.opacity-40]="!previousPositionForSelected()"
-							[class.pointer-events-none]="!previousPositionForSelected()">
-						<i class="fas fa-chevron-left text-[11px]"></i>
-						<span>Prev</span>
-					</button>
-					<button
-							type="button"
-							class="position-modal-header-action"
-							title="Open next position"
-							(click)="openNextPosition()"
-							[disabled]="!nextPositionForSelected()"
-							[class.opacity-40]="!nextPositionForSelected()"
-							[class.pointer-events-none]="!nextPositionForSelected()">
-						<i class="fas fa-chevron-right text-[11px]"></i>
-						<span>Next</span>
-					</button>
-				</div>
-			</div>
-		</div>
-	</ng-template>
+    <p-tabs value="overview">
+        <p-tablist>
+            <p-tab value="overview"><i class="fa fa-info-circle mr-2 text-blue-400/60"></i>Position Details</p-tab>
+            <p-tab value="shadows">
+                <div class="flex items-center gap-2">
+                    <i class="fa fa-ghost text-purple-400/60"></i>
+                    <span>Shadow Intelligence</span>
+                </div>
+            </p-tab>
+        </p-tablist>
+        <p-tabpanels>
+            <p-tabpanel value="overview">
+                <div class="space-y-3">
+                    <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                        <div
+                            class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl border p-3"
+                            [ngClass]="{
+                                'border-white/5': deltaPercent(selectedPosition()) === 0,
+                                'border-emerald-500/20': deltaPercent(selectedPosition()) > 0,
+                                'border-red-500/20': deltaPercent(selectedPosition()) < 0,
+                            }"
+                        >
+                            <span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Live P&amp;L</span>
+                            <span class="position-modal-kpi-value mt-2 block" [class.text-emerald-400]="deltaPercent(selectedPosition()) > 0" [class.text-red-400]="deltaPercent(selectedPosition()) < 0" [class.text-slate-400]="deltaPercent(selectedPosition()) === 0"> {{ deltaPercent(selectedPosition()) > 0 ? '+' : '' }}{{ formatPercent(deltaPercent(selectedPosition())) }} </span>
+                            <span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">vs entry</span>
+                        </div>
+                        <div class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                            <span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Entry notional</span>
+                            <span class="position-modal-kpi-value mt-2 block text-white">{{ formatCompactUsd(orderNotionalUsd(selectedPosition(), 'entry')) }}</span>
+                            <span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'entry'), 'USD', 2, 2) }}</span>
+                        </div>
+                        <div
+                            class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl border p-3"
+                            [ngClass]="{
+                                'border-white/5': deltaPercent(selectedPosition()) === 0,
+                                'border-emerald-500/20': deltaPercent(selectedPosition()) > 0,
+                                'border-red-500/20': deltaPercent(selectedPosition()) < 0,
+                            }"
+                        >
+                            <span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Live notional</span>
+                            <span class="position-modal-kpi-value mt-2 block" [class.text-emerald-400]="deltaPercent(selectedPosition()) > 0" [class.text-red-400]="deltaPercent(selectedPosition()) < 0" [class.text-slate-100]="deltaPercent(selectedPosition()) === 0">{{ formatCompactUsd(orderNotionalUsd(selectedPosition(), 'last')) }}</span>
+                            <span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'last'), 'USD', 2, 2) }}</span>
+                        </div>
+                        <div class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                            <span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Multiplier</span>
+                            <span class="position-modal-kpi-value mt-2 block text-slate-100"> {{ selectedAnalytics()?.decision?.sizing_multiplier ?? 1.0 | number: '1.2-2' }}x </span>
+                            <span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">sizing factor</span>
+                        </div>
+                    </div>
 
-	<p-tabs value="overview">
-		<p-tablist>
-			<p-tab value="overview"><i class="fa fa-info-circle mr-2 text-blue-400/60"></i>Position Details</p-tab>
-			<p-tab value="shadows">
-				<div class="flex items-center gap-2">
-					<i class="fa fa-ghost text-purple-400/60"></i>
-					<span>Shadow Intelligence</span>
-				</div>
-			</p-tab>
-		</p-tablist>
-		<p-tabpanels>
-			<p-tabpanel value="overview">
-				<div class="space-y-3">
-					<div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
-						<div class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl border p-3"
-						     [ngClass]="{
-						         'border-white/5': deltaPercent(selectedPosition()) === 0,
-						         'border-emerald-500/20': deltaPercent(selectedPosition()) > 0,
-						         'border-red-500/20': deltaPercent(selectedPosition()) < 0
-						     }">
-							<span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Live P&amp;L</span>
-							<span class="position-modal-kpi-value mt-2 block"
-							      [class.text-emerald-400]="deltaPercent(selectedPosition()) > 0"
-							      [class.text-red-400]="deltaPercent(selectedPosition()) < 0"
-							      [class.text-slate-400]="deltaPercent(selectedPosition()) === 0">
-								{{ deltaPercent(selectedPosition()) > 0 ? '+' : '' }}{{ formatPercent(deltaPercent(selectedPosition())) }}
-							</span>
-							<span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">vs entry</span>
-						</div>
-						<div class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
-							<span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Entry notional</span>
-							<span class="position-modal-kpi-value mt-2 block text-white">{{ formatCompactUsd(orderNotionalUsd(selectedPosition(), 'entry')) }}</span>
-							<span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'entry'), 'USD', 2, 2) }}</span>
-						</div>
-						<div class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl border p-3"
-						     [ngClass]="{
-						         'border-white/5': deltaPercent(selectedPosition()) === 0,
-						         'border-emerald-500/20': deltaPercent(selectedPosition()) > 0,
-						         'border-red-500/20': deltaPercent(selectedPosition()) < 0
-						     }">
-							<span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Live notional</span>
-							<span class="position-modal-kpi-value mt-2 block"
-							      [class.text-emerald-400]="deltaPercent(selectedPosition()) > 0"
-							      [class.text-red-400]="deltaPercent(selectedPosition()) < 0"
-							      [class.text-slate-100]="deltaPercent(selectedPosition()) === 0">{{ formatCompactUsd(orderNotionalUsd(selectedPosition(), 'last')) }}</span>
-							<span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(orderNotionalUsd(selectedPosition(), 'last'), 'USD', 2, 2) }}</span>
-						</div>
-						<div class="flex min-h-[5.5rem] flex-col justify-between rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
-							<span class="block text-[9px] uppercase font-bold text-slate-500 tracking-widest">Multiplier</span>
-							<span class="position-modal-kpi-value mt-2 block text-slate-100">
-								{{ (selectedAnalytics()?.decision?.sizing_multiplier ?? 1.0) | number:'1.2-2' }}x
-							</span>
-							<span class="mt-1.5 block text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">sizing factor</span>
-						</div>
-					</div>
+                    <div class="pt-3 space-y-3">
+                        <div class="position-modal-section-header">
+                            <div class="flex items-center gap-2 px-1">
+                                <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
+                                    <i class="fa fa-crosshairs text-xs"></i>
+                                </span>
+                                <div class="leading-none">
+                                    <div class="text-[10px] font-black uppercase text-slate-200">Price range</div>
+                                    <div class="mt-1 text-[10px] text-slate-500">Stop loss, entry and take-profit ladder</div>
+                                </div>
+                            </div>
+                        </div>
 
-					<div class="pt-3 space-y-3">
-						<div class="position-modal-section-header">
-							<div class="flex items-center gap-2 px-1">
-								<span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
-									<i class="fa fa-crosshairs text-xs"></i>
-								</span>
-								<div class="leading-none">
-									<div class="text-[10px] font-black uppercase text-slate-200">Price range</div>
-									<div class="mt-1 text-[10px] text-slate-500">Stop loss, entry and take-profit ladder</div>
-								</div>
-							</div>
-						</div>
+                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                            <div class="grid grid-cols-2 xl:grid-cols-4 gap-2.5 text-center">
+                                <div class="position-modal-range-card position-modal-range-card--sl">
+                                    <span class="position-modal-range-watermark">SL</span>
+                                    <span class="relative z-[1] mt-3 block text-base font-black text-red-300">{{ formatCompactUsd(selectedPosition()?.stop_loss_price) }}</span>
+                                    <span class="relative z-[1] mt-1 block text-[13px] font-bold text-red-500/60">{{ formatPercent(((selectedPosition()?.stop_loss_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
+                                </div>
+                                <div class="position-modal-range-card position-modal-range-card--entry">
+                                    <span class="position-modal-range-watermark">ENTRY</span>
+                                    <span class="relative z-[1] mt-3 block text-base font-black text-slate-100">{{ formatCompactUsd(selectedPosition()?.entry_price) }}</span>
+                                    <span class="relative z-[1] mt-1 block text-[13px] font-bold text-slate-500">baseline</span>
+                                </div>
+                                <div class="position-modal-range-card position-modal-range-card--tp">
+                                    <span class="position-modal-range-watermark">TP1</span>
+                                    <span class="relative z-[1] mt-3 block text-base font-black text-emerald-300">{{ formatCompactUsd(selectedPosition()?.take_profit_tier_1_price) }}</span>
+                                    <span class="relative z-[1] mt-1 block text-[13px] font-bold text-emerald-500/60">{{ formatPercent(((selectedPosition()?.take_profit_tier_1_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
+                                </div>
+                                <div class="position-modal-range-card position-modal-range-card--tp2">
+                                    <span class="position-modal-range-watermark">TP2</span>
+                                    <span class="relative z-[1] mt-3 block text-base font-black text-emerald-200">{{ formatCompactUsd(selectedPosition()?.take_profit_tier_2_price) }}</span>
+                                    <span class="relative z-[1] mt-1 block text-[13px] font-bold text-emerald-500/60">{{ formatPercent(((selectedPosition()?.take_profit_tier_2_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
+                                </div>
+                            </div>
 
-						<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-							<div class="grid grid-cols-2 xl:grid-cols-4 gap-2.5 text-center">
-								<div class="position-modal-range-card position-modal-range-card--sl">
-									<span class="position-modal-range-watermark">SL</span>
-									<span class="relative z-[1] mt-3 block text-base font-black text-red-300">{{ formatCompactUsd(selectedPosition()?.stop_loss_price) }}</span>
-									<span class="relative z-[1] mt-1 block text-[13px] font-bold text-red-500/60">{{ formatPercent(((selectedPosition()?.stop_loss_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
-								</div>
-								<div class="position-modal-range-card position-modal-range-card--entry">
-									<span class="position-modal-range-watermark">ENTRY</span>
-									<span class="relative z-[1] mt-3 block text-base font-black text-slate-100">{{ formatCompactUsd(selectedPosition()?.entry_price) }}</span>
-									<span class="relative z-[1] mt-1 block text-[13px] font-bold text-slate-500">baseline</span>
-								</div>
-								<div class="position-modal-range-card position-modal-range-card--tp">
-									<span class="position-modal-range-watermark">TP1</span>
-									<span class="relative z-[1] mt-3 block text-base font-black text-emerald-300">{{ formatCompactUsd(selectedPosition()?.take_profit_tier_1_price) }}</span>
-									<span class="relative z-[1] mt-1 block text-[13px] font-bold text-emerald-500/60">{{ formatPercent(((selectedPosition()?.take_profit_tier_1_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
-								</div>
-								<div class="position-modal-range-card position-modal-range-card--tp2">
-									<span class="position-modal-range-watermark">TP2</span>
-									<span class="relative z-[1] mt-3 block text-base font-black text-emerald-200">{{ formatCompactUsd(selectedPosition()?.take_profit_tier_2_price) }}</span>
-									<span class="relative z-[1] mt-1 block text-[13px] font-bold text-emerald-500/60">{{ formatPercent(((selectedPosition()?.take_profit_tier_2_price ?? 0) / (selectedPosition()?.entry_price ?? 1) - 1) * 100) }}</span>
-								</div>
-							</div>
+                            <div class="mt-6">
+                                <div class="relative flex h-8 w-full items-center">
+                                    <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-500/10">
+                                        <div class="absolute left-0 h-full bg-gradient-to-r from-red-500/80 to-red-500/30" [style.width.%]="entryPositionPercentage(selectedPosition())"></div>
+                                        <div class="absolute h-full bg-gradient-to-r from-emerald-500/10 to-emerald-500/30" [style.left.%]="entryPositionPercentage(selectedPosition())" [style.width.%]="tp1PositionPercentage(selectedPosition()) - entryPositionPercentage(selectedPosition())"></div>
+                                        <div class="absolute h-full bg-gradient-to-r from-emerald-500/30 to-emerald-500/80" [style.left.%]="tp1PositionPercentage(selectedPosition())" [style.width.%]="100 - tp1PositionPercentage(selectedPosition())"></div>
+                                    </div>
 
-							<div class="mt-6">
-								<div class="relative flex h-8 w-full items-center">
-									<div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-500/10">
-										<div class="absolute left-0 h-full bg-gradient-to-r from-red-500/80 to-red-500/30" [style.width.%]="entryPositionPercentage(selectedPosition())"></div>
-										<div class="absolute h-full bg-gradient-to-r from-emerald-500/10 to-emerald-500/30" [style.left.%]="entryPositionPercentage(selectedPosition())" [style.width.%]="tp1PositionPercentage(selectedPosition()) - entryPositionPercentage(selectedPosition())"></div>
-										<div class="absolute h-full bg-gradient-to-r from-emerald-500/30 to-emerald-500/80" [style.left.%]="tp1PositionPercentage(selectedPosition())" [style.width.%]="100 - tp1PositionPercentage(selectedPosition())"></div>
-									</div>
+                                    <div class="absolute top-1/2 h-[10px] w-[2px] -translate-y-1/2 rounded bg-red-500" style="left: 0%"></div>
+                                    <div class="absolute top-1/2 h-[10px] w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-400" [style.left.%]="entryPositionPercentage(selectedPosition())"></div>
+                                    <div class="absolute top-1/2 h-[10px] w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-emerald-500" [style.left.%]="tp1PositionPercentage(selectedPosition())"></div>
+                                    <div class="absolute top-1/2 h-[10px] w-[2px] -translate-y-1/2 rounded bg-emerald-500" style="right: 0%"></div>
 
-									<div class="absolute top-1/2 h-[10px] w-[2px] -translate-y-1/2 rounded bg-red-500" style="left: 0%"></div>
-									<div class="absolute top-1/2 h-[10px] w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-400" [style.left.%]="entryPositionPercentage(selectedPosition())"></div>
-									<div class="absolute top-1/2 h-[10px] w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-emerald-500" [style.left.%]="tp1PositionPercentage(selectedPosition())"></div>
-									<div class="absolute top-1/2 h-[10px] w-[2px] -translate-y-1/2 rounded bg-emerald-500" style="right: 0%"></div>
+                                    <div class="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 transition-all duration-500" [style.left.%]="pricePositionPercentage(selectedPosition())">
+                                        <div class="relative h-4 w-4">
+                                            <div
+                                                class="h-4 w-4 rounded-full border-2 shadow-lg"
+                                                [ngClass]="{
+                                                    'bg-emerald-400 border-emerald-300 shadow-emerald-500/50': deltaPercent(selectedPosition()) > 0,
+                                                    'bg-red-400 border-red-300 shadow-red-500/50': deltaPercent(selectedPosition()) < 0,
+                                                    'bg-slate-400 border-slate-300': deltaPercent(selectedPosition()) === 0,
+                                                }"
+                                            ></div>
+                                            <div class="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                                                <span
+                                                    class="rounded-md border px-1.5 py-0.5 text-[9px] font-black shadow-lg backdrop-blur-sm"
+                                                    [ngClass]="{
+                                                        'bg-emerald-500/20 text-emerald-300 border-emerald-500/30': deltaPercent(selectedPosition()) > 0,
+                                                        'bg-red-500/20 text-red-300 border-red-500/30': deltaPercent(selectedPosition()) < 0,
+                                                        'bg-slate-500/20 text-slate-300 border-white/5': deltaPercent(selectedPosition()) === 0,
+                                                    }"
+                                                >
+                                                    {{ formatCompactUsd(selectedPosition()?.last_price) }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
 
-									<div class="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 transition-all duration-500"
-									     [style.left.%]="pricePositionPercentage(selectedPosition())">
-										<div class="relative h-4 w-4">
-											<div class="h-4 w-4 rounded-full border-2 shadow-lg"
-											     [ngClass]="{
-											         'bg-emerald-400 border-emerald-300 shadow-emerald-500/50': deltaPercent(selectedPosition()) > 0,
-											         'bg-red-400 border-red-300 shadow-red-500/50': deltaPercent(selectedPosition()) < 0,
-											         'bg-slate-400 border-slate-300': deltaPercent(selectedPosition()) === 0
-											     }">
-											</div>
-											<div class="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap">
-												<span class="rounded-md border px-1.5 py-0.5 text-[9px] font-black shadow-lg backdrop-blur-sm"
-												      [ngClass]="{
-												          'bg-emerald-500/20 text-emerald-300 border-emerald-500/30': deltaPercent(selectedPosition()) > 0,
-												          'bg-red-500/20 text-red-300 border-red-500/30': deltaPercent(selectedPosition()) < 0,
-												          'bg-slate-500/20 text-slate-300 border-white/5': deltaPercent(selectedPosition()) === 0
-												      }">
-													{{ formatCompactUsd(selectedPosition()?.last_price) }}
-												</span>
-											</div>
-										</div>
-									</div>
-								</div>
+                                <div class="relative mt-1 h-4 w-full text-[9px] font-bold tracking-wide text-slate-500">
+                                    <span class="absolute left-0">SL</span>
+                                    <span class="absolute -translate-x-1/2" [style.left.%]="entryPositionPercentage(selectedPosition())">ENTRY</span>
+                                    <span class="absolute -translate-x-1/2" [style.left.%]="tp1PositionPercentage(selectedPosition())">TP1</span>
+                                    <span class="absolute right-0 translate-x-1/2">TP2</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-								<div class="relative mt-1 h-4 w-full text-[9px] font-bold tracking-wide text-slate-500">
-									<span class="absolute left-0">SL</span>
-									<span class="absolute -translate-x-1/2" [style.left.%]="entryPositionPercentage(selectedPosition())">ENTRY</span>
-									<span class="absolute -translate-x-1/2" [style.left.%]="tp1PositionPercentage(selectedPosition())">TP1</span>
-									<span class="absolute right-0 translate-x-1/2">TP2</span>
-								</div>
-							</div>
-						</div>
-					</div>
+                    <div class="pt-3 space-y-3">
+                        <div class="position-modal-section-header">
+                            <div class="flex items-center gap-2 px-1">
+                                <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
+                                    <i class="fa fa-circle-info text-xs"></i>
+                                </span>
+                                <div class="leading-none">
+                                    <div class="text-[10px] font-black uppercase text-slate-200">Position information</div>
+                                    <div class="mt-1 text-[10px] text-slate-500">Lifecycle, analytics and chain references</div>
+                                </div>
+                            </div>
+                        </div>
 
-					<div class="pt-3 space-y-3">
-						<div class="position-modal-section-header">
-							<div class="flex items-center gap-2 px-1">
-								<span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
-									<i class="fa fa-circle-info text-xs"></i>
-								</span>
-								<div class="leading-none">
-									<div class="text-[10px] font-black uppercase text-slate-200">Position information</div>
-									<div class="mt-1 text-[10px] text-slate-500">Lifecycle, analytics and chain references</div>
-								</div>
-							</div>
-						</div>
+                        <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fa fa-clock text-cyan-400/60 text-sm"></i>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Position details</span>
+                                </div>
+                                <div class="space-y-2.5">
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">Phase</span>
+                                        <span
+                                            class="poseidon-grid-pill"
+                                            [ngClass]="{
+                                                'poseidon-grid-pill--info': selectedPosition()?.position_phase === 'OPEN',
+                                                'poseidon-grid-pill--warn': selectedPosition()?.position_phase === 'PARTIAL',
+                                                'poseidon-grid-pill--neutral': selectedPosition()?.position_phase !== 'OPEN' && selectedPosition()?.position_phase !== 'PARTIAL',
+                                            }"
+                                        >
+                                            {{ selectedPosition()?.position_phase || '—' }}
+                                        </span>
+                                    </div>
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">Open quantity</span>
+                                        <span class="position-modal-detail-value">{{ formatCompactQuantity(selectedPosition()?.open_quantity) }}</span>
+                                    </div>
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">Current quantity</span>
+                                        <span class="position-modal-detail-value">{{ formatCompactQuantity(selectedPosition()?.current_quantity) }}</span>
+                                    </div>
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">Opened</span>
+                                        <span class="position-modal-detail-value">{{ selectedPosition()?.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
+                                    </div>
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">Updated</span>
+                                        <span class="position-modal-detail-value">{{ selectedPosition()?.updated_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
+                                    </div>
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">Closed</span>
+                                        <span class="position-modal-detail-value">{{ selectedPosition()?.closed_at ? (selectedPosition()?.closed_at | date: 'yyyy-MM-dd HH:mm:ss') : 'active' }}</span>
+                                    </div>
+                                </div>
+                            </div>
 
-						<div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-							<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-								<div class="flex items-center gap-2 mb-3">
-									<i class="fa fa-clock text-cyan-400/60 text-sm"></i>
-									<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Position details</span>
-								</div>
-								<div class="space-y-2.5">
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">Phase</span>
-										<span class="poseidon-grid-pill"
-										      [ngClass]="{
-										          'poseidon-grid-pill--info': selectedPosition()?.position_phase === 'OPEN',
-										          'poseidon-grid-pill--warn': selectedPosition()?.position_phase === 'PARTIAL',
-										          'poseidon-grid-pill--neutral': selectedPosition()?.position_phase !== 'OPEN' && selectedPosition()?.position_phase !== 'PARTIAL'
-										      }">
-											{{ selectedPosition()?.position_phase || '—' }}
-										</span>
-									</div>
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">Open quantity</span>
-										<span class="position-modal-detail-value">{{ formatCompactQuantity(selectedPosition()?.open_quantity) }}</span>
-									</div>
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">Current quantity</span>
-										<span class="position-modal-detail-value">{{ formatCompactQuantity(selectedPosition()?.current_quantity) }}</span>
-									</div>
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">Opened</span>
-										<span class="position-modal-detail-value">{{ selectedPosition()?.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
-									</div>
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">Updated</span>
-										<span class="position-modal-detail-value">{{ selectedPosition()?.updated_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
-									</div>
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">Closed</span>
-										<span class="position-modal-detail-value">{{ selectedPosition()?.closed_at ? (selectedPosition()?.closed_at | date: 'yyyy-MM-dd HH:mm:ss') : 'active' }}</span>
-									</div>
-								</div>
-							</div>
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fa fa-brain text-purple-400/60 text-sm"></i>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">AI intelligence</span>
+                                </div>
+                                @if (analyticsForSelected(); as analytics) {
+                                    <div class="space-y-2.5">
+                                        <div class="position-modal-detail-row">
+                                            <span class="position-modal-detail-label">Quality</span>
+                                            <span class="position-modal-detail-value text-slate-200">{{ formatPercent(analytics.scores.quality_score) }}</span>
+                                        </div>
+                                        <div class="position-modal-detail-row">
+                                            <span class="position-modal-detail-label">Adjusted quality</span>
+                                            <span class="position-modal-detail-value text-emerald-400">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</span>
+                                        </div>
+                                        <div class="position-modal-detail-row">
+                                            <span class="position-modal-detail-label">AI delta</span>
+                                            <span class="position-modal-detail-value" [class.text-emerald-400]="analytics.ai.ai_quality_score_delta > 0" [class.text-red-400]="analytics.ai.ai_quality_score_delta < 0" [class.text-slate-400]="analytics.ai.ai_quality_score_delta === 0"> {{ analytics.ai.ai_quality_score_delta > 0 ? '+' : '' }}{{ formatPercent(analytics.ai.ai_quality_score_delta) }} </span>
+                                        </div>
+                                    </div>
+                                } @else {
+                                    <div class="flex h-24 items-center justify-center text-[10px] font-bold uppercase text-slate-600">No AI chartist analysis available</div>
+                                }
+                            </div>
 
-							<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-								<div class="flex items-center gap-2 mb-3">
-									<i class="fa fa-brain text-purple-400/60 text-sm"></i>
-									<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">AI intelligence</span>
-								</div>
-								@if (analyticsForSelected(); as analytics) {
-									<div class="space-y-2.5">
-										<div class="position-modal-detail-row">
-											<span class="position-modal-detail-label">Quality</span>
-											<span class="position-modal-detail-value text-slate-200">{{ formatPercent(analytics.scores.quality_score) }}</span>
-										</div>
-										<div class="position-modal-detail-row">
-											<span class="position-modal-detail-label">Adjusted quality</span>
-											<span class="position-modal-detail-value text-emerald-400">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</span>
-										</div>
-										<div class="position-modal-detail-row">
-											<span class="position-modal-detail-label">AI delta</span>
-											<span class="position-modal-detail-value"
-											      [class.text-emerald-400]="analytics.ai.ai_quality_score_delta > 0"
-											      [class.text-red-400]="analytics.ai.ai_quality_score_delta < 0"
-											      [class.text-slate-400]="analytics.ai.ai_quality_score_delta === 0">
-												{{ analytics.ai.ai_quality_score_delta > 0 ? '+' : '' }}{{ formatPercent(analytics.ai.ai_quality_score_delta) }}
-											</span>
-										</div>
-									</div>
-								} @else {
-									<div class="flex h-24 items-center justify-center text-[10px] font-bold uppercase text-slate-600">No AI chartist analysis available</div>
-								}
-							</div>
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fa fa-link text-amber-400/60 text-sm"></i>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Chain references</span>
+                                </div>
+                                <div class="space-y-2.5">
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">Blockchain</span>
+                                        <span class="inline-flex items-center gap-2 text-right text-xs font-bold text-slate-200">
+                                            @if (currentPositionChainIcon()) {
+                                                <img [src]="currentPositionChainIcon()" (error)="handlePositionChainIconError($event)" alt="Blockchain icon" class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
+                                            }
+                                            <span>{{ selectedPosition()?.blockchain_network || '—' }}</span>
+                                        </span>
+                                    </div>
+                                    <div class="position-modal-detail-row">
+                                        <span class="position-modal-detail-label">DEX</span>
+                                        <span class="inline-flex items-center gap-2 text-right text-xs font-bold text-slate-200">
+                                            @if (currentPositionDexIcon(); as positionDexIcon) {
+                                                <img [src]="positionDexIcon" (error)="handlePositionDexIconError($event)" alt="DEX icon" class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
+                                            }
+                                            <span>{{ selectedPosition()?.dex_id || '—' }}</span>
+                                        </span>
+                                    </div>
+                                    <div class="position-modal-address-row">
+                                        <span class="position-modal-detail-label">Token address</span>
+                                        <div class="position-modal-address-value">
+                                            <span class="font-mono truncate">{{ selectedPosition()?.token_address }}</span>
+                                            <button class="position-modal-icon-btn" (click)="copyToClipboard(selectedPosition()?.token_address)">
+                                                <i class="far fa-copy text-[10px]"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="position-modal-address-row">
+                                        <span class="position-modal-detail-label">Pair address</span>
+                                        <div class="position-modal-address-value">
+                                            <span class="font-mono truncate">{{ selectedPosition()?.pair_address }}</span>
+                                            <button class="position-modal-icon-btn" (click)="copyToClipboard(selectedPosition()?.pair_address)">
+                                                <i class="far fa-copy text-[10px]"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-							<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-								<div class="flex items-center gap-2 mb-3">
-									<i class="fa fa-link text-amber-400/60 text-sm"></i>
-									<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Chain references</span>
-								</div>
-								<div class="space-y-2.5">
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">Blockchain</span>
-										<span class="inline-flex items-center gap-2 text-right text-xs font-bold text-slate-200">
-											@if (currentPositionChainIcon()) {
-												<img [src]="currentPositionChainIcon()"
-												     (error)="handlePositionChainIconError($event)"
-												     alt="Blockchain icon"
-												     class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10"/>
-											}
-											<span>{{ selectedPosition()?.blockchain_network || '—' }}</span>
-										</span>
-									</div>
-									<div class="position-modal-detail-row">
-										<span class="position-modal-detail-label">DEX</span>
-										<span class="inline-flex items-center gap-2 text-right text-xs font-bold text-slate-200">
-											@if (currentPositionDexIcon(); as positionDexIcon) {
-												<img [src]="positionDexIcon"
-												     (error)="handlePositionDexIconError($event)"
-												     alt="DEX icon"
-												     class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10"/>
-											}
-											<span>{{ selectedPosition()?.dex_id || '—' }}</span>
-										</span>
-									</div>
-									<div class="position-modal-address-row">
-										<span class="position-modal-detail-label">Token address</span>
-										<div class="position-modal-address-value">
-											<span class="font-mono truncate">{{ selectedPosition()?.token_address }}</span>
-											<button class="position-modal-icon-btn" (click)="copyToClipboard(selectedPosition()?.token_address)">
-												<i class="far fa-copy text-[10px]"></i>
-											</button>
-										</div>
-									</div>
-									<div class="position-modal-address-row">
-										<span class="position-modal-detail-label">Pair address</span>
-										<div class="position-modal-address-value">
-											<span class="font-mono truncate">{{ selectedPosition()?.pair_address }}</span>
-											<button class="position-modal-icon-btn" (click)="copyToClipboard(selectedPosition()?.pair_address)">
-												<i class="far fa-copy text-[10px]"></i>
-											</button>
-										</div>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
+                    @if (analyticsForSelected(); as analytics) {
+                        <div class="pt-3 space-y-3">
+                            <div class="position-modal-section-header">
+                                <div class="flex items-center gap-2 px-1">
+                                    <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
+                                        <i class="fa fa-chart-column text-xs"></i>
+                                    </span>
+                                    <div class="leading-none">
+                                        <div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
+                                        <div class="mt-1 text-[10px] text-slate-500">Condensed market structure and momentum</div>
+                                    </div>
+                                </div>
+                            </div>
 
-					@if (analyticsForSelected(); as analytics) {
-						<div class="pt-3 space-y-3">
-							<div class="position-modal-section-header">
-								<div class="flex items-center gap-2 px-1">
-									<span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
-										<i class="fa fa-chart-column text-xs"></i>
-									</span>
-									<div class="leading-none">
-										<div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
-										<div class="mt-1 text-[10px] text-slate-500">Condensed market structure and momentum</div>
-									</div>
-								</div>
-							</div>
+                            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                                    <div class="flex items-center gap-2 mb-3">
+                                        <i class="fa fa-coins text-emerald-400/60 text-sm"></i>
+                                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Market structure</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Liquidity</div>
+                                            <div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Volume 1h</div>
+                                            <div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Volume 24h</div>
+                                            <div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Market cap</div>
+                                            <div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</div>
+                                        </div>
+                                    </div>
+                                </div>
 
-							<div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-								<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-									<div class="flex items-center gap-2 mb-3">
-										<i class="fa fa-coins text-emerald-400/60 text-sm"></i>
-										<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Market structure</span>
-									</div>
-									<div class="grid grid-cols-2 gap-2">
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Liquidity</div>
-											<div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Volume 1h</div>
-											<div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Volume 24h</div>
-											<div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Market cap</div>
-											<div class="position-modal-stat-value">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</div>
-										</div>
-									</div>
-								</div>
+                                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                                    <div class="flex items-center gap-2 mb-3">
+                                        <i class="fa fa-wave-square text-blue-400/60 text-sm"></i>
+                                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Momentum at entry</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Delta 5m</div>
+                                            <div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Delta 1h</div>
+                                            <div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Delta 6h</div>
+                                            <div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Delta 24h</div>
+                                            <div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Buy/Sell ratio</div>
+                                            <div class="position-modal-stat-value">{{ formatNumber(analytics.fundamentals.buy_to_sell_ratio, 2, 2) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Transactions 1h</div>
+                                            <div class="position-modal-stat-value">{{ formatNumber(analytics.fundamentals.transaction_count_h1, 0, 0) }}</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">Token age</div>
+                                            <div class="position-modal-stat-value">{{ formatNumber(analytics.fundamentals.token_age_hours, 0, 0) }}h</div>
+                                        </div>
+                                        <div class="position-modal-stat-card">
+                                            <div class="position-modal-stat-label">AI adjusted</div>
+                                            <div class="position-modal-stat-value">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    } @else {
+                        <ng-container [ngTemplateOutlet]="positionMarketSnapshotSkeleton"></ng-container>
+                    }
+                </div>
+            </p-tabpanel>
+            <p-tabpanel value="shadows">
+                <trading-shadow-intelligence-tab [snapshot]="selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot ?? null" />
+            </p-tabpanel>
+        </p-tabpanels>
+    </p-tabs>
 
-								<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-									<div class="flex items-center gap-2 mb-3">
-										<i class="fa fa-wave-square text-blue-400/60 text-sm"></i>
-										<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Momentum at entry</span>
-									</div>
-									<div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Delta 5m</div>
-											<div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Delta 1h</div>
-											<div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Delta 6h</div>
-											<div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Delta 24h</div>
-											<div class="position-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Buy/Sell ratio</div>
-											<div class="position-modal-stat-value">{{ formatNumber(analytics.fundamentals.buy_to_sell_ratio, 2, 2) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Transactions 1h</div>
-											<div class="position-modal-stat-value">{{ formatNumber(analytics.fundamentals.transaction_count_h1, 0, 0) }}</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">Token age</div>
-											<div class="position-modal-stat-value">{{ formatNumber(analytics.fundamentals.token_age_hours, 0, 0) }}h</div>
-										</div>
-										<div class="position-modal-stat-card">
-											<div class="position-modal-stat-label">AI adjusted</div>
-											<div class="position-modal-stat-value">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</div>
-										</div>
-									</div>
-								</div>
-							</div>
-						</div>
-					} @else {
-						<ng-container [ngTemplateOutlet]="positionMarketSnapshotSkeleton"></ng-container>
-					}
-				</div>
-			</p-tabpanel>
-			<p-tabpanel value="shadows">
-				<trading-shadow-intelligence-tab
-						[snapshot]="selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot ?? null"/>
-			</p-tabpanel>
-		</p-tabpanels>
-	</p-tabs>
+    <ng-template #positionMarketSnapshotSkeleton>
+        <div class="pt-3 space-y-3">
+            <div class="position-modal-section-header">
+                <div class="flex items-center gap-2 px-1">
+                    <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
+                        <i class="fa fa-chart-column text-xs opacity-50"></i>
+                    </span>
+                    <div class="leading-none">
+                        <div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
+                        <div class="mt-1 text-[10px] text-slate-500">Loading market structure and momentum</div>
+                    </div>
+                </div>
+            </div>
 
-	<ng-template #positionMarketSnapshotSkeleton>
-		<div class="pt-3 space-y-3">
-			<div class="position-modal-section-header">
-				<div class="flex items-center gap-2 px-1">
-					<span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
-						<i class="fa fa-chart-column text-xs opacity-50"></i>
-					</span>
-					<div class="leading-none">
-						<div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
-						<div class="mt-1 text-[10px] text-slate-500">Loading market structure and momentum</div>
-					</div>
-				</div>
-			</div>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fa fa-coins text-emerald-400/40 text-sm"></i>
+                        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Market structure</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        @for (_ of [1, 2, 3, 4]; track $index) {
+                            <div class="position-modal-stat-card">
+                                <p-skeleton width="42%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
+                                <p-skeleton width="68%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
+                            </div>
+                        }
+                    </div>
+                </div>
 
-			<div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-				<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-					<div class="flex items-center gap-2 mb-3">
-						<i class="fa fa-coins text-emerald-400/40 text-sm"></i>
-						<span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Market structure</span>
-					</div>
-					<div class="grid grid-cols-2 gap-2">
-						@for (_ of [1, 2, 3, 4]; track $index) {
-							<div class="position-modal-stat-card">
-								<p-skeleton width="42%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
-								<p-skeleton width="68%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
-							</div>
-						}
-					</div>
-				</div>
-
-				<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-					<div class="flex items-center gap-2 mb-3">
-						<i class="fa fa-wave-square text-blue-400/40 text-sm"></i>
-						<span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Momentum at entry</span>
-					</div>
-					<div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
-						@for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track $index) {
-							<div class="position-modal-stat-card">
-								<p-skeleton width="58%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
-								<p-skeleton width="54%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
-							</div>
-						}
-					</div>
-				</div>
-			</div>
-		</div>
-	</ng-template>
+                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fa fa-wave-square text-blue-400/40 text-sm"></i>
+                        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Momentum at entry</span>
+                    </div>
+                    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                        @for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track $index) {
+                            <div class="position-modal-stat-card">
+                                <p-skeleton width="58%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
+                                <p-skeleton width="54%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </ng-template>
 </p-dialog>

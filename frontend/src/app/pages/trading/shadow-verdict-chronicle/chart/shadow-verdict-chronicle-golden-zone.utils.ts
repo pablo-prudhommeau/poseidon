@@ -1,4 +1,4 @@
-import type {ChronicleArrays, ChronicleBucketMeta, ChronicleChartModel, ChronicleGoldenZoneThresholds,} from '../data/shadow-verdict-chronicle.models';
+import type { ChronicleArrays, ChronicleBucketMeta, ChronicleChartModel, ChronicleGoldenZoneThresholds } from '../data/shadow-verdict-chronicle.models';
 
 function toFiniteThreshold(value: number | string | null | undefined): number | undefined {
     const numeric = typeof value === 'string' ? Number(value) : value;
@@ -8,7 +8,7 @@ function toFiniteThreshold(value: number | string | null | undefined): number | 
 export function resolveChronicleGoldenZoneThresholds(meta: ChronicleBucketMeta): ChronicleGoldenZoneThresholds {
     return {
         sparseExpectedValueThreshold: toFiniteThreshold(meta.sparseExpectedValueUsdThreshold),
-        chronicleProfitFactorThreshold: toFiniteThreshold(meta.chronicleProfitFactorThreshold),
+        chronicleProfitFactorThreshold: toFiniteThreshold(meta.chronicleProfitFactorThreshold)
     };
 }
 
@@ -21,7 +21,7 @@ export function applyChronicleGoldenZoneVisualState(
     model: ChronicleChartModel,
     thresholds: ChronicleGoldenZoneThresholds,
     isSmaExpectedValueVisible: boolean,
-    isSmaProfitFactorVisible: boolean,
+    isSmaProfitFactorVisible: boolean
 ): void {
     const isSmaExpectedValueAreaVisible = model.goldenZoneExpectedValueBandSeries.isVisible;
     const isSmaProfitFactorAreaVisible = model.goldenZoneProfitFactorBandSeries.isVisible;
@@ -32,8 +32,7 @@ export function applyChronicleGoldenZoneVisualState(
             model.goldenZoneExpectedValueBandSeries.isVisible = false;
         } else {
             model.goldenZoneExpectedValueAnnotation.y1 = thresholds.sparseExpectedValueThreshold;
-            model.goldenZoneExpectedValueAnnotation.isHidden =
-                !(isSmaExpectedValueVisible || isSmaExpectedValueAreaVisible);
+            model.goldenZoneExpectedValueAnnotation.isHidden = !(isSmaExpectedValueVisible || isSmaExpectedValueAreaVisible);
             model.goldenZoneExpectedValueBandSeries.zeroLineY = thresholds.sparseExpectedValueThreshold;
         }
     }
@@ -44,33 +43,22 @@ export function applyChronicleGoldenZoneVisualState(
             model.goldenZoneProfitFactorBandSeries.isVisible = false;
         } else {
             model.goldenZoneProfitFactorAnnotation.y1 = thresholds.chronicleProfitFactorThreshold;
-            model.goldenZoneProfitFactorAnnotation.isHidden =
-                !(isSmaProfitFactorVisible || isSmaProfitFactorAreaVisible);
+            model.goldenZoneProfitFactorAnnotation.isHidden = !(isSmaProfitFactorVisible || isSmaProfitFactorAreaVisible);
             model.goldenZoneProfitFactorBandSeries.zeroLineY = thresholds.chronicleProfitFactorThreshold;
         }
     }
 }
 
-export function buildChronicleGoldenZoneExpectedValueBandValues(
-    arrays: ChronicleArrays,
-    sparseExpectedValueThreshold: number | undefined,
-): number[] {
+export function buildChronicleGoldenZoneExpectedValueBandValues(arrays: ChronicleArrays, sparseExpectedValueThreshold: number | undefined): number[] {
     if (sparseExpectedValueThreshold == null) {
         return arrays.movingAverageExpectedValueSeries.map(() => 0);
     }
-    return arrays.movingAverageExpectedValueSeries.map((value: number) =>
-        value > sparseExpectedValueThreshold ? value : sparseExpectedValueThreshold,
-    );
+    return arrays.movingAverageExpectedValueSeries.map((value: number) => (value > sparseExpectedValueThreshold ? value : sparseExpectedValueThreshold));
 }
 
-export function buildChronicleGoldenZoneProfitFactorBandValues(
-    arrays: ChronicleArrays,
-    chronicleProfitFactorThreshold: number | undefined,
-): number[] {
+export function buildChronicleGoldenZoneProfitFactorBandValues(arrays: ChronicleArrays, chronicleProfitFactorThreshold: number | undefined): number[] {
     if (chronicleProfitFactorThreshold == null) {
         return arrays.movingAverageProfitFactorSeries.map(() => 0);
     }
-    return arrays.movingAverageProfitFactorSeries.map((value: number) =>
-        value > chronicleProfitFactorThreshold ? value : chronicleProfitFactorThreshold,
-    );
+    return arrays.movingAverageProfitFactorSeries.map((value: number) => (value > chronicleProfitFactorThreshold ? value : chronicleProfitFactorThreshold));
 }

@@ -28,10 +28,10 @@ from src.core.utils.math_utils import quantize_2dp, decimal_from_primitive
 from src.integrations.blockchain.blockchain_free_cash_service import BlockchainCashBalance, fetch_stablecoin_balances_for_allowed_chains
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
-from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
+from src.persistence.dao.trading_position_dao import TradingPositionDao
+from src.persistence.dao.trading_trade_dao import TradingTradeDao
+from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingPortfolioSnapshot, TradingPosition
 
 logger = get_application_logger(__name__)

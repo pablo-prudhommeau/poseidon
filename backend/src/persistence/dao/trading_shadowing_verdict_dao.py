@@ -139,7 +139,7 @@ class TradingShadowingVerdictDao:
 
     def retrieve_shadow_intelligence_status_summary(self) -> ShadowIntelligenceStatusSummary:
         from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceStatusSummary
-        from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
+        from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 
         resolved_outcome_count = self.count_resolved()
         probe_dao = TradingShadowingProbeDao(self.database_session)

@@ -1,7 +1,7 @@
-import {HttpClient} from '@angular/common/http';
-import {inject, Injectable} from '@angular/core';
-import {ICellRendererParams} from 'ag-grid-community';
-import {catchError, firstValueFrom, map, of, timeout} from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { ICellRendererParams } from 'ag-grid-community';
+import { catchError, firstValueFrom, map, of, timeout } from 'rxjs';
 
 type IconCategory = 'chain' | 'token' | 'protocol';
 
@@ -53,7 +53,7 @@ const CHAIN_TO_TRUST_WALLET_FOLDER: Record<string, string> = {
     fantom: 'fantom',
     base: 'base',
     sol: 'solana',
-    solana: 'solana',
+    solana: 'solana'
 };
 
 const DEXSCREENER_ID_TO_DEFILLAMA_SLUG: Record<string, string> = {
@@ -64,28 +64,11 @@ const DEXSCREENER_ID_TO_DEFILLAMA_SLUG: Record<string, string> = {
     'uniswap-v3': 'uniswap',
     'uniswap-v4': 'uniswap',
     'pancakeswap-amm': 'pancakeswap',
-    'pancakeswap-amm-v3': 'pancakeswap',
+    'pancakeswap-amm-v3': 'pancakeswap'
 };
 
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class DefiIconsService {
-    private readonly httpClient = inject(HttpClient);
-
-    private readonly resolvedIconCache = new Map<string, string>();
-    private readonly pendingResolutionCache = new Map<string, Promise<string | null>>();
-
-    constructor() {
-        console.info('[UI][ICONS] DefiIconsService initialized');
-    }
-
-    public getChainIconCandidates(chainName: string | null | undefined): string[] {
-        return this.buildChainIconCandidates(String(chainName ?? '').toLowerCase());
-    }
-
-    public getProtocolIconCandidates(dexscreenerId: string | null | undefined): string[] {
-        return this.buildProtocolIconCandidates(String(dexscreenerId ?? '').toLowerCase());
-    }
-
     public readonly tokenChainChipRenderer = (params: ICellRendererParams): HTMLElement => {
         const row = params.data ?? {};
         const chainName = String(row.blockchain_network ?? '').toLowerCase();
@@ -96,19 +79,11 @@ export class DefiIconsService {
         const rootElement = document.createElement('span');
         rootElement.className = 'inline-flex items-center gap-2';
 
-        const chainIconElement = this.buildIconElement(
-            this.buildChainIconCandidates(chainName),
-            `chain:${chainName || 'unknown'}`,
-            'chain',
-        );
+        const chainIconElement = this.buildIconElement(this.buildChainIconCandidates(chainName), `chain:${chainName || 'unknown'}`, 'chain');
 
         let protocolIconElement: HTMLSpanElement | null = null;
         if (dexId && dexId !== 'unknown') {
-            protocolIconElement = this.buildIconElement(
-                this.buildProtocolIconCandidates(dexId),
-                `protocol:${dexId}`,
-                'protocol',
-            );
+            protocolIconElement = this.buildIconElement(this.buildProtocolIconCandidates(dexId), `protocol:${dexId}`, 'protocol');
         }
 
         const tokenIconElement = this.buildTokenIconElement(chainName, tokenAddress, tokenSymbol);
@@ -125,6 +100,136 @@ export class DefiIconsService {
         rootElement.appendChild(labelElement);
         return rootElement;
     };
+
+    private readonly httpClient = inject(HttpClient);
+    private readonly pendingResolutionCache = new Map<string, Promise<string | null>>();
+
+    private readonly resolvedIconCache = new Map<string, string>();
+
+    constructor() {
+        console.info('[UI][ICONS] DefiIconsService initialized');
+    }
+
+    public getChainIconCandidates(chainName: string | null | undefined): string[] {
+        return this.buildChainIconCandidates(String(chainName ?? '').toLowerCase());
+    }
+
+    public getProtocolIconCandidates(dexscreenerId: string | null | undefined): string[] {
+        return this.buildProtocolIconCandidates(String(dexscreenerId ?? '').toLowerCase());
+    }
+
+    private applyResolvedImage(imageElement: HTMLImageElement, placeholderElement: HTMLElement, source: string): void {
+        imageElement.onload = () => {
+            imageElement.classList.add('is-loaded');
+            placeholderElement.style.opacity = '0';
+        };
+        imageElement.onerror = () => {
+            imageElement.style.opacity = '0';
+        };
+        imageElement.src = source;
+    }
+
+    private attemptCandidateCascade(imageElement: HTMLImageElement, placeholderElement: HTMLElement, candidates: string[], cacheKey: string): void {
+        let candidateIndex = 0;
+
+        const attemptNextCandidate = (): void => {
+            if (candidateIndex >= candidates.length) {
+                imageElement.removeAttribute('src');
+                imageElement.style.opacity = '0';
+                return;
+            }
+            const candidateUrl = candidates[candidateIndex++];
+            imageElement.onerror = attemptNextCandidate;
+            imageElement.onload = () => {
+                const resolvedSource = imageElement.currentSrc || imageElement.src;
+                this.applyResolvedImage(imageElement, placeholderElement, resolvedSource);
+                this.resolvedIconCache.set(cacheKey, resolvedSource);
+                this.writeToLocalStorage(cacheKey, resolvedSource);
+                this.persistAsDataUrl(cacheKey, resolvedSource);
+            };
+            imageElement.src = candidateUrl;
+        };
+
+        attemptNextCandidate();
+    }
+
+    private buildChainIconCandidates(chainName: string): string[] {
+        const candidates: string[] = [];
+        if (chainName) {
+            for (const extension of ICON_EXTENSIONS) {
+                candidates.push(`https://icons.llamao.fi/icons/chains/rsz_${chainName}${extension}`);
+            }
+        }
+        candidates.push('https://icons.llamao.fi/icons/chains/rsz_unknown.jpg');
+        return candidates;
+    }
+
+    private buildIconElement(sourceCandidates: string[], cacheKey: string, category: IconCategory): HTMLSpanElement {
+        const wrapperElement = this.createCircleWrapper();
+        const placeholderElement = this.createPlaceholderElement();
+        const imageElement = this.createImageElement(category);
+        wrapperElement.appendChild(placeholderElement);
+        wrapperElement.appendChild(imageElement);
+
+        const persistedSource = this.readFromLocalStorage(cacheKey);
+        if (persistedSource) {
+            this.applyResolvedImage(imageElement, placeholderElement, persistedSource);
+            this.resolvedIconCache.set(cacheKey, persistedSource);
+            return wrapperElement;
+        }
+
+        const cachedSource = this.resolvedIconCache.get(cacheKey);
+        if (cachedSource) {
+            this.applyResolvedImage(imageElement, placeholderElement, cachedSource);
+            return wrapperElement;
+        }
+
+        this.attemptCandidateCascade(imageElement, placeholderElement, sourceCandidates, cacheKey);
+        return wrapperElement;
+    }
+
+    private buildProtocolIconCandidates(dexscreenerId: string): string[] {
+        if (!dexscreenerId || dexscreenerId === 'unknown') {
+            return [];
+        }
+
+        const slugVariants = new Set<string>();
+        slugVariants.add(dexscreenerId);
+
+        const mappedSlug = DEXSCREENER_ID_TO_DEFILLAMA_SLUG[dexscreenerId];
+        if (mappedSlug) {
+            slugVariants.add(mappedSlug);
+        }
+
+        if (dexscreenerId.endsWith('fun') && !dexscreenerId.endsWith('.fun')) {
+            slugVariants.add(dexscreenerId.replace(/fun$/, '.fun'));
+        }
+
+        if (dexscreenerId.includes('-')) {
+            slugVariants.add(dexscreenerId.split('-')[0]);
+        }
+
+        const candidates: string[] = [];
+        for (const slug of slugVariants) {
+            for (const extension of ICON_EXTENSIONS) {
+                candidates.push(`https://icons.llamao.fi/icons/protocols/${slug}${extension}`);
+            }
+        }
+        return candidates;
+    }
+
+    private buildTokenFallbackCandidates(chainName: string, tokenAddress: string): string[] {
+        const candidates: string[] = [];
+        if (!chainName || !tokenAddress) {
+            return candidates;
+        }
+        candidates.push(`https://cdn.dexscreener.com/token-icons/${chainName}/${tokenAddress}.png`);
+        const trustWalletFolder = CHAIN_TO_TRUST_WALLET_FOLDER[chainName];
+        if (trustWalletFolder) {
+            candidates.push(`https://cdn.jsdelivr.net/gh/trustwallet/assets@master/blockchains/${trustWalletFolder}/assets/${tokenAddress}/logo.png`);
+        }
+        return candidates;
+    }
 
     private buildTokenIconElement(chainName: string, tokenAddress: string, tokenSymbol: string): HTMLSpanElement {
         const cacheKey = `token:${chainName}:${tokenAddress}`;
@@ -165,188 +270,9 @@ export class DefiIconsService {
         return wrapperElement;
     }
 
-    private resolveTokenFallbackCascade(
-        imageElement: HTMLImageElement,
-        placeholderElement: HTMLElement,
-        chainName: string,
-        tokenAddress: string,
-        cacheKey: string,
-    ): void {
-        const fallbackCandidates = this.buildTokenFallbackCandidates(chainName, tokenAddress);
-        this.attemptCandidateCascade(imageElement, placeholderElement, fallbackCandidates, cacheKey);
-    }
-
-    private resolveDexscreenerTokenImageUrl(chainName: string, tokenAddress: string, tokenSymbol: string): Promise<string | null> {
-        if (!chainName || !tokenAddress) {
-            return Promise.resolve(null);
-        }
-
-        const deduplicationKey = `dex:${chainName}:${tokenAddress}`;
-        const pendingPromise = this.pendingResolutionCache.get(deduplicationKey);
-        if (pendingPromise) {
-            return pendingPromise;
-        }
-
-        const resolutionPromise = firstValueFrom(
-            this.httpClient
-                .get<DexscreenerPairsResponse>(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`)
-                .pipe(
-                    timeout(3500),
-                    map((response) => this.extractImageUrlFromDexscreenerResponse(response)),
-                    catchError(() => of(null)),
-                ),
-        ).then((rawUrl) => {
-            if (!rawUrl) {
-                return null;
-            }
-            return this.normalizeExternalImageUrl(rawUrl);
-        });
-
-        this.pendingResolutionCache.set(deduplicationKey, resolutionPromise);
-        return resolutionPromise;
-    }
-
-    private extractImageUrlFromDexscreenerResponse(response: DexscreenerPairsResponse): string | null {
-        const pairs = Array.isArray(response?.pairs) ? response.pairs : [];
-        for (const pair of pairs) {
-            const directCandidates = [
-                pair?.info?.imageUrl,
-                pair?.info?.headerImage,
-                pair?.baseToken?.logo,
-                pair?.baseToken?.logoUrl,
-                pair?.baseToken?.image,
-                pair?.baseToken?.icon,
-                pair?.baseToken?.logoURI,
-            ].filter(Boolean);
-            if (directCandidates.length > 0) {
-                return String(directCandidates[0]);
-            }
-            const imageIdentifier = pair?.info?.imageId || pair?.info?.imageHash || pair?.baseToken?.imageId;
-            if (imageIdentifier) {
-                return `https://cdn.dexscreener.com/cms/images/${imageIdentifier}`;
-            }
-        }
-        return null;
-    }
-
-    private buildTokenFallbackCandidates(chainName: string, tokenAddress: string): string[] {
-        const candidates: string[] = [];
-        if (!chainName || !tokenAddress) {
-            return candidates;
-        }
-        candidates.push(`https://cdn.dexscreener.com/token-icons/${chainName}/${tokenAddress}.png`);
-        const trustWalletFolder = CHAIN_TO_TRUST_WALLET_FOLDER[chainName];
-        if (trustWalletFolder) {
-            candidates.push(
-                `https://cdn.jsdelivr.net/gh/trustwallet/assets@master/blockchains/${trustWalletFolder}/assets/${tokenAddress}/logo.png`,
-            );
-        }
-        return candidates;
-    }
-
-    private buildChainIconCandidates(chainName: string): string[] {
-        const candidates: string[] = [];
-        if (chainName) {
-            for (const extension of ICON_EXTENSIONS) {
-                candidates.push(`https://icons.llamao.fi/icons/chains/rsz_${chainName}${extension}`);
-            }
-        }
-        candidates.push('https://icons.llamao.fi/icons/chains/rsz_unknown.jpg');
-        return candidates;
-    }
-
-    private buildProtocolIconCandidates(dexscreenerId: string): string[] {
-        if (!dexscreenerId || dexscreenerId === 'unknown') {
-            return [];
-        }
-
-        const slugVariants = new Set<string>();
-        slugVariants.add(dexscreenerId);
-
-        const mappedSlug = DEXSCREENER_ID_TO_DEFILLAMA_SLUG[dexscreenerId];
-        if (mappedSlug) {
-            slugVariants.add(mappedSlug);
-        }
-
-        if (dexscreenerId.endsWith('fun') && !dexscreenerId.endsWith('.fun')) {
-            slugVariants.add(dexscreenerId.replace(/fun$/, '.fun'));
-        }
-
-        if (dexscreenerId.includes('-')) {
-            slugVariants.add(dexscreenerId.split('-')[0]);
-        }
-
-        const candidates: string[] = [];
-        for (const slug of slugVariants) {
-            for (const extension of ICON_EXTENSIONS) {
-                candidates.push(`https://icons.llamao.fi/icons/protocols/${slug}${extension}`);
-            }
-        }
-        return candidates;
-    }
-
-    private buildIconElement(sourceCandidates: string[], cacheKey: string, category: IconCategory): HTMLSpanElement {
-        const wrapperElement = this.createCircleWrapper();
-        const placeholderElement = this.createPlaceholderElement();
-        const imageElement = this.createImageElement(category);
-        wrapperElement.appendChild(placeholderElement);
-        wrapperElement.appendChild(imageElement);
-
-        const persistedSource = this.readFromLocalStorage(cacheKey);
-        if (persistedSource) {
-            this.applyResolvedImage(imageElement, placeholderElement, persistedSource);
-            this.resolvedIconCache.set(cacheKey, persistedSource);
-            return wrapperElement;
-        }
-
-        const cachedSource = this.resolvedIconCache.get(cacheKey);
-        if (cachedSource) {
-            this.applyResolvedImage(imageElement, placeholderElement, cachedSource);
-            return wrapperElement;
-        }
-
-        this.attemptCandidateCascade(imageElement, placeholderElement, sourceCandidates, cacheKey);
-        return wrapperElement;
-    }
-
-    private attemptCandidateCascade(
-        imageElement: HTMLImageElement,
-        placeholderElement: HTMLElement,
-        candidates: string[],
-        cacheKey: string,
-    ): void {
-        let candidateIndex = 0;
-
-        const attemptNextCandidate = (): void => {
-            if (candidateIndex >= candidates.length) {
-                imageElement.removeAttribute('src');
-                imageElement.style.opacity = '0';
-                return;
-            }
-            const candidateUrl = candidates[candidateIndex++];
-            imageElement.onerror = attemptNextCandidate;
-            imageElement.onload = () => {
-                const resolvedSource = imageElement.currentSrc || imageElement.src;
-                this.applyResolvedImage(imageElement, placeholderElement, resolvedSource);
-                this.resolvedIconCache.set(cacheKey, resolvedSource);
-                this.writeToLocalStorage(cacheKey, resolvedSource);
-                this.persistAsDataUrl(cacheKey, resolvedSource);
-            };
-            imageElement.src = candidateUrl;
-        };
-
-        attemptNextCandidate();
-    }
-
     private createCircleWrapper(): HTMLSpanElement {
         const element = document.createElement('span');
         element.className = 'relative inline-block h-4 w-4 align-middle';
-        return element;
-    }
-
-    private createPlaceholderElement(): HTMLSpanElement {
-        const element = document.createElement('span');
-        element.className = 'absolute inset-0 rounded-full';
         return element;
     }
 
@@ -360,42 +286,55 @@ export class DefiIconsService {
         return element;
     }
 
-    private applyResolvedImage(imageElement: HTMLImageElement, placeholderElement: HTMLElement, source: string): void {
-        imageElement.onload = () => {
-            imageElement.classList.add('is-loaded');
-            placeholderElement.style.opacity = '0';
-        };
-        imageElement.onerror = () => {
-            imageElement.style.opacity = '0';
-        };
-        imageElement.src = source;
+    private createPlaceholderElement(): HTMLSpanElement {
+        const element = document.createElement('span');
+        element.className = 'absolute inset-0 rounded-full';
+        return element;
     }
 
-    private readFromLocalStorage(key: string): string | null {
-        try {
-            const rawValue = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + key);
-            if (!rawValue) {
-                return null;
+    private extractImageUrlFromDexscreenerResponse(response: DexscreenerPairsResponse): string | null {
+        const pairs = Array.isArray(response?.pairs) ? response.pairs : [];
+        for (const pair of pairs) {
+            const directCandidates = [
+                pair?.info?.imageUrl,
+                pair?.info?.headerImage,
+                pair?.baseToken?.logo,
+                pair?.baseToken?.logoUrl,
+                pair?.baseToken?.image,
+                pair?.baseToken?.icon,
+                pair?.baseToken?.logoURI
+            ].filter(Boolean);
+            if (directCandidates.length > 0) {
+                return String(directCandidates[0]);
             }
-            const parsedEntry: PersistedIconEntry = JSON.parse(rawValue);
-            const isStillFresh = Date.now() - parsedEntry.updatedAt < LOCAL_STORAGE_TTL_MILLISECONDS;
-            return isStillFresh && parsedEntry.source ? parsedEntry.source : null;
-        } catch {
-            return null;
+            const imageIdentifier = pair?.info?.imageId || pair?.info?.imageHash || pair?.baseToken?.imageId;
+            if (imageIdentifier) {
+                return `https://cdn.dexscreener.com/cms/images/${imageIdentifier}`;
+            }
         }
+        return null;
     }
 
-    private writeToLocalStorage(key: string, source: string): void {
-        try {
-            const entry: PersistedIconEntry = {source, updatedAt: Date.now()};
-            localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + key, JSON.stringify(entry));
-        } catch {
-            // localStorage quota exceeded — silently ignored
+    private normalizeExternalImageUrl(rawUrl: string): string {
+        if (!rawUrl) {
+            return rawUrl;
         }
+        if (rawUrl.startsWith('ipfs://')) {
+            const ipfsPath = rawUrl.replace(/^ipfs:\/\//, '').replace(/^ipfs\//, '');
+            return `https://cloudflare-ipfs.com/ipfs/${ipfsPath}`;
+        }
+        if (rawUrl.startsWith('ar://')) {
+            const arweaveIdentifier = rawUrl.slice('ar://'.length);
+            return `https://arweave.net/${arweaveIdentifier}`;
+        }
+        if (rawUrl.startsWith('//')) {
+            return `https:${rawUrl}`;
+        }
+        return rawUrl;
     }
 
     private persistAsDataUrl(cacheKey: string, source: string): void {
-        fetch(source, {mode: 'cors', credentials: 'omit', cache: 'force-cache'})
+        fetch(source, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
             .then((response) => {
                 if (!response.ok) {
                     return;
@@ -416,21 +355,65 @@ export class DefiIconsService {
             .catch(() => {});
     }
 
-    private normalizeExternalImageUrl(rawUrl: string): string {
-        if (!rawUrl) {
-            return rawUrl;
+    private readFromLocalStorage(key: string): string | null {
+        try {
+            const rawValue = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + key);
+            if (!rawValue) {
+                return null;
+            }
+            const parsedEntry: PersistedIconEntry = JSON.parse(rawValue);
+            const isStillFresh = Date.now() - parsedEntry.updatedAt < LOCAL_STORAGE_TTL_MILLISECONDS;
+            return isStillFresh && parsedEntry.source ? parsedEntry.source : null;
+        } catch {
+            return null;
         }
-        if (rawUrl.startsWith('ipfs://')) {
-            const ipfsPath = rawUrl.replace(/^ipfs:\/\//, '').replace(/^ipfs\//, '');
-            return `https://cloudflare-ipfs.com/ipfs/${ipfsPath}`;
+    }
+
+    private resolveDexscreenerTokenImageUrl(chainName: string, tokenAddress: string, tokenSymbol: string): Promise<string | null> {
+        if (!chainName || !tokenAddress) {
+            return Promise.resolve(null);
         }
-        if (rawUrl.startsWith('ar://')) {
-            const arweaveIdentifier = rawUrl.slice('ar://'.length);
-            return `https://arweave.net/${arweaveIdentifier}`;
+
+        const deduplicationKey = `dex:${chainName}:${tokenAddress}`;
+        const pendingPromise = this.pendingResolutionCache.get(deduplicationKey);
+        if (pendingPromise) {
+            return pendingPromise;
         }
-        if (rawUrl.startsWith('//')) {
-            return `https:${rawUrl}`;
+
+        const resolutionPromise = firstValueFrom(
+            this.httpClient.get<DexscreenerPairsResponse>(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`).pipe(
+                timeout(3500),
+                map((response) => this.extractImageUrlFromDexscreenerResponse(response)),
+                catchError(() => of(null))
+            )
+        ).then((rawUrl) => {
+            if (!rawUrl) {
+                return null;
+            }
+            return this.normalizeExternalImageUrl(rawUrl);
+        });
+
+        this.pendingResolutionCache.set(deduplicationKey, resolutionPromise);
+        return resolutionPromise;
+    }
+
+    private resolveTokenFallbackCascade(
+        imageElement: HTMLImageElement,
+        placeholderElement: HTMLElement,
+        chainName: string,
+        tokenAddress: string,
+        cacheKey: string
+    ): void {
+        const fallbackCandidates = this.buildTokenFallbackCandidates(chainName, tokenAddress);
+        this.attemptCandidateCascade(imageElement, placeholderElement, fallbackCandidates, cacheKey);
+    }
+
+    private writeToLocalStorage(key: string, source: string): void {
+        try {
+            const entry: PersistedIconEntry = { source, updatedAt: Date.now() };
+            localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + key, JSON.stringify(entry));
+        } catch {
+            // localStorage quota exceeded — silently ignored
         }
-        return rawUrl;
     }
 }

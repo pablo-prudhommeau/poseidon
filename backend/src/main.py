@@ -18,5 +18,5 @@ if __name__ == "__main__":
         factory=True,
         host=settings.API_HOST,
         port=settings.API_PORT,
-        reload=True
+        reload=settings.API_RELOAD
     )

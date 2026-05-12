@@ -1,0 +1,28 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+    "files": {
+        "includes": ["src/**/*.ts", "src/**/*.json", "eslint.config.ts", "tailwind.config.ts"]
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 160,
+        "lineEnding": "lf"
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single",
+            "semicolons": "always",
+            "trailingCommas": "none",
+            "arrowParentheses": "always",
+            "bracketSpacing": true
+        },
+        "parser": {
+            "unsafeParameterDecoratorsEnabled": true
+        }
+    },
+    "linter": {
+        "enabled": false
+    }
+}

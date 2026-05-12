@@ -216,6 +216,7 @@ class SolanaSigner:
             raise ValueError(f"Payload is not a valid VersionedTransaction: {exception}") from exception
 
         message = versioned_transaction.message
+        constructor_keypair_exception: Exception | None = None
 
         try:
             signed_versioned_transaction = VersionedTransaction(message, [self.keypair])
@@ -223,6 +224,7 @@ class SolanaSigner:
             logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Signed using constructor(keypairs)")
             return signed_bytes
         except Exception as exception_constructor_keypair:
+            constructor_keypair_exception = exception_constructor_keypair
             logger.exception("[BLOCKCHAIN][SOLANA][SIGNER] constructor(keypairs) path failed: %s", exception_constructor_keypair)
 
         try:
@@ -235,7 +237,7 @@ class SolanaSigner:
         except Exception as exception_constructor_presigner:
             raise ValueError(
                 f"[BLOCKCHAIN][SOLANA][SIGNER] Could not sign VersionedTransaction using any method. "
-                f"ctor(keypairs): {exception_constructor_keypair!r} | ctor(presigner): {exception_constructor_presigner!r}"
+                f"ctor(keypairs): {constructor_keypair_exception!r} | ctor(presigner): {exception_constructor_presigner!r}"
             ) from exception_constructor_presigner
 
     def send_raw_transaction(self, raw_bytes: bytes) -> str:

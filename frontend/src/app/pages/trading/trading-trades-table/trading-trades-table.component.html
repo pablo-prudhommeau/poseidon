@@ -1,450 +1,393 @@
-<ag-grid-angular
-		class="w-full poseidon-ag-grid-surface"
-		domLayout="autoHeight"
-		[columnDefs]="columnDefinitions"
-		[defaultColDef]="defaultColumnDefinition"
-		[rowData]="tradesRowData()"
-		[getRowId]="getRowId"
-		[theme]="agGridTheme"
-		(gridReady)="onTradesGridReady($event)">
-</ag-grid-angular>
+<ag-grid-angular class="w-full poseidon-ag-grid-surface" domLayout="autoHeight" [columnDefs]="columnDefinitions" [defaultColDef]="defaultColumnDefinition" [rowData]="tradesRowData()" [getRowId]="getRowId" [theme]="agGridTheme" (gridReady)="onTradesGridReady($event)"> </ag-grid-angular>
 
 <ng-template #actionsTemplate let-row="row">
-	<div class="flex items-center justify-center gap-1.5 h-full">
-		<button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400"
-		        title="View details" (click)="openDetails(row)">
-			<i class="fas fa-expand"></i>
-		</button>
-		<a [href]="dexUrlForPair(row)" target="_blank" rel="noopener"
-		   class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400"
-		   title="Open on DexScreener">
-			<i class="fas fa-arrow-up-right-from-square"></i>
-		</a>
-	</div>
+    <div class="flex items-center justify-center gap-1.5 h-full">
+        <button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400" title="View details" (click)="openDetails(row)">
+            <i class="fas fa-expand"></i>
+        </button>
+        <a [href]="dexUrlForPair(row)" target="_blank" rel="noopener" class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400" title="Open on DexScreener">
+            <i class="fas fa-arrow-up-right-from-square"></i>
+        </a>
+    </div>
 </ng-template>
 
-<p-dialog
-		[visible]="detailsVisible()"
-		(visibleChange)="detailsVisible.set($event)"
-		(onHide)="detailsVisible.set(false)"
-		[modal]="true"
-		[draggable]="false"
-		[dismissableMask]="true"
-		appendTo="body"
-		[breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }"
-		[style]="{ width: '90rem' }"
-		styleClass="trades-table-dialog"
-		[contentStyle]="{ padding: '0' }">
+<p-dialog [visible]="detailsVisible()" (visibleChange)="detailsVisible.set($event)" (onHide)="detailsVisible.set(false)" [modal]="true" [draggable]="false" [dismissableMask]="true" appendTo="body" [breakpoints]="{ '1024px': '60vw', '768px': '80vw', '560px': '95vw' }" [style]="{ width: '90rem' }" styleClass="trades-table-dialog" [contentStyle]="{ padding: '0' }">
+    <ng-template pTemplate="header">
+        <div class="flex w-full flex-col gap-3">
+            <div class="flex w-full items-center justify-between gap-4">
+                <div class="flex min-w-0 items-center gap-3">
+                    <div class="min-w-0">
+                        <div class="text-xl font-black text-white tracking-tight">{{ selectedTrade()?.token_symbol }}</div>
+                    </div>
+                </div>
+                <div class="trade-modal-header-actions flex flex-wrap items-center justify-end gap-2">
+                    @if (dexUrlForPair(selectedTrade())) {
+                        <a [href]="dexUrlForPair(selectedTrade())" target="_blank" rel="noopener" class="trade-modal-header-action" title="Open on DexScreener">
+                            <i class="fas fa-chart-line text-[11px]"></i>
+                            <span>Open Dex</span>
+                        </a>
+                    }
+                    @if (transactionExplorerUrl(selectedTrade()); as explorerUrl) {
+                        <a [href]="explorerUrl" target="_blank" rel="noopener" class="trade-modal-header-action" title="Open on Solscan">
+                            <i class="fas fa-link text-[11px]"></i>
+                            <span>Open Sol</span>
+                        </a>
+                    }
+                    @if (positionForSelectedTrade()) {
+                        <button type="button" class="trade-modal-header-action trade-modal-header-action--position" title="Open linked position" (click)="openLinkedPositionDetails()">
+                            <i class="fas fa-layer-group text-[11px]"></i>
+                            <span>Open position</span>
+                        </button>
+                    }
+                    <button type="button" class="trade-modal-header-action" title="Open previous trade" (click)="openPreviousTrade()" [disabled]="!previousTradeForSelected()" [class.opacity-40]="!previousTradeForSelected()" [class.pointer-events-none]="!previousTradeForSelected()">
+                        <i class="fas fa-chevron-left text-[11px]"></i>
+                        <span>Prev</span>
+                    </button>
+                    <button type="button" class="trade-modal-header-action" title="Open next trade" (click)="openNextTrade()" [disabled]="!nextTradeForSelected()" [class.opacity-40]="!nextTradeForSelected()" [class.pointer-events-none]="!nextTradeForSelected()">
+                        <i class="fas fa-chevron-right text-[11px]"></i>
+                        <span>Next</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </ng-template>
 
-	<ng-template pTemplate="header">
-		<div class="flex w-full flex-col gap-3">
-			<div class="flex w-full items-center justify-between gap-4">
-				<div class="flex min-w-0 items-center gap-3">
-					<div class="min-w-0">
-						<div class="text-xl font-black text-white tracking-tight">{{ selectedTrade()?.token_symbol }}</div>
-					</div>
-				</div>
-				<div class="trade-modal-header-actions flex flex-wrap items-center justify-end gap-2">
-					@if (dexUrlForPair(selectedTrade())) {
-						<a [href]="dexUrlForPair(selectedTrade())" target="_blank" rel="noopener"
-						   class="trade-modal-header-action" title="Open on DexScreener">
-							<i class="fas fa-chart-line text-[11px]"></i>
-							<span>Open Dex</span>
-						</a>
-					}
-					@if (transactionExplorerUrl(selectedTrade()); as explorerUrl) {
-						<a [href]="explorerUrl" target="_blank" rel="noopener"
-						   class="trade-modal-header-action" title="Open on Solscan">
-							<i class="fas fa-link text-[11px]"></i>
-							<span>Open Sol</span>
-						</a>
-					}
-					@if (positionForSelectedTrade()) {
-						<button
-								type="button"
-								class="trade-modal-header-action trade-modal-header-action--position"
-								title="Open linked position"
-								(click)="openLinkedPositionDetails()"
-						>
-							<i class="fas fa-layer-group text-[11px]"></i>
-							<span>Open position</span>
-						</button>
-					}
-					<button
-							type="button"
-							class="trade-modal-header-action"
-							title="Open previous trade"
-							(click)="openPreviousTrade()"
-							[disabled]="!previousTradeForSelected()"
-							[class.opacity-40]="!previousTradeForSelected()"
-							[class.pointer-events-none]="!previousTradeForSelected()">
-						<i class="fas fa-chevron-left text-[11px]"></i>
-						<span>Prev</span>
-					</button>
-					<button
-							type="button"
-							class="trade-modal-header-action"
-							title="Open next trade"
-							(click)="openNextTrade()"
-							[disabled]="!nextTradeForSelected()"
-							[class.opacity-40]="!nextTradeForSelected()"
-							[class.pointer-events-none]="!nextTradeForSelected()">
-						<i class="fas fa-chevron-right text-[11px]"></i>
-						<span>Next</span>
-					</button>
-				</div>
-			</div>
-		</div>
-	</ng-template>
+    <p-tabs value="overview">
+        <p-tablist>
+            <p-tab value="overview"><i class="fa fa-info-circle mr-2 text-blue-400/60"></i>Trade Details</p-tab>
+            <p-tab value="shadows">
+                <div class="flex items-center gap-2">
+                    <i class="fa fa-ghost text-purple-400/60"></i>
+                    <span>Shadow Intelligence</span>
+                </div>
+            </p-tab>
+        </p-tablist>
 
-	<p-tabs value="overview">
-		<p-tablist>
-			<p-tab value="overview"><i class="fa fa-info-circle mr-2 text-blue-400/60"></i>Trade Details</p-tab>
-			<p-tab value="shadows">
-				<div class="flex items-center gap-2">
-					<i class="fa fa-ghost text-purple-400/60"></i>
-					<span>Shadow Intelligence</span>
-				</div>
-			</p-tab>
-		</p-tablist>
+        <p-tabpanels>
+            <p-tabpanel value="overview">
+                <div class="grid grid-cols-2 xl:grid-cols-5 gap-3">
+                    <div class="rounded-2xl bg-black/20 border border-cyan-500/20 backdrop-blur-2xl shadow-xl p-3">
+                        <div class="text-[9px] font-black uppercase text-slate-500">Execution price</div>
+                        <div class="mt-2 trade-modal-kpi-value text-white">{{ formatCompactUsd(selectedTrade()?.execution_price) }}</div>
+                        <div class="mt-1 text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(selectedTrade()?.execution_price, 'USD', 4, 12) }}</div>
+                    </div>
+                    <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                        <div class="text-[9px] font-black uppercase text-slate-500">Quantity</div>
+                        <div class="mt-2 trade-modal-kpi-value text-white">{{ formatCompactQuantity(selectedTrade()?.execution_quantity) }}</div>
+                        <div class="mt-1 text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatNumber(selectedTrade()?.execution_quantity, 2, 6) }}</div>
+                    </div>
+                    <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                        <div class="text-[9px] font-black uppercase text-slate-500">Order notional</div>
+                        <div class="mt-2 trade-modal-kpi-value text-white">{{ formatCompactUsd(orderNotionalUsd(selectedTrade())) }}</div>
+                        <div class="mt-1 text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(orderNotionalUsd(selectedTrade()), 'USD', 2, 2) }}</div>
+                    </div>
+                    <div
+                        class="rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl border p-3"
+                        [ngClass]="{
+                            'border-white/5': (selectedTrade()?.realized_profit_and_loss ?? 0) === 0,
+                            'border-emerald-500/20': (selectedTrade()?.realized_profit_and_loss ?? 0) > 0,
+                            'border-red-500/20': (selectedTrade()?.realized_profit_and_loss ?? 0) < 0,
+                        }"
+                    >
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="text-[9px] font-black uppercase text-slate-500">Realized P&amp;L</div>
+                        </div>
+                        <div class="mt-2 trade-modal-kpi-value" [class.text-emerald-400]="(selectedTrade()?.realized_profit_and_loss ?? 0) > 0" [class.text-red-400]="(selectedTrade()?.realized_profit_and_loss ?? 0) < 0" [class.text-slate-300]="(selectedTrade()?.realized_profit_and_loss ?? 0) === 0">
+                            {{ formatSignedCompactUsd(selectedTrade()?.realized_profit_and_loss) }}
+                        </div>
+                    </div>
+                    <div class="rounded-2xl bg-black/20 border border-purple-500/20 backdrop-blur-2xl shadow-xl p-3">
+                        <div class="text-[9px] font-black uppercase text-slate-500">Multiplier</div>
+                        <div class="mt-2 trade-modal-kpi-value text-slate-100">{{ selectedAnalytics()?.decision?.sizing_multiplier ?? 1.0 | number: '1.2-2' }}x</div>
+                    </div>
+                </div>
 
-		<p-tabpanels>
-			<p-tabpanel value="overview">
-				<div class="grid grid-cols-2 xl:grid-cols-5 gap-3">
-					<div class="rounded-2xl bg-black/20 border border-cyan-500/20 backdrop-blur-2xl shadow-xl p-3">
-						<div class="text-[9px] font-black uppercase text-slate-500">Execution price</div>
-						<div class="mt-2 trade-modal-kpi-value text-white">{{ formatCompactUsd(selectedTrade()?.execution_price) }}</div>
-						<div class="mt-1 text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(selectedTrade()?.execution_price, 'USD', 4, 12) }}</div>
-					</div>
-					<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
-						<div class="text-[9px] font-black uppercase text-slate-500">Quantity</div>
-						<div class="mt-2 trade-modal-kpi-value text-white">{{ formatCompactQuantity(selectedTrade()?.execution_quantity) }}</div>
-						<div class="mt-1 text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatNumber(selectedTrade()?.execution_quantity, 2, 6) }}</div>
-					</div>
-					<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
-						<div class="text-[9px] font-black uppercase text-slate-500">Order notional</div>
-						<div class="mt-2 trade-modal-kpi-value text-white">{{ formatCompactUsd(orderNotionalUsd(selectedTrade())) }}</div>
-						<div class="mt-1 text-[0.67rem] font-semibold leading-[1.1] text-slate-500 tabular-nums">{{ formatCurrency(orderNotionalUsd(selectedTrade()), 'USD', 2, 2) }}</div>
-					</div>
-					<div class="rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl border p-3"
-					     [ngClass]="{
-					         'border-white/5': (selectedTrade()?.realized_profit_and_loss ?? 0) === 0,
-					         'border-emerald-500/20': (selectedTrade()?.realized_profit_and_loss ?? 0) > 0,
-					         'border-red-500/20': (selectedTrade()?.realized_profit_and_loss ?? 0) < 0
-					     }">
-						<div class="flex items-center justify-between gap-2">
-							<div class="text-[9px] font-black uppercase text-slate-500">Realized P&amp;L</div>
-						</div>
-						<div class="mt-2 trade-modal-kpi-value"
-						     [class.text-emerald-400]="(selectedTrade()?.realized_profit_and_loss ?? 0) > 0"
-						     [class.text-red-400]="(selectedTrade()?.realized_profit_and_loss ?? 0) < 0"
-						     [class.text-slate-300]="(selectedTrade()?.realized_profit_and_loss ?? 0) === 0">
-							{{ formatSignedCompactUsd(selectedTrade()?.realized_profit_and_loss) }}
-						</div>
-					</div>
-					<div class="rounded-2xl bg-black/20 border border-purple-500/20 backdrop-blur-2xl shadow-xl p-3">
-						<div class="text-[9px] font-black uppercase text-slate-500">Multiplier</div>
-						<div class="mt-2 trade-modal-kpi-value text-slate-100">{{ (selectedAnalytics()?.decision?.sizing_multiplier ?? 1.0) | number:'1.2-2' }}x</div>
-					</div>
-				</div>
+                <div class="pt-3 space-y-3">
+                    <div class="trade-modal-section-header">
+                        <div class="flex items-center gap-2 px-1">
+                            <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
+                                <i class="fa fa-circle-info text-xs"></i>
+                            </span>
+                            <div class="leading-none">
+                                <div class="text-[10px] font-black uppercase text-slate-200">Trade information</div>
+                                <div class="mt-1 text-[10px] text-slate-500">Execution, context and linked position</div>
+                            </div>
+                        </div>
+                    </div>
 
-				<div class="pt-3 space-y-3">
-					<div class="trade-modal-section-header">
-						<div class="flex items-center gap-2 px-1">
-							<span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
-								<i class="fa fa-circle-info text-xs"></i>
-							</span>
-							<div class="leading-none">
-								<div class="text-[10px] font-black uppercase text-slate-200">Trade information</div>
-								<div class="mt-1 text-[10px] text-slate-500">Execution, context and linked position</div>
-							</div>
-						</div>
-					</div>
+                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                            <div class="flex items-center gap-2 mb-3">
+                                <i class="fa fa-bolt text-cyan-400/60 text-sm"></i>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Execution context</span>
+                            </div>
+                            <div class="space-y-2.5">
+                                <div class="trade-modal-detail-row">
+                                    <span class="trade-modal-detail-label">Executed</span>
+                                    <span class="trade-modal-detail-value">{{ selectedTrade()?.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
+                                </div>
+                                <div class="trade-modal-detail-row">
+                                    <span class="trade-modal-detail-label">Fee</span>
+                                    <span class="trade-modal-detail-value">{{ formatCurrency(selectedTrade()?.transaction_fee, 'USD', 4, 6) }}</span>
+                                </div>
+                                <div class="trade-modal-detail-row">
+                                    <span class="trade-modal-detail-label">Network</span>
+                                    <span class="trade-modal-inline-value">
+                                        @if (currentTradeChainIcon()) {
+                                            <img [src]="currentTradeChainIcon()" (error)="handleTradeChainIconError($event)" alt="Blockchain icon" class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
+                                        }
+                                        <span>{{ selectedTrade()?.blockchain_network || '—' }}</span>
+                                    </span>
+                                </div>
+                                <div class="trade-modal-detail-row">
+                                    <span class="trade-modal-detail-label">Side</span>
+                                    <span class="poseidon-grid-pill" [ngClass]="selectedTrade()?.trade_side === 'BUY' ? 'poseidon-grid-pill--buy' : 'poseidon-grid-pill--sell'">
+                                        {{ selectedTrade()?.trade_side || '—' }}
+                                    </span>
+                                </div>
+                                <div class="trade-modal-detail-row">
+                                    <span class="trade-modal-detail-label">DEX</span>
+                                    <span class="trade-modal-inline-value">
+                                        @if (currentTradeDexIcon(); as tradeDexIcon) {
+                                            <img [src]="tradeDexIcon" (error)="handleTradeDexIconError($event)" alt="DEX icon" class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
+                                        }
+                                        <span>{{ selectedTrade()?.dex_id || '—' }}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
 
-					<div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-						<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-							<div class="flex items-center gap-2 mb-3">
-								<i class="fa fa-bolt text-cyan-400/60 text-sm"></i>
-								<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Execution context</span>
-							</div>
-							<div class="space-y-2.5">
-								<div class="trade-modal-detail-row">
-									<span class="trade-modal-detail-label">Executed</span>
-									<span class="trade-modal-detail-value">{{ selectedTrade()?.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
-								</div>
-								<div class="trade-modal-detail-row">
-									<span class="trade-modal-detail-label">Fee</span>
-									<span class="trade-modal-detail-value">{{ formatCurrency(selectedTrade()?.transaction_fee, 'USD', 4, 6) }}</span>
-								</div>
-								<div class="trade-modal-detail-row">
-									<span class="trade-modal-detail-label">Network</span>
-									<span class="trade-modal-inline-value">
-										@if (currentTradeChainIcon()) {
-											<img [src]="currentTradeChainIcon()"
-											     (error)="handleTradeChainIconError($event)"
-											     alt="Blockchain icon"
-											     class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10"/>
-										}
-										<span>{{ selectedTrade()?.blockchain_network || '—' }}</span>
-									</span>
-								</div>
-								<div class="trade-modal-detail-row">
-									<span class="trade-modal-detail-label">Side</span>
-									<span class="poseidon-grid-pill"
-									      [ngClass]="selectedTrade()?.trade_side === 'BUY' ? 'poseidon-grid-pill--buy' : 'poseidon-grid-pill--sell'">
-										{{ selectedTrade()?.trade_side || '—' }}
-									</span>
-								</div>
-								<div class="trade-modal-detail-row">
-									<span class="trade-modal-detail-label">DEX</span>
-									<span class="trade-modal-inline-value">
-										@if (currentTradeDexIcon(); as tradeDexIcon) {
-											<img [src]="tradeDexIcon"
-											     (error)="handleTradeDexIconError($event)"
-											     alt="DEX icon"
-											     class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10"/>
-										}
-										<span>{{ selectedTrade()?.dex_id || '—' }}</span>
-									</span>
-								</div>
-							</div>
-						</div>
+                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                            <div class="flex items-center gap-2 mb-3">
+                                <i class="fa fa-layer-group text-purple-400/60 text-sm"></i>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Position context</span>
+                            </div>
+                            @if (positionForSelectedTrade(); as livePosition) {
+                                <div class="space-y-2.5">
+                                    <div class="trade-modal-detail-row">
+                                        <span class="trade-modal-detail-label">Phase</span>
+                                        <span
+                                            class="poseidon-grid-pill"
+                                            [ngClass]="{
+                                                'poseidon-grid-pill--info': livePosition.position_phase === 'OPEN',
+                                                'poseidon-grid-pill--warn': livePosition.position_phase === 'PARTIAL',
+                                                'poseidon-grid-pill--neutral': livePosition.position_phase !== 'OPEN' && livePosition.position_phase !== 'PARTIAL',
+                                            }"
+                                        >
+                                            {{ livePosition.position_phase }}
+                                        </span>
+                                    </div>
+                                    <div class="trade-modal-detail-row">
+                                        <span class="trade-modal-detail-label">Opened</span>
+                                        <span class="trade-modal-detail-value">{{ livePosition.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
+                                    </div>
+                                    <div class="trade-modal-detail-row">
+                                        <span class="trade-modal-detail-label">Closed</span>
+                                        <span class="trade-modal-detail-value">{{ livePosition.closed_at ? (livePosition.closed_at | date: 'yyyy-MM-dd HH:mm:ss') : 'active' }}</span>
+                                    </div>
+                                    <div class="trade-modal-detail-row">
+                                        <span class="trade-modal-detail-label">Open quantity</span>
+                                        <span class="trade-modal-detail-value">{{ formatCompactQuantity(livePosition.open_quantity) }}</span>
+                                    </div>
+                                    <div class="trade-modal-detail-row">
+                                        <span class="trade-modal-detail-label">Current quantity</span>
+                                        <span class="trade-modal-detail-value">{{ formatCompactQuantity(livePosition.current_quantity) }}</span>
+                                    </div>
+                                    <div class="trade-modal-detail-row">
+                                        <span class="trade-modal-detail-label">Entry</span>
+                                        <span class="trade-modal-detail-value">{{ formatCompactUsd(livePosition.entry_price) }}</span>
+                                    </div>
+                                    @if (linkedPositionLastPrice(livePosition) !== null) {
+                                        <div class="trade-modal-detail-row">
+                                            <span class="trade-modal-detail-label">Live price</span>
+                                            <span class="trade-modal-detail-value">{{ formatCompactUsd(linkedPositionLastPrice(livePosition)) }}</span>
+                                        </div>
+                                        <div class="trade-modal-detail-row">
+                                            <span class="trade-modal-detail-label">Live delta</span>
+                                            <span class="trade-modal-detail-value" [class.text-emerald-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) > 0" [class.text-red-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) < 0" [class.text-slate-300]="(linkedPositionDeltaPercent(livePosition) ?? 0) === 0"> {{ linkedPositionDeltaPercent(livePosition) !== null && (linkedPositionDeltaPercent(livePosition) ?? 0) > 0 ? '+' : '' }}{{ formatPercent(linkedPositionDeltaPercent(livePosition)) }} </span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
 
-						<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-							<div class="flex items-center gap-2 mb-3">
-								<i class="fa fa-layer-group text-purple-400/60 text-sm"></i>
-								<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Position context</span>
-							</div>
-							@if (positionForSelectedTrade(); as livePosition) {
-								<div class="space-y-2.5">
-									<div class="trade-modal-detail-row">
-										<span class="trade-modal-detail-label">Phase</span>
-										<span class="poseidon-grid-pill"
-										      [ngClass]="{
-										          'poseidon-grid-pill--info': livePosition.position_phase === 'OPEN',
-										          'poseidon-grid-pill--warn': livePosition.position_phase === 'PARTIAL',
-										          'poseidon-grid-pill--neutral': livePosition.position_phase !== 'OPEN' && livePosition.position_phase !== 'PARTIAL'
-										      }">
-											{{ livePosition.position_phase }}
-										</span>
-									</div>
-									<div class="trade-modal-detail-row">
-										<span class="trade-modal-detail-label">Opened</span>
-										<span class="trade-modal-detail-value">{{ livePosition.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
-									</div>
-									<div class="trade-modal-detail-row">
-										<span class="trade-modal-detail-label">Closed</span>
-										<span class="trade-modal-detail-value">{{ livePosition.closed_at ? (livePosition.closed_at | date: 'yyyy-MM-dd HH:mm:ss') : 'active' }}</span>
-									</div>
-									<div class="trade-modal-detail-row">
-										<span class="trade-modal-detail-label">Open quantity</span>
-										<span class="trade-modal-detail-value">{{ formatCompactQuantity(livePosition.open_quantity) }}</span>
-									</div>
-									<div class="trade-modal-detail-row">
-										<span class="trade-modal-detail-label">Current quantity</span>
-										<span class="trade-modal-detail-value">{{ formatCompactQuantity(livePosition.current_quantity) }}</span>
-									</div>
-									<div class="trade-modal-detail-row">
-										<span class="trade-modal-detail-label">Entry</span>
-										<span class="trade-modal-detail-value">{{ formatCompactUsd(livePosition.entry_price) }}</span>
-									</div>
-									@if (linkedPositionLastPrice(livePosition) !== null) {
-										<div class="trade-modal-detail-row">
-											<span class="trade-modal-detail-label">Live price</span>
-											<span class="trade-modal-detail-value">{{ formatCompactUsd(linkedPositionLastPrice(livePosition)) }}</span>
-										</div>
-										<div class="trade-modal-detail-row">
-											<span class="trade-modal-detail-label">Live delta</span>
-											<span class="trade-modal-detail-value"
-											      [class.text-emerald-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) > 0"
-											      [class.text-red-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) < 0"
-											      [class.text-slate-300]="(linkedPositionDeltaPercent(livePosition) ?? 0) === 0">
-												{{ linkedPositionDeltaPercent(livePosition) !== null && (linkedPositionDeltaPercent(livePosition) ?? 0) > 0 ? '+' : '' }}{{ formatPercent(linkedPositionDeltaPercent(livePosition)) }}
-											</span>
-										</div>
-									}
-								</div>
-							}
-						</div>
+                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                            <div class="flex items-center gap-2 mb-3">
+                                <i class="fa fa-link text-amber-400/60 text-sm"></i>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Chain references</span>
+                            </div>
+                            <div class="space-y-2.5">
+                                @if (selectedTrade()?.transaction_hash) {
+                                    <div class="trade-modal-address-row">
+                                        <span class="trade-modal-detail-label">Transaction</span>
+                                        <div class="trade-modal-address-value">
+                                            <span class="font-mono truncate">{{ selectedTrade()?.transaction_hash }}</span>
+                                            <button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.transaction_hash)">
+                                                <i class="far fa-copy text-[10px]"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                                <div class="trade-modal-address-row">
+                                    <span class="trade-modal-detail-label">Token address</span>
+                                    <div class="trade-modal-address-value">
+                                        <span class="font-mono truncate">{{ selectedTrade()?.token_address }}</span>
+                                        <button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.token_address)">
+                                            <i class="far fa-copy text-[10px]"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="trade-modal-address-row">
+                                    <span class="trade-modal-detail-label">Pair address</span>
+                                    <div class="trade-modal-address-value">
+                                        <span class="font-mono truncate">{{ selectedTrade()?.pair_address }}</span>
+                                        <button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.pair_address)">
+                                            <i class="far fa-copy text-[10px]"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-						<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-							<div class="flex items-center gap-2 mb-3">
-								<i class="fa fa-link text-amber-400/60 text-sm"></i>
-								<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Chain references</span>
-							</div>
-							<div class="space-y-2.5">
-								@if (selectedTrade()?.transaction_hash) {
-									<div class="trade-modal-address-row">
-										<span class="trade-modal-detail-label">Transaction</span>
-										<div class="trade-modal-address-value">
-											<span class="font-mono truncate">{{ selectedTrade()?.transaction_hash }}</span>
-											<button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.transaction_hash)">
-												<i class="far fa-copy text-[10px]"></i>
-											</button>
-										</div>
-									</div>
-								}
-								<div class="trade-modal-address-row">
-									<span class="trade-modal-detail-label">Token address</span>
-									<div class="trade-modal-address-value">
-										<span class="font-mono truncate">{{ selectedTrade()?.token_address }}</span>
-										<button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.token_address)">
-											<i class="far fa-copy text-[10px]"></i>
-										</button>
-									</div>
-								</div>
-								<div class="trade-modal-address-row">
-									<span class="trade-modal-detail-label">Pair address</span>
-									<div class="trade-modal-address-value">
-										<span class="font-mono truncate">{{ selectedTrade()?.pair_address }}</span>
-										<button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.pair_address)">
-											<i class="far fa-copy text-[10px]"></i>
-										</button>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
+                @if (analyticsForSelected(); as analytics) {
+                    <div class="pt-3 space-y-3">
+                        <div class="trade-modal-section-header">
+                            <div class="flex items-center gap-2 px-1">
+                                <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
+                                    <i class="fa fa-chart-column text-xs"></i>
+                                </span>
+                                <div class="leading-none">
+                                    <div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
+                                    <div class="mt-1 text-[10px] text-slate-500">Condensed market structure and momentum</div>
+                                </div>
+                            </div>
+                        </div>
 
-				@if (analyticsForSelected(); as analytics) {
-					<div class="pt-3 space-y-3">
-						<div class="trade-modal-section-header">
-							<div class="flex items-center gap-2 px-1">
-									<span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
-										<i class="fa fa-chart-column text-xs"></i>
-									</span>
-								<div class="leading-none">
-									<div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
-									<div class="mt-1 text-[10px] text-slate-500">Condensed market structure and momentum</div>
-								</div>
-							</div>
-						</div>
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fa fa-coins text-emerald-400/60 text-sm"></i>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Market structure</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Liquidity</div>
+                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Volume 1h</div>
+                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Volume 24h</div>
+                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Market cap</div>
+                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</div>
+                                    </div>
+                                </div>
+                            </div>
 
-						<div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-							<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-								<div class="flex items-center gap-2 mb-3">
-									<i class="fa fa-coins text-emerald-400/60 text-sm"></i>
-									<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Market structure</span>
-								</div>
-								<div class="grid grid-cols-2 gap-2">
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Liquidity</div>
-										<div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Volume 1h</div>
-										<div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Volume 24h</div>
-										<div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Market cap</div>
-										<div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</div>
-									</div>
-								</div>
-							</div>
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fa fa-wave-square text-blue-400/60 text-sm"></i>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Momentum at entry</span>
+                                </div>
+                                <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Delta 5m</div>
+                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Delta 1h</div>
+                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Delta 6h</div>
+                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Delta 24h</div>
+                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Buy/Sell ratio</div>
+                                        <div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.buy_to_sell_ratio, 2, 2) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Transactions 1h</div>
+                                        <div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.transaction_count_h1, 0, 0) }}</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">Token age</div>
+                                        <div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.token_age_hours, 0, 0) }}h</div>
+                                    </div>
+                                    <div class="trade-modal-stat-card">
+                                        <div class="trade-modal-stat-label">AI adjusted</div>
+                                        <div class="trade-modal-stat-value">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                } @else {
+                    <ng-container [ngTemplateOutlet]="tradeMarketSnapshotSkeleton"></ng-container>
+                }
+            </p-tabpanel>
+            <p-tabpanel value="shadows">
+                <trading-shadow-intelligence-tab [snapshot]="selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot ?? null" />
+            </p-tabpanel>
+        </p-tabpanels>
+    </p-tabs>
 
-							<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-								<div class="flex items-center gap-2 mb-3">
-									<i class="fa fa-wave-square text-blue-400/60 text-sm"></i>
-									<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Momentum at entry</span>
-								</div>
-								<div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Delta 5m</div>
-										<div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Delta 1h</div>
-										<div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Delta 6h</div>
-										<div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Delta 24h</div>
-										<div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Buy/Sell ratio</div>
-										<div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.buy_to_sell_ratio, 2, 2) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Transactions 1h</div>
-										<div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.transaction_count_h1, 0, 0) }}</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">Token age</div>
-										<div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.token_age_hours, 0, 0) }}h</div>
-									</div>
-									<div class="trade-modal-stat-card">
-										<div class="trade-modal-stat-label">AI adjusted</div>
-										<div class="trade-modal-stat-value">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</div>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				} @else {
-					<ng-container [ngTemplateOutlet]="tradeMarketSnapshotSkeleton"></ng-container>
-				}
-			</p-tabpanel>
-			<p-tabpanel value="shadows">
-				<trading-shadow-intelligence-tab
-						[snapshot]="selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot ?? null"/>
-			</p-tabpanel>
-		</p-tabpanels>
-	</p-tabs>
+    <ng-template #tradeMarketSnapshotSkeleton>
+        <div class="pt-3 space-y-3">
+            <div class="trade-modal-section-header">
+                <div class="flex items-center gap-2 px-1">
+                    <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
+                        <i class="fa fa-chart-column text-xs opacity-50"></i>
+                    </span>
+                    <div class="leading-none">
+                        <div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
+                        <div class="mt-1 text-[10px] text-slate-500">Loading market structure and momentum</div>
+                    </div>
+                </div>
+            </div>
 
-	<ng-template #tradeMarketSnapshotSkeleton>
-		<div class="pt-3 space-y-3">
-			<div class="trade-modal-section-header">
-				<div class="flex items-center gap-2 px-1">
-					<span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
-						<i class="fa fa-chart-column text-xs opacity-50"></i>
-					</span>
-					<div class="leading-none">
-						<div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
-						<div class="mt-1 text-[10px] text-slate-500">Loading market structure and momentum</div>
-					</div>
-				</div>
-			</div>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fa fa-coins text-emerald-400/40 text-sm"></i>
+                        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Market structure</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        @for (_ of [1, 2, 3, 4]; track $index) {
+                            <div class="trade-modal-stat-card">
+                                <p-skeleton width="42%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
+                                <p-skeleton width="68%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
+                            </div>
+                        }
+                    </div>
+                </div>
 
-			<div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-				<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-					<div class="flex items-center gap-2 mb-3">
-						<i class="fa fa-coins text-emerald-400/40 text-sm"></i>
-						<span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Market structure</span>
-					</div>
-					<div class="grid grid-cols-2 gap-2">
-						@for (_ of [1, 2, 3, 4]; track $index) {
-							<div class="trade-modal-stat-card">
-								<p-skeleton width="42%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
-								<p-skeleton width="68%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
-							</div>
-						}
-					</div>
-				</div>
-
-				<div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-					<div class="flex items-center gap-2 mb-3">
-						<i class="fa fa-wave-square text-blue-400/40 text-sm"></i>
-						<span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Momentum at entry</span>
-					</div>
-					<div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
-						@for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track $index) {
-							<div class="trade-modal-stat-card">
-								<p-skeleton width="58%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
-								<p-skeleton width="54%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
-							</div>
-						}
-					</div>
-				</div>
-			</div>
-		</div>
-	</ng-template>
+                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fa fa-wave-square text-blue-400/40 text-sm"></i>
+                        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Momentum at entry</span>
+                    </div>
+                    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                        @for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track $index) {
+                            <div class="trade-modal-stat-card">
+                                <p-skeleton width="58%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
+                                <p-skeleton width="54%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </ng-template>
 </p-dialog>

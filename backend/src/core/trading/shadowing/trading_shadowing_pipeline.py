@@ -8,7 +8,7 @@ from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.db import get_database_session
+from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingShadowingProbe, TradingShadowingVerdict
 
 logger = get_application_logger(__name__)
@@ -48,7 +48,7 @@ class TradingShadowingPipeline:
         cooldown_skip_count = 0
 
         from datetime import timedelta
-        from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
+        from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 
         cooldown_threshold = current_time - timedelta(minutes=cooldown_minutes)
         token_addresses = [c.dexscreener_token_information.base_token.address for c in candidates]

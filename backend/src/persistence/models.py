@@ -4,12 +4,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Enum as SQLAlchemyEnum, Float, Integer, String, JSON, Boolean, ForeignKey
+from sqlalchemy import Enum as SQLAlchemyEnum, Float, Integer, String, JSON, Boolean, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.structures.structures import DcaStrategyStatus, DcaOrderStatus
 from src.core.utils.date_utils import get_current_local_datetime
-from src.persistence.db import DatabaseBaseModel
+from src.persistence.database_session_manager import DatabaseBaseModel
 
 
 class PositionPhase(Enum):
@@ -45,7 +45,7 @@ class TradingPosition(DatabaseBaseModel):
     take_profit_tier_1_price: Mapped[float] = mapped_column(Float, nullable=False)
     take_profit_tier_2_price: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss_price: Mapped[float] = mapped_column(Float, nullable=False)
-    position_phase: Mapped[PositionPhase] = mapped_column(SQLAlchemyEnum(PositionPhase), nullable=False)
+    position_phase: Mapped[PositionPhase] = mapped_column(SQLAlchemyEnum(PositionPhase, name="positionphase"), nullable=False)
     opened_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, onupdate=get_current_local_datetime, nullable=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(default=None, nullable=True)
@@ -59,14 +59,14 @@ class TradingTrade(DatabaseBaseModel):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     evaluation_id: Mapped[int] = mapped_column(ForeignKey("trading_evaluations.id"), nullable=False)
-    trade_side: Mapped[TradeSide] = mapped_column(SQLAlchemyEnum(TradeSide), index=True)
+    trade_side: Mapped[TradeSide] = mapped_column(SQLAlchemyEnum(TradeSide, name="tradeside"), index=True)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True)
     blockchain_network: Mapped[str] = mapped_column(String(32), nullable=False)
     execution_price: Mapped[float] = mapped_column(Float, nullable=False)
     execution_quantity: Mapped[float] = mapped_column(Float, nullable=False)
     transaction_fee: Mapped[float] = mapped_column(Float, nullable=False)
     realized_profit_and_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    execution_status: Mapped[ExecutionStatus] = mapped_column(SQLAlchemyEnum(ExecutionStatus), nullable=False)
+    execution_status: Mapped[ExecutionStatus] = mapped_column(SQLAlchemyEnum(ExecutionStatus, name="executionstatus"), nullable=False)
     token_address: Mapped[str] = mapped_column(String(128), nullable=False)
     pair_address: Mapped[str] = mapped_column(String(128), nullable=False)
     dex_id: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -84,7 +84,7 @@ class TradingPortfolioSnapshot(DatabaseBaseModel):
     total_equity_value: Mapped[float] = mapped_column(Float, nullable=False)
     available_cash_balance: Mapped[float] = mapped_column(Float, nullable=False)
     active_holdings_value: Mapped[float] = mapped_column(Float, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False, index=True)
 
     def __repr__(self) -> str:
         return f"<TradingPortfolioSnapshot total_equity_value={self.total_equity_value} available_cash_balance={self.available_cash_balance} active_holdings_value={self.active_holdings_value}>"
@@ -137,6 +137,9 @@ class TradingEvaluation(DatabaseBaseModel):
 
 class TradingShadowingProbe(DatabaseBaseModel):
     __tablename__ = "trading_shadowing_probes"
+    __table_args__ = (
+        Index("ix_trading_shadowing_probes_token_address_probed_at", "token_address", "probed_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
@@ -166,7 +169,7 @@ class TradingShadowingProbe(DatabaseBaseModel):
     fully_diluted_valuation_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     dexscreener_boost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     order_notional_value_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    probed_at: Mapped[datetime] = mapped_column(nullable=False)
+    probed_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
     verdict: Mapped[Optional[TradingShadowingVerdict]] = relationship("TradingShadowingVerdict", back_populates="probe", uselist=False, cascade="all, delete-orphan")
 
@@ -190,8 +193,8 @@ class TradingShadowingVerdict(DatabaseBaseModel):
     realized_pnl_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     holding_duration_minutes: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     is_profitable: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=get_current_local_datetime, nullable=False, index=True)
     probe: Mapped[TradingShadowingProbe] = relationship("TradingShadowingProbe", back_populates="verdict")
 
     def __repr__(self) -> str:
@@ -241,7 +244,7 @@ class DcaStrategy(DatabaseBaseModel):
     last_yield_calculation_timestamp: Mapped[datetime] = mapped_column(nullable=False)
     strategy_start_date: Mapped[datetime] = mapped_column(nullable=False)
     strategy_end_date: Mapped[datetime] = mapped_column(nullable=False)
-    strategy_status: Mapped[DcaStrategyStatus] = mapped_column(SQLAlchemyEnum(DcaStrategyStatus), nullable=False)
+    strategy_status: Mapped[DcaStrategyStatus] = mapped_column(SQLAlchemyEnum(DcaStrategyStatus, name="dcastrategystatus"), nullable=False)
     bypass_security_approval: Mapped[bool] = mapped_column(Boolean, nullable=False)
     available_dry_powder: Mapped[float] = mapped_column(Float, nullable=False)
     total_deployed_amount: Mapped[float] = mapped_column(Float, nullable=False)
@@ -264,7 +267,7 @@ class DcaOrder(DatabaseBaseModel):
     planned_source_asset_amount: Mapped[float] = mapped_column(Float, nullable=False)
     executed_source_asset_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     executed_target_asset_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    order_status: Mapped[DcaOrderStatus] = mapped_column(SQLAlchemyEnum(DcaOrderStatus), nullable=False)
+    order_status: Mapped[DcaOrderStatus] = mapped_column(SQLAlchemyEnum(DcaOrderStatus, name="dcaorderstatus"), nullable=False)
     transaction_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     actual_execution_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     executed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)

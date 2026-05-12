@@ -3,8 +3,8 @@ from typing import Set, Tuple
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.trading_utils import is_address_in_open_positions
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_position_dao import TradingPositionDao
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 

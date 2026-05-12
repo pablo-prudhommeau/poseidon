@@ -1,4 +1,5 @@
-import {Injectable, signal} from '@angular/core';
+import { Injectable, signal } from '@angular/core';
+import { ShadowVerdictChronicleMergeService } from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
 import {
     DcaStrategyPayload,
     ShadowVerdictChronicleDeltaPayload,
@@ -13,32 +14,25 @@ import {
     WebsocketMessageType,
     WebsocketMessageUnion
 } from './models';
-import {ShadowVerdictChronicleMergeService} from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
 
 export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class WebSocketService {
-    private socket?: WebSocket;
-    /** Price ticks received before the positions snapshot is applied (initial sync / race). */
-    private pendingPositionPriceUpdates: TradingPositionPricePayload[] = [];
-
-    constructor(private readonly shadowHistoryMerge: ShadowVerdictChronicleMergeService) {}
-
-    public readonly status = signal<WebsocketConnectionStatus>('closed');
-    public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
-    public readonly liquidity = signal<TradingLiquidityPayload | null>(null);
-    public readonly shadowMeta = signal<TradingShadowMetaPayload | null>(null);
-    public readonly positions = signal<TradingPositionPayload[]>([]);
-    public readonly trades = signal<TradingTradePayload[]>([]);
     public readonly analytics = signal<TradingEvaluationPayload[]>([]);
     public readonly dcaStrategies = signal<DcaStrategyPayload[]>([]);
+    public readonly liquidity = signal<TradingLiquidityPayload | null>(null);
+    public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
+    public readonly positions = signal<TradingPositionPayload[]>([]);
     public readonly shadowHistory = signal<ShadowVerdictChronicleResponse | null>(null);
+    public readonly shadowMeta = signal<TradingShadowMetaPayload | null>(null);
+    public readonly status = signal<WebsocketConnectionStatus>('closed');
+    public readonly trades = signal<TradingTradePayload[]>([]);
 
-    private defaultWebsocketUrl(): string {
-        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${protocol}//${location.host}/ws`;
-    }
+    private pendingPositionPriceUpdates: TradingPositionPricePayload[] = [];
+    private socket?: WebSocket;
+
+    constructor(private readonly shadowHistoryMerge: ShadowVerdictChronicleMergeService) {}
 
     public connect(url = this.defaultWebsocketUrl()): void {
         if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)) {
@@ -57,8 +51,7 @@ export class WebSocketService {
             try {
                 const message = JSON.parse(event.data) as WebsocketMessageUnion;
                 this.apply(message);
-            } catch {
-            }
+            } catch {}
         };
 
         socket.onerror = () => {
@@ -76,7 +69,7 @@ export class WebSocketService {
         if (this.socket?.readyState !== WebSocket.OPEN) {
             return;
         }
-        this.socket.send(JSON.stringify({type: WebsocketMessageType.REFRESH}));
+        this.socket.send(JSON.stringify({ type: WebsocketMessageType.REFRESH }));
     }
 
     private apply(message: WebsocketMessageUnion): void {
@@ -135,36 +128,7 @@ export class WebSocketService {
         }
     }
 
-    private mergeIncomingPositionPrices(priceUpdates: TradingPositionPricePayload[]): void {
-        if (!Array.isArray(priceUpdates) || priceUpdates.length === 0) {
-            return;
-        }
-        const currentPositions = this.positions();
-        if (!Array.isArray(currentPositions) || currentPositions.length === 0) {
-            this.pendingPositionPriceUpdates.push(...priceUpdates);
-            return;
-        }
-        this.applyPositionPriceUpdatesToRows(currentPositions, priceUpdates);
-    }
-
-    private flushPendingPositionPriceUpdates(): void {
-        if (this.pendingPositionPriceUpdates.length === 0) {
-            return;
-        }
-        const pending = this.pendingPositionPriceUpdates;
-        this.pendingPositionPriceUpdates = [];
-        const currentPositions = this.positions();
-        if (!Array.isArray(currentPositions) || currentPositions.length === 0) {
-            this.pendingPositionPriceUpdates.push(...pending);
-            return;
-        }
-        this.applyPositionPriceUpdatesToRows(currentPositions, pending);
-    }
-
-    private applyPositionPriceUpdatesToRows(
-        currentPositions: TradingPositionPayload[],
-        rawUpdates: TradingPositionPricePayload[],
-    ): void {
+    private applyPositionPriceUpdatesToRows(currentPositions: TradingPositionPayload[], rawUpdates: TradingPositionPricePayload[]): void {
         if (rawUpdates.length === 0) {
             return;
         }
@@ -186,36 +150,30 @@ export class WebSocketService {
         const nextPositions = currentPositions.map((position) => {
             const id = Number(position.id);
             const update =
-                (Number.isFinite(id) ? updateByPositionId.get(id) : undefined)
-                ?? (position.pair_address ? updateByPairAddress.get(position.pair_address) : undefined);
+                (Number.isFinite(id) ? updateByPositionId.get(id) : undefined) ??
+                (position.pair_address ? updateByPairAddress.get(position.pair_address) : undefined);
             if (!update) {
                 return position;
             }
 
             const previousPrice = Number(position.last_price ?? 0);
-            const nextPrice: number | null =
-                update.last_price == null
-                    ? (position.last_price ?? null)
-                    : Number(update.last_price);
-            const nextDeltaPercent =
-                update.delta_percent == null
-                    ? undefined
-                    : Number(update.delta_percent);
+            const nextPrice: number | null = update.last_price == null ? (position.last_price ?? null) : Number(update.last_price);
+            const nextDeltaPercent = update.delta_percent == null ? undefined : Number(update.delta_percent);
 
             const hasComparableNextPrice = nextPrice !== null && Number.isFinite(nextPrice);
             const nextDirection: 'up' | 'down' | null =
                 update.last_price == null || !Number.isFinite(previousPrice) || !hasComparableNextPrice
                     ? null
                     : nextPrice > previousPrice
-                        ? 'up'
-                        : nextPrice < previousPrice
-                            ? 'down'
-                            : null;
+                      ? 'up'
+                      : nextPrice < previousPrice
+                        ? 'down'
+                        : null;
 
             const didChange =
-                nextPrice !== position.last_price
-                || (nextDeltaPercent ?? null) !== ((position as any).priceChangePercent ?? null)
-                || nextDirection !== ((position as any).lastPriceDirection ?? null);
+                nextPrice !== position.last_price ||
+                (nextDeltaPercent ?? null) !== ((position as any).priceChangePercent ?? null) ||
+                nextDirection !== ((position as any).lastPriceDirection ?? null);
             if (didChange) {
                 hasAnyChange = true;
             }
@@ -224,13 +182,70 @@ export class WebSocketService {
                 ...position,
                 last_price: nextPrice,
                 priceChangePercent: nextDeltaPercent ?? (position as any).priceChangePercent ?? null,
-                lastPriceDirection: nextDirection,
+                lastPriceDirection: nextDirection
             };
         });
 
         if (hasAnyChange) {
             this.positions.set(nextPositions);
         }
+    }
+
+    private arePlainObjectsEquivalent(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+        if (left === right) {
+            return true;
+        }
+
+        const leftKeys = Object.keys(left);
+        const rightKeys = Object.keys(right);
+        if (leftKeys.length !== rightKeys.length) {
+            return false;
+        }
+
+        for (const key of leftKeys) {
+            if (!(key in right)) {
+                return false;
+            }
+            if (!Object.is(left[key], right[key])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private defaultWebsocketUrl(): string {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${protocol}//${location.host}/ws`;
+    }
+
+    private flushPendingPositionPriceUpdates(): void {
+        if (this.pendingPositionPriceUpdates.length === 0) {
+            return;
+        }
+        const pending = this.pendingPositionPriceUpdates;
+        this.pendingPositionPriceUpdates = [];
+        const currentPositions = this.positions();
+        if (!Array.isArray(currentPositions) || currentPositions.length === 0) {
+            this.pendingPositionPriceUpdates.push(...pending);
+            return;
+        }
+        this.applyPositionPriceUpdatesToRows(currentPositions, pending);
+    }
+
+    private mergeIncomingPositionPrices(priceUpdates: TradingPositionPricePayload[]): void {
+        if (!Array.isArray(priceUpdates) || priceUpdates.length === 0) {
+            return;
+        }
+        const currentPositions = this.positions();
+        if (!Array.isArray(currentPositions) || currentPositions.length === 0) {
+            this.pendingPositionPriceUpdates.push(...priceUpdates);
+            return;
+        }
+        this.applyPositionPriceUpdatesToRows(currentPositions, priceUpdates);
+    }
+
+    private positionsAreEquivalent(left: TradingPositionPayload, right: TradingPositionPayload): boolean {
+        return this.arePlainObjectsEquivalent(left as unknown as Record<string, unknown>, right as unknown as Record<string, unknown>);
     }
 
     private reconcilePositions(nextPayload: TradingPositionPayload[]): void {
@@ -245,9 +260,7 @@ export class WebSocketService {
             return;
         }
 
-        const currentById = new Map<number, TradingPositionPayload>(
-            currentPositions.map((position) => [position.id, position])
-        );
+        const currentById = new Map<number, TradingPositionPayload>(currentPositions.map((position) => [position.id, position]));
         let hasAnyChange = nextPayload.length !== currentPositions.length;
 
         const reconciled = nextPayload.map((incomingPosition) => {
@@ -259,15 +272,12 @@ export class WebSocketService {
 
             const direction = (current as any).lastPriceDirection ?? null;
             const changePct = (current as any).priceChangePercent ?? null;
-            const mergedLastPrice =
-                incomingPosition.last_price != null
-                    ? incomingPosition.last_price
-                    : current.last_price;
+            const mergedLastPrice = incomingPosition.last_price != null ? incomingPosition.last_price : current.last_price;
             const incomingWithUiState = {
                 ...incomingPosition,
                 last_price: mergedLastPrice,
                 lastPriceDirection: direction,
-                priceChangePercent: changePct,
+                priceChangePercent: changePct
             };
 
             if (this.positionsAreEquivalent(current, incomingWithUiState)) {
@@ -284,13 +294,6 @@ export class WebSocketService {
         this.flushPendingPositionPriceUpdates();
     }
 
-    private positionsAreEquivalent(left: TradingPositionPayload, right: TradingPositionPayload): boolean {
-        return this.arePlainObjectsEquivalent(
-            left as unknown as Record<string, unknown>,
-            right as unknown as Record<string, unknown>
-        );
-    }
-
     private reconcileTrades(nextPayload: TradingTradePayload[]): void {
         if (!Array.isArray(nextPayload)) {
             return;
@@ -302,9 +305,7 @@ export class WebSocketService {
             return;
         }
 
-        const currentById = new Map<number, TradingTradePayload>(
-            currentTrades.map((trade) => [trade.id, trade])
-        );
+        const currentById = new Map<number, TradingTradePayload>(currentTrades.map((trade) => [trade.id, trade]));
         let hasAnyChange = nextPayload.length !== currentTrades.length;
 
         const reconciled = nextPayload.map((incomingTrade) => {
@@ -328,31 +329,6 @@ export class WebSocketService {
     }
 
     private tradesAreEquivalent(left: TradingTradePayload, right: TradingTradePayload): boolean {
-        return this.arePlainObjectsEquivalent(
-            left as unknown as Record<string, unknown>,
-            right as unknown as Record<string, unknown>
-        );
-    }
-
-    private arePlainObjectsEquivalent(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
-        if (left === right) {
-            return true;
-        }
-
-        const leftKeys = Object.keys(left);
-        const rightKeys = Object.keys(right);
-        if (leftKeys.length !== rightKeys.length) {
-            return false;
-        }
-
-        for (const key of leftKeys) {
-            if (!(key in right)) {
-                return false;
-            }
-            if (!Object.is(left[key], right[key])) {
-                return false;
-            }
-        }
-        return true;
+        return this.arePlainObjectsEquivalent(left as unknown as Record<string, unknown>, right as unknown as Record<string, unknown>);
     }
 }

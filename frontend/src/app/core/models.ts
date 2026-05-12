@@ -3,7 +3,16 @@ export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';
 export type TradeMode = 'LIVE' | 'PAPER';
 export type DcaStrategyStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
-export type DcaOrderStatus = 'PENDING' | 'WAITING_USER_APPROVAL' | 'APPROVED' | 'WITHDRAWN_FROM_AAVE' | 'SWAPPED' | 'EXECUTED' | 'SKIPPED' | 'FAILED' | 'REJECTED';
+export type DcaOrderStatus =
+    | 'PENDING'
+    | 'WAITING_USER_APPROVAL'
+    | 'APPROVED'
+    | 'WITHDRAWN_FROM_AAVE'
+    | 'SWAPPED'
+    | 'EXECUTED'
+    | 'SKIPPED'
+    | 'FAILED'
+    | 'REJECTED';
 
 export interface SystemHealthComponentPayload {
     ok: boolean;
@@ -402,7 +411,7 @@ export enum WebsocketMessageType {
     PONG = 'pong',
     ERROR = 'error',
     REFRESH = 'refresh',
-    PING = 'ping',
+    PING = 'ping'
 }
 
 export interface BaseWebsocketMessage<T> {
@@ -660,4 +669,3 @@ export interface ShadowVerdictChronicleDeltaPayload {
     series_end_lag_seconds: number;
     buckets: ShadowVerdictChronicleBucketDeltaPayload[];
 }
-

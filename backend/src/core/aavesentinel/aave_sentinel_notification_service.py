@@ -26,9 +26,9 @@ from src.integrations.telegram.telegram_client import (
 )
 from src.integrations.telegram.telegram_structures import TelegramCallbackQuery, TelegramMessage
 from src.logging.logger import get_application_logger
-from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
-from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 

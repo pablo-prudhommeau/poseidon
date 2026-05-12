@@ -1,6 +1,6 @@
-import {CommonModule} from '@angular/common';
-import {Component, computed, OnInit} from '@angular/core';
-import {WebSocketService} from '../../core/websocket.service';
+import { CommonModule } from '@angular/common';
+import { Component, computed, OnInit } from '@angular/core';
+import { WebSocketService } from '../../core/websocket.service';
 
 @Component({
     standalone: true,
@@ -10,7 +10,6 @@ import {WebSocketService} from '../../core/websocket.service';
     styleUrl: './connection-overlay-pill.component.css'
 })
 export class ConnectionOverlayPillComponent implements OnInit {
-
     public readonly label = computed(() => {
         const raw = this.webSocketService.status();
         return raw.toUpperCase();
@@ -22,9 +21,15 @@ export class ConnectionOverlayPillComponent implements OnInit {
         console.info('poseidon.ui.connection-overlay-pill — mounted; initial status:', this.webSocketService.status());
     }
 
-    public isConnecting(): boolean { return this.webSocketService.status() === 'connecting'; }
+    public isClosed(): boolean {
+        return this.webSocketService.status() === 'closed';
+    }
 
-    public isOpen(): boolean { return this.webSocketService.status() === 'open'; }
+    public isConnecting(): boolean {
+        return this.webSocketService.status() === 'connecting';
+    }
 
-    public isClosed(): boolean { return this.webSocketService.status() === 'closed'; }
+    public isOpen(): boolean {
+        return this.webSocketService.status() === 'open';
+    }
 }

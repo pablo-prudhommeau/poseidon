@@ -1,112 +1,82 @@
 @if (kpis) {
-	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl flex flex-col justify-between">
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Screener Funnel</span>
+                <i class="fa fa-filter text-slate-600"></i>
+            </div>
+            <div class="text-3xl font-black text-white tracking-tight">
+                {{ kpis.total_outcomes | number }}
+            </div>
+            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Resolved Outcomes</div>
 
-		<div class="p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl flex flex-col justify-between">
-			<div class="flex justify-between items-center mb-3">
-				<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Screener Funnel</span>
-				<i class="fa fa-filter text-slate-600"></i>
-			</div>
-			<div class="text-3xl font-black text-white tracking-tight">
-				{{ kpis.total_outcomes | number }}
-			</div>
-			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
-				Resolved Outcomes
-			</div>
+            <div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
+                <div class="flex flex-col">
+                    <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Total Evaluations</span>
+                    <span class="text-slate-300 font-bold text-xs">{{ kpis.total_evaluations | number }}</span>
+                </div>
+            </div>
+        </div>
 
-			<div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
-				<div class="flex flex-col">
-					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Total Evaluations</span>
-					<span class="text-slate-300 font-bold text-xs">{{ kpis.total_evaluations | number }}</span>
-				</div>
-			</div>
-		</div>
+        <div class="p-4 rounded-2xl bg-black/20 border border-emerald-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-colors" [class.!border-emerald-500]="kpis.profit_factor >= 1" [class.!border-red-500]="kpis.profit_factor < 1 && kpis.profit_factor > 0" [style.border-opacity]="0.2">
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-[10px] uppercase font-bold tracking-widest" [class.text-emerald-400]="kpis.profit_factor >= 1" [class.text-red-400]="kpis.profit_factor < 1 && kpis.profit_factor > 0" [class.text-slate-400]="kpis.profit_factor === 0"> Efficiency </span>
+                <i class="fa fa-crosshairs" [class.text-emerald-500]="kpis.profit_factor >= 1" [class.text-red-500]="kpis.profit_factor < 1 && kpis.profit_factor > 0" [class.text-slate-500]="kpis.profit_factor === 0" [style.opacity]="0.5"></i>
+            </div>
+            <div class="text-3xl font-black tracking-tight" [class.text-emerald-400]="kpis.profit_factor >= 1" [class.text-red-400]="kpis.profit_factor < 1 && kpis.profit_factor > 0" [class.text-white]="kpis.profit_factor === 0">
+                {{ kpis.profit_factor === 999 ? 'MAX' : (kpis.profit_factor | number: '1.2-2') }}
+            </div>
+            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Profit Factor</div>
 
-		<div class="p-4 rounded-2xl bg-black/20 border border-emerald-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between transition-colors"
-		     [class.!border-emerald-500]="kpis.profit_factor >= 1" [class.!border-red-500]="kpis.profit_factor < 1 && kpis.profit_factor > 0"
-		     [style.border-opacity]="0.2">
-			<div class="flex justify-between items-center mb-3">
-                        <span class="text-[10px] uppercase font-bold tracking-widest"
-                              [class.text-emerald-400]="kpis.profit_factor >= 1" [class.text-red-400]="kpis.profit_factor < 1 && kpis.profit_factor > 0" [class.text-slate-400]="kpis.profit_factor === 0">
-                            Efficiency
-                        </span>
-				<i class="fa fa-crosshairs" [class.text-emerald-500]="kpis.profit_factor >= 1" [class.text-red-500]="kpis.profit_factor < 1 && kpis.profit_factor > 0"
-				   [class.text-slate-500]="kpis.profit_factor === 0" [style.opacity]="0.5"></i>
-			</div>
-			<div class="text-3xl font-black tracking-tight"
-			     [class.text-emerald-400]="kpis.profit_factor >= 1" [class.text-red-400]="kpis.profit_factor < 1 && kpis.profit_factor > 0" [class.text-white]="kpis.profit_factor === 0">
-				{{ kpis.profit_factor === 999 ? 'MAX' : (kpis.profit_factor | number:'1.2-2') }}
-			</div>
-			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
-				Profit Factor
-			</div>
+            <div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
+                <div class="flex flex-col">
+                    <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Win Rate</span>
+                    <span class="text-slate-300 font-bold text-xs">{{ kpis.win_rate_percentage | number: '1.1-1' }}%</span>
+                </div>
+                <div class="flex flex-col border-l border-white/5 pl-4">
+                    <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Expected Val</span>
+                    <span class="text-slate-300 font-bold text-xs">{{ formatUsd(kpis.expected_value_usd) }} / trade</span>
+                </div>
+                <div class="flex flex-col border-l border-white/5 pl-4">
+                    <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Velocity</span>
+                    <span class="font-bold text-xs" [class.text-emerald-400]="kpis.capital_velocity > 0" [class.text-red-400]="kpis.capital_velocity < 0" [class.text-slate-400]="kpis.capital_velocity === 0">{{ kpis.capital_velocity | number: '1.2-2' }}</span>
+                </div>
+            </div>
+        </div>
 
-			<div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
-				<div class="flex flex-col">
-					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Win Rate</span>
-					<span class="text-slate-300 font-bold text-xs">{{ kpis.win_rate_percentage | number:'1.1-1' }}%</span>
-				</div>
-				<div class="flex flex-col border-l border-white/5 pl-4">
-					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Expected Val</span>
-					<span class="text-slate-300 font-bold text-xs">{{ formatUsd(kpis.expected_value_usd) }} / trade</span>
-				</div>
-				<div class="flex flex-col border-l border-white/5 pl-4">
-					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Velocity</span>
-					<span class="font-bold text-xs"
-					      [class.text-emerald-400]="kpis.capital_velocity > 0"
-					      [class.text-red-400]="kpis.capital_velocity < 0"
-					      [class.text-slate-400]="kpis.capital_velocity === 0">{{ kpis.capital_velocity | number:'1.2-2' }}</span>
-				</div>
-			</div>
-		</div>
+        <div class="p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl flex flex-col justify-between">
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Net Yield</span>
+                <i class="fa fa-wallet text-slate-600"></i>
+            </div>
+            <div class="text-3xl font-black tracking-tight" [class.text-emerald-400]="kpis.total_pnl_usd > 0" [class.text-red-400]="kpis.total_pnl_usd < 0" [class.text-white]="kpis.total_pnl_usd === 0">
+                {{ formatUsd(kpis.total_pnl_usd) }}
+            </div>
+            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Cumulative Return</div>
 
-		<div class="p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl flex flex-col justify-between">
-			<div class="flex justify-between items-center mb-3">
-				<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Net Yield</span>
-				<i class="fa fa-wallet text-slate-600"></i>
-			</div>
-			<div class="text-3xl font-black tracking-tight"
-			     [class.text-emerald-400]="kpis.total_pnl_usd > 0" [class.text-red-400]="kpis.total_pnl_usd < 0" [class.text-white]="kpis.total_pnl_usd === 0">
-				{{ formatUsd(kpis.total_pnl_usd) }}
-			</div>
-			<div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
-				Cumulative Return
-			</div>
+            <div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
+                <div class="flex flex-col">
+                    <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Avg PnL</span>
+                    <span class="font-bold text-xs" [class.text-emerald-500]="kpis.average_pnl_percentage > 0" [class.text-red-500]="kpis.average_pnl_percentage < 0" [class.text-slate-400]="kpis.average_pnl_percentage === 0"> {{ kpis.average_pnl_percentage > 0 ? '+' : '' }}{{ kpis.average_pnl_percentage | number: '1.1-1' }}% </span>
+                </div>
+                <div class="flex flex-col border-l border-white/5 pl-4">
+                    <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Avg Hold</span>
+                    <span class="text-slate-300 font-bold text-xs">{{ formatDuration(kpis.average_holding_duration_minutes) }}</span>
+                </div>
+            </div>
+        </div>
 
-			<div class="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
-				<div class="flex flex-col">
-					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Avg PnL</span>
-					<span class="font-bold text-xs"
-					      [class.text-emerald-500]="kpis.average_pnl_percentage > 0" [class.text-red-500]="kpis.average_pnl_percentage < 0" [class.text-slate-400]="kpis.average_pnl_percentage === 0">
-                                {{ kpis.average_pnl_percentage > 0 ? '+' : '' }}{{ kpis.average_pnl_percentage | number:'1.1-1' }}%
-                            </span>
-				</div>
-				<div class="flex flex-col border-l border-white/5 pl-4">
-					<span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Avg Hold</span>
-					<span class="text-slate-300 font-bold text-xs">{{ formatDuration(kpis.average_holding_duration_minutes) }}</span>
-				</div>
-			</div>
-		</div>
-
-		<div class="p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl flex flex-col justify-between">
-			<div class="flex justify-between items-center mb-3">
-				<span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Timeline Trajectory</span>
-				<i class="fa fa-chart-area text-slate-600"></i>
-			</div>
-			<div class="flex-grow -mx-2 -mb-2 mt-2">
-				<apx-chart
-						*ngIf="sparklineSeries.length > 0; else noTimeline"
-						[series]="sparklineSeries"
-						[chart]="sparklineChart"
-						[stroke]="sparklineStroke"
-						[fill]="sparklineFill"
-						[tooltip]="sparklineTooltip"
-						style="width: 100%; height: 100%; min-height: 80px;"
-				></apx-chart>
-				<ng-template #noTimeline>
-					<div class="flex h-full items-center justify-center text-[10px] text-slate-600 font-bold uppercase">No data</div>
-				</ng-template>
-			</div>
-		</div>
-
-	</div>
+        <div class="p-4 rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl flex flex-col justify-between">
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Timeline Trajectory</span>
+                <i class="fa fa-chart-area text-slate-600"></i>
+            </div>
+            <div class="flex-grow -mx-2 -mb-2 mt-2">
+                <apx-chart *ngIf="sparklineSeries.length > 0; else noTimeline" [series]="sparklineSeries" [chart]="sparklineChart" [stroke]="sparklineStroke" [fill]="sparklineFill" [tooltip]="sparklineTooltip" style="width: 100%; height: 100%; min-height: 80px"></apx-chart>
+                <ng-template #noTimeline>
+                    <div class="flex h-full items-center justify-center text-[10px] text-slate-600 font-bold uppercase">No data</div>
+                </ng-template>
+            </div>
+        </div>
+    </div>
 }

@@ -1,6 +1,6 @@
-import {definePreset} from '@primeuix/themes';
+import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
-import type {ComponentsDesignTokens} from '@primeuix/themes/types';
+import type { ComponentsDesignTokens } from '@primeuix/themes/types';
 
 const componentsDesignTokens: ComponentsDesignTokens = {
     button: {
@@ -26,7 +26,7 @@ const componentsDesignTokens: ComponentsDesignTokens = {
                 iconOnlyWidth: '1.80rem'
             }
         },
-        css: ({dt}) => `
+        css: ({ dt }) => `
           .p-button.p-button-icon-only  { 
             line-height: 1.05rem;
           }
@@ -43,8 +43,8 @@ const componentsDesignTokens: ComponentsDesignTokens = {
             paddingX: '0.50rem',
             paddingY: '0.28rem',
             borderRadius: '0.50rem',
-            sm: {fontSize: '0.80rem', paddingX: '0.45rem', paddingY: '0.22rem'},
-            lg: {fontSize: '0.95rem', paddingX: '0.65rem', paddingY: '0.35rem'}
+            sm: { fontSize: '0.80rem', paddingX: '0.45rem', paddingY: '0.22rem' },
+            lg: { fontSize: '0.95rem', paddingX: '0.65rem', paddingY: '0.35rem' }
         }
     },
     select: {
@@ -52,15 +52,15 @@ const componentsDesignTokens: ComponentsDesignTokens = {
             paddingX: '0.50rem',
             paddingY: '0.28rem',
             borderRadius: '0.50rem',
-            sm: {fontSize: '0.80rem', paddingX: '0.45rem', paddingY: '0.22rem'}
+            sm: { fontSize: '0.80rem', paddingX: '0.45rem', paddingY: '0.22rem' }
         }
     },
     dialog: {
-        header: {padding: '0.50rem 0.75rem', gap: '0.40rem'},
-        footer: {padding: '0.50rem 0.75rem', gap: '0.40rem'}
+        header: { padding: '0.50rem 0.75rem', gap: '0.40rem' },
+        footer: { padding: '0.50rem 0.75rem', gap: '0.40rem' }
     },
     toolbar: {
-        root: {padding: '0.40rem 0.60rem', gap: '0.50rem'}
+        root: { padding: '0.40rem 0.60rem', gap: '0.50rem' }
     }
 };
 

@@ -32,26 +32,32 @@ def start_background_jobs() -> None:
     from src.core.jobs.aave_sentinel_job import AaveSentinelJob
     from src.core.jobs.dca_job import DcaJob
 
-    _trading_cycle_thread = threading.Thread(
-        target=TradingCycleJob().run_loop,
-        name="trading-cycle-loop",
-        daemon=True,
-    )
-    _trading_cycle_thread.start()
-    logger.info("[ORCHESTRATOR] Trading cycle thread started (interval=%ss)", settings.TRADING_LOOP_INTERVAL_SECONDS)
-
-    _shadowing_thread = threading.Thread(
-        target=TradingShadowingJob().run_loop,
-        name="shadowing-loop",
-        daemon=True,
-    )
-    _shadowing_thread.start()
-    logger.info("[ORCHESTRATOR] Shadowing thread started (interval=%ss)", settings.TRADING_SHADOWING_LOOP_INTERVAL_SECONDS)
-
     event_loop = asyncio.get_event_loop()
 
-    _position_guard_task = event_loop.create_task(TradingPositionGuardJob().run_loop())
-    logger.info("[ORCHESTRATOR] Position guard task started (interval=%ss)", settings.TRADING_POSITION_GUARD_INTERVAL_SECONDS)
+    if settings.TRADING_ENABLED:
+        _trading_cycle_thread = threading.Thread(
+            target=TradingCycleJob().run_loop,
+            name="trading-cycle-loop",
+            daemon=True,
+        )
+        _trading_cycle_thread.start()
+        logger.info("[ORCHESTRATOR] Trading cycle thread started (interval=%ss)", settings.TRADING_LOOP_INTERVAL_SECONDS)
+
+        _position_guard_task = event_loop.create_task(TradingPositionGuardJob().run_loop())
+        logger.info("[ORCHESTRATOR] Position guard task started (interval=%ss)", settings.TRADING_POSITION_GUARD_INTERVAL_SECONDS)
+    else:
+        logger.info("[ORCHESTRATOR] Trading disabled in settings, trading loop and position guard not scheduled")
+
+    if settings.TRADING_ENABLED and settings.TRADING_SHADOWING_ENABLED:
+        _shadowing_thread = threading.Thread(
+            target=TradingShadowingJob().run_loop,
+            name="shadowing-loop",
+            daemon=True,
+        )
+        _shadowing_thread.start()
+        logger.info("[ORCHESTRATOR] Shadowing thread started (interval=%ss)", settings.TRADING_SHADOWING_LOOP_INTERVAL_SECONDS)
+    else:
+        logger.info("[ORCHESTRATOR] Shadowing disabled or trading inactive, shadowing loop not scheduled")
 
     if settings.AAVE_SENTINEL_ENABLED:
         _aave_sentinel_task = event_loop.create_task(AaveSentinelJob().run_loop())
@@ -59,8 +65,11 @@ def start_background_jobs() -> None:
     else:
         logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Sentinel disabled in settings, task not scheduled")
 
-    _dca_background_task = event_loop.create_task(DcaJob().run_loop())
-    logger.info("[ORCHESTRATOR][DCA_JOB] Scheduled task started (interval=%ss)", settings.AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS)
+    if settings.DCA_ENABLED:
+        _dca_background_task = event_loop.create_task(DcaJob().run_loop())
+        logger.info("[ORCHESTRATOR][DCA_JOB] Scheduled task started (interval=%ss)", settings.AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS)
+    else:
+        logger.info("[ORCHESTRATOR][DCA_JOB] DCA disabled in settings, task not scheduled")
 
     _started = True
     logger.info("[ORCHESTRATOR] All background jobs armed successfully")
@@ -70,6 +79,7 @@ def read_background_jobs_runtime_status() -> BackgroundJobsRuntimeStatus:
     return BackgroundJobsRuntimeStatus(
         mode=Mode.PAPER if settings.PAPER_MODE else Mode.LIVE,
         trading_enabled=settings.TRADING_ENABLED,
+        dca_enabled=settings.DCA_ENABLED,
         trading_interval_seconds=settings.TRADING_LOOP_INTERVAL_SECONDS,
         position_guard_interval_seconds=settings.TRADING_POSITION_GUARD_INTERVAL_SECONDS,
         shadowing_enabled=settings.TRADING_SHADOWING_ENABLED,

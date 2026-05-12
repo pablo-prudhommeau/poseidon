@@ -1,4 +1,4 @@
-import {colorSchemeDark, themeQuartz} from 'ag-grid-community';
+import { colorSchemeDark, themeQuartz } from 'ag-grid-community';
 
 export const balhamDarkThemeCompact = themeQuartz
     .withParams({
@@ -18,6 +18,6 @@ export const balhamDarkThemeCompact = themeQuartz
         wrapperBorderRadius: 12,
         columnBorder: false,
         cellHorizontalPadding: 10,
-        spacing: 4,
+        spacing: 4
     })
     .withPart(colorSchemeDark);

@@ -11,9 +11,9 @@ from src.core.trading.trading_structures import TradingOrderPayload, TradingExec
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.dao.trading.trading_trade_dao import TradingTradeDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_position_dao import TradingPositionDao
+from src.persistence.dao.trading_trade_dao import TradingTradeDao
+from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import ExecutionStatus, TradingTrade, TradingPosition, TradeSide, PositionPhase
 
 logger = get_application_logger(__name__)

@@ -1,4 +1,4 @@
-import {Component, Input, OnChanges, SimpleChanges} from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 
 @Component({
     standalone: true,
@@ -11,9 +11,9 @@ export class TokenChipComponent implements OnChanges {
     @Input() public symbol!: string;
 
     public blockchainIconUrl: string = '';
-    public tokenIconCandidates: string[] = [];
     public currentTokenIconIndex: number = 0;
     public isTokenImageVisible: boolean = true;
+    public tokenIconCandidates: string[] = [];
 
     private readonly fallbackChainIconUrl = 'https://icons.llamao.fi/icons/chains/rsz_unknown.jpg';
 
@@ -23,11 +23,18 @@ export class TokenChipComponent implements OnChanges {
         }
     }
 
-    private initializeIcons(): void {
-        this.currentTokenIconIndex = 0;
-        this.isTokenImageVisible = true;
-        this.blockchainIconUrl = this.generateBlockchainIconUrl();
-        this.tokenIconCandidates = this.generateTokenIconCandidates();
+    public handleBlockchainImageError(): void {
+        this.blockchainIconUrl = this.fallbackChainIconUrl;
+    }
+
+    public handleTokenImageError(): void {
+        const nextIndex = this.currentTokenIconIndex + 1;
+
+        if (nextIndex < this.tokenIconCandidates.length) {
+            this.currentTokenIconIndex = nextIndex;
+        } else {
+            this.isTokenImageVisible = false;
+        }
     }
 
     private generateBlockchainIconUrl(): string {
@@ -51,7 +58,9 @@ export class TokenChipComponent implements OnChanges {
 
         if (normalizedAddress && normalizedBlockchain) {
             const trustWalletFolder = this.getTrustWalletBlockchainFolder(normalizedBlockchain);
-            iconCandidates.push(`https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${trustWalletFolder}/assets/${normalizedAddress}/logo.png`);
+            iconCandidates.push(
+                `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${trustWalletFolder}/assets/${normalizedAddress}/logo.png`
+            );
         }
 
         if (normalizedAddress) {
@@ -68,17 +77,10 @@ export class TokenChipComponent implements OnChanges {
         return blockchain;
     }
 
-    public handleTokenImageError(): void {
-        const nextIndex = this.currentTokenIconIndex + 1;
-
-        if (nextIndex < this.tokenIconCandidates.length) {
-            this.currentTokenIconIndex = nextIndex;
-        } else {
-            this.isTokenImageVisible = false;
-        }
-    }
-
-    public handleBlockchainImageError(): void {
-        this.blockchainIconUrl = this.fallbackChainIconUrl;
+    private initializeIcons(): void {
+        this.currentTokenIconIndex = 0;
+        this.isTokenImageVisible = true;
+        this.blockchainIconUrl = this.generateBlockchainIconUrl();
+        this.tokenIconCandidates = this.generateTokenIconCandidates();
     }
 }

@@ -1,26 +1,12 @@
-import {ENVIRONMENT_INITIALIZER, Provider} from '@angular/core';
-import {AgGridAngular} from 'ag-grid-angular';
-import type {ColDef, ColGroupDef, ColumnState, GridApi, GridOptions, ManagedGridOptionKey} from 'ag-grid-community';
+import { ENVIRONMENT_INITIALIZER, Provider } from '@angular/core';
+import { AgGridAngular } from 'ag-grid-angular';
+import type { ColDef, ColGroupDef, ColumnState, GridApi, GridOptions, ManagedGridOptionKey } from 'ag-grid-community';
 
 class PoseidonAgGridHmrRegistry {
     private static readonly singleton = new PoseidonAgGridHmrRegistry();
     private readonly grids = new Set<AgGridAngular>();
 
     private constructor() {}
-
-    public static instance(): PoseidonAgGridHmrRegistry {
-        return PoseidonAgGridHmrRegistry.singleton;
-    }
-
-    public register(grid: AgGridAngular): void {
-        this.grids.add(grid);
-        console.info('[UI][AGGRID][HMR][REGISTER] grid registered');
-    }
-
-    public unregister(grid: AgGridAngular): void {
-        this.grids.delete(grid);
-        console.info('[UI][AGGRID][HMR][UNREGISTER] grid unregistered');
-    }
 
     public rebindAll(): void {
         const versionToken: number = Date.now();
@@ -50,17 +36,17 @@ class PoseidonAgGridHmrRegistry {
                 const hasHeaderParams = typeof leaf.headerComponentParams === 'object' && leaf.headerComponentParams !== null;
 
                 const nextCellParams = hasCellParams
-                    ? {...(leaf.cellRendererParams as Record<string, unknown>), __poseidonHmrVersion: versionToken}
+                    ? { ...(leaf.cellRendererParams as Record<string, unknown>), __poseidonHmrVersion: versionToken }
                     : undefined;
 
                 const nextHeaderParams = hasHeaderParams
-                    ? {...(leaf.headerComponentParams as Record<string, unknown>), __poseidonHmrVersion: versionToken}
+                    ? { ...(leaf.headerComponentParams as Record<string, unknown>), __poseidonHmrVersion: versionToken }
                     : undefined;
 
                 const nextLeaf: ColDef = {
                     ...leaf,
-                    ...(nextCellParams ? {cellRendererParams: nextCellParams} : {}),
-                    ...(nextHeaderParams ? {headerComponentParams: nextHeaderParams} : {})
+                    ...(nextCellParams ? { cellRendererParams: nextCellParams } : {}),
+                    ...(nextHeaderParams ? { headerComponentParams: nextHeaderParams } : {})
                 };
 
                 return nextLeaf;
@@ -73,13 +59,27 @@ class PoseidonAgGridHmrRegistry {
             api.setGridOption(key, nextDefs as ColumnDefsOption);
 
             if (columnStateBefore.length > 0) {
-                api.applyColumnState({state: columnStateBefore, applyOrder: true});
+                api.applyColumnState({ state: columnStateBefore, applyOrder: true });
             }
 
-            api.refreshCells({force: true});
+            api.refreshCells({ force: true });
         }
 
         console.info(`[UI][AGGRID][HMR][DONE] all grids rebound version=${versionToken}`);
+    }
+
+    public register(grid: AgGridAngular): void {
+        this.grids.add(grid);
+        console.info('[UI][AGGRID][HMR][REGISTER] grid registered');
+    }
+
+    public unregister(grid: AgGridAngular): void {
+        this.grids.delete(grid);
+        console.info('[UI][AGGRID][HMR][UNREGISTER] grid unregistered');
+    }
+
+    public static instance(): PoseidonAgGridHmrRegistry {
+        return PoseidonAgGridHmrRegistry.singleton;
     }
 }
 

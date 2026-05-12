@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from src.api.http.api_schemas import TradingEvaluationPayload
 from src.api.serializers import serialize_trading_evaluation
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
-from src.persistence.dao.trading.trading_outcome_dao import TradingOutcomeDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
+from src.persistence.dao.trading_outcome_dao import TradingOutcomeDao
+from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingEvaluation, TradingOutcome
 
 logger = get_application_logger(__name__)

@@ -8,6 +8,7 @@ from src.core.structures.structures import Mode
 class BackgroundJobsRuntimeStatus(BaseModel):
     mode: Mode
     trading_enabled: bool
+    dca_enabled: bool
     trading_interval_seconds: int
     position_guard_interval_seconds: int
     shadowing_enabled: bool

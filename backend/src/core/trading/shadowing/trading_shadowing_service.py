@@ -20,8 +20,8 @@ from src.core.utils.date_utils import (
     get_current_local_datetime,
 )
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
+from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingShadowingVerdict
 
 logger = get_application_logger(__name__)

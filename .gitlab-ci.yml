@@ -1,0 +1,191 @@
+default:
+  interruptible: true
+
+variables:
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+  POSEIDON_IMAGE: "$DOCKER_REPOSITORY_HOSTNAME/poseidon"
+
+stages:
+  - validate
+  - test
+  - scan
+  - build
+  - container_scan
+  - deploy
+
+cache:
+  paths:
+    - .cache/pip
+    - .cache/npm
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_REF_NAME
+
+frontend:lint:
+  image: node:24-bullseye
+  stage: validate
+  script:
+    - cd frontend
+    - npm ci
+    - npm run lint
+
+frontend:build:
+  image: node:24-bullseye
+  stage: validate
+  script:
+    - cd frontend
+    - npm ci
+    - npm run build:prod
+
+backend:lint:
+  image: python:3.11-slim
+  stage: validate
+  script:
+    - python -m pip install --upgrade pip
+    - pip install -r backend/requirements.txt ruff pytest
+    - ruff check backend/src backend/tests
+
+frontend:test:
+  image: node:24-bullseye
+  stage: test
+  variables:
+    CHROME_BIN: /usr/bin/chromium
+  script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends chromium
+    - rm -rf /var/lib/apt/lists/*
+    - cd frontend
+    - npm ci
+    - npm run test:ci
+
+backend:test:
+  image: python:3.11-slim
+  stage: test
+  script:
+    - python -m pip install --upgrade pip
+    - pip install -r backend/requirements.txt pytest
+    - export PYTHONPATH="$CI_PROJECT_DIR/backend"
+    - pytest backend/tests
+
+sonarqube-check:
+  image: sonarsource/sonar-scanner-cli:latest
+  stage: scan
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - sonar-scanner -Dsonar.projectKey="$SONAR_PROJECT_KEY"
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "develop" || $CI_COMMIT_BRANCH == "develop"'
+    - if: $CI_COMMIT_TAG
+
+frontend:dependency-audit:
+  image: node:24-bullseye
+  stage: scan
+  script:
+    - cd frontend
+    - npm ci
+    - npm audit --audit-level=high --omit=dev
+  allow_failure: true
+
+backend:dependency-audit:
+  image: python:3.11-slim
+  stage: scan
+  script:
+    - python -m pip install --upgrade pip
+    - pip install -r backend/requirements.txt pip-audit
+    - pip-audit -r backend/requirements.txt
+  allow_failure: true
+
+docker:build:
+  image: docker:20.10.23
+  services:
+    - name: docker:20.10.23-dind
+      alias: docker
+      variables:
+        HEALTHCHECK_TCP_PORT: "2375"
+      command:
+        - "--host=tcp://0.0.0.0:2375"
+        - "--tls=false"
+  stage: build
+  needs:
+    - frontend:lint
+    - frontend:build
+    - backend:lint
+    - frontend:test
+    - backend:test
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "develop" || $CI_COMMIT_BRANCH == "develop"'
+    - if: $CI_COMMIT_TAG
+  before_script:
+    - until docker info >/dev/null 2>&1; do echo "Waiting for Docker daemon..."; sleep 2; done
+  script:
+    - docker login -u "$DOCKER_REPOSITORY_USERNAME" -p "$DOCKER_REPOSITORY_PASSWORD" "$DOCKER_REPOSITORY_HOSTNAME"
+    - export IMAGE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+    - |
+      if [ "${CI_COMMIT_REF_NAME:-}" = "develop" ] || [ "${CI_COMMIT_BRANCH:-}" = "develop" ]; then
+        docker build \
+          -t "$POSEIDON_IMAGE:$IMAGE_TAG" \
+          -t "$POSEIDON_IMAGE:$CI_COMMIT_SHORT_SHA" \
+          -t "$POSEIDON_IMAGE:develop" \
+          .
+      else
+        docker build \
+          -t "$POSEIDON_IMAGE:$IMAGE_TAG" \
+          -t "$POSEIDON_IMAGE:$CI_COMMIT_SHORT_SHA" \
+          .
+      fi
+    - docker push "$POSEIDON_IMAGE:$IMAGE_TAG"
+    - |
+      if [ "$IMAGE_TAG" != "$CI_COMMIT_SHORT_SHA" ]; then
+        docker push "$POSEIDON_IMAGE:$CI_COMMIT_SHORT_SHA"
+      fi
+    - |
+      if [ "${CI_COMMIT_REF_NAME:-}" = "develop" ] || [ "${CI_COMMIT_BRANCH:-}" = "develop" ]; then
+        docker push "$POSEIDON_IMAGE:develop"
+      fi
+
+container:scan:
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  stage: container_scan
+  needs:
+    - docker:build
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "develop" || $CI_COMMIT_BRANCH == "develop"'
+    - if: $CI_COMMIT_TAG
+  script:
+    - export IMAGE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+    - trivy image --username "$DOCKER_REPOSITORY_USERNAME" --password "$DOCKER_REPOSITORY_PASSWORD" --severity HIGH,CRITICAL --ignore-unfixed "$POSEIDON_IMAGE:$IMAGE_TAG"
+  allow_failure: true
+
+continuous-delivery:integration:
+  image: alpine:3.21
+  stage: deploy
+  needs:
+    - docker:build
+  environment:
+    name: integration
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "develop" || $CI_COMMIT_BRANCH == "develop"'
+  script:
+    - chmod 600 "$CONTINUOUS_DELIVERY_ID_RSA"
+    - apk add --no-cache openssh-client
+    - export REMOTE_TARGET="$CONTINUOUS_DELIVERY_SERVER_USER@$CONTINUOUS_DELIVERY_SERVER_ADDRESS"
+    - export IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
+    - ssh -i "$CONTINUOUS_DELIVERY_ID_RSA" -o StrictHostKeyChecking=no "$REMOTE_TARGET" "docker login -u $DOCKER_REPOSITORY_USERNAME -p $DOCKER_REPOSITORY_PASSWORD $DOCKER_REPOSITORY_HOSTNAME"
+    - ssh -i "$CONTINUOUS_DELIVERY_ID_RSA" -o StrictHostKeyChecking=no "$REMOTE_TARGET" "export POSEIDON_IMAGE=$POSEIDON_IMAGE:$IMAGE_TAG && docker compose -f $CONTINUOUS_DELIVERY_DOCKER_COMPOSE_YML_PATH pull poseidon"
+    - ssh -i "$CONTINUOUS_DELIVERY_ID_RSA" -o StrictHostKeyChecking=no "$REMOTE_TARGET" "export POSEIDON_IMAGE=$POSEIDON_IMAGE:$IMAGE_TAG && docker compose -f $CONTINUOUS_DELIVERY_DOCKER_COMPOSE_YML_PATH up -d --force-recreate poseidon"

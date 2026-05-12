@@ -1,7 +1,7 @@
-import {CommonModule} from '@angular/common';
-import {Component} from '@angular/core';
-import {IHeaderAngularComp} from 'ag-grid-angular';
-import {IHeaderParams} from 'ag-grid-community';
+import { CommonModule } from '@angular/common';
+import { Component } from '@angular/core';
+import { IHeaderAngularComp } from 'ag-grid-angular';
+import { IHeaderParams } from 'ag-grid-community';
 
 type IconHeaderConfig = {
     iconClass?: string;
@@ -37,10 +37,10 @@ type IconHeaderConfig = {
     `
 })
 export class IconHeaderRendererComponent implements IHeaderAngularComp {
+    public headerRowClass: Record<string, boolean> = {};
+    public hideLabel = false;
     public iconClass = 'fa-circle';
     public labelUpper = '';
-    public hideLabel = false;
-    public headerRowClass: Record<string, boolean> = {};
 
     public agInit(params: IHeaderParams): void {
         const headerParams = (params.column?.getColDef().headerComponentParams ?? {}) as IconHeaderConfig;
@@ -51,12 +51,12 @@ export class IconHeaderRendererComponent implements IHeaderAngularComp {
         const alignRight = Boolean(headerParams.alignRight);
         this.labelUpper = (params.displayName ?? '').toUpperCase();
         this.headerRowClass = this.hideLabel
-            ? {'justify-center': true, 'w-full': true}
+            ? { 'justify-center': true, 'w-full': true }
             : alignCenter
-                ? {'justify-center': true, 'w-full': true}
-                : alignRight
-                    ? {'justify-end': true, 'w-full': true}
-                    : {'justify-start': true, 'min-w-0': true};
+              ? { 'justify-center': true, 'w-full': true }
+              : alignRight
+                ? { 'justify-end': true, 'w-full': true }
+                : { 'justify-start': true, 'min-w-0': true };
     }
 
     public refresh(params: IHeaderParams): boolean {

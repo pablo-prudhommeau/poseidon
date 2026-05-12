@@ -22,9 +22,9 @@ from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntell
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
-from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
-from src.persistence.db import get_database_session
+from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
+from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 

@@ -27,18 +27,18 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.dca.dca_backtester import DcaBacktester
 from src.core.dca.dca_scheduler import DcaScheduler
+from src.core.paper import paper_service
 from src.core.structures.structures import DcaStrategyStatus, BlockchainNetwork
 from src.core.trading.analytics.trading_analytics_helpers import map_trading_evaluation
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.logging.logger import get_application_logger
-from src.persistence import service
-from src.persistence.dao.dca.dca_order_dao import DcaOrderDao
-from src.persistence.dao.dca.dca_strategy_dao import DcaStrategyDao
-from src.persistence.dao.trading.trading_evaluation_dao import TradingEvaluationDao
-from src.persistence.dao.trading.trading_position_dao import TradingPositionDao
-from src.persistence.db import get_fastapi_database_session
+from src.persistence.dao.dca_order_dao import DcaOrderDao
+from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
+from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
+from src.persistence.dao.trading_position_dao import TradingPositionDao
+from src.persistence.database_session_manager import get_fastapi_database_session
 from src.persistence.models import DcaStrategy
 
 router = APIRouter()
@@ -72,7 +72,7 @@ def get_health_status(database_session: Session = Depends(get_fastapi_database_s
 @router.post("/api/paper/reset", tags=["paper"])
 def reset_paper_mode(database_session: Session = Depends(get_fastapi_database_session)) -> TradingPaperResetPayload:
     logger.debug("[HTTP][PAPER][RESET] Initiating paper mode reset process")
-    service.reset_paper(database_session)
+    paper_service.reset_paper(database_session)
 
     cache_invalidator.mark_dirty(
         CacheRealm.POSITIONS,
@@ -115,8 +115,8 @@ def get_shadow_analytics(
 ) -> AnalyticsResponse:
     from src.core.trading.analytics.trading_analytics_service import build_analytics_response
     from src.core.trading.analytics.trading_analytics_helpers import map_trading_shadowing_verdict
-    from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
-    from src.persistence.dao.trading.shadowing_probe_dao import TradingShadowingProbeDao
+    from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
+    from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 
     logger.debug("[HTTP][ANALYTICS][FETCH] Retrieving shadow analytics with limit %s", limit_results)
     verdict_dao = TradingShadowingVerdictDao(database_session)
@@ -155,7 +155,7 @@ def get_shadow_trades_for_pair(
         database_session: Session = Depends(get_fastapi_database_session)
 ) -> List[TradingEvaluationPayload]:
     from src.api.serializers import serialize_trading_evaluation
-    from src.persistence.dao.trading.shadowing_verdict_dao import TradingShadowingVerdictDao
+    from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
     from src.persistence.models import TradingEvaluation
 
     logger.debug("[HTTP][ANALYTICS][SHADOW] Retrieving shadow verdicts for pair %s", pair_address)

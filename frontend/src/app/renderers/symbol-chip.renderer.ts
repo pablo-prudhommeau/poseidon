@@ -1,8 +1,8 @@
-import {CommonModule} from '@angular/common';
-import {AfterViewInit, Component, ElementRef, inject, ViewChild} from '@angular/core';
-import {ICellRendererAngularComp} from 'ag-grid-angular';
-import {ICellRendererParams} from 'ag-grid-community';
-import {DefiIconsService} from '../core/defi-icons.service';
+import { CommonModule } from '@angular/common';
+import { AfterViewInit, Component, ElementRef, inject, ViewChild } from '@angular/core';
+import { ICellRendererAngularComp } from 'ag-grid-angular';
+import { ICellRendererParams } from 'ag-grid-community';
+import { DefiIconsService } from '../core/defi-icons.service';
 
 @Component({
     standalone: true,
@@ -13,19 +13,18 @@ import {DefiIconsService} from '../core/defi-icons.service';
     `
 })
 export class SymbolChipRendererComponent implements ICellRendererAngularComp, AfterViewInit {
-    private defiIcons = inject(DefiIconsService);
+    @ViewChild('host', { static: true }) private hostRef!: ElementRef<HTMLElement>;
 
+    private defiIcons = inject(DefiIconsService);
     private params!: ICellRendererParams;
     private renderedEl?: HTMLElement;
 
-    @ViewChild('host', {static: true}) private hostRef!: ElementRef<HTMLElement>;
+    ngAfterViewInit(): void {
+        this.render();
+    }
 
     agInit(params: ICellRendererParams): void {
         this.params = params;
-    }
-
-    ngAfterViewInit(): void {
-        this.render();
     }
 
     refresh(params: ICellRendererParams): boolean {
