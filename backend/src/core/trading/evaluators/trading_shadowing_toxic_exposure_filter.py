@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from src.configuration.config import settings
-from src.core.trading.shadowing.trading_shadowing_intelligence_service import find_bucket_index_for_value, extract_metric_value_from_candidate
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot, \
-    ShadowIntelligenceSnapshotMetricPayload, ShadowIntelligenceSnapshotPayload, ShadowIntelligenceSnapshotSummaryPayload
+from src.core.trading.shadowing.trading_shadowing_intelligence_service import (
+    evaluate_candidate_shadow_intelligence,
+)
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingShadowingIntelligenceSnapshot,
+    TradingShadowingPhase,
+)
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.log_utils import get_visual_width
 from src.logging.logger import get_application_logger, console_color_codes
@@ -13,18 +17,23 @@ logger = get_application_logger(__name__)
 
 def apply_shadowing_toxic_exposure_filter(
         candidates: list[TradingCandidate],
-        snapshot: ShadowIntelligenceSnapshot,
+        snapshot: TradingShadowingIntelligenceSnapshot,
 ) -> list[TradingCandidate]:
-    if not snapshot.is_activated:
-        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shadow intelligence not activated, bypassing filter")
-        for candidate in candidates:
-            _assign_frozen_shadow_intelligence_summary(candidate, snapshot)
+    if snapshot.summary.phase == TradingShadowingPhase.DISABLED:
+        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shadow intelligence phase is %s, bypassing filter completely", snapshot.summary.phase.value)
         return candidates
 
-    toxic_win_rate_threshold = snapshot.meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
-    toxic_max_average_pnl = (snapshot.meta_average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0)
-    toxic_min_capital_velocity = snapshot.meta_capital_velocity + settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET
-    toxic_max_holding_time_minutes = (snapshot.meta_average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET) * 60.0
+    is_active = snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+
+    meta_win_rate = snapshot.summary.meta_win_rate or 0.0
+    meta_average_pnl = snapshot.summary.meta_average_pnl or 0.0
+    meta_capital_velocity = snapshot.summary.meta_capital_velocity or 0.0
+    meta_average_holding_time_hours = snapshot.summary.meta_average_holding_time_hours or 0.0
+
+    toxic_win_rate_threshold = meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
+    toxic_max_average_pnl = (meta_average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0)
+    toxic_min_capital_velocity = meta_capital_velocity + settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET
+    toxic_max_holding_time_minutes = (meta_average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET) * 60.0
     maximum_toxic_exposure = settings.TRADING_SHADOWING_TOXIC_MAX_EXPOSURE
 
     retained: list[TradingCandidate] = []
@@ -33,77 +42,44 @@ def apply_shadowing_toxic_exposure_filter(
     for candidate in candidates:
         if candidate.token.symbol == "RUNNER":
             logger.info("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shunting toxicity for %s", candidate.token.symbol)
-            _assign_frozen_shadow_intelligence_summary(candidate, snapshot)
+            candidate.shadow_diagnostics.intelligence_snapshot = TradingShadowingIntelligenceSnapshot(
+                summary=snapshot.summary,
+            )
             retained.append(candidate)
             continue
 
-        toxic_metric_count = 0
-        total_metrics_evaluated = 0
+        diagnostics = evaluate_candidate_shadow_intelligence(candidate, snapshot)
+        candidate.shadow_diagnostics = diagnostics
 
-        evaluated_metrics_snapshot = []
+        if not is_active:
+            retained.append(candidate)
+            continue
 
-        for metric_snapshot in snapshot.metric_snapshots:
-            try:
-                candidate_value = extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
-            except Exception:
-                continue
+        if settings.TRADING_GATE_SHADOWING_ENABLED and diagnostics.total_metrics_evaluated <= 0:
+            rejected.append(candidate)
+            continue
 
-            if candidate_value is None:
-                continue
-
-            total_metrics_evaluated += 1
-            bucket_index = find_bucket_index_for_value(candidate_value, metric_snapshot.bucket_edges)
-
-            if bucket_index < len(metric_snapshot.bucket_win_rates):
-                bucket_win_rate = metric_snapshot.bucket_win_rates[bucket_index]
-                bucket_average_pnl = metric_snapshot.bucket_average_pnl[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_pnl) else 0.0
-                bucket_average_holding_time = metric_snapshot.bucket_average_holding_time[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_holding_time) else 0.0
-                bucket_capital_velocity = metric_snapshot.bucket_capital_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_capital_velocity) else 0.0
-                bucket_outlier_hit_rate = metric_snapshot.bucket_outlier_hit_rates[bucket_index] if bucket_index < len(metric_snapshot.bucket_outlier_hit_rates) else 0.0
-                bucket_sample_count = metric_snapshot.bucket_sample_counts[bucket_index] if bucket_index < len(metric_snapshot.bucket_sample_counts) else 0
-
-                is_toxic = metric_snapshot.bucket_is_toxic[bucket_index] if bucket_index < len(metric_snapshot.bucket_is_toxic) else False
-                is_golden = metric_snapshot.bucket_is_golden[bucket_index] if bucket_index < len(metric_snapshot.bucket_is_golden) else False
-
-                if is_toxic:
-                    toxic_metric_count += 1
-                    candidate.shadow_diagnostics.toxic_metric_keys.append(metric_snapshot.metric_key)
-
-                evaluated_metrics_snapshot.append(ShadowIntelligenceSnapshotMetricPayload(
-                    metric_key=metric_snapshot.metric_key,
-                    candidate_value=candidate_value,
-                    bucket_index=bucket_index,
-                    bucket_win_rate=bucket_win_rate,
-                    bucket_average_pnl=bucket_average_pnl,
-                    bucket_average_holding_time=bucket_average_holding_time,
-                    bucket_capital_velocity=bucket_capital_velocity,
-                    bucket_outlier_hit_rate=bucket_outlier_hit_rate,
-                    bucket_sample_count=bucket_sample_count,
-                    is_toxic=is_toxic,
-                    is_golden=is_golden,
-                ))
-
-        _assign_frozen_shadow_intelligence_summary(candidate, snapshot)
-        candidate.shadow_diagnostics.intelligence_snapshot.evaluated_metrics = evaluated_metrics_snapshot
-
-        candidate.shadow_diagnostics.toxic_metric_count = toxic_metric_count
-        candidate.shadow_diagnostics.total_metrics_evaluated = total_metrics_evaluated
-
-        if toxic_metric_count > maximum_toxic_exposure:
+        if diagnostics.toxic_metric_count > maximum_toxic_exposure:
             rejected.append(candidate)
         else:
             retained.append(candidate)
+            logger.info(
+                "\033[92m[TRADING][EVALUATOR][SHADOW_EXPOSURE] RETAINED %s | Toxic Metrics: %d/%d\033[0m",
+                candidate.token.symbol,
+                diagnostics.toxic_metric_count,
+                diagnostics.total_metrics_evaluated,
+            )
 
     rejected.sort(key=lambda c: c.shadow_diagnostics.toxic_metric_count, reverse=True)
 
     for candidate in rejected:
         toxic_metric_count = candidate.shadow_diagnostics.toxic_metric_count
         total_metrics_evaluated = candidate.shadow_diagnostics.total_metrics_evaluated
-        evaluated_metrics_snapshot = candidate.shadow_diagnostics.intelligence_snapshot.evaluated_metrics
+        evaluated_metrics = candidate.shadow_diagnostics.intelligence_snapshot.metrics
 
         formatted_reasons = []
         master_metric_keys = sorted([m.metric_key for m in snapshot.metric_snapshots])
-        evaluated_lookup = {m.metric_key: m for m in evaluated_metrics_snapshot}
+        evaluated_lookup = {m.metric_key: m for m in evaluated_metrics}
         grey = console_color_codes["GREY"]
         red = console_color_codes["RED"]
         green = console_color_codes["GREEN"]
@@ -170,7 +146,7 @@ def apply_shadowing_toxic_exposure_filter(
     meta_summary = (
             "meta(WR=%.1f%%, PnL=%.2f%%, Hold=%.1fh, Vel=%.2f) → toxic(WR<%.1f%%, PnL<%.2f%%, Hold>%.1fh, Vel<%.2f)"
             % (
-                snapshot.meta_win_rate * 100, snapshot.meta_average_pnl, snapshot.meta_average_holding_time_hours, snapshot.meta_capital_velocity,
+                meta_win_rate * 100, meta_average_pnl, meta_average_holding_time_hours, meta_capital_velocity,
                 toxic_win_rate_threshold * 100, toxic_max_average_pnl, toxic_max_holding_time_minutes / 60.0, toxic_min_capital_velocity,
             )
     )
@@ -183,25 +159,3 @@ def apply_shadowing_toxic_exposure_filter(
     return retained
 
 
-def _assign_frozen_shadow_intelligence_summary(candidate: TradingCandidate, snapshot: ShadowIntelligenceSnapshot) -> None:
-    summary_payload = ShadowIntelligenceSnapshotSummaryPayload(
-        is_activated=snapshot.is_activated,
-        total_outcomes_analyzed=snapshot.total_outcomes_analyzed,
-        resolved_outcome_count=snapshot.resolved_outcome_count,
-        elapsed_hours=snapshot.elapsed_hours,
-        meta_win_rate=snapshot.meta_win_rate,
-        meta_average_pnl=snapshot.meta_average_pnl,
-        meta_average_holding_time_hours=snapshot.meta_average_holding_time_hours,
-        meta_capital_velocity=snapshot.meta_capital_velocity,
-        meta_profit_factor=snapshot.meta_profit_factor,
-        meta_expected_value_usd=snapshot.meta_expected_value_usd,
-        empirical_profit_factor=snapshot.empirical_profit_factor,
-        chronicle_profit_factor=snapshot.chronicle_profit_factor,
-        chronicle_profit_factor_threshold=snapshot.chronicle_profit_factor_threshold,
-        sparse_expected_value_usd=snapshot.sparse_expected_value_usd,
-    )
-    existing_snapshot = candidate.shadow_diagnostics.intelligence_snapshot
-    if existing_snapshot is None:
-        candidate.shadow_diagnostics.intelligence_snapshot = ShadowIntelligenceSnapshotPayload(summary=summary_payload)
-    else:
-        existing_snapshot.summary = summary_payload

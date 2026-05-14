@@ -7,11 +7,12 @@ from pydantic import BaseModel, ConfigDict
 
 
 class MetricDefinition(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     key: str
     label: str
     accessor: Callable[[AnalyticsOutcomeRecord], float]
     unit: str
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class AnalyticsOutcomeRecord(BaseModel):

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshotSummaryPayload
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 
 
 class SystemHealthComponentPayload(BaseModel):
@@ -233,25 +233,21 @@ class TradingLiquidityPayload(BaseModel):
 
 class TradingShadowMetaPayload(BaseModel):
     is_enabled: bool
-    is_activated: bool
-    phase: str
+    phase: TradingShadowingPhase
     total_outcomes_analyzed: int
     resolved_outcome_count: int
     elapsed_hours: float
-    win_rate_percentage: float
-    expected_value_usd: float
-    capital_velocity: float
-    global_profit_factor: float
-    empirical_profit_factor: float
-    empirical_profit_factor_threshold: float
-    empirical_profit_factor_window_verdict_count: int
-    chronicle_profit_factor: float
-    chronicle_profit_factor_threshold: float
+    win_rate_percentage: Optional[float] = None
+    expected_value_usd: Optional[float] = None
+    capital_velocity: Optional[float] = None
+    global_profit_factor: Optional[float] = None
+    chronicle_profit_factor: Optional[float] = None
+    chronicle_profit_factor_threshold: Optional[float] = None
     chronicle_profit_factor_lookback_days: float
     chronicle_profit_factor_bucket_width_seconds: int
     chronicle_profit_factor_moving_average_period: int
-    sparse_expected_value_usd: float
-    sparse_expected_value_usd_threshold: float
+    sparse_expected_value_usd: Optional[float] = None
+    sparse_expected_value_usd_threshold: Optional[float] = None
     sparse_expected_value_lookback_days: float
     sparse_expected_value_bucket_width_seconds: int
     sparse_expected_value_moving_average_period: int
@@ -288,28 +284,47 @@ class TradingEvaluationDecisionPayload(BaseModel):
     free_cash_after_execution_usd: float
 
 
-class TradingEvaluationShadowIntelligenceSnapshotMetricPayload(BaseModel):
+class TradingShadowingIntelligenceSummaryPayload(BaseModel):
+    total_outcomes_analyzed: int
+    resolved_outcome_count: int = 0
+    resolved_shadowing_and_cortex_inference_aware_outcome_count: int = 0
+    elapsed_hours: float = 0.0
+    meta_win_rate: Optional[float] = None
+    meta_average_pnl: Optional[float] = None
+    meta_average_holding_time_hours: Optional[float] = None
+    meta_capital_velocity: Optional[float] = None
+    meta_profit_factor: Optional[float] = None
+    meta_expected_value_usd: Optional[float] = None
+    chronicle_profit_factor: Optional[float] = None
+    chronicle_profit_factor_threshold: Optional[float] = None
+    sparse_expected_value_usd: Optional[float] = None
+    sparse_expected_value_usd_threshold: Optional[float] = None
+
+
+class TradingShadowingIntelligenceMetricPayload(BaseModel):
     metric_key: str
     candidate_value: Optional[float] = None
-    bucket_index: int
-    bucket_win_rate: float
-    bucket_average_pnl: float
-    bucket_average_holding_time: float = 0.0
-    bucket_capital_velocity: float = 0.0
-    bucket_outlier_hit_rate: float = 0.0
-    bucket_sample_count: int = 0
-    is_toxic: bool
-    is_golden: bool
-    normalized_influence: float
+    bucket_index: Optional[int] = None
+    bucket_win_rate: Optional[float] = None
+    bucket_average_pnl: Optional[float] = None
+    bucket_average_holding_time: Optional[float] = None
+    bucket_capital_velocity: Optional[float] = None
+    bucket_outlier_hit_rate: Optional[float] = None
+    bucket_sample_count: Optional[int] = None
+    is_toxic: bool = False
+    is_golden: bool = False
+    normalized_influence: Optional[float] = None
 
 
-class TradingEvaluationShadowIntelligenceSnapshotPayload(BaseModel):
-    summary: ShadowIntelligenceSnapshotSummaryPayload
-    evaluated_metrics: List[TradingEvaluationShadowIntelligenceSnapshotMetricPayload] = Field(default_factory=list)
+class TradingShadowingIntelligenceSnapshotPayload(BaseModel):
+    summary: TradingShadowingIntelligenceSummaryPayload
+    evaluated_metrics: List[TradingShadowingIntelligenceMetricPayload] = Field(default_factory=list)
 
 
 class TradingEvaluationShadowDiagnosticsPayload(BaseModel):
-    intelligence_snapshot: TradingEvaluationShadowIntelligenceSnapshotPayload
+    cortex_inference_summary: Optional[dict] = None
+    shadowing_summary: Optional[dict] = None
+    shadowing_metrics: Optional[list] = None
 
 
 class TradingEvaluationShadowSimulationPayload(BaseModel):
@@ -330,8 +345,9 @@ class TradingEvaluationShadowSimulationPayload(BaseModel):
 
 class ShadowIntelligenceStatusPayload(BaseModel):
     is_enabled: bool
-    phase: str
+    phase: TradingShadowingPhase
     resolved_outcome_count: int
+    resolved_shadowing_and_cortex_inference_aware_outcome_count: int
     required_outcome_count: int
     elapsed_hours: float
     required_hours: float

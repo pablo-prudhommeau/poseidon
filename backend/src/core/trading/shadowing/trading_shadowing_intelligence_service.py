@@ -18,9 +18,15 @@ from src.core.trading.shadowing.trading_shadowing_service import (
     _floor_datetime_to_granularity,
     _series_end_datetime,
 )
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceMetricSnapshot, ShadowIntelligenceSnapshot
-from src.core.trading.trading_structures import TradingCandidate
-from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingShadowingIntelligenceMetric,
+    TradingShadowingIntelligenceMetricSnapshot,
+    TradingShadowingIntelligenceSnapshot,
+    TradingShadowingIntelligenceSummary,
+    TradingShadowingPhase,
+)
+from src.core.trading.trading_structures import ShadowDiagnostics, TradingCandidate
+from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
@@ -29,7 +35,7 @@ from src.persistence.database_session_manager import get_database_session
 logger = get_application_logger(__name__)
 
 
-def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
+def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapshot:
     lookback_limit = settings.TRADING_SHADOWING_LOOKBACK_EVALUATIONS
     minimum_outcomes = settings.TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION
     minimum_hours = settings.TRADING_SHADOWING_MIN_HOURS_FOR_ACTIVATION
@@ -40,6 +46,7 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
 
         resolved_verdicts = verdict_dao.retrieve_recent_resolved(limit_count=lookback_limit)
         total_outcomes = len(resolved_verdicts)
+        resolved_shadowing_and_cortex_inference_aware_count = verdict_dao.count_resolved_with_shadowing_and_cortex_inference()
         resolved_count = verdict_dao.count_resolved()
         elapsed_hours = probe_dao.retrieve_oldest_probe_timestamp()
 
@@ -48,15 +55,17 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
 
         if outcomes_insufficient or hours_insufficient:
             logger.info(
-                "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence not yet activated — outcomes=%d/%d, elapsed_hours=%.1f/%.1f",
+                "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence not yet computed — resolved=%d/%d, elapsed_hours=%.1f/%.1f",
                 resolved_count, minimum_outcomes, elapsed_hours, minimum_hours,
             )
-            return ShadowIntelligenceSnapshot(
-                metric_snapshots=[],
-                total_outcomes_analyzed=total_outcomes,
-                is_activated=False,
-                resolved_outcome_count=resolved_count,
-                elapsed_hours=elapsed_hours,
+            return TradingShadowingIntelligenceSnapshot(
+                summary=TradingShadowingIntelligenceSummary(
+                    phase=TradingShadowingPhase.DISABLED if not settings.TRADING_SHADOWING_ENABLED else TradingShadowingPhase.LEARNING,
+                    total_outcomes_analyzed=total_outcomes,
+                    resolved_outcome_count=resolved_count,
+                    resolved_shadowing_and_cortex_inference_aware_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
+                    elapsed_hours=elapsed_hours,
+                ),
             )
 
         analytics_records = [map_trading_shadowing_verdict(verdict) for verdict in resolved_verdicts]
@@ -78,20 +87,6 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
             meta_profit_factor = meta_kpis.profit_factor
             meta_expected_value_usd = meta_kpis.expected_value_usd
 
-        empirical_window_verdict_count = settings.TRADING_SHADOWING_REGIME_EMPIRICAL_PROFIT_FACTOR_WINDOW_VERDICT_COUNT
-        empirical_profit_factor = meta_profit_factor
-        if empirical_window_verdict_count < lookback_limit and len(resolved_verdicts) > empirical_window_verdict_count:
-            empirical_verdicts = resolved_verdicts[:empirical_window_verdict_count]
-            empirical_analytics_records = [map_trading_shadowing_verdict(verdict) for verdict in empirical_verdicts]
-            empirical_closed_records = [record for record in empirical_analytics_records if record.has_outcome]
-            if empirical_closed_records:
-                empirical_kpis = compute_kpis(empirical_analytics_records, len(empirical_verdicts))
-                empirical_profit_factor = empirical_kpis.profit_factor
-                logger.info(
-                    "[TRADING][SHADOW][INTELLIGENCE] Empirical profit factor — window_verdicts=%d empirical_pf=%.2f meta_pf=%.2f",
-                    empirical_window_verdict_count, empirical_profit_factor, meta_profit_factor,
-                )
-
         meta_statistics = MetaStatistics(
             win_rate=meta_win_rate,
             average_pnl=meta_average_pnl,
@@ -101,7 +96,7 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
 
         bucket_profiles = compute_all_metric_bucket_profiles(analytics_records, meta_statistics)
 
-        metric_snapshots: list[ShadowIntelligenceMetricSnapshot] = []
+        metric_snapshots: list[TradingShadowingIntelligenceMetricSnapshot] = []
         for profile in bucket_profiles:
             snapshot = _convert_bucket_profile_to_metric_snapshot(profile)
             if snapshot is not None:
@@ -137,26 +132,42 @@ def compute_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
         )
 
         logger.info(
-            "[TRADING][SHADOW][INTELLIGENCE][SNAPSHOT] Shadow intelligence snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f empirical_pf=%.2f chronicle_pf=%.2f sparse_ev_usd=%.2f",
-            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_capital_velocity, empirical_profit_factor, chronicle_profit_factor, sparse_expected_value_usd
+            "[TRADING][SHADOW][INTELLIGENCE][SNAPSHOT] Shadow intelligence snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f chronicle_pf=%.2f sparse_ev_usd=%.2f",
+            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_capital_velocity, chronicle_profit_factor, sparse_expected_value_usd
         )
 
-        return ShadowIntelligenceSnapshot(
+        is_aware_outcomes_sufficient = resolved_shadowing_and_cortex_inference_aware_count >= minimum_outcomes
+
+        if not settings.TRADING_SHADOWING_ENABLED:
+            phase = TradingShadowingPhase.DISABLED
+        elif is_aware_outcomes_sufficient:
+            phase = TradingShadowingPhase.ACTIVE
+        else:
+            phase = TradingShadowingPhase.LEARNING
+            logger.info(
+                "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence computed but not yet activated (learning phase) — aware_outcomes=%d/%d",
+                resolved_shadowing_and_cortex_inference_aware_count, minimum_outcomes
+            )
+
+        return TradingShadowingIntelligenceSnapshot(
+            summary=TradingShadowingIntelligenceSummary(
+                phase=phase,
+                total_outcomes_analyzed=total_outcomes,
+                resolved_outcome_count=resolved_count,
+                resolved_shadowing_and_cortex_inference_aware_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
+                elapsed_hours=elapsed_hours,
+                meta_win_rate=meta_win_rate,
+                meta_average_pnl=meta_average_pnl,
+                meta_average_holding_time_hours=meta_average_holding_time_hours,
+                meta_capital_velocity=meta_capital_velocity,
+                meta_profit_factor=meta_profit_factor,
+                meta_expected_value_usd=meta_expected_value_usd,
+                chronicle_profit_factor=chronicle_profit_factor,
+                sparse_expected_value_usd=sparse_expected_value_usd,
+                chronicle_profit_factor_threshold=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_THRESHOLD,
+                sparse_expected_value_usd_threshold=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_USD_THRESHOLD,
+            ),
             metric_snapshots=metric_snapshots,
-            total_outcomes_analyzed=total_outcomes,
-            is_activated=True,
-            resolved_outcome_count=resolved_count,
-            elapsed_hours=elapsed_hours,
-            meta_win_rate=meta_win_rate,
-            meta_average_pnl=meta_average_pnl,
-            meta_average_holding_time_hours=meta_average_holding_time_hours,
-            meta_capital_velocity=meta_capital_velocity,
-            meta_profit_factor=meta_profit_factor,
-            meta_expected_value_usd=meta_expected_value_usd,
-            empirical_profit_factor=empirical_profit_factor,
-            chronicle_profit_factor=chronicle_profit_factor,
-            sparse_expected_value_usd=sparse_expected_value_usd,
-            chronicle_profit_factor_threshold=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_THRESHOLD
         )
 
 
@@ -276,11 +287,11 @@ def _simple_moving_average_like_shadow_verdict_chronicle_chart(values: list[floa
 
 def _convert_bucket_profile_to_metric_snapshot(
         profile: MetricBucketProfile,
-) -> Optional[ShadowIntelligenceMetricSnapshot]:
+) -> Optional[TradingShadowingIntelligenceMetricSnapshot]:
     if not profile.bucket_statistics:
         return None
 
-    return ShadowIntelligenceMetricSnapshot(
+    return TradingShadowingIntelligenceMetricSnapshot(
         metric_key=profile.metric_key,
         bucket_edges=profile.bucket_edges,
         bucket_win_rates=[bucket.win_rate / 100.0 for bucket in profile.bucket_statistics],
@@ -308,6 +319,74 @@ def find_bucket_index_for_value(value: float, bucket_edges: list[float]) -> int:
     if value < bucket_edges[0]:
         return 0
     return last_valid_bucket
+
+
+def evaluate_candidate_shadow_intelligence(
+        candidate: TradingCandidate,
+        snapshot: TradingShadowingIntelligenceSnapshot,
+) -> ShadowDiagnostics:
+    toxic_metric_count = 0
+    total_metrics_evaluated = 0
+    evaluated_metrics: list[TradingShadowingIntelligenceMetric] = []
+    toxic_metric_keys: list[str] = []
+    golden_metric_keys: list[str] = []
+
+    for metric_snapshot in snapshot.metric_snapshots:
+        try:
+            candidate_value = extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
+        except Exception:
+            continue
+
+        if candidate_value is None:
+            continue
+
+        total_metrics_evaluated += 1
+        bucket_index = find_bucket_index_for_value(candidate_value, metric_snapshot.bucket_edges)
+
+        if bucket_index < len(metric_snapshot.bucket_win_rates):
+            bucket_win_rate = metric_snapshot.bucket_win_rates[bucket_index]
+            bucket_average_pnl = metric_snapshot.bucket_average_pnl[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_pnl) else 0.0
+            bucket_average_holding_time = metric_snapshot.bucket_average_holding_time[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_holding_time) else 0.0
+            bucket_capital_velocity = metric_snapshot.bucket_capital_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_capital_velocity) else 0.0
+            bucket_outlier_hit_rate = metric_snapshot.bucket_outlier_hit_rates[bucket_index] if bucket_index < len(metric_snapshot.bucket_outlier_hit_rates) else 0.0
+            bucket_sample_count = metric_snapshot.bucket_sample_counts[bucket_index] if bucket_index < len(metric_snapshot.bucket_sample_counts) else 0
+
+            is_toxic = metric_snapshot.bucket_is_toxic[bucket_index] if bucket_index < len(metric_snapshot.bucket_is_toxic) else False
+            is_golden = metric_snapshot.bucket_is_golden[bucket_index] if bucket_index < len(metric_snapshot.bucket_is_golden) else False
+
+            if is_toxic:
+                toxic_metric_count += 1
+                toxic_metric_keys.append(metric_snapshot.metric_key)
+
+            if is_golden:
+                golden_metric_keys.append(metric_snapshot.metric_key)
+
+            evaluated_metrics.append(TradingShadowingIntelligenceMetric(
+                metric_key=metric_snapshot.metric_key,
+                candidate_value=candidate_value,
+                bucket_index=bucket_index,
+                bucket_win_rate=bucket_win_rate,
+                bucket_average_pnl=bucket_average_pnl,
+                bucket_average_holding_time=bucket_average_holding_time,
+                bucket_capital_velocity=bucket_capital_velocity,
+                bucket_outlier_hit_rate=bucket_outlier_hit_rate,
+                bucket_sample_count=bucket_sample_count,
+                is_toxic=is_toxic,
+                is_golden=is_golden,
+            ))
+
+    intelligence_snapshot = TradingShadowingIntelligenceSnapshot(
+        summary=snapshot.summary,
+        metrics=evaluated_metrics,
+    )
+
+    return ShadowDiagnostics(
+        toxic_metric_count=toxic_metric_count,
+        total_metrics_evaluated=total_metrics_evaluated,
+        toxic_metric_keys=toxic_metric_keys,
+        golden_metric_keys=golden_metric_keys,
+        intelligence_snapshot=intelligence_snapshot,
+    )
 
 
 def extract_metric_value_from_candidate(candidate: TradingCandidate, metric_key: str) -> float | None:

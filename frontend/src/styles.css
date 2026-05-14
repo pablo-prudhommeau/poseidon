@@ -1,6 +1,6 @@
 @config "../tailwind.config.ts";
-@import "tailwindcss";
-@import "@fortawesome/fontawesome-free/css/all.css";
+@import 'tailwindcss';
+@import '@fortawesome/fontawesome-free/css/all.css';
 
 @plugin "tailwindcss-primeui";
 
@@ -143,7 +143,12 @@
 }
 
 .last-price-tick-up .last-price-ripple {
-    background: radial-gradient(ellipse at center, rgba(52, 211, 153, 0.28) 0%, rgba(52, 211, 153, 0.06) 58%, rgba(52, 211, 153, 0) 100%);
+    background: radial-gradient(
+        ellipse at center,
+        rgba(52, 211, 153, 0.28) 0%,
+        rgba(52, 211, 153, 0.06) 58%,
+        rgba(52, 211, 153, 0) 100%
+    );
 }
 
 .last-price-tick-down {
@@ -156,7 +161,12 @@
 }
 
 .last-price-tick-down .last-price-ripple {
-    background: radial-gradient(ellipse at center, rgba(251, 113, 133, 0.28) 0%, rgba(251, 113, 133, 0.06) 58%, rgba(251, 113, 133, 0) 100%);
+    background: radial-gradient(
+        ellipse at center,
+        rgba(251, 113, 133, 0.28) 0%,
+        rgba(251, 113, 133, 0.06) 58%,
+        rgba(251, 113, 133, 0) 100%
+    );
 }
 
 .delta-static {
@@ -360,7 +370,7 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
 }
 
 .poseidon-grid-tx-hash-link {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
     font-size: 0.7rem;
     font-weight: 600;
     color: rgb(125 211 252);
@@ -373,7 +383,7 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
 }
 
 .poseidon-grid-tx-hash-muted {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
     font-size: 0.7rem;
     font-weight: 500;
     color: rgba(148, 163, 184, 0.88);
@@ -393,15 +403,32 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
 
 .img-fade {
     opacity: 0;
-    transition: opacity .25s ease-out;
+    transition: opacity 0.25s ease-out;
 }
 
 .img-fade.is-loaded {
     opacity: 1;
 }
 
-.apexcharts-canvas, .apexcharts-tooltip, .apexcharts-menu, .apexcharts-legend {
-    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+.apexcharts-canvas,
+.apexcharts-tooltip,
+.apexcharts-menu,
+.apexcharts-legend {
+    font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        Ubuntu,
+        Cantarell,
+        'Fira Sans',
+        'Droid Sans',
+        Helvetica,
+        Arial,
+        'Apple Color Emoji',
+        'Segoe UI Emoji',
+        'Segoe UI Symbol';
 }
 
 .apexcharts-tooltip {
@@ -415,10 +442,31 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     border: 1px solid #2a2f36 !important;
 }
 
-.apexcharts-xaxis text, .apexcharts-yaxis text, .apexcharts-legend-text {
+.apexcharts-xaxis text,
+.apexcharts-yaxis text,
+.apexcharts-legend-text {
     fill: #cbd5e1 !important;
 }
-
 .p-popover-content {
     padding: 0 !important;
+}
+
+.poseidon-tooltip {
+    --p-tooltip-background: rgba(18, 20, 23, 0.95);
+    --p-tooltip-text-color: #e5e7eb;
+}
+
+.poseidon-tooltip .p-tooltip-text {
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.5;
+    padding: 0.85rem 1rem;
+    box-shadow:
+        0 10px 25px -5px rgba(0, 0, 0, 0.5),
+        0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    max-width: 280px;
+    text-align: center;
 }

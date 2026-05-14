@@ -4,9 +4,9 @@ import enum
 from dataclasses import dataclass
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshotPayload
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 
 
@@ -27,7 +27,21 @@ class ShadowDiagnostics(BaseModel):
     toxic_metric_keys: list[str] = []
     golden_metric_keys: list[str] = []
     notional_boost_factor: float = 1.0
-    intelligence_snapshot: Optional[ShadowIntelligenceSnapshotPayload] = None
+    intelligence_snapshot: Optional[TradingShadowingIntelligenceSnapshot] = None
+
+
+class TradingCortexInferenceSnapshot(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    success_probability: Optional[float] = None
+    toxicity_probability: Optional[float] = None
+    expected_profit_and_loss_percentage: Optional[float] = None
+    final_trade_score: Optional[float] = None
+    model_version: Optional[str] = None
+    model_ready: bool = False
+    gate_verdict: TradingFilterVerdict = Field(
+        default_factory=lambda: TradingFilterVerdict(is_accepted=True, rejection_reasons=[]),
+    )
 
 
 class TradingCandidate(BaseModel):
@@ -38,6 +52,7 @@ class TradingCandidate(BaseModel):
     ai_buy_probability: float
     shadow_notional_multiplier: float = 1.0
     shadow_diagnostics: ShadowDiagnostics = ShadowDiagnostics()
+    trading_cortex_inference_snapshot: Optional[TradingCortexInferenceSnapshot] = None
     dexscreener_token_information: DexscreenerTokenInformation
     pair_address: Optional[str] = None
     dex_price: Optional[float] = None
@@ -147,14 +162,13 @@ class TradingExecutionResult:
 
 
 class TradingPipelineContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     token_price_information_list: list[DexscreenerTokenInformation] = []
     shadow_intelligence_snapshot: Optional[object] = None
     free_cash_usd: float = 0.0
     per_order_budget_usd: float = 0.0
     executed_buy_count: int = 0
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 @dataclass

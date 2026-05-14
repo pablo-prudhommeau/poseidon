@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from src.configuration.config import settings
 from src.core.trading.shadowing.trading_shadowing_intelligence_service import find_bucket_index_for_value, extract_metric_value_from_candidate
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingShadowingIntelligenceSnapshot,
+    TradingShadowingPhase,
+)
 from src.core.trading.trading_structures import TradingCandidate
 from src.logging.logger import get_application_logger
 
@@ -11,10 +14,10 @@ logger = get_application_logger(__name__)
 
 def apply_shadowing_notional_boost(
         candidates: list[TradingCandidate],
-        snapshot: ShadowIntelligenceSnapshot,
+        snapshot: TradingShadowingIntelligenceSnapshot,
 ) -> None:
-    if not snapshot.is_activated:
-        logger.debug("[TRADING][EVALUATOR][SHADOW_BOOST] Shadow intelligence not activated, all multipliers stay at 1.0")
+    if snapshot.summary.phase != TradingShadowingPhase.ACTIVE:
+        logger.debug("[TRADING][EVALUATOR][SHADOW_BOOST] Shadow intelligence phase is %s, all multipliers stay at 1.0", snapshot.summary.phase.value)
         return
 
     golden_win_rate_threshold = settings.TRADING_SHADOWING_GOLDEN_WIN_RATE_THRESHOLD
@@ -59,7 +62,7 @@ def apply_shadowing_notional_boost(
                     golden_notional_accumulator += normalized_influence * golden_strength
                     candidate.shadow_diagnostics.golden_metric_keys.append(metric_snapshot.metric_key)
 
-            for evaluated_metric in candidate.shadow_diagnostics.intelligence_snapshot.evaluated_metrics:
+            for evaluated_metric in candidate.shadow_diagnostics.intelligence_snapshot.metrics:
                 if evaluated_metric.metric_key == metric_snapshot.metric_key:
                     evaluated_metric.is_golden = is_golden
                     evaluated_metric.normalized_influence = normalized_influence

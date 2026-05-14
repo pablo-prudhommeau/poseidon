@@ -19,7 +19,7 @@ from src.api.serializers import (
 from src.configuration.config import MAX_TRADING_ALLOWED_CHAIN_COUNT, settings
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.structures.structures import RealizedProfitAndLoss, HoldingsAndUnrealizedProfitAndLoss
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
 from src.core.trading.trading_service import compute_realized_profit_and_loss, compute_available_cash_usd
 from src.core.utils.date_utils import (
     get_current_local_datetime,
@@ -380,7 +380,7 @@ def build_trading_portfolio_payload_reusing_cached_chain_balances(
         raise
 
 
-def build_shadow_intelligence_snapshot() -> ShadowIntelligenceSnapshot:
+def build_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapshot:
     from src.core.trading.shadowing.trading_shadowing_intelligence_service import compute_shadow_intelligence_snapshot
     return compute_shadow_intelligence_snapshot()
 

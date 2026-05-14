@@ -1,4 +1,5 @@
 export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSED' | 'STALED';
+export type TradingShadowingPhase = 'DISABLED' | 'LEARNING' | 'ACTIVE';
 export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';
 export type TradeMode = 'LIVE' | 'PAPER';
@@ -203,8 +204,9 @@ export interface TradingEquityCurvePointPayload {
 
 export interface ShadowIntelligenceStatusPayload {
     is_enabled: boolean;
-    phase: string;
+    phase: TradingShadowingPhase;
     resolved_outcome_count: number;
+    resolved_shadowing_and_cortex_inference_aware_outcome_count: number;
     required_outcome_count: number;
     elapsed_hours: number;
     required_hours: number;
@@ -234,25 +236,21 @@ export interface TradingLiquidityPayload {
 
 export interface TradingShadowMetaPayload {
     is_enabled: boolean;
-    is_activated: boolean;
-    phase: string;
+    phase: TradingShadowingPhase;
     total_outcomes_analyzed: number;
     resolved_outcome_count: number;
     elapsed_hours: number;
-    win_rate_percentage: number;
-    expected_value_usd: number;
-    capital_velocity: number;
-    global_profit_factor: number;
-    empirical_profit_factor: number;
-    empirical_profit_factor_threshold: number;
-    empirical_profit_factor_window_verdict_count: number;
-    chronicle_profit_factor: number;
-    chronicle_profit_factor_threshold: number;
+    win_rate_percentage?: number | null;
+    expected_value_usd?: number | null;
+    capital_velocity?: number | null;
+    global_profit_factor?: number | null;
+    chronicle_profit_factor?: number | null;
+    chronicle_profit_factor_threshold?: number | null;
     chronicle_profit_factor_lookback_days: number;
     chronicle_profit_factor_bucket_width_seconds: number;
     chronicle_profit_factor_moving_average_period: number;
-    sparse_expected_value_usd: number;
-    sparse_expected_value_usd_threshold: number;
+    sparse_expected_value_usd?: number | null;
+    sparse_expected_value_usd_threshold?: number | null;
     sparse_expected_value_lookback_days: number;
     sparse_expected_value_bucket_width_seconds: number;
     sparse_expected_value_moving_average_period: number;
@@ -290,20 +288,20 @@ export interface TradingEvaluationDecisionPayload {
 }
 
 export interface TradingEvaluationShadowIntelligenceSnapshotSummaryPayload {
-    is_activated: boolean;
+    phase: TradingShadowingPhase;
     total_outcomes_analyzed: number;
     resolved_outcome_count: number;
     elapsed_hours: number;
-    meta_win_rate: number;
-    meta_average_pnl: number;
-    meta_average_holding_time_hours: number;
-    meta_capital_velocity: number;
-    meta_profit_factor: number;
-    meta_expected_value_usd: number;
-    empirical_profit_factor: number;
-    chronicle_profit_factor: number;
-    chronicle_profit_factor_threshold: number;
-    sparse_expected_value_usd: number;
+    meta_win_rate?: number | null;
+    meta_average_pnl?: number | null;
+    meta_average_holding_time_hours?: number | null;
+    meta_capital_velocity?: number | null;
+    meta_profit_factor?: number | null;
+    meta_expected_value_usd?: number | null;
+    chronicle_profit_factor?: number | null;
+    chronicle_profit_factor_threshold?: number | null;
+    sparse_expected_value_usd?: number | null;
+    sparse_expected_value_usd_threshold?: number | null;
 }
 
 export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
@@ -323,11 +321,13 @@ export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
 
 export interface TradingEvaluationShadowIntelligenceSnapshotPayload {
     summary: TradingEvaluationShadowIntelligenceSnapshotSummaryPayload;
-    evaluated_metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[];
+    metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[];
 }
 
 export interface TradingEvaluationShadowDiagnosticsPayload {
-    intelligence_snapshot: TradingEvaluationShadowIntelligenceSnapshotPayload;
+    cortex_inference_summary: Record<string, unknown> | null;
+    shadowing_summary: TradingEvaluationShadowIntelligenceSnapshotSummaryPayload | null;
+    shadowing_metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[] | null;
 }
 
 export interface TradingEvaluationShadowSimulationPayload {

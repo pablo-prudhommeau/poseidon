@@ -15,6 +15,7 @@ class LifiEstimate(BaseModel):
 
 class LifiTransactionRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
+
     to: str
     data: str
     value: str

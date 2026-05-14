@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
@@ -9,6 +7,7 @@ from src.core.trading.evaluators.trading_age_filter import apply_age_filter
 from src.core.trading.evaluators.trading_ai_scorer import apply_ai_scorer
 from src.core.trading.evaluators.trading_contradictions_filter import apply_contradictions_filter
 from src.core.trading.evaluators.trading_cooldown_filter import apply_cooldown_filter
+from src.core.trading.evaluators.trading_cortex_gate_filter import apply_trading_cortex_gate_filter
 from src.core.trading.evaluators.trading_deduplication_filter import apply_deduplication_filter
 from src.core.trading.evaluators.trading_fundamentals_filter import apply_fundamentals_filter
 from src.core.trading.evaluators.trading_liquidity_filter import apply_liquidity_filter
@@ -22,7 +21,10 @@ from src.core.trading.evaluators.trading_volume_filter import apply_volume_filte
 from src.core.trading.execution.trading_executor import TradingExecutor
 from src.core.trading.execution.trading_order_builder import build_route_for_live_execution
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingShadowingIntelligenceSnapshot,
+    TradingShadowingPhase,
+)
 from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload, TradingPipelineContext
 from src.core.trading.trading_utils import (
@@ -70,8 +72,8 @@ class TradingPipeline:
         if not candidates:
             return
 
-        shadow_snapshot = None
-        if settings.TRADING_SHADOWING_ENABLED:
+        shadow_snapshot: TradingShadowingIntelligenceSnapshot | None = None
+        if settings.TRADING_GATE_SHADOWING_ENABLED:
             shadow_snapshot = self._step_load_shadow_intelligence()
             if shadow_snapshot is None:
                 logger.warning(
@@ -80,13 +82,13 @@ class TradingPipeline:
                 )
                 return
             pipeline_context.shadow_intelligence_snapshot = shadow_snapshot
-            if not shadow_snapshot.is_activated:
-                logger.info("[TRADING][PIPELINE][GATE] Shadow intelligence in LEARNING phase — live trading is paused until sufficient data is collected.")
+            if shadow_snapshot.summary.phase != TradingShadowingPhase.ACTIVE:
+                logger.info("[TRADING][PIPELINE][GATE] Shadow intelligence in %s phase — live trading is paused until sufficient data is collected.", shadow_snapshot.summary.phase.value)
                 return
-            if not self._is_shadow_profit_factor_tradable(shadow_snapshot):
+            if not self._is_shadow_regime_tradable(shadow_snapshot):
                 return
 
-        shadow_active = shadow_snapshot is not None and shadow_snapshot.is_activated
+        shadow_active = shadow_snapshot is not None and shadow_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
 
         if not shadow_active:
             candidates = self._step_filter_volume(candidates)
@@ -146,6 +148,9 @@ class TradingPipeline:
                 return
             self._step_shadowing_notional_boost(candidates, shadow_snapshot)
 
+        candidates = self._step_apply_trading_cortex_gate(candidates, shadow_snapshot)
+        if not candidates:
+            return
         self._step_execute(candidates, pipeline_context)
 
     def _step_fetch_candidates(self) -> list[TradingCandidate]:
@@ -265,32 +270,14 @@ class TradingPipeline:
         if snapshot is None:
             return None
         logger.info(
-            "[TRADING][PIPELINE][SHADOW] Shadow intelligence loaded — activated=%s, outcomes=%d",
-            snapshot.is_activated, snapshot.total_outcomes_analyzed,
+            "[TRADING][PIPELINE][SHADOW] Shadow intelligence loaded — phase=%s, outcomes=%d",
+            snapshot.summary.phase.value, snapshot.summary.total_outcomes_analyzed,
         )
         return snapshot
 
-    def _is_shadow_profit_factor_tradable(self, shadow_snapshot: ShadowIntelligenceSnapshot) -> bool:
-        empirical_profit_factor = shadow_snapshot.empirical_profit_factor
-        if not math.isfinite(empirical_profit_factor) or empirical_profit_factor <= 0.0:
-            logger.warning(
-                "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow empirical profit factor unavailable/invalid (value=%s); trading cycle blocked",
-                empirical_profit_factor,
-            )
-            return False
-
-        minimum_profit_factor = settings.TRADING_SHADOWING_REGIME_EMPIRICAL_PROFIT_FACTOR_THRESHOLD
-        if empirical_profit_factor < minimum_profit_factor:
-            logger.warning(
-                "[TRADING][PIPELINE][GATE][SHADOW_PF] Shadow empirical profit factor %.2f is below %.2f (meta_pf=%.2f); trading cycle blocked",
-                empirical_profit_factor,
-                minimum_profit_factor,
-                shadow_snapshot.meta_profit_factor,
-            )
-            return False
-
-        chronicle_profit_factor = shadow_snapshot.chronicle_profit_factor
-        chronicle_threshold = settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_THRESHOLD
+    def _is_shadow_regime_tradable(self, shadow_snapshot: TradingShadowingIntelligenceSnapshot) -> bool:
+        chronicle_profit_factor = shadow_snapshot.summary.chronicle_profit_factor
+        chronicle_threshold = shadow_snapshot.summary.chronicle_profit_factor_threshold
         if chronicle_profit_factor < chronicle_threshold:
             logger.warning(
                 "[TRADING][PIPELINE][GATE][SHADOW_SMA_PF] Chronicle profit factor %.2f is below %.2f; trading cycle blocked",
@@ -299,8 +286,8 @@ class TradingPipeline:
             )
             return False
 
-        sparse_expected_value_usd = shadow_snapshot.sparse_expected_value_usd
-        sparse_expected_value_threshold = settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_USD_THRESHOLD
+        sparse_expected_value_usd = shadow_snapshot.summary.sparse_expected_value_usd
+        sparse_expected_value_threshold = shadow_snapshot.summary.sparse_expected_value_usd_threshold
         if sparse_expected_value_usd < sparse_expected_value_threshold:
             logger.warning(
                 "[TRADING][PIPELINE][GATE][SHADOW_SPARSE_EV] Sparse expected value USD %.2f is below %.2f; trading cycle blocked",
@@ -316,6 +303,13 @@ class TradingPipeline:
 
     def _step_shadowing_notional_boost(self, candidates: list[TradingCandidate], shadow_snapshot) -> None:
         apply_shadowing_notional_boost(candidates, shadow_snapshot)
+
+    def _step_apply_trading_cortex_gate(
+            self,
+            candidates: list[TradingCandidate],
+            shadow_snapshot: TradingShadowingIntelligenceSnapshot | None,
+    ) -> list[TradingCandidate]:
+        return apply_trading_cortex_gate_filter(candidates, shadow_snapshot)
 
     def _step_execute(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> None:
         from sqlalchemy import select, func

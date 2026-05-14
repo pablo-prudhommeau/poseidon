@@ -29,21 +29,25 @@ _EVM_CHAIN_REGISTRY: dict[BlockchainNetwork, EvmChain] = {
 
 class LifiQuoteStepData(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     transaction_request: Optional[dict[str, object]] = Field(default=None, alias="transactionRequest")
 
 
 class LifiQuoteStepItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     data: Optional[LifiQuoteStepData] = None
 
 
 class LifiQuoteStep(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     items: Optional[list[LifiQuoteStepItem]] = None
 
 
 class LifiRouteResponsePayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     transaction_request: Optional[dict[str, object]] = Field(default=None, alias="transactionRequest")
     transaction: Optional[dict[str, object]] = None
     transactions: Optional[list[dict[str, object]]] = None

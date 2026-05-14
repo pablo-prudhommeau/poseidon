@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TelegramInlineKeyboardButton(BaseModel):
@@ -30,28 +30,22 @@ class TelegramUser(BaseModel):
 
 
 class TelegramMessage(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     message_id: int
-    from_user: Optional[TelegramUser] = None
+    from_user: Optional[TelegramUser] = Field(default=None, alias="from")
     chat: dict
     date: int
     text: Optional[str] = None
 
-    class Config:
-        fields = {
-            "from_user": "from"
-        }
-
 
 class TelegramCallbackQuery(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
-    from_user: TelegramUser
+    from_user: TelegramUser = Field(alias="from")
     message: Optional[TelegramMessage] = None
     data: str
-
-    class Config:
-        fields = {
-            "from_user": "from"
-        }
 
 
 class TelegramUpdate(BaseModel):

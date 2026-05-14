@@ -24,7 +24,7 @@ from src.core.trading.shadowing.cache.trading_shadowing_cache_payload_builders i
 from src.core.trading.shadowing.trading_shadowing_service import (
     compute_shadow_verdict_chronicle,
 )
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingVerdictChronicleVerdict, TradingShadowingVerdictChronicle
 from src.logging.logger import get_application_logger
 
@@ -35,14 +35,14 @@ class _ShadowSnapshotRebuilder:
     realm = CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT
     ttl_seconds = 120.0
 
-    def rebuild(self) -> ShadowIntelligenceSnapshot:
+    def rebuild(self) -> TradingShadowingIntelligenceSnapshot:
         return build_shadow_intelligence_snapshot()
 
-    def apply_to_cache(self, payload: ShadowIntelligenceSnapshot) -> None:
+    def apply_to_cache(self, payload: TradingShadowingIntelligenceSnapshot) -> None:
         shadow_snapshot = payload
         trading_shadowing_cache.update_shadow_intelligence_snapshot(shadow_snapshot)
 
-    async def notify_websocket(self, payload: ShadowIntelligenceSnapshot) -> None:
+    async def notify_websocket(self, payload: TradingShadowingIntelligenceSnapshot) -> None:
         return
 
 

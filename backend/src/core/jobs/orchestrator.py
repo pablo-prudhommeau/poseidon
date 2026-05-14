@@ -22,6 +22,7 @@ def start_background_jobs() -> None:
     global _started
     global _trading_cycle_thread, _shadowing_thread
     global _position_guard_task, _aave_sentinel_task, _dca_background_task
+    global _trading_cortex_training_task
 
     if _started:
         return
@@ -70,6 +71,14 @@ def start_background_jobs() -> None:
         logger.info("[ORCHESTRATOR][DCA_JOB] Scheduled task started (interval=%ss)", settings.AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS)
     else:
         logger.info("[ORCHESTRATOR][DCA_JOB] DCA disabled in settings, task not scheduled")
+
+    if settings.TRADING_CORTEX_ENABLED:
+        from src.core.jobs.trading_cortex_training_job import TradingCortexTrainingJob
+        global _trading_cortex_training_task
+        _trading_cortex_training_task = event_loop.create_task(TradingCortexTrainingJob().run_loop())
+        logger.info("[ORCHESTRATOR][TRADING][CORTEX][TRAINING] Scheduled task started")
+    else:
+        logger.info("[ORCHESTRATOR][TRADING][CORTEX][TRAINING] TradingCortex disabled in settings, task not scheduled")
 
     _started = True
     logger.info("[ORCHESTRATOR] All background jobs armed successfully")

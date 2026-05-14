@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class JupiterRoutePlanStepSwapInfo(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     amm_key: str = Field(alias="ammKey")
     label: str = Field(alias="label")
     input_mint: str = Field(alias="inputMint")
@@ -19,12 +20,14 @@ class JupiterRoutePlanStepSwapInfo(BaseModel):
 
 class JupiterRoutePlanStep(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     swap_info: JupiterRoutePlanStepSwapInfo = Field(alias="swapInfo")
     percent: int
 
 
 class JupiterQuoteResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     input_mint: str = Field(alias="inputMint")
     in_amount: str = Field(alias="inAmount")
     output_mint: str = Field(alias="outputMint")
@@ -47,4 +50,5 @@ class JupiterSwapRequest(BaseModel):
 
 class JupiterSwapResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     swap_transaction: str = Field(alias="swapTransaction")

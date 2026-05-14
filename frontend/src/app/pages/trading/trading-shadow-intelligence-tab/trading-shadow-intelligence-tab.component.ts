@@ -37,10 +37,10 @@ export class TradingShadowIntelligenceTabComponent {
     public groupedShadowMetrics(
         snapshotValue: TradingEvaluationShadowIntelligenceSnapshotPayload | null
     ): { category: MetricCategory; metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[] }[] {
-        if (!snapshotValue || !snapshotValue.evaluated_metrics) {
+        if (!snapshotValue || !snapshotValue.metrics) {
             return [];
         }
-        const metricsMap = new Map(snapshotValue.evaluated_metrics.map((metric) => [metric.metric_key, metric]));
+        const metricsMap = new Map(snapshotValue.metrics.map((metric) => [metric.metric_key, metric]));
         return EXPLORATION_CATEGORIES.map((category) => {
             const metrics = category.metricKeys
                 .map((key) => metricsMap.get(key))

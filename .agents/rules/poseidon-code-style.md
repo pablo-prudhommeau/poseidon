@@ -2,13 +2,13 @@
 trigger: always_on
 ---
 
-Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un mindset de développeur très expérimenté afin de te préparer à un potentiel audit de code extrêmement sérieux :  
+Pour chaque portion de code générée, je souhaiterais que tu te mettes dans un mindset de développeur très expérimenté afin de te préparer à un potentiel audit de code extrêmement sérieux :  
 
-* Tu dois homogénéiser et améliorer l'ensemble des nommages (variables, méthodes, etc.) afin d'avoir des noms limpides, sans AUCUNE abréviations, et parfaitement lisibles, et cohérents dans tous le code. Tu peux exceptionnellement utiliser avec parcimonie des acronymes ultra mainstream (DCA, PnL, DB, DAO, etc.)
+* Tu dois homogénéiser et améliorer l'ensemble des nommages (variables, méthodes, etc.) afin d'avoir des noms limpides, sans AUCUNE abréviations, et parfaitement lisibles, et cohérents dans tout le code. Tu peux exceptionnellement utiliser avec parcimonie des acronymes ultra mainstream (DCA, PnL, DB, DAO, etc.)
 
 * Pour les fichiers TypeScript frontend, respecte strictement le schéma `<nom>.<type>.ts` avec un suffixe qui décrit la responsabilité dominante du fichier (`component`, `service`, `builder`, `formatter`, `adapter`, `models`, `utils`, etc.).
 
-* Tu dois bannir toute forme de commentaire quels qu'ils soient (`# ...", docstrings `"""`, `/**`, etc.) qui sont complètement inutiles car le code est autoporteur de l'information si il est bien écrit avec des nommages explicites
+* Tu dois bannir toute forme de commentaire quels qu'ils soient (`# ...", docstrings `"""`, `/**`, etc.) qui sont complètement inutiles, car le code est autoporteur de l'information s'il est bien écrit avec des nommages explicites
 
 * Tu dois homogénéiser l'ensemble des phrases de log, et tu dois t'assurer d'avoir à la fois du logging "info" et du logging "verbose" dans les endroits clés, en gardant un niveau de log décent et en gardant une cohérence dans toute la codebase
 
@@ -26,7 +26,7 @@ Pour chaque portion de code générée, je souhaiterai que tu te mettes dans un 
 
 * Privilégie les appels de fonctions avec arguments nommés (`object.function(argument_name=value)`) uniquement quand cela améliore clairement la lisibilité (booléens, paramètres optionnels, plusieurs paramètres du même type, valeurs numériques sans unité explicite). Conserve les appels positionnels pour les APIs courtes et idiomatiques (`append`, `min`, `max`, signatures évidentes).
 
-* Privilégie l'utilisation de structure typées via BaseModel plutôt que des `dict` / `Tuple` / `Mapping` de types primitifs et n'utilise pas de dict.get() ni de dict["..."] ni de getattr() pour récupérer les attributs des structures (`structure.attribute` plutôt que `structure.get("attribute")` ou `structure["attribute"]`)
+* Privilégie l'utilisation de structure typée via BaseModel plutôt que des `dict` / `Tuple` / `Mapping` de types primitifs et n'utilise pas de dict.get() ni de dict["..."] ni de getattr() pour récupérer les attributs des structures (`structure.attribute` plutôt que `structure.get("attribute")` ou `structure["attribute"]`)
 
 * Ces structures typées backend doivent être regroupées dans des `*_structures.py` par "module applicatif"
 

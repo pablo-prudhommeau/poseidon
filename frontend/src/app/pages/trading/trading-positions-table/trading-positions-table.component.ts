@@ -33,7 +33,13 @@ import { balhamDarkThemeCompact } from '../../../ag-grid.theme';
 import { ApiService } from '../../../api.service';
 import { DatetimeDisplayService } from '../../../core/datetime-display.service';
 import { DefiIconsService } from '../../../core/defi-icons.service';
-import { TradingEvaluationPayload, TradingPositionPayload, TradingTradePayload } from '../../../core/models';
+import {
+    TradingEvaluationPayload,
+    TradingEvaluationShadowDiagnosticsPayload,
+    TradingEvaluationShadowIntelligenceSnapshotPayload,
+    TradingPositionPayload,
+    TradingTradePayload
+} from '../../../core/models';
 import { NumberFormattingService } from '../../../core/number-formatting.service';
 import { WebSocketService } from '../../../core/websocket.service';
 import { IconHeaderRendererComponent } from '../../../renderers/icon-header.renderer';
@@ -426,6 +432,18 @@ export class TradingPositionsTableComponent implements AfterViewInit {
 
     public analyticsForSelected(): TradingEvaluationPayload | null {
         return this.selectedAnalytics();
+    }
+
+    public buildSnapshotFromDiagnostics(
+        diagnostics: TradingEvaluationShadowDiagnosticsPayload | null | undefined
+    ): TradingEvaluationShadowIntelligenceSnapshotPayload | null {
+        if (!diagnostics || !diagnostics.shadowing_summary) {
+            return null;
+        }
+        return {
+            summary: diagnostics.shadowing_summary as TradingEvaluationShadowIntelligenceSnapshotPayload['summary'],
+            metrics: (diagnostics.shadowing_metrics ?? []) as TradingEvaluationShadowIntelligenceSnapshotPayload['metrics']
+        };
     }
 
     public buyTradeForSelectedPosition(): TradingTradePayload | null {

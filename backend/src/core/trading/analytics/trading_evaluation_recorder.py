@@ -4,6 +4,7 @@ from typing import Optional
 
 from src.api.websocket.telemetry import TelemetryService
 from src.configuration.config import _to_dict, settings
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
@@ -75,9 +76,24 @@ class TradingEvaluationRecorder:
             order_notional_value_usd=order_notional_usd or 0.0,
             free_cash_before_execution_usd=free_cash_before_usd or 0.0,
             free_cash_after_execution_usd=free_cash_after_usd or 0.0,
-            shadow_intelligence_snapshot=(
-                candidate.shadow_diagnostics.intelligence_snapshot.model_dump(mode="json")
-                if candidate.shadow_diagnostics.intelligence_snapshot is not None
+            shadowing_summary=(
+                candidate.shadow_diagnostics.intelligence_snapshot.summary.model_dump(mode="json", exclude_none=True)
+                if candidate.shadow_diagnostics.intelligence_snapshot is not None 
+                and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+                and settings.TRADING_SHADOWING_ENABLED
+                else None
+            ),
+            shadowing_metrics=(
+                [metric.model_dump(mode="json") for metric in candidate.shadow_diagnostics.intelligence_snapshot.metrics]
+                if candidate.shadow_diagnostics.intelligence_snapshot is not None 
+                and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+                and settings.TRADING_SHADOWING_ENABLED
+                else None
+            ),
+            cortex_inference_summary=(
+                candidate.trading_cortex_inference_snapshot.model_dump(mode="json")
+                if candidate.trading_cortex_inference_snapshot is not None
+                and candidate.trading_cortex_inference_snapshot.model_ready
                 else None
             ),
             raw_dexscreener_payload=candidate.dexscreener_token_information.model_dump(mode="json"),

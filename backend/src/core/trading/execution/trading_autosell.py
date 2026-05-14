@@ -154,6 +154,7 @@ def _execute_sell_operation(
         pair_address=position.pair_address,
         dex_id=position.dex_id,
         transaction_hash=live_transaction_hash,
+        created_at=get_current_local_datetime()
     )
     trade_dao.save(sell_trade)
 

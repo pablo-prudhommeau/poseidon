@@ -390,7 +390,7 @@
                 </div>
             </p-tabpanel>
             <p-tabpanel value="shadows">
-                <trading-shadow-intelligence-tab [snapshot]="selectedAnalytics()?.shadow_diagnostics?.intelligence_snapshot ?? null" />
+                <trading-shadow-intelligence-tab [snapshot]="buildSnapshotFromDiagnostics(selectedAnalytics()?.shadow_diagnostics)" />
             </p-tabpanel>
         </p-tabpanels>
     </p-tabs>

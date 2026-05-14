@@ -8,6 +8,7 @@ from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
 from src.core.trading.trading_structures import TradingOrderPayload, TradingExecutionRoute
+from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.logging.logger import get_application_logger
@@ -133,6 +134,7 @@ class TradingExecutor:
                     token_address=payload.target_token.token_address,
                     pair_address=payload.target_token.pair_address,
                     dex_id=payload.target_token.dex_id,
+                    created_at=get_current_local_datetime()
                 )
                 trade_dao.save(trading_trade)
 
@@ -150,6 +152,8 @@ class TradingExecutor:
                     stop_loss_price=stop_loss,
                     position_phase=PositionPhase.OPEN,
                     dex_id=payload.target_token.dex_id,
+                    opened_at=get_current_local_datetime(),
+                    updated_at=get_current_local_datetime(),
                 )
                 position_dao.save(trading_position)
                 database_session.commit()
@@ -274,6 +278,7 @@ class TradingExecutor:
                     pair_address=token.pair_address,
                     dex_id=token.dex_id,
                     transaction_hash=execution_outcome.transaction_hash_or_signature,
+                    created_at=get_current_local_datetime()
                 )
                 trade_dao.save(trading_trade)
 
@@ -291,6 +296,8 @@ class TradingExecutor:
                     stop_loss_price=stop_loss_usd,
                     position_phase=PositionPhase.OPEN,
                     dex_id=token.dex_id,
+                    opened_at=get_current_local_datetime(),
+                    updated_at=get_current_local_datetime()
                 )
                 position_dao.save(trading_position)
 

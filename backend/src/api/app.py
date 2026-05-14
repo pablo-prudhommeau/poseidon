@@ -18,8 +18,8 @@ from src.core.jobs.orchestrator import read_background_jobs_runtime_status, star
 from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders
 from src.core.trading.shadowing.cache.trading_shadowing_cache_rebuilders import register_trading_shadowing_rebuilders
 from src.logging.logger import get_application_logger, initialize_application_logging
-from src.persistence.database_session_manager import get_database_session
 from src.persistence.database_migration_manager import run_database_migrations
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 

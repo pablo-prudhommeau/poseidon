@@ -77,7 +77,7 @@
             <div class="flex justify-between items-center h-7 mb-3">
                 <span class="text-[10px] uppercase font-bold tracking-widest" [ngClass]="shadowTitleTextClass()">shadow regime</span>
                 <div class="flex items-center gap-2">
-                    <button type="button" class="chronicle-ghost-btn" title="Shadowing verdict chronicle" (click)="openShadowChronicle.emit()">
+                    <button type="button" class="chronicle-ghost-btn" [ngClass]="shadowAccentTextClass()" title="Shadowing verdict chronicle" (click)="openShadowChronicle.emit()">
                         <i class="fa fa-bolt"></i>
                     </button>
                     <span class="px-2 py-1 rounded-lg border text-[8px] uppercase font-black tracking-widest" [ngClass]="shadowRegimeClasses()">
@@ -86,34 +86,14 @@
                 </div>
             </div>
             <div class="flex flex-col">
-                <div class="grid grid-cols-1 sm:grid-cols-3 sm:gap-x-3 gap-y-8 sm:gap-y-0 items-stretch">
+                <div class="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-3 gap-y-8 sm:gap-y-0 items-stretch">
                     <div class="shadow-regime-metric-col flex flex-col min-w-0">
-                        <div class="min-h-[2.25rem] flex flex-col">
-                            <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowEmpiricalProfitFactorProgress() === null ? 'text-slate-200' : shadowEmpiricalProfitFactorProgress()! >= 100 ? 'text-purple-400' : 'text-red-400'">
-                                {{ formatMultiplier(shadowEmpiricalProfitFactor()) }}
-                            </span>
-                        </div>
-                        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug">
-                            {{ shadowEmpiricalGeometryLabel() }}
-                        </div>
-                        <div class="mt-3 flex flex-col flex-1">
-                            <div class="flex items-center justify-between text-[9px] text-slate-500 mb-2 leading-none">
-                                <span class="uppercase font-black tracking-widest">gate</span>
-                                <span class="font-bold text-slate-300 tabular-nums">{{ shadowEmpiricalProfitFactorThreshold() | optionalNumber: '1.2-2' }}</span>
-                            </div>
-                            <div class="w-full bg-slate-800/80 rounded-full h-1.5 mb-2 overflow-hidden">
-                                <div class="h-1.5 rounded-full transition-all duration-700" [ngClass]="shadowEmpiricalProfitFactorProgress() === null ? 'bg-slate-700' : shadowEmpiricalProfitFactorProgress()! >= 100 ? 'bg-purple-400' : 'bg-red-400'" [style.width.%]="shadowEmpiricalProfitFactorProgress() ?? 0"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="shadow-regime-metric-col flex flex-col min-w-0 border-l-0 sm:border-l border-white/10 sm:pl-2">
                         <div class="min-h-[2.25rem] flex flex-col">
                             <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowChronicleProfitFactorProgress() === null ? 'text-slate-200' : shadowChronicleProfitFactorProgress()! >= 100 ? 'text-purple-400' : 'text-red-400'">
                                 {{ formatMultiplier(shadowChronicleProfitFactor()) }}
                             </span>
                         </div>
-                        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug">
+                        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug cursor-help" [pTooltip]="shadowChronicleGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">
                             {{ shadowChronicleGeometryLabel() }}
                         </div>
                         <div class="mt-3 flex flex-col justify-end flex-1">
@@ -133,7 +113,7 @@
                                 {{ shadowSparseExpectedValueUsd() | optionalNumber: '1.1-1' : '$ ' }}
                             </span>
                         </div>
-                        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug">
+                        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2 leading-snug cursor-help" [pTooltip]="shadowSparseExpectedValueGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">
                             {{ shadowSparseExpectedValueGeometryLabel() }}
                         </div>
                         <div class="mt-3 flex flex-col justify-end flex-1">
@@ -171,10 +151,15 @@
                     <div>
                         <div class="flex items-center justify-between text-[8px] text-slate-600 mb-1">
                             <span class="uppercase font-black tracking-widest">outcomes</span>
-                            <span class="font-bold text-slate-400">{{ shadowResolvedCount() }}/{{ shadowRequiredCount() }}</span>
+                            <span class="font-bold text-slate-400">
+                                <span class="text-amber-400/80 cursor-help" [pTooltip]="shadowAwareTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">{{ shadowAwareResolvedCount() }}/{{ shadowRequiredCount() }} aware</span>
+                                <span class="text-slate-600 px-1">•</span>
+                                <span class="cursor-help" [pTooltip]="shadowTotalTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">{{ shadowTotalResolvedCount() }}/{{ shadowRequiredCount() }}</span>
+                            </span>
                         </div>
-                        <div class="w-full bg-slate-700/50 rounded-full h-1 overflow-hidden">
-                            <div class="bg-amber-400/80 h-1 rounded-full transition-all duration-700" [style.width.%]="shadowOutcomeProgress()"></div>
+                        <div class="w-full bg-slate-700/50 rounded-full h-1 overflow-hidden flex">
+                            <div class="bg-amber-400/80 h-1 transition-all duration-700" [style.width.%]="shadowAwareProgress()"></div>
+                            <div class="bg-amber-400/30 h-1 transition-all duration-700" [style.width.%]="shadowTotalProgress() - shadowAwareProgress()"></div>
                         </div>
                     </div>
                     <div>

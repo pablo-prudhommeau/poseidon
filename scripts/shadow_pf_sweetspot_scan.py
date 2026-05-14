@@ -39,8 +39,6 @@ class ShadowVerdictMaterializedSnapshot(BaseModel):
 
 
 class ProfitFactorSweepMatrixRow(BaseModel):
-    """Five verdict metrics per SMA regime (above / below threshold), five chart-side SMA metrics, deltas."""
-
     model_config = ConfigDict(frozen=True)
 
     lookback_days: float

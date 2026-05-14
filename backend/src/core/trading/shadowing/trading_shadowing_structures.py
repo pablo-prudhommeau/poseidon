@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
-class ShadowIntelligenceMetricSnapshot(BaseModel):
+class TradingShadowingPhase(Enum):
+    DISABLED = "DISABLED"
+    LEARNING = "LEARNING"
+    ACTIVE = "ACTIVE"
+
+
+class TradingShadowingIntelligenceMetricSnapshot(BaseModel):
     metric_key: str
     bucket_edges: list[float]
     bucket_win_rates: list[float]
@@ -21,63 +28,48 @@ class ShadowIntelligenceMetricSnapshot(BaseModel):
     winner_deviation: float
 
 
-class ShadowIntelligenceSnapshot(BaseModel):
-    metric_snapshots: list[ShadowIntelligenceMetricSnapshot]
-    total_outcomes_analyzed: int
-    is_activated: bool
-    resolved_outcome_count: int = 0
-    elapsed_hours: float = 0.0
-    meta_win_rate: float = 0.0
-    meta_average_pnl: float = 0.0
-    meta_average_holding_time_hours: float = 0.0
-    meta_capital_velocity: float = 0.0
-    meta_profit_factor: float = 0.0
-    meta_expected_value_usd: float = 0.0
-    empirical_profit_factor: float = 0.0
-    chronicle_profit_factor: float = 0.0
-    sparse_expected_value_usd: float = 0.0
-    chronicle_profit_factor_threshold: float = 0.0
-
-
-class ShadowIntelligenceSnapshotSummaryPayload(BaseModel):
-    is_activated: bool
-    total_outcomes_analyzed: int
-    resolved_outcome_count: int = 0
-    elapsed_hours: float = 0.0
-    meta_win_rate: float = 0.0
-    meta_average_pnl: float = 0.0
-    meta_average_holding_time_hours: float = 0.0
-    meta_capital_velocity: float = 0.0
-    meta_profit_factor: float = 0.0
-    meta_expected_value_usd: float = 0.0
-    empirical_profit_factor: float = 0.0
-    chronicle_profit_factor: float = 0.0
-    chronicle_profit_factor_threshold: float = 0.0
-    sparse_expected_value_usd: float = 0.0
-
-
-class ShadowIntelligenceSnapshotMetricPayload(BaseModel):
+class TradingShadowingIntelligenceMetric(BaseModel):
     metric_key: str
     candidate_value: Optional[float] = None
-    bucket_index: int
-    bucket_win_rate: float
-    bucket_average_pnl: float
-    bucket_average_holding_time: float = 0.0
-    bucket_capital_velocity: float = 0.0
-    bucket_outlier_hit_rate: float = 0.0
-    bucket_sample_count: int = 0
+    bucket_index: Optional[int] = None
+    bucket_win_rate: Optional[float] = None
+    bucket_average_pnl: Optional[float] = None
+    bucket_average_holding_time: Optional[float] = None
+    bucket_capital_velocity: Optional[float] = None
+    bucket_outlier_hit_rate: Optional[float] = None
+    bucket_sample_count: Optional[int] = None
     is_toxic: bool = False
     is_golden: bool = False
-    normalized_influence: float = 0.0
+    normalized_influence: Optional[float] = None
 
 
-class ShadowIntelligenceSnapshotPayload(BaseModel):
-    summary: ShadowIntelligenceSnapshotSummaryPayload
-    evaluated_metrics: list[ShadowIntelligenceSnapshotMetricPayload] = Field(default_factory=list)
+class TradingShadowingIntelligenceSummary(BaseModel):
+    phase: TradingShadowingPhase
+    total_outcomes_analyzed: int
+    resolved_outcome_count: int = 0
+    resolved_shadowing_and_cortex_inference_aware_outcome_count: int = 0
+    elapsed_hours: float = 0.0
+    meta_win_rate: Optional[float] = None
+    meta_average_pnl: Optional[float] = None
+    meta_average_holding_time_hours: Optional[float] = None
+    meta_capital_velocity: Optional[float] = None
+    meta_profit_factor: Optional[float] = None
+    meta_expected_value_usd: Optional[float] = None
+    chronicle_profit_factor: Optional[float] = None
+    sparse_expected_value_usd: Optional[float] = None
+    chronicle_profit_factor_threshold: Optional[float] = None
+    sparse_expected_value_usd_threshold: Optional[float] = None
 
 
-class ShadowIntelligenceStatusSummary(BaseModel):
+class TradingShadowingIntelligenceSnapshot(BaseModel):
+    summary: TradingShadowingIntelligenceSummary
+    metric_snapshots: list[TradingShadowingIntelligenceMetricSnapshot] = Field(default_factory=list)
+    metrics: list[TradingShadowingIntelligenceMetric] = Field(default_factory=list)
+
+
+class TradingShadowingStatusSummary(BaseModel):
     resolved_outcome_count: int
+    resolved_shadowing_and_cortex_inference_aware_outcome_count: int
     elapsed_hours: float
 
 

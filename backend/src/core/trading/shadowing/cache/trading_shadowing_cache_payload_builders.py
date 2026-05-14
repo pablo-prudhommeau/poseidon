@@ -13,7 +13,10 @@ from src.api.http.api_schemas import (
     ShadowVerdictChronicleDeltaVerdictPayload,
 )
 from src.configuration.config import settings
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingShadowingIntelligenceSnapshot,
+    TradingShadowingPhase,
+)
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicle,
     TradingShadowingVerdictChronicleBucket,
@@ -32,18 +35,20 @@ def build_shadow_intelligence_status_payload() -> ShadowIntelligenceStatusPayloa
     required_outcomes = settings.TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION
     required_hours = settings.TRADING_SHADOWING_MIN_HOURS_FOR_ACTIVATION
 
-    outcome_progress = (status_summary.resolved_outcome_count / required_outcomes * 100.0) if required_outcomes > 0 else 100.0
+    outcome_progress = (status_summary.resolved_shadowing_and_cortex_inference_aware_outcome_count / required_outcomes * 100.0) if required_outcomes > 0 else 100.0
     hours_progress = (status_summary.elapsed_hours / required_hours * 100.0) if required_hours > 0 else 100.0
 
-    is_activated = status_summary.resolved_outcome_count >= required_outcomes and status_summary.elapsed_hours >= required_hours
-    phase = "ACTIVE" if is_activated else "LEARNING"
+    is_activated = status_summary.resolved_shadowing_and_cortex_inference_aware_outcome_count >= required_outcomes and status_summary.elapsed_hours >= required_hours
     if not settings.TRADING_SHADOWING_ENABLED:
-        phase = "DISABLED"
+        phase = TradingShadowingPhase.DISABLED
+    else:
+        phase = TradingShadowingPhase.ACTIVE if is_activated else TradingShadowingPhase.LEARNING
 
     return ShadowIntelligenceStatusPayload(
         is_enabled=settings.TRADING_SHADOWING_ENABLED,
         phase=phase,
         resolved_outcome_count=status_summary.resolved_outcome_count,
+        resolved_shadowing_and_cortex_inference_aware_outcome_count=status_summary.resolved_shadowing_and_cortex_inference_aware_outcome_count,
         required_outcome_count=required_outcomes,
         elapsed_hours=status_summary.elapsed_hours,
         required_hours=required_hours,
@@ -52,32 +57,24 @@ def build_shadow_intelligence_status_payload() -> ShadowIntelligenceStatusPayloa
     )
 
 
-def build_trading_shadow_meta_payload(snapshot: ShadowIntelligenceSnapshot) -> TradingShadowMetaPayload:
-    phase = "ACTIVE" if snapshot.is_activated else "LEARNING"
-    if not settings.TRADING_SHADOWING_ENABLED:
-        phase = "DISABLED"
-
+def build_trading_shadow_meta_payload(snapshot: TradingShadowingIntelligenceSnapshot) -> TradingShadowMetaPayload:
     return TradingShadowMetaPayload(
         is_enabled=settings.TRADING_SHADOWING_ENABLED,
-        is_activated=snapshot.is_activated,
-        phase=phase,
-        total_outcomes_analyzed=snapshot.total_outcomes_analyzed,
-        resolved_outcome_count=snapshot.resolved_outcome_count,
-        elapsed_hours=snapshot.elapsed_hours,
-        win_rate_percentage=snapshot.meta_win_rate * 100.0,
-        global_profit_factor=snapshot.meta_profit_factor,
-        expected_value_usd=snapshot.meta_expected_value_usd,
-        capital_velocity=snapshot.meta_capital_velocity,
-        empirical_profit_factor=snapshot.empirical_profit_factor,
-        empirical_profit_factor_threshold=settings.TRADING_SHADOWING_REGIME_EMPIRICAL_PROFIT_FACTOR_THRESHOLD,
-        empirical_profit_factor_window_verdict_count=settings.TRADING_SHADOWING_REGIME_EMPIRICAL_PROFIT_FACTOR_WINDOW_VERDICT_COUNT,
-        chronicle_profit_factor=snapshot.chronicle_profit_factor,
-        chronicle_profit_factor_threshold=snapshot.chronicle_profit_factor_threshold,
+        phase=snapshot.summary.phase,
+        total_outcomes_analyzed=snapshot.summary.total_outcomes_analyzed,
+        resolved_outcome_count=snapshot.summary.resolved_outcome_count,
+        elapsed_hours=snapshot.summary.elapsed_hours,
+        win_rate_percentage=(snapshot.summary.meta_win_rate * 100.0) if snapshot.summary.meta_win_rate is not None else None,
+        global_profit_factor=snapshot.summary.meta_profit_factor,
+        expected_value_usd=snapshot.summary.meta_expected_value_usd,
+        capital_velocity=snapshot.summary.meta_capital_velocity,
+        chronicle_profit_factor=snapshot.summary.chronicle_profit_factor,
+        chronicle_profit_factor_threshold=snapshot.summary.chronicle_profit_factor_threshold,
         chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
         chronicle_profit_factor_bucket_width_seconds=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
         chronicle_profit_factor_moving_average_period=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
-        sparse_expected_value_usd=snapshot.sparse_expected_value_usd,
-        sparse_expected_value_usd_threshold=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_USD_THRESHOLD,
+        sparse_expected_value_usd=snapshot.summary.sparse_expected_value_usd,
+        sparse_expected_value_usd_threshold=snapshot.summary.sparse_expected_value_usd_threshold,
         sparse_expected_value_lookback_days=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
         sparse_expected_value_bucket_width_seconds=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
         sparse_expected_value_moving_average_period=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,

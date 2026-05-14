@@ -124,8 +124,8 @@ class TradingShadowingVerdictTracker:
                     if self._evaluate_price_against_thresholds(verdict, probe, onchain_price, current_time):
                         resolved_count += 1
                         logger.debug(
-                            "[TRADING][SHADOW][VERDICT] %s resolved — exit=%s pnl=%.2f%% (onchain verified)",
-                            probe.token_symbol, verdict.exit_reason, verdict.realized_pnl_percentage,
+                            "[TRADING][SHADOW][VERDICT] %s resolved — exit=%s pnl=%.2f%% probe_id=%s verdict_id=%s (onchain verified)",
+                            probe.token_symbol, verdict.exit_reason, verdict.realized_pnl_percentage, probe.id, verdict.id
                         )
 
             for verdict, dex_price in lethargic_candidates:

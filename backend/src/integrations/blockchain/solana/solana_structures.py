@@ -2,21 +2,21 @@ from pydantic import BaseModel, ConfigDict
 
 
 class SolanaTransactionFeeBreakdown(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     base_fee_lamports: int
     account_rent_lamports: int
     total_lamports: int
     total_sol: float
     total_usd: float
 
-    model_config = ConfigDict(extra="ignore")
-
 
 class SolanaPoolPriceResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     price_in_quote_token: float
     quote_token_mint: str
     dex_identifier: str
-
-    model_config = ConfigDict(extra="ignore")
 
 
 SOLANA_WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112"

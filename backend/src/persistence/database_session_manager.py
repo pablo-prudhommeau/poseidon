@@ -1,17 +1,45 @@
 from __future__ import annotations
 
+from datetime import datetime
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Any, Optional
 
+from sqlalchemy import TypeDecorator, DateTime
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import Session, DeclarativeBase, sessionmaker
 
+from src.core.utils.date_utils import ensure_timezone_aware
 from src.logging.logger import get_application_logger
 from src.persistence.database_engine_builder import build_database_engine
 
 logger = get_application_logger(__name__)
 
-DatabaseBaseModel = declarative_base()
+
+class HybridAwareDateTime(TypeDecorator):
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(postgresql.TIMESTAMP(timezone=True))
+        return dialect.type_descriptor(DateTime(timezone=True))
+
+    def process_bind_param(self, value: Optional[datetime], dialect: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        return ensure_timezone_aware(value)
+
+    def process_result_value(self, value: Optional[datetime], dialect: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        return ensure_timezone_aware(value)
+
+
+class DatabaseBaseModel(DeclarativeBase):
+    type_annotation_map = {
+        datetime: HybridAwareDateTime()
+    }
 
 database_engine: Engine = build_database_engine()
 

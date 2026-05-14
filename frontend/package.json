@@ -12,7 +12,7 @@
         "format:prettier": "prettier --write \"src/**/*.html\"",
         "format:prettier:check": "prettier --check \"src/**/*.html\"",
         "format:biome": "biome format --write src eslint.config.ts tailwind.config.ts",
-        "format:biome:check": "biome check src eslint.config.ts tailwind.config.ts --formatter-enabled=true --linter-enabled=false --assist-enabled=false",
+        "format:biome:check": "biome check src eslint.config.ts tailwind.config.ts --formatter-enabled=true --linter-enabled=false --assist-enabled=true",
         "lint": "eslint src --max-warnings=0",
         "watch": "ng build --watch --configuration development",
         "test": "ng test",

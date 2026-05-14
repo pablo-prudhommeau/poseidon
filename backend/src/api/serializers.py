@@ -145,7 +145,9 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
             free_cash_after_execution_usd=row.free_cash_after_execution_usd,
         ),
         shadow_diagnostics=TradingEvaluationShadowDiagnosticsPayload(
-            intelligence_snapshot=row.shadow_intelligence_snapshot,
+            cortex_inference_summary=row.cortex_inference_summary,
+            shadowing_summary=row.shadowing_summary,
+            shadowing_metrics=row.shadowing_metrics,
         ),
         raw_dexscreener_payload=row.raw_dexscreener_payload,
         raw_configuration_settings=row.raw_configuration_settings,

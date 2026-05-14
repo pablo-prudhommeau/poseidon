@@ -12,7 +12,7 @@ from src.api.http.api_schemas import (
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.shadowing.cache.trading_shadowing_cache_structures import TradingShadowingState
-from src.core.trading.shadowing.trading_shadowing_structures import ShadowIntelligenceSnapshot
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 
@@ -28,12 +28,12 @@ class TradingShadowingCache:
     def __init__(self) -> None:
         self._lock = Lock()
         self._cached_shadow_meta: Optional[TradingShadowMetaPayload] = None
-        self._cached_shadow_intelligence_snapshot: Optional[ShadowIntelligenceSnapshot] = None
+        self._cached_shadow_intelligence_snapshot: Optional[TradingShadowingIntelligenceSnapshot] = None
         self._cached_shadow_verdict_chronicle: Optional[ShadowVerdictChroniclePayload] = None
         self._cached_shadow_verdict_chronicle_delta: Optional[ShadowVerdictChronicleDeltaPayload] = None
         self._last_successful_update_timestamp: datetime = get_current_local_datetime()
 
-    def update_shadow_intelligence_snapshot(self, snapshot: ShadowIntelligenceSnapshot) -> None:
+    def update_shadow_intelligence_snapshot(self, snapshot: TradingShadowingIntelligenceSnapshot) -> None:
         with self._lock:
             self._cached_shadow_intelligence_snapshot = snapshot
             logger.debug("[TRADING][CACHE] Shadow intelligence snapshot updated")
@@ -65,7 +65,7 @@ class TradingShadowingCache:
         with self._lock:
             return self._cached_shadow_meta
 
-    def get_shadow_intelligence_snapshot(self) -> Optional[ShadowIntelligenceSnapshot]:
+    def get_shadow_intelligence_snapshot(self) -> Optional[TradingShadowingIntelligenceSnapshot]:
         with self._lock:
             return self._cached_shadow_intelligence_snapshot
 
