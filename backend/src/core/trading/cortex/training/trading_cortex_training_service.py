@@ -201,7 +201,7 @@ class TradingCortexTrainingService:
             validation_feature_matrix=validation_feature_matrix,
             validation_targets=validation_targets,
             preferred_training_device=preferred_training_device,
-            objective_name="reg:pseudohubererror",
+            objective_name="reg:squarederror",
             evaluation_metric_name="rmse",
         )
 
@@ -247,6 +247,13 @@ class TradingCortexTrainingService:
             training_device: str,
             extra_parameters: dict[str, float] | None = None,
     ) -> xgboost.Booster:
+        logger.info(
+            "[TRADING][CORTEX][TRAINING][BOOSTER] Training targets objective=%s: min=%.2f, max=%.2f, mean=%.2f",
+            objective_name,
+            float(numpy.min(training_targets)),
+            float(numpy.max(training_targets)),
+            float(numpy.mean(training_targets)),
+        )
         training_matrix = xgboost.QuantileDMatrix(training_feature_matrix, training_targets)
         validation_matrix = xgboost.QuantileDMatrix(
             validation_feature_matrix,

@@ -109,7 +109,7 @@
 
                     <div class="shadow-regime-metric-col flex flex-col min-w-0 border-l-0 sm:border-l border-white/10 sm:pl-2">
                         <div class="min-h-[2.25rem] flex flex-col">
-                            <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowSparseExpectedValueProgress() === null ? 'text-slate-200' : shadowSparseExpectedValueProgress()! >= 100 ? 'text-purple-400' : 'text-red-400'">
+                            <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowSparseExpectedValueUsd() === null ? 'text-slate-200' : shadowSparseExpectedValueUsd()! >= shadowSparseExpectedValueUsdThreshold()! ? 'text-purple-400' : 'text-red-400'">
                                 {{ shadowSparseExpectedValueUsd() | optionalNumber: '1.1-1' : '$ ' }}
                             </span>
                         </div>
@@ -121,8 +121,8 @@
                                 <span class="uppercase font-black tracking-widest">floor</span>
                                 <span class="font-bold text-slate-300 tabular-nums">{{ shadowSparseExpectedValueUsdThreshold() | optionalNumber: '1.2-2' : '$ ' }}</span>
                             </div>
-                            <div class="w-full bg-slate-800/80 rounded-full h-1.5 mb-2 overflow-hidden">
-                                <div class="h-1.5 rounded-full transition-all duration-700" [ngClass]="shadowSparseExpectedValueProgress() === null ? 'bg-slate-700' : shadowSparseExpectedValueProgress()! >= 100 ? 'bg-purple-400' : 'bg-red-400'" [style.width.%]="shadowSparseExpectedValueProgress() ?? 0"></div>
+                            <div class="w-full bg-slate-800/80 rounded-full h-1.5 mb-2 overflow-hidden flex justify-end">
+                                <div class="h-1.5 rounded-full transition-all duration-700" [ngClass]="shadowSparseExpectedValueUsd() === null ? 'bg-slate-700' : shadowSparseExpectedValueUsd()! >= shadowSparseExpectedValueUsdThreshold()! ? 'bg-purple-400' : 'bg-red-400'" [style.width.%]="shadowSparseExpectedValueProgress() ?? 0"></div>
                             </div>
                         </div>
                     </div>

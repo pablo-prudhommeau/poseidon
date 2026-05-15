@@ -316,10 +316,15 @@ export class TradingOverviewComponent {
     readonly shadowSparseExpectedValueProgress = computed(() => {
         const threshold = this.shadowSparseExpectedValueUsdThreshold();
         const value = this.shadowSparseExpectedValueUsd();
-        if (threshold === null || value === null || threshold === 0) {
+        if (threshold === null || value === null) {
             return null;
         }
-        return Math.min(100, (value / threshold) * 100);
+        if (value >= threshold) {
+            return 100;
+        }
+        const worstValue: number = -15.0;
+        const progress: number = Math.min(100, Math.max(0, (value / worstValue) * 100));
+        return progress;
     });
 
     readonly shadowTitleTextClass = computed(() => {

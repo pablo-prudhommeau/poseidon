@@ -6,13 +6,19 @@ from typing import Optional
 import numpy
 from pydantic import BaseModel, ConfigDict
 
-from src.core.trading.cortex.trading_cortex_structures import TradingCortexCandidateFeatureSnapshot
+from src.core.trading.cortex.trading_cortex_structures import (
+    TradingCortexCandidateFeatureSnapshot,
+    TradingCortexShadowMetricFeatureSnapshot,
+    TradingCortexShadowRegimeFeatureSnapshot,
+)
 
 
 class TradingCortexShadowTrainingRecord(BaseModel):
     probe_identifier: int
     resolved_at: datetime
     candidate_features: TradingCortexCandidateFeatureSnapshot
+    shadow_regime_features: TradingCortexShadowRegimeFeatureSnapshot
+    shadow_metric_features: list[TradingCortexShadowMetricFeatureSnapshot]
     realized_profit_and_loss_percentage: float
     realized_profit_and_loss_usd: float
     holding_duration_minutes: float
@@ -35,8 +41,8 @@ class TradingCortexPreparedTrainingDataset(BaseModel):
     validation_expected_profit_and_loss_percentages: numpy.ndarray
     training_record_count: int
     validation_record_count: int
-    dataset_window_start_at: Optional[datetime]
-    dataset_window_end_at: Optional[datetime]
+    dataset_window_start_at: datetime
+    dataset_window_end_at: datetime
 
 
 class TradingCortexModelEvaluationMetrics(BaseModel):

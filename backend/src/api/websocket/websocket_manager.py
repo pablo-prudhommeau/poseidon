@@ -33,6 +33,15 @@ class WebsocketManager:
         self._connected_clients.discard(websocket_client)
         logger.info("[WEBSOCKET][MANAGER][DISCONNECT] Client connection unregistered. Total active connections: %s", len(self._connected_clients))
 
+    async def close_all_connections(self) -> None:
+        logger.info("[WEBSOCKET][MANAGER][SHUTDOWN] Closing all active websocket connections (%s clients)", len(self._connected_clients))
+        close_tasks = []
+        for websocket_client in list(self._connected_clients):
+            close_tasks.append(websocket_client.close())
+        if close_tasks:
+            await asyncio.gather(*close_tasks, return_exceptions=True)
+        self._connected_clients.clear()
+
     @staticmethod
     def _convert_to_json_compatible_payload(raw_payload: dict) -> dict:
         return jsonable_encoder(

@@ -104,7 +104,7 @@ class TradingShadowingVerdictDao:
     ) -> list[TradingShadowingVerdict]:
         from sqlalchemy.orm import joinedload
         try:
-            return list(self.database_session.scalars(
+            verdicts = list(self.database_session.scalars(
                 select(TradingShadowingVerdict)
                 .options(joinedload(TradingShadowingVerdict.probe))
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
@@ -112,9 +112,11 @@ class TradingShadowingVerdictDao:
                 .where(TradingShadowingVerdict.resolved_at.is_not(None))
                 .where(TradingShadowingVerdict.resolved_at >= start_datetime)
                 .where(TradingShadowingVerdict.resolved_at <= end_datetime)
-                .order_by(TradingShadowingVerdict.resolved_at.asc())
+                .order_by(TradingShadowingVerdict.resolved_at.desc())
                 .limit(limit_count)
             ).unique().all())
+            verdicts.reverse()
+            return verdicts
         except Exception as error:
             logger.exception(
                 "[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts in range [%s, %s] — %s",

@@ -7,18 +7,22 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 
 from src.api.http.api_schemas import (
+    DcaStrategyPayload,
     WebsocketInitializationPayload,
     WebsocketStatusPayload,
 )
 from src.api.websocket.websocket_manager import websocket_manager
 from src.configuration.config import settings
 from src.core.dca.cache.dca_cache import dca_state_cache
+from src.core.dca.cache.dca_cache_structures import DcaState
 from src.core.structures.structures import (
     WebsocketInboundMessage,
     WebsocketMessageType,
 )
 from src.core.trading.cache.trading_cache import trading_cache
+from src.core.trading.cache.trading_cache_structures import TradingState
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
+from src.core.trading.shadowing.cache.trading_shadowing_cache_structures import TradingShadowingState
 from src.logging.logger import get_application_logger
 
 router = APIRouter()
@@ -26,52 +30,59 @@ logger = get_application_logger(__name__)
 
 
 async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
-    trading_state = trading_cache.get_trading_state()
-    if trading_state.positions is not None:
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.POSITIONS.value,
-            "payload": jsonable_encoder(trading_state.positions),
-        })
-    if trading_state.position_prices is not None:
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.POSITION_PRICES.value,
-            "payload": jsonable_encoder(trading_state.position_prices),
-        })
-    if trading_state.trades is not None:
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.TRADES.value,
-            "payload": jsonable_encoder(trading_state.trades),
-        })
-    if trading_state.portfolio is not None:
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.PORTFOLIO.value,
-            "payload": jsonable_encoder(trading_state.portfolio),
-        })
-    if trading_state.liquidity is not None:
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.LIQUIDITY.value,
-            "payload": jsonable_encoder(trading_state.liquidity),
-        })
+    try:
+        trading_state: TradingState = trading_cache.get_trading_state()
+        if trading_state.positions is not None:
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.POSITIONS.value,
+                "payload": jsonable_encoder(trading_state.positions),
+            })
+        if trading_state.position_prices is not None:
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.POSITION_PRICES.value,
+                "payload": jsonable_encoder(trading_state.position_prices),
+            })
+        if trading_state.trades is not None:
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.TRADES.value,
+                "payload": jsonable_encoder(trading_state.trades),
+            })
+        if trading_state.portfolio is not None:
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.PORTFOLIO.value,
+                "payload": jsonable_encoder(trading_state.portfolio),
+            })
+        if trading_state.liquidity is not None:
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.LIQUIDITY.value,
+                "payload": jsonable_encoder(trading_state.liquidity),
+            })
 
-    trading_shadowing_state = trading_shadowing_cache.get_shadowing_trading_state()
-    if trading_shadowing_state.shadow_meta is not None:
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.SHADOW_META.value,
-            "payload": jsonable_encoder(trading_shadowing_state.shadow_meta),
-        })
-    if trading_shadowing_state.shadow_verdict_chronicle is not None:
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.SHADOW_VERDICT_CHRONICLE.value,
-            "payload": jsonable_encoder(trading_shadowing_state.shadow_verdict_chronicle),
-        })
+        trading_shadowing_state: TradingShadowingState = trading_shadowing_cache.get_shadowing_trading_state()
+        if trading_shadowing_state.shadow_meta is not None:
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.SHADOW_META.value,
+                "payload": jsonable_encoder(trading_shadowing_state.shadow_meta),
+            })
+        if trading_shadowing_state.shadow_verdict_chronicle is not None:
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.SHADOW_VERDICT_CHRONICLE.value,
+                "payload": jsonable_encoder(trading_shadowing_state.shadow_verdict_chronicle),
+            })
 
-    dca_state = dca_state_cache.get_dca_state()
-    if dca_state.dca_strategies is not None:
-        dca_strategies_payload = dca_state.dca_strategies
-        await websocket_connection.send_json({
-            "type": WebsocketMessageType.DCA_STRATEGIES.value,
-            "payload": jsonable_encoder(dca_strategies_payload),
-        })
+        dca_state: DcaState = dca_state_cache.get_dca_state()
+        if dca_state.dca_strategies is not None:
+            dca_strategies_payload: list[DcaStrategyPayload] = dca_state.dca_strategies
+            await websocket_connection.send_json({
+                "type": WebsocketMessageType.DCA_STRATEGIES.value,
+                "payload": jsonable_encoder(dca_strategies_payload),
+            })
+
+    except WebSocketDisconnect:
+        logger.debug("[WEBSOCKET][HUB][STATE_SYNC] Client disconnected during background state synchronization")
+    except Exception as exception:
+        logger.exception("[WEBSOCKET][HUB][STATE_SYNC] Unexpected error during background state synchronization: %s", exception)
+
 
 
 async def send_websocket_handshake(websocket_connection: WebSocket) -> None:

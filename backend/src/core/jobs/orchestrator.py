@@ -16,16 +16,19 @@ _shadowing_thread: threading.Thread | None = None
 _position_guard_task: asyncio.Task | None = None
 _aave_sentinel_task: asyncio.Task | None = None
 _dca_background_task: asyncio.Task | None = None
+_trading_cortex_training_task: asyncio.Task | None = None
+_stop_event = threading.Event()
 
 
 def start_background_jobs() -> None:
-    global _started
+    global _started, _stop_event
     global _trading_cycle_thread, _shadowing_thread
     global _position_guard_task, _aave_sentinel_task, _dca_background_task
-    global _trading_cortex_training_task
 
     if _started:
         return
+    
+    _stop_event.clear()
 
     from src.core.jobs.trading_cycle_job import TradingCycleJob
     from src.core.jobs.trading_shadowing_job import TradingShadowingJob
@@ -38,6 +41,7 @@ def start_background_jobs() -> None:
     if settings.TRADING_ENABLED:
         _trading_cycle_thread = threading.Thread(
             target=TradingCycleJob().run_loop,
+            args=(_stop_event,),
             name="trading-cycle-loop",
             daemon=True,
         )
@@ -52,6 +56,7 @@ def start_background_jobs() -> None:
     if settings.TRADING_ENABLED and settings.TRADING_SHADOWING_ENABLED:
         _shadowing_thread = threading.Thread(
             target=TradingShadowingJob().run_loop,
+            args=(_stop_event,),
             name="shadowing-loop",
             daemon=True,
         )
@@ -82,6 +87,33 @@ def start_background_jobs() -> None:
 
     _started = True
     logger.info("[ORCHESTRATOR] All background jobs armed successfully")
+
+
+def stop_background_jobs() -> None:
+    global _started, _stop_event
+    global _position_guard_task, _aave_sentinel_task, _dca_background_task, _trading_cortex_training_task
+    
+    if not _started:
+        return
+        
+    logger.info("[ORCHESTRATOR][SHUTDOWN] Signaling background threads to stop...")
+    _stop_event.set()
+    
+    logger.info("[ORCHESTRATOR][SHUTDOWN] Canceling asyncio tasks...")
+    tasks_to_cancel = [
+        task for task in [
+            _position_guard_task, 
+            _aave_sentinel_task, 
+            _dca_background_task, 
+            _trading_cortex_training_task
+        ] if task is not None
+    ]
+    
+    for task in tasks_to_cancel:
+        task.cancel()
+        
+    _started = False
+    logger.info("[ORCHESTRATOR][SHUTDOWN] All background jobs signalized for termination")
 
 
 def read_background_jobs_runtime_status() -> BackgroundJobsRuntimeStatus:

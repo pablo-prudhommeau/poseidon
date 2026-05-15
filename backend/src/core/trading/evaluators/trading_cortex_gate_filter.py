@@ -110,7 +110,7 @@ def apply_trading_cortex_gate_filter(
         if gate_verdict.is_accepted:
             retained.append(candidate)
             logger.info(
-                "\033[92m[TRADING][PIPELINE][TRADING][CORTEX][GATE] RETAINED %s | Score: %.2f | Win: %.1f%% | Tox: %.1f%% | PnL: %.1f%%\033[0m",
+                "[TRADING][PIPELINE][TRADING][CORTEX][GATE] RETAINED %s | Score: %.2f | Win: %.1f%% | Tox: %.1f%% | PnL: %.1f%%\033[0m",
                 candidate.token.symbol,
                 scoring_response.final_trade_score,
                 scoring_response.success_probability * 100,
