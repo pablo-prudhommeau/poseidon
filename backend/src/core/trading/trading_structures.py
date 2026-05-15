@@ -10,7 +10,7 @@ from src.core.trading.shadowing.trading_shadowing_structures import TradingShado
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 
 
-class AutosellTriggerReason(str, enum.Enum):
+class PositionExitTriggerReason(str, enum.Enum):
     TAKE_PROFIT_1 = "TAKE_PROFIT_1"
     TAKE_PROFIT_2 = "TAKE_PROFIT_2"
     STOP_LOSS = "STOP_LOSS"

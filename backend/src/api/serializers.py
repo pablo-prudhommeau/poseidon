@@ -20,6 +20,7 @@ from src.api.http.api_schemas import (
 )
 from src.core.structures.structures import EquityCurve, BlockchainNetwork
 from src.core.trading.trading_utils import get_currency_symbol
+from src.core.trading.trading_utils import infer_closing_exit_trigger_reason
 from src.core.utils.date_utils import format_datetime_to_local_iso
 from src.integrations.aave.aave_structures import AaveLiveMetrics
 from src.logging.logger import get_application_logger
@@ -30,7 +31,7 @@ logger = get_application_logger(__name__)
 
 def serialize_trading_trade(
         trading_trade: TradingTrade,
-        linked_position: TradingPosition,
+        linked_position_id: int,
 ) -> TradingTradePayload:
     return TradingTradePayload(
         id=trading_trade.id,
@@ -48,7 +49,7 @@ def serialize_trading_trade(
         transaction_hash=trading_trade.transaction_hash,
         dex_id=trading_trade.dex_id,
         created_at=format_datetime_to_local_iso(trading_trade.created_at),
-        linked_position=serialize_trading_position(linked_position, last_price=None),
+        linked_position_id=linked_position_id,
     )
 
 
@@ -72,6 +73,7 @@ def serialize_trading_position(trading_position: TradingPosition, last_price: Op
         updated_at=format_datetime_to_local_iso(trading_position.updated_at),
         closed_at=format_datetime_to_local_iso(trading_position.closed_at) if trading_position.closed_at else None,
         last_price=last_price,
+        exit_trigger_reason=infer_closing_exit_trigger_reason(trading_position, last_price),
     )
 
 

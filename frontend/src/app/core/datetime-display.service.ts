@@ -1,4 +1,4 @@
-import { Inject, Injectable, LOCALE_ID } from '@angular/core';
+import {Inject, Injectable, LOCALE_ID} from '@angular/core';
 
 @Injectable({ providedIn: 'root' })
 export class DatetimeDisplayService {

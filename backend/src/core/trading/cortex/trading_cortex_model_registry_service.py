@@ -99,10 +99,6 @@ class TradingCortexModelRegistryService:
         if not partial_prediction.used_model_names:
             return None
 
-        logger.debug(
-            "[TRADING][CORTEX][MODEL] Produced partial prediction using models=%s",
-            ", ".join(partial_prediction.used_model_names),
-        )
         return partial_prediction
 
     @property

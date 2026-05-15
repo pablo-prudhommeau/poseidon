@@ -4,9 +4,10 @@ import asyncio
 import threading
 from typing import Optional
 
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
-from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
 from src.core.trading.trading_structures import TradingOrderPayload, TradingExecutionRoute
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
@@ -158,7 +159,12 @@ class TradingExecutor:
                 position_dao.save(trading_position)
                 database_session.commit()
 
-            invalidate_trading_positions_and_trades_cache()
+            cache_invalidator.mark_dirty(
+                CacheRealm.POSITIONS,
+                CacheRealm.TRADES,
+                CacheRealm.AVAILABLE_CASH,
+                CacheRealm.PORTFOLIO,
+            )
             return True
 
         if payload.execution_route is None:
@@ -311,7 +317,12 @@ class TradingExecutor:
                 await execution_service.close()
             except Exception as close_exception:
                 logger.exception("[TRADING][EXECUTOR][LIVE] Execution service close suppressed — %s", close_exception)
-            invalidate_trading_positions_and_trades_cache()
+            cache_invalidator.mark_dirty(
+                CacheRealm.POSITIONS,
+                CacheRealm.TRADES,
+                CacheRealm.AVAILABLE_CASH,
+                CacheRealm.PORTFOLIO,
+            )
 
     def _run_live_buy_blocking(
             self,

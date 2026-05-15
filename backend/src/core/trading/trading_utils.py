@@ -6,10 +6,11 @@ from enum import Enum
 from typing import Awaitable, Optional, TypeVar, Dict, Set, Any
 
 from src.core.structures.structures import Token, BlockchainNetwork
+from src.core.trading.trading_structures import PositionExitTriggerReason
 from src.core.trading.trading_structures import TradingCandidate
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_application_logger
-from src.persistence.models import TradingPosition
+from src.persistence.models import TradingPosition, PositionPhase
 
 logger = get_application_logger(__name__)
 
@@ -205,3 +206,25 @@ def get_currency_symbol(asset_symbol: str) -> str:
         return "⬡"
 
     return asset_symbol
+
+
+def infer_closing_exit_trigger_reason(
+        trading_position: TradingPosition,
+        last_price: Optional[float],
+) -> Optional[str]:
+    if trading_position.position_phase != PositionPhase.CLOSING:
+        return None
+    if last_price is None:
+        return None
+
+    stop_loss_price = trading_position.stop_loss_price or 0.0
+    take_profit_tier_2_price = trading_position.take_profit_tier_2_price or 0.0
+    take_profit_tier_1_price = trading_position.take_profit_tier_1_price or 0.0
+
+    if stop_loss_price > 0.0 and last_price <= stop_loss_price:
+        return PositionExitTriggerReason.STOP_LOSS.value
+    if take_profit_tier_2_price > 0.0 and last_price >= take_profit_tier_2_price:
+        return PositionExitTriggerReason.TAKE_PROFIT_2.value
+    if take_profit_tier_1_price > 0.0 and last_price >= take_profit_tier_1_price:
+        return PositionExitTriggerReason.TAKE_PROFIT_1.value
+    return None

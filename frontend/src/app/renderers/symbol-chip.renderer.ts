@@ -1,8 +1,8 @@
-import { CommonModule } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, inject, ViewChild } from '@angular/core';
-import { ICellRendererAngularComp } from 'ag-grid-angular';
-import { ICellRendererParams } from 'ag-grid-community';
-import { DefiIconsService } from '../core/defi-icons.service';
+import {CommonModule} from '@angular/common';
+import {AfterViewInit, Component, ElementRef, inject, ViewChild} from '@angular/core';
+import {ICellRendererAngularComp} from 'ag-grid-angular';
+import {ICellRendererParams} from 'ag-grid-community';
+import {DefiIconsService} from '../core/defi-icons.service';
 
 @Component({
     standalone: true,

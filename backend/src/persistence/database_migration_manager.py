@@ -12,7 +12,7 @@ from src.persistence.database_session_manager import DatabaseBaseModel, database
 
 logger = get_application_logger(__name__)
 
-INITIAL_REVISION_ID: str = "20260512_000001"
+INITIAL_REVISION_ID: str = "20260512_0626"
 ALEMBIC_VERSION_TABLE_NAME: str = "alembic_version"
 
 

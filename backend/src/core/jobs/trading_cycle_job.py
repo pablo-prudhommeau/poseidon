@@ -25,10 +25,10 @@ class TradingCycleJob:
                     logger.debug("[TRADING][CYCLE][JOB] Trading is disabled in settings, skipping cycle")
             except Exception as exception:
                 logger.exception("[TRADING][CYCLE][JOB] Trading cycle error: %s", exception)
-            
+
             for _ in range(int(interval * 2)):
                 if stop_event.is_set():
                     break
                 time.sleep(0.5)
-        
+
         logger.info("[TRADING][CYCLE][JOB] Trading cycle loop successfully terminated")

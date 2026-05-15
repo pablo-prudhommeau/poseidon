@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from src.persistence.models import TradingPosition, PositionPhase
@@ -31,6 +31,15 @@ class TradingPositionDao:
     def retrieve_by_phase(self, target_phase: PositionPhase) -> List[TradingPosition]:
         database_query = select(TradingPosition).where(TradingPosition.position_phase == target_phase)
         return list(self.database_session.execute(database_query).scalars().all())
+
+    def retrieve_latest_by_evaluation_id(self, evaluation_id: int) -> Optional[TradingPosition]:
+        database_query = (
+            select(TradingPosition)
+            .where(TradingPosition.evaluation_id == evaluation_id)
+            .order_by(desc(TradingPosition.id))
+            .limit(1)
+        )
+        return self.database_session.execute(database_query).scalar_one_or_none()
 
     def retrieve_by_evaluation_ids(self, evaluation_ids: List[int]) -> List[TradingPosition]:
         normalized_ids = [evaluation_id for evaluation_id in evaluation_ids if evaluation_id is not None]

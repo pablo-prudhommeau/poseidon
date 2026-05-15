@@ -2,19 +2,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { AfterViewInit, Component, computed, DestroyRef, effect, inject, signal, TemplateRef, ViewChild } from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
 import { ColDef, GetRowIdParams, GridApi, GridReadyEvent, ITooltipParams, ValueFormatterParams, ValueGetterParams } from 'ag-grid-community';
-import {
-    ApexAxisChartSeries,
-    ApexChart,
-    ApexDataLabels,
-    ApexGrid,
-    ApexLegend,
-    ApexNonAxisChartSeries,
-    ApexPlotOptions,
-    ApexStates,
-    ApexTooltip,
-    ApexXAxis,
-    NgApexchartsModule
-} from 'ng-apexcharts';
+import { NgApexchartsModule } from 'ng-apexcharts';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { DialogModule } from 'primeng/dialog';
@@ -79,41 +67,19 @@ export class TradingTradesTableComponent implements AfterViewInit {
         filter: true,
         flex: 1
     };
-    public deltaChart: ApexChart = { type: 'bar', height: 240, toolbar: { show: false } };
-    public deltaColors: string[] = [];
-    public deltaDataLabels: ApexDataLabels = { enabled: true, formatter: (v: number) => `${v.toFixed(2)}%` };
-    public deltaPlot: ApexPlotOptions = { bar: { distributed: true, columnWidth: '45%' } };
 
-    public deltaSeries: ApexAxisChartSeries = [];
-
-    public deltaXaxis: ApexXAxis = { categories: ['5m', '1h', '24h'] };
     public readonly detailsVisible = signal<boolean>(false);
-
     public readonly getRowId = (params: GetRowIdParams<TradingTradePayload>): string => String(params.data?.id ?? '');
-    public grid: ApexGrid = { padding: { left: 8, right: 8 } };
 
-    public liqVolChart: ApexChart = { type: 'donut', height: 240 };
-
-    public liqVolLabels: string[] = ['Liquidity (24h)', 'Volume (24h)'];
-    public liqVolSeries: ApexNonAxisChartSeries = [];
-    public notionalChart: ApexChart = { type: 'bar', height: 200, toolbar: { show: false } };
-    private readonly numberFormattingService = inject(NumberFormattingService);
-    public notionalDataLabels: ApexDataLabels = {
-        enabled: true,
-        formatter: (v: number) => `$${this.numberFormattingService.formatNumber(v, 0, 0)}`
-    };
-    public notionalPlot: ApexPlotOptions = { bar: { horizontal: true, barHeight: '60%' } };
-    public notionalSeries: ApexAxisChartSeries = [];
-
-    public notionalXaxis: ApexXAxis = { categories: ['Order notional (USD)'] };
     private readonly webSocketService = inject(WebSocketService);
+
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
         const rows = this.webSocketService.trades() ?? [];
         return Array.isArray(rows) ? (rows as TradingTradePayload[]) : [];
     });
+
     private readonly selectedTradeId = signal<number | null>(null);
     private readonly selectedTradeSnapshot = signal<TradingTradePayload | null>(null);
-
     public readonly selectedTrade = computed<TradingTradePayload | null>(() => {
         const tradeId = this.selectedTradeId();
         const snapshot = this.selectedTradeSnapshot();
@@ -123,28 +89,15 @@ export class TradingTradesTableComponent implements AfterViewInit {
         return this.tradesRowData().find((trade) => trade.id === tradeId) ?? snapshot;
     });
     public readonly positionForSelectedTrade = computed<TradingPositionPayload | null>(() => this.findPositionForTrade(this.selectedTrade()));
-    public scoresChart: ApexChart = { type: 'radialBar', height: 240 };
-    public scoresLabels: string[] = [];
-    public scoresLegend: ApexLegend = { show: true, position: 'bottom' };
-    public scoresPlot: ApexPlotOptions = {
-        radialBar: {
-            hollow: { size: '22%' },
-            dataLabels: { name: { fontSize: '12px' }, value: { fontSize: '16px' } }
-        }
-    };
-
-    public scoresSeries: ApexNonAxisChartSeries = [];
     public readonly selectedAnalytics = signal<TradingEvaluationPayload | null>(null);
     public selectedTradeChainIconCandidates: string[] = [];
 
     public selectedTradeChainIconIndex: number = 0;
     public selectedTradeDexIconCandidates: string[] = [];
     public selectedTradeDexIconIndex: number = 0;
-    public states: ApexStates = { hover: { filter: { type: 'lighten' } } };
-    public tooltip: ApexTooltip = { enabled: true };
-
     private readonly apiService = inject(ApiService);
     private readonly datetimeDisplayService = inject(DatetimeDisplayService);
+
     private readonly defiIconsService = inject(DefiIconsService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly detailsSyncEffect = effect(() => {
@@ -153,8 +106,9 @@ export class TradingTradesTableComponent implements AfterViewInit {
         }
         this.selectedTrade();
         this.selectedAnalytics();
-        this.recomputeCharts();
     });
+    private readonly linkedPositionsByEvaluationId = signal<ReadonlyMap<number, TradingPositionPayload>>(new Map());
+    private readonly numberFormattingService = inject(NumberFormattingService);
     private tradesGridApi: GridApi | null = null;
     private readonly tradingPositionModalService = inject(TradingPositionModalService);
 
@@ -461,6 +415,9 @@ export class TradingTradesTableComponent implements AfterViewInit {
             this.apiService.getEvaluationById(row.evaluation_id).subscribe({
                 next: (evalData) => {
                     this.selectedAnalytics.set(evalData);
+                    if (evalData?.linked_position) {
+                        this.storeLinkedPositionForEvaluation(row.evaluation_id, evalData.linked_position);
+                    }
                 },
                 error: (error) => {
                     console.error('[UI][TRADES][DETAILS] Failed to load analytics for pair', error);
@@ -470,14 +427,24 @@ export class TradingTradesTableComponent implements AfterViewInit {
     }
 
     public openLinkedPositionDetails(): void {
-        const linkedPosition = this.positionForSelectedTrade();
-        if (!linkedPosition) {
+        const selectedTrade = this.selectedTrade();
+        if (!selectedTrade) {
             return;
         }
-        this.detailsVisible.set(false);
-        window.setTimeout(() => {
-            this.tradingPositionModalService.open(linkedPosition);
-        }, 0);
+        const cachedLinkedPosition = this.positionForSelectedTrade();
+        if (cachedLinkedPosition) {
+            this.openPositionModalFromTradeDetails(cachedLinkedPosition);
+            return;
+        }
+        this.apiService.getPositionByEvaluationId(selectedTrade.evaluation_id).subscribe({
+            next: (linkedPosition) => {
+                this.storeLinkedPositionForEvaluation(selectedTrade.evaluation_id, linkedPosition);
+                this.openPositionModalFromTradeDetails(linkedPosition);
+            },
+            error: (error) => {
+                console.error('[UI][TRADES][POSITION] Failed to load linked position', error);
+            }
+        });
     }
 
     public openNextTrade(): void {
@@ -575,13 +542,12 @@ export class TradingTradesTableComponent implements AfterViewInit {
         if (!trade) {
             return null;
         }
-        const linkedPositionId = trade.linked_position.id;
-        const positions = this.webSocketService.positions() ?? [];
-        const livePosition = positions.find((position) => position.id === linkedPositionId);
-        if (livePosition) {
-            return livePosition;
+        const openPositions = this.webSocketService.positions() ?? [];
+        const openPositionMatch = openPositions.find((position) => position.evaluation_id === trade.evaluation_id || position.id === trade.linked_position_id);
+        if (openPositionMatch) {
+            return openPositionMatch;
         }
-        return trade.linked_position;
+        return this.linkedPositionsByEvaluationId().get(trade.evaluation_id) ?? null;
     }
 
     private formatTransactionHashCellHtml(row: TradingTradePayload | undefined): string {
@@ -625,37 +591,12 @@ export class TradingTradesTableComponent implements AfterViewInit {
         return rows;
     }
 
-    private recomputeCharts(): void {
-        const t = this.selectedTrade();
-        const a = this.selectedAnalytics();
-
-        const scoreValues: number[] = [];
-        const scoreLabels: string[] = [];
-        const push = (label: string, v: number | null | undefined) => {
-            if (v == null) {
-                return;
-            }
-            scoreLabels.push(label);
-            scoreValues.push(v);
-        };
-        push('Quality', (a as any)?.scores?.quality_score);
-        push('AI adjusted', (a as any)?.scores?.ai_adjusted_quality_score);
-        this.scoresLabels = scoreLabels;
-        this.scoresSeries = scoreValues;
-
-        const pct5m = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_m5) ?? 0;
-        const pct1h = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h1) ?? 0;
-        const pct24h = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h24) ?? 0;
-        const deltas = [pct5m, pct1h, pct24h];
-        this.deltaSeries = [{ name: 'Δ', data: deltas }];
-        this.deltaColors = deltas.map((v) => (v >= 0 ? '#22c55e' : '#ef4444'));
-
-        const liq = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.liquidity_usd) ?? 0;
-        const vol = this.numberFormattingService.toNumberSafe((a as any)?.fundamentals?.volume_h24_usd) ?? 0;
-        this.liqVolSeries = [Math.max(liq, 0), Math.max(vol, 0)];
-
-        const notional = this.orderNotionalUsd(t) ?? 0;
-        this.notionalSeries = [{ name: 'Notional', data: [notional] }];
+    private openPositionModalFromTradeDetails(linkedPosition: TradingPositionPayload): void {
+        const preloadedEvaluation = this.selectedAnalytics();
+        this.detailsVisible.set(false);
+        window.setTimeout(() => {
+            this.tradingPositionModalService.open(linkedPosition, preloadedEvaluation);
+        }, 0);
     }
 
     private resetSelectedTradeIcons(row: TradingTradePayload | null): void {
@@ -663,5 +604,11 @@ export class TradingTradesTableComponent implements AfterViewInit {
         this.selectedTradeDexIconCandidates = this.defiIconsService.getProtocolIconCandidates(row?.dex_id);
         this.selectedTradeChainIconIndex = 0;
         this.selectedTradeDexIconIndex = 0;
+    }
+
+    private storeLinkedPositionForEvaluation(evaluationId: number, linkedPosition: TradingPositionPayload): void {
+        const nextLinkedPositions = new Map(this.linkedPositionsByEvaluationId());
+        nextLinkedPositions.set(evaluationId, linkedPosition);
+        this.linkedPositionsByEvaluationId.set(nextLinkedPositions);
     }
 }

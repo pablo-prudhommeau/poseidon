@@ -4,7 +4,6 @@ from src.core.trading.cortex.trading_cortex_feature_vector_builder import Tradin
 from src.core.trading.cortex.trading_cortex_final_score_service import TradingCortexFinalScoreService
 from src.core.trading.cortex.trading_cortex_model_registry_service import TradingCortexModelRegistryService
 from src.core.trading.cortex.trading_cortex_structures import (
-    TradingCortexPrediction,
     TradingCortexScoringBatchRequest,
     TradingCortexScoringBatchResponse,
     TradingCortexScoringRequest,
@@ -55,21 +54,12 @@ class TradingCortexInferenceService:
                 model_feature_set_version,
                 scoring_request.candidate_features.token_symbol,
             )
-            
+
         model_prediction = self._model_registry_service.predict(feature_vector_snapshot)
-        
+
         final_score_breakdown = self._final_score_service.calculate_final_score(
             model_prediction,
             feature_vector_snapshot,
-        )
-
-        logger.info(
-            "[TRADING][CORTEX][INFERENCE] Scored %s final_score=%.2f success=%.3f toxicity=%.3f expected_pnl=%.2f",
-            scoring_request.candidate_features.token_symbol,
-            final_score_breakdown.final_trade_score,
-            model_prediction.success_probability,
-            model_prediction.toxicity_probability,
-            model_prediction.expected_profit_and_loss_percentage,
         )
 
         return TradingCortexScoringResponse(

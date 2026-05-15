@@ -6,6 +6,7 @@ import time
 
 from src.cache.cache_protocols import RealmRebuilder, CacheRealmRebuildSkipped
 from src.cache.cache_realm import CacheRealm
+from src.configuration.config import settings
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -35,7 +36,6 @@ class CacheInvalidator:
         return asyncio.create_task(self._watch_loop())
 
     async def _watch_loop(self) -> None:
-        from src.configuration.config import settings
         debounce_seconds = settings.CACHE_WATCHER_DEBOUNCE_SECONDS
         logger.info("[CACHE][WATCHER] Starting cache invalidation watcher (debounce=%.2fs)", debounce_seconds)
 
@@ -105,9 +105,20 @@ class CacheInvalidator:
         except Exception:
             logger.exception("[CACHE][REBUILD] realm=%s failed", realm_candidate.value)
         finally:
+            follow_up_rebuild = False
             with self._lock:
                 self._in_flight.discard(realm_candidate)
                 self._last_rebuild_at_monotonic[realm_candidate] = time.monotonic()
+                if realm_candidate in self._dirty:
+                    self._dirty.discard(realm_candidate)
+                    self._in_flight.add(realm_candidate)
+                    follow_up_rebuild = True
+            if follow_up_rebuild:
+                logger.debug(
+                    "[CACHE][REBUILD] realm=%s still dirty after rebuild; scheduling immediate follow-up",
+                    realm_candidate.value,
+                )
+                asyncio.create_task(self._process_realm(realm_candidate))
 
 
 cache_invalidator = CacheInvalidator()

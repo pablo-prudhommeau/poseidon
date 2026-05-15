@@ -8,16 +8,22 @@ from typing import Iterable, List, Dict, Deque, Optional
 from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import TradingTradePayload
-from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import RealizedProfitAndLoss, Token, CashFromTrades
+from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.trading_structures import InventoryLot, TradingCandidate
 from src.core.trading.trading_utils import normalize_side_to_upper, run_awaitable_in_fresh_loop, candidate_from_dexscreener_token_information
-from src.core.utils.date_utils import get_current_local_datetime, parse_iso_datetime_to_local
+from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime, parse_iso_datetime_to_local
 from src.core.utils.math_utils import quantize_2dp, decimal_from_primitive
+from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
+from src.integrations.dexscreener.dexscreener_client import fetch_trending_candidates
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.logging.logger import get_application_logger
+from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
+from src.persistence.dao.trading_position_dao import TradingPositionDao
+from src.persistence.dao.trading_trade_dao import TradingTradeDao
+from src.persistence.database_session_manager import get_database_session
+from src.persistence.models import PositionPhase
 from src.persistence.models import TradingTrade
 
 logger = get_application_logger(__name__)
@@ -113,9 +119,28 @@ def compute_realized_profit_and_loss(trades: Iterable[TradingTradePayload], *, c
 def compute_available_cash_usd(*, database_session: Optional[Session] = None) -> float:
     if settings.PAPER_MODE:
         if database_session is not None:
-            return _paper_available_cash_from_trades(database_session, settings.PAPER_STARTING_CASH)
-        return _compute_paper_available_cash_usd(settings.PAPER_STARTING_CASH)
+            return compute_trade_ledger_available_cash_usd(database_session)
+        with get_database_session() as opened_database_session:
+            return compute_trade_ledger_available_cash_usd(opened_database_session)
     return _compute_live_available_cash_usd()
+
+
+def compute_trade_ledger_available_cash_usd(database_session: Session) -> float:
+    baseline_cash_usd = _resolve_trade_ledger_baseline_cash_usd(database_session)
+    trade_records = _retrieve_trades_for_trade_ledger(database_session)
+    cash_state = compute_cash_from_trades(baseline_cash_usd, trade_records)
+    operating_mode_label = "paper" if settings.PAPER_MODE else "live"
+    logger.debug(
+        "[TRADING][CASH][LEDGER] Trade-ledger available cash resolved — mode=%s balance=%.2f",
+        operating_mode_label,
+        cash_state.available_cash,
+    )
+    return cash_state.available_cash
+
+
+def has_any_closing_positions(database_session: Session) -> bool:
+    closing_positions = TradingPositionDao(database_session).retrieve_by_phase(PositionPhase.CLOSING)
+    return len(closing_positions) > 0
 
 
 def compute_cash_from_trades(start_cash_usd: float, trades: Iterable[TradingTrade]) -> CashFromTrades:
@@ -158,8 +183,6 @@ def compute_cash_from_trades(start_cash_usd: float, trades: Iterable[TradingTrad
 
 
 def fetch_trading_candidates_sync() -> list[TradingCandidate]:
-    from src.integrations.dexscreener.dexscreener_client import fetch_trending_candidates
-
     token_information_list: list[DexscreenerTokenInformation] = run_awaitable_in_fresh_loop(
         asynchronous_task=fetch_trending_candidates(),
         debug_label="fetch_trading_candidates",
@@ -169,24 +192,56 @@ def fetch_trading_candidates_sync() -> list[TradingCandidate]:
     return candidates_list
 
 
-def invalidate_trading_positions_and_trades_cache() -> None:
-    cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.TRADES)
-    logger.debug("[TRADING][SERVICE] Positions and trades cache realms marked dirty after persisted mutation")
+def _resolve_trade_ledger_baseline_cash_usd(database_session: Session) -> float:
+    if settings.PAPER_MODE:
+        return settings.PAPER_STARTING_CASH
+    return _resolve_live_trade_ledger_baseline_cash_usd(database_session)
 
 
-def _paper_available_cash_from_trades(database_session: Session, starting_cash_usd: float) -> float:
-    from src.persistence.dao.trading_trade_dao import TradingTradeDao
+def _resolve_live_trade_ledger_baseline_cash_usd(database_session: Session) -> float:
+    portfolio_dao = TradingPortfolioSnapshotDao(database_session)
+    latest_portfolio_snapshot = portfolio_dao.retrieve_latest_snapshot()
+    if latest_portfolio_snapshot is not None:
+        return latest_portfolio_snapshot.available_cash_balance
 
+    logger.info(
+        "[TRADING][CASH][LEDGER] No portfolio snapshot in live mode; "
+        "bootstrapping trade-ledger baseline from on-chain balances"
+    )
+    on_chain_cash_balance_usd = _compute_live_available_cash_usd()
     trade_dao = TradingTradeDao(database_session)
-    all_trades = trade_dao.retrieve_recent_trades(limit_count=100000)
-    cash_state = compute_cash_from_trades(starting_cash_usd, all_trades)
-    return cash_state.available_cash
+    all_trade_records = trade_dao.retrieve_recent_trades(limit_count=100000)
+    cash_state_from_zero_baseline = compute_cash_from_trades(0.0, all_trade_records)
+    return on_chain_cash_balance_usd - cash_state_from_zero_baseline.available_cash
+
+
+def _retrieve_trades_for_trade_ledger(database_session: Session) -> List[TradingTrade]:
+    trade_dao = TradingTradeDao(database_session)
+    all_trade_records = trade_dao.retrieve_recent_trades(limit_count=100000)
+
+    if settings.PAPER_MODE:
+        return all_trade_records
+
+    portfolio_dao = TradingPortfolioSnapshotDao(database_session)
+    latest_portfolio_snapshot = portfolio_dao.retrieve_latest_snapshot()
+    if latest_portfolio_snapshot is None:
+        return all_trade_records
+
+    ledger_anchor_timestamp = ensure_timezone_aware(latest_portfolio_snapshot.created_at)
+    if ledger_anchor_timestamp is None:
+        return all_trade_records
+
+    trade_records_after_ledger_anchor: List[TradingTrade] = []
+    for trade_record in all_trade_records:
+        trade_timestamp = ensure_timezone_aware(trade_record.created_at)
+        if trade_timestamp is None:
+            continue
+        if trade_timestamp > ledger_anchor_timestamp:
+            trade_records_after_ledger_anchor.append(trade_record)
+    return trade_records_after_ledger_anchor
 
 
 def _compute_live_available_cash_usd() -> float:
-    from src.core.trading.cache.trading_cache import trading_cache
-    from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
-
     try:
         balances = fetch_stablecoin_balances_for_allowed_chains()
     except ConnectionError:
@@ -199,10 +254,3 @@ def _compute_live_available_cash_usd() -> float:
             return cached_cash
         raise
     return sum(balance.balance_raw for balance in balances)
-
-
-def _compute_paper_available_cash_usd(starting_cash_usd: float) -> float:
-    from src.persistence.database_session_manager import get_database_session
-
-    with get_database_session() as database_session:
-        return _paper_available_cash_from_trades(database_session, starting_cash_usd)

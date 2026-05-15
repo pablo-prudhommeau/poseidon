@@ -33,7 +33,7 @@
                             <span>Open Sol</span>
                         </a>
                     }
-                    @if (positionForSelectedTrade()) {
+                    @if (selectedTrade()?.evaluation_id) {
                         <button type="button" class="trade-modal-header-action trade-modal-header-action--position" title="Open linked position" (click)="openLinkedPositionDetails()">
                             <i class="fas fa-layer-group text-[11px]"></i>
                             <span>Open position</span>

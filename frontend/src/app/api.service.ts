@@ -62,6 +62,10 @@ export class ApiService {
         return this.http.get<TradingPositionsResponse>('/api/positions').pipe(map((response) => response.positions));
     }
 
+    getPositionByEvaluationId(evaluationId: number): Observable<TradingPositionPayload> {
+        return this.http.get<TradingPositionPayload>(`/api/positions/by-evaluation/${evaluationId}`);
+    }
+
     getShadowTradesForPair(pairAddress: string): Observable<TradingEvaluationPayload[]> {
         return this.http.get<TradingEvaluationPayload[]>(`/api/analytics/shadow/${pairAddress}`);
     }

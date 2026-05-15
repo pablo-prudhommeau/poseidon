@@ -84,7 +84,6 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
         logger.exception("[WEBSOCKET][HUB][STATE_SYNC] Unexpected error during background state synchronization: %s", exception)
 
 
-
 async def send_websocket_handshake(websocket_connection: WebSocket) -> None:
     handshake_payload = WebsocketInitializationPayload(
         status=WebsocketStatusPayload(paper_mode=settings.PAPER_MODE, interval_seconds=settings.TRADING_LOOP_INTERVAL_SECONDS)

@@ -1,4 +1,5 @@
-export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSED' | 'STALED';
+export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSING' | 'CLOSED' | 'STALED';
+export type PositionExitTriggerReason = 'TAKE_PROFIT_1' | 'TAKE_PROFIT_2' | 'STOP_LOSS';
 export type TradingShadowingPhase = 'DISABLED' | 'LEARNING' | 'ACTIVE';
 export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';
@@ -166,7 +167,7 @@ export interface TradingTradePayload {
     dex_id: string;
     realized_profit_and_loss?: number | null;
     transaction_hash?: string | null;
-    linked_position: TradingPositionPayload;
+    linked_position_id: number;
 }
 
 export interface TradingPositionPayload {
@@ -188,6 +189,7 @@ export interface TradingPositionPayload {
     updated_at: string;
     closed_at?: string | null;
     last_price?: number | null;
+    exit_trigger_reason?: PositionExitTriggerReason | null;
 }
 
 export interface TradingPositionPricePayload {
@@ -382,6 +384,7 @@ export interface TradingEvaluationPayload {
     shadow_diagnostics: TradingEvaluationShadowDiagnosticsPayload;
     raw_dexscreener_payload: Record<string, object>;
     raw_configuration_settings: Record<string, object>;
+    linked_position?: TradingPositionPayload | null;
 }
 
 export interface TradingPositionsResponse {

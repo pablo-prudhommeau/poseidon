@@ -11,6 +11,7 @@ from src.api.http.api_schemas import (
     TradingPortfolioPayload,
     TradingLiquidityPayload,
 )
+from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.cache.trading_cache_structures import TradingState
 from src.core.utils.date_utils import get_current_local_datetime
@@ -20,7 +21,6 @@ logger = get_application_logger(__name__)
 
 
 def _touch_realm(realm: CacheRealm) -> None:
-    from src.cache.cache_invalidator import cache_invalidator
     cache_invalidator.touch(realm)
 
 
@@ -77,6 +77,20 @@ class TradingCache:
             self._cached_available_cash_usd = liquidity_payload.available_cash_balance
             self._last_successful_update_timestamp = get_current_local_datetime()
             logger.debug("[TRADING][CACHE] Liquidity state updated")
+        _touch_realm(CacheRealm.AVAILABLE_CASH)
+
+    def update_trading_available_cash_state(self, available_cash_balance_usd: float) -> None:
+        with self._lock:
+            self._cached_available_cash_usd = available_cash_balance_usd
+            if self._cached_liquidity is not None:
+                self._cached_liquidity = self._cached_liquidity.model_copy(
+                    update={"available_cash_balance": available_cash_balance_usd},
+                )
+            self._last_successful_update_timestamp = get_current_local_datetime()
+            logger.debug(
+                "[TRADING][CACHE] Available cash state updated — balance=%.2f",
+                available_cash_balance_usd,
+            )
         _touch_realm(CacheRealm.AVAILABLE_CASH)
 
     def get_trading_liquidity_state(self) -> Optional[TradingLiquidityPayload]:

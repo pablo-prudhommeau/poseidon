@@ -100,7 +100,7 @@ def create_app() -> FastAPI:
     @application.on_event("shutdown")
     async def on_shutdown() -> None:
         logger.info("[SHUTDOWN] Application shutdown initiated")
-        
+
         from src.core.jobs.orchestrator import stop_background_jobs
         stop_background_jobs()
 
@@ -108,7 +108,7 @@ def create_app() -> FastAPI:
 
         from src.core.aavesentinel.aave_sentinel_service import sentinel
         await sentinel.stop()
-        
+
         logger.info("[SHUTDOWN] Application shutdown complete")
 
     @application.get("/api/status", response_model=ApiStatusResponse)

@@ -27,7 +27,7 @@ def start_background_jobs() -> None:
 
     if _started:
         return
-    
+
     _stop_event.clear()
 
     from src.core.jobs.trading_cycle_job import TradingCycleJob
@@ -92,26 +92,26 @@ def start_background_jobs() -> None:
 def stop_background_jobs() -> None:
     global _started, _stop_event
     global _position_guard_task, _aave_sentinel_task, _dca_background_task, _trading_cortex_training_task
-    
+
     if not _started:
         return
-        
+
     logger.info("[ORCHESTRATOR][SHUTDOWN] Signaling background threads to stop...")
     _stop_event.set()
-    
+
     logger.info("[ORCHESTRATOR][SHUTDOWN] Canceling asyncio tasks...")
     tasks_to_cancel = [
         task for task in [
-            _position_guard_task, 
-            _aave_sentinel_task, 
-            _dca_background_task, 
+            _position_guard_task,
+            _aave_sentinel_task,
+            _dca_background_task,
             _trading_cortex_training_task
         ] if task is not None
     ]
-    
+
     for task in tasks_to_cancel:
         task.cancel()
-        
+
     _started = False
     logger.info("[ORCHESTRATOR][SHUTDOWN] All background jobs signalized for termination")
 

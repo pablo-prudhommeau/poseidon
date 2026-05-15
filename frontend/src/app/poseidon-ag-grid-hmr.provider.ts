@@ -1,6 +1,6 @@
-import { ENVIRONMENT_INITIALIZER, Provider } from '@angular/core';
-import { AgGridAngular } from 'ag-grid-angular';
-import type { ColDef, ColGroupDef, ColumnState, GridApi, GridOptions, ManagedGridOptionKey } from 'ag-grid-community';
+import {ENVIRONMENT_INITIALIZER, Provider} from '@angular/core';
+import {AgGridAngular} from 'ag-grid-angular';
+import type {ColDef, ColGroupDef, ColumnState, GridApi, GridOptions, ManagedGridOptionKey} from 'ag-grid-community';
 
 class PoseidonAgGridHmrRegistry {
     private static readonly singleton = new PoseidonAgGridHmrRegistry();

@@ -271,6 +271,4 @@ class Settings:
             )
 
 
-
-
 settings: Settings = Settings()

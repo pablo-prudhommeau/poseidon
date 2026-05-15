@@ -2,22 +2,24 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.trading.analytics.trading_analytics_helpers import MINIMUM_POINTS_PER_BUCKET
 from src.core.trading.cortex.trading_cortex_inference_provider import get_trading_cortex_inference_service
 from src.core.trading.cortex.trading_cortex_request_builder import TradingCortexRequestBuilder
 from src.core.trading.cortex.trading_cortex_structures import TradingCortexScoringBatchRequest
 from src.core.trading.evaluators.trading_quality_scorer import _evaluate_quality
+from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
 from src.core.trading.shadowing.trading_shadowing_intelligence_service import (
     evaluate_candidate_shadow_intelligence,
 )
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot, TradingFilterVerdict
-from src.core.trading.analytics.trading_analytics_helpers import MINIMUM_POINTS_PER_BUCKET
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_database_session
-from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 from src.persistence.models import TradingShadowingProbe, TradingShadowingVerdict
 
 logger = get_application_logger(__name__)
@@ -94,10 +96,21 @@ class TradingShadowingPipeline:
             admissible_candidates.append((rank, candidate, entry_price))
 
         cached_snapshot = trading_shadowing_cache.get_shadow_intelligence_snapshot()
-        shadow_can_simulate = (
-            cached_snapshot is not None
-            and len(cached_snapshot.metric_snapshots) > 0
-        )
+        if cached_snapshot is None:
+            logger.info("[TRADING][SHADOW][PIPELINE] Shadow intelligence snapshot missing from cache, triggering background rebuild and skipping cycle")
+            cache_invalidator.mark_dirty(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
+            return
+
+        current_phase = cached_snapshot.summary.phase
+        shadow_can_simulate = len(cached_snapshot.metric_snapshots) > 0
+
+        if current_phase == TradingShadowingPhase.ACTIVE and not shadow_can_simulate:
+            logger.info("[TRADING][SHADOW][PIPELINE] Shadowing phase is ACTIVE but intelligence metrics are not yet ready, skipping cycle")
+            return
+
+        if current_phase == TradingShadowingPhase.DISABLED:
+            logger.debug("[TRADING][SHADOW][PIPELINE] Shadowing phase is DISABLED, skipping")
+            return
 
         if settings.TRADING_CORTEX_ENABLED and admissible_candidates and shadow_can_simulate:
             request_builder = TradingCortexRequestBuilder()
@@ -223,13 +236,13 @@ class TradingShadowingPipeline:
                     for metric in candidate.shadow_diagnostics.intelligence_snapshot.metrics
                 ]
                 if shadow_can_simulate
-                and candidate.shadow_diagnostics.intelligence_snapshot is not None
+                   and candidate.shadow_diagnostics.intelligence_snapshot is not None
                 else None
             ),
             cortex_inference_summary=(
                 candidate.trading_cortex_inference_snapshot.model_dump(mode="json")
                 if candidate.trading_cortex_inference_snapshot is not None
-                and candidate.trading_cortex_inference_snapshot.model_ready
+                   and candidate.trading_cortex_inference_snapshot.model_ready
                 else None
             ),
             probed_at=current_time,
@@ -250,10 +263,7 @@ class TradingShadowingPipeline:
 
     def _build_cached_shadow_intelligence_summary(self) -> dict | None:
         cached_snapshot = trading_shadowing_cache.get_shadow_intelligence_snapshot()
-        if (
-            cached_snapshot is not None
-            and len(cached_snapshot.metric_snapshots) > 0
-        ):
+        if cached_snapshot is not None:
             return cached_snapshot.summary.model_dump(mode="json", exclude_none=True)
         return None
 

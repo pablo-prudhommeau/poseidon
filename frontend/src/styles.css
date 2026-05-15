@@ -58,6 +58,15 @@
     }
 }
 
+@keyframes poseidonPillShimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
 @keyframes deltaArrowRise {
     0% {
         opacity: 0;
@@ -238,6 +247,42 @@
     color: #0f172a;
     border-color: rgba(15, 23, 42, 0.12);
     font-weight: 800;
+}
+
+.poseidon-grid-pill--closing {
+    background: linear-gradient(90deg, #0f172a, #ffffff, #0f172a);
+    background-size: 200% 100%;
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.6) !important;
+    animation: poseidonPillShimmer 1.2s infinite linear;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+    letter-spacing: 0.1em;
+}
+
+.poseidon-grid-pill--closing-positive {
+    background: linear-gradient(90deg, #0d9488, #5eead4, #0d9488);
+    background-size: 200% 100%;
+    color: #0f172a !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    animation: poseidonPillShimmer 1.5s infinite linear;
+    text-shadow: none;
+    box-shadow: 0 0 12px rgba(45, 212, 191, 0.4);
+}
+
+.poseidon-grid-pill--closing-negative {
+    background: linear-gradient(90deg, #94a3b8, #f8fafc, #94a3b8);
+    background-size: 200% 100%;
+    color: #0f172a !important;
+    border-color: rgba(255, 255, 255, 0.5) !important;
+    animation: poseidonPillShimmer 1.5s infinite linear;
+    text-shadow: none;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.poseidon-grid-pill--danger {
+    background-color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.55);
 }
 
 .poseidon-grid-pill--neutral {
@@ -463,7 +508,7 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     font-size: 0.72rem;
     font-weight: 500;
     line-height: 1.5;
-    padding: 0.85rem 1rem;
+    padding: 0.65rem 0.85rem;
     box-shadow:
         0 10px 25px -5px rgba(0, 0, 0, 0.5),
         0 8px 10px -6px rgba(0, 0, 0, 0.5);

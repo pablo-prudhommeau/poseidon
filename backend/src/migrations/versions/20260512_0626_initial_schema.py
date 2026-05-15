@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlalchemy as schema
 from alembic import op as operations
 
-revision = "20260512_000001"
+revision = "20260512_0626"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -36,11 +36,7 @@ def upgrade() -> None:
         schema.Column("last_yield_calculation_timestamp", schema.DateTime(timezone=True), nullable=False),
         schema.Column("strategy_start_date", schema.DateTime(timezone=True), nullable=False),
         schema.Column("strategy_end_date", schema.DateTime(timezone=True), nullable=False),
-        schema.Column(
-            "strategy_status",
-            schema.Enum("ACTIVE", "PAUSED", "COMPLETED", "CANCELLED", name="dcastrategystatus"),
-            nullable=False,
-        ),
+        schema.Column("strategy_status", schema.String(length=9), nullable=False),
         schema.Column("bypass_security_approval", schema.Boolean(), nullable=False),
         schema.Column("available_dry_powder", schema.Float(), nullable=False),
         schema.Column("total_deployed_amount", schema.Float(), nullable=False),
@@ -58,22 +54,7 @@ def upgrade() -> None:
         schema.Column("planned_source_asset_amount", schema.Float(), nullable=False),
         schema.Column("executed_source_asset_amount", schema.Float(), nullable=True),
         schema.Column("executed_target_asset_amount", schema.Float(), nullable=True),
-        schema.Column(
-            "order_status",
-            schema.Enum(
-                "PENDING",
-                "WAITING_USER_APPROVAL",
-                "APPROVED",
-                "WITHDRAWN_FROM_AAVE",
-                "SWAPPED",
-                "EXECUTED",
-                "SKIPPED",
-                "FAILED",
-                "REJECTED",
-                name="dcaorderstatus",
-            ),
-            nullable=False,
-        ),
+        schema.Column("order_status", schema.String(length=21), nullable=False),
         schema.Column("transaction_hash", schema.String(length=128), nullable=True),
         schema.Column("actual_execution_price", schema.Float(), nullable=True),
         schema.Column("executed_at", schema.DateTime(timezone=True), nullable=True),
@@ -181,11 +162,7 @@ def upgrade() -> None:
         schema.Column("take_profit_tier_1_price", schema.Float(), nullable=False),
         schema.Column("take_profit_tier_2_price", schema.Float(), nullable=False),
         schema.Column("stop_loss_price", schema.Float(), nullable=False),
-        schema.Column(
-            "position_phase",
-            schema.Enum("OPEN", "PARTIAL", "CLOSED", "STALED", name="positionphase"),
-            nullable=False,
-        ),
+        schema.Column("position_phase", schema.String(length=7), nullable=False),
         schema.Column("opened_at", schema.DateTime(timezone=True), nullable=False),
         schema.Column("updated_at", schema.DateTime(timezone=True), nullable=False),
         schema.Column("closed_at", schema.DateTime(timezone=True), nullable=True),
@@ -195,22 +172,14 @@ def upgrade() -> None:
         "trading_trades",
         schema.Column("id", schema.Integer(), primary_key=True, autoincrement=True, nullable=False),
         schema.Column("evaluation_id", schema.Integer(), schema.ForeignKey("trading_evaluations.id"), nullable=False),
-        schema.Column(
-            "trade_side",
-            schema.Enum("BUY", "SELL", name="tradeside"),
-            nullable=False,
-        ),
+        schema.Column("trade_side", schema.String(length=4), nullable=False),
         schema.Column("token_symbol", schema.String(length=24), nullable=False),
         schema.Column("blockchain_network", schema.String(length=32), nullable=False),
         schema.Column("execution_price", schema.Float(), nullable=False),
         schema.Column("execution_quantity", schema.Float(), nullable=False),
         schema.Column("transaction_fee", schema.Float(), nullable=False),
         schema.Column("realized_profit_and_loss", schema.Float(), nullable=True),
-        schema.Column(
-            "execution_status",
-            schema.Enum("PAPER", "LIVE", name="executionstatus"),
-            nullable=False,
-        ),
+        schema.Column("execution_status", schema.String(length=5), nullable=False),
         schema.Column("token_address", schema.String(length=128), nullable=False),
         schema.Column("pair_address", schema.String(length=128), nullable=False),
         schema.Column("dex_id", schema.String(length=32), nullable=False),
@@ -250,25 +219,20 @@ def upgrade() -> None:
         schema.Column("occurred_at", schema.DateTime(timezone=True), nullable=False),
     )
 
-    operations.create_index("ix_dca_orders_strategy_id", "dca_orders", ["strategy_id"])
     operations.create_index("ix_trading_evaluations_pair_address", "trading_evaluations", ["pair_address"])
     operations.create_index("ix_trading_evaluations_token_address", "trading_evaluations", ["token_address"])
     operations.create_index("ix_trading_evaluations_token_symbol", "trading_evaluations", ["token_symbol"])
     operations.create_index("ix_trading_outcomes_evaluation_id", "trading_outcomes", ["evaluation_id"])
-    operations.create_index("ix_trading_portfolio_snapshots_created_at", "trading_portfolio_snapshots", ["created_at"])
     operations.create_index("ix_trading_positions_token_symbol", "trading_positions", ["token_symbol"])
     operations.create_index("ix_trading_shadowing_probes_pair_address", "trading_shadowing_probes", ["pair_address"])
-    operations.create_index("ix_trading_shadowing_probes_probed_at", "trading_shadowing_probes", ["probed_at"])
     operations.create_index("ix_trading_shadowing_probes_token_address", "trading_shadowing_probes", ["token_address"])
-    operations.create_index(
-        "ix_trading_shadowing_probes_token_address_probed_at",
-        "trading_shadowing_probes",
-        ["token_address", "probed_at"],
-    )
     operations.create_index("ix_trading_shadowing_probes_token_symbol", "trading_shadowing_probes", ["token_symbol"])
-    operations.create_index("ix_trading_shadowing_verdicts_created_at", "trading_shadowing_verdicts", ["created_at"])
-    operations.create_index("ix_trading_shadowing_verdicts_probe_id", "trading_shadowing_verdicts", ["probe_id"], unique=True)
-    operations.create_index("ix_trading_shadowing_verdicts_resolved_at", "trading_shadowing_verdicts", ["resolved_at"])
+    operations.create_index(
+        "ix_trading_shadowing_verdicts_probe_id",
+        "trading_shadowing_verdicts",
+        ["probe_id"],
+        unique=True,
+    )
     operations.create_index("ix_trading_trades_token_symbol", "trading_trades", ["token_symbol"])
     operations.create_index("ix_trading_trades_trade_side", "trading_trades", ["trade_side"])
 
@@ -276,21 +240,15 @@ def upgrade() -> None:
 def downgrade() -> None:
     operations.drop_index("ix_trading_trades_trade_side", table_name="trading_trades")
     operations.drop_index("ix_trading_trades_token_symbol", table_name="trading_trades")
-    operations.drop_index("ix_trading_shadowing_verdicts_resolved_at", table_name="trading_shadowing_verdicts")
     operations.drop_index("ix_trading_shadowing_verdicts_probe_id", table_name="trading_shadowing_verdicts")
-    operations.drop_index("ix_trading_shadowing_verdicts_created_at", table_name="trading_shadowing_verdicts")
     operations.drop_index("ix_trading_shadowing_probes_token_symbol", table_name="trading_shadowing_probes")
-    operations.drop_index("ix_trading_shadowing_probes_token_address_probed_at", table_name="trading_shadowing_probes")
     operations.drop_index("ix_trading_shadowing_probes_token_address", table_name="trading_shadowing_probes")
-    operations.drop_index("ix_trading_shadowing_probes_probed_at", table_name="trading_shadowing_probes")
     operations.drop_index("ix_trading_shadowing_probes_pair_address", table_name="trading_shadowing_probes")
     operations.drop_index("ix_trading_positions_token_symbol", table_name="trading_positions")
-    operations.drop_index("ix_trading_portfolio_snapshots_created_at", table_name="trading_portfolio_snapshots")
     operations.drop_index("ix_trading_outcomes_evaluation_id", table_name="trading_outcomes")
     operations.drop_index("ix_trading_evaluations_token_symbol", table_name="trading_evaluations")
     operations.drop_index("ix_trading_evaluations_token_address", table_name="trading_evaluations")
     operations.drop_index("ix_trading_evaluations_pair_address", table_name="trading_evaluations")
-    operations.drop_index("ix_dca_orders_strategy_id", table_name="dca_orders")
 
     operations.drop_table("trading_outcomes")
     operations.drop_table("trading_shadowing_verdicts")

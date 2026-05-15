@@ -37,10 +37,10 @@ class TradingShadowingJob:
                     logger.debug("[TRADING][SHADOWING][JOB] Shadowing is disabled in settings, skipping cycle")
             except Exception as exception:
                 logger.exception("[TRADING][SHADOWING][JOB] Shadowing loop error: %s", exception)
-            
+
             for _ in range(int(interval * 2)):
                 if stop_event.is_set():
                     break
                 time.sleep(0.5)
-        
+
         logger.info("[TRADING][SHADOWING][JOB] Shadowing loop successfully terminated")

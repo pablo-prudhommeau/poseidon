@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import enum
 import math
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
-
-
-
 
 
 class TradingCortexNamedFeatureValue(BaseModel):

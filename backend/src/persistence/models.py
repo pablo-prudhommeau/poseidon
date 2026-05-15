@@ -15,6 +15,7 @@ from src.persistence.database_session_manager import DatabaseBaseModel
 class PositionPhase(Enum):
     OPEN = "OPEN"
     PARTIAL = "PARTIAL"
+    CLOSING = "CLOSING"
     CLOSED = "CLOSED"
     STALED = "STALED"
 
@@ -281,6 +282,7 @@ class DcaOrder(DatabaseBaseModel):
     executed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     allocation_decision_description: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     parent_strategy: Mapped[DcaStrategy] = relationship("DcaStrategy", back_populates="execution_orders")
+
 
 class TradingCortexModelManifest(DatabaseBaseModel):
     __tablename__ = "trading_cortex_model_manifests"

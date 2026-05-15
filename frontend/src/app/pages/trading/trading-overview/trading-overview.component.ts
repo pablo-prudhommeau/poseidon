@@ -197,9 +197,12 @@ export class TradingOverviewComponent {
         return 'text-slate-400';
     });
 
-    readonly shadowAwareResolvedCount = computed(() => this.shadowStatus()?.resolved_shadowing_and_cortex_inference_aware_outcome_count ?? 0);
-
     readonly shadowRequiredCount = computed(() => this.shadowStatus()?.required_outcome_count ?? 0);
+
+    readonly shadowAwareResolvedCount = computed(() => {
+        const count = this.shadowStatus()?.resolved_shadowing_and_cortex_inference_aware_outcome_count ?? 0;
+        return Math.min(count, this.shadowRequiredCount());
+    });
 
     readonly shadowAwareProgress = computed(() => {
         const aware = this.shadowAwareResolvedCount();
@@ -247,7 +250,12 @@ export class TradingOverviewComponent {
         return Math.min(100, (value / threshold) * 100);
     });
 
-    readonly shadowElapsedHours = computed(() => this.shadowStatus()?.elapsed_hours ?? 0);
+    readonly shadowRequiredHours = computed(() => this.shadowStatus()?.required_hours ?? 0);
+
+    readonly shadowElapsedHours = computed(() => {
+        const elapsed = this.shadowStatus()?.elapsed_hours ?? 0;
+        return Math.min(elapsed, this.shadowRequiredHours());
+    });
 
     readonly shadowExpectedValue = computed<number | null>(() => {
         if (this.shadowPhase() === 'LEARNING') {
@@ -256,7 +264,10 @@ export class TradingOverviewComponent {
         return this.mapNullable(this.shadowMeta(), (shadowMeta) => shadowMeta.expected_value_usd);
     });
 
-    readonly shadowHoursProgress = computed(() => this.shadowStatus()?.hours_progress_percentage ?? 0);
+    readonly shadowHoursProgress = computed(() => {
+        const progress = this.shadowStatus()?.hours_progress_percentage ?? 0;
+        return Math.min(progress, 100);
+    });
 
     readonly shadowOutcomeProgress = computed(() => this.shadowStatus()?.outcome_progress_percentage ?? 0);
 
@@ -291,8 +302,6 @@ export class TradingOverviewComponent {
         }
         return 'bg-slate-500/10 text-slate-300 border-slate-500/20';
     });
-
-    readonly shadowRequiredHours = computed(() => this.shadowStatus()?.required_hours ?? 0);
 
     readonly shadowSparseExpectedValueGeometryLabel = computed(() => {
         const meta = this.shadowMeta();

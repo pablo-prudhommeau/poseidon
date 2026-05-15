@@ -1,12 +1,6 @@
-import type { XyzDataSeries } from 'scichart';
-import type {
-    ChronicleArrays,
-    ChronicleCartesianPoint,
-    ChronicleChartModel,
-    ChronicleGoldenZoneThresholds,
-    SciChartModule
-} from '../data/shadow-verdict-chronicle.models';
-import { buildChronicleGoldenZoneExpectedValueBandValues, buildChronicleGoldenZoneProfitFactorBandValues } from './shadow-verdict-chronicle-golden-zone.utils';
+import type {XyzDataSeries} from 'scichart';
+import type {ChronicleArrays, ChronicleCartesianPoint, ChronicleChartModel, ChronicleGoldenZoneThresholds, SciChartModule} from '../data/shadow-verdict-chronicle.models';
+import {buildChronicleGoldenZoneExpectedValueBandValues, buildChronicleGoldenZoneProfitFactorBandValues} from './shadow-verdict-chronicle-golden-zone.utils';
 
 function synchronizeXySeries(dataSeries: InstanceType<SciChartModule['XyDataSeries']>, xValues: number[], yValues: number[]): void {
     dataSeries.clear();

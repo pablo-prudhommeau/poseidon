@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,10 @@ from src.api.http.api_schemas import (
     DcaStrategiesResponse,
     DcaOrdersResponse,
     TradingPositionsResponse,
+    TradingPositionPayload,
     DcaStrategyPayload,
     AnalyticsResponse, TradingEvaluationPayload, )
+from src.api.http.http_helpers import resolve_linked_position_payload_for_evaluation
 from src.api.serializers import (
     serialize_dca_strategy,
     serialize_dca_order,
@@ -146,7 +148,11 @@ def get_evaluation_by_id(
     if not evaluation:
         return None
 
-    return serialize_trading_evaluation(evaluation)
+    evaluation_payload = serialize_trading_evaluation(evaluation)
+    linked_position = resolve_linked_position_payload_for_evaluation(evaluation_id, database_session)
+    if linked_position is not None:
+        return evaluation_payload.model_copy(update={"linked_position": linked_position})
+    return evaluation_payload
 
 
 @router.get("/api/analytics/shadow/{pair_address}", tags=["analytics"])
@@ -222,6 +228,25 @@ async def get_open_positions_list(database_session: Session = Depends(get_fastap
 
     logger.info("[HTTP][POSITIONS][FETCH] Successfully retrieved %s open positions from database fallback", len(serialized_positions))
     return TradingPositionsResponse(positions=serialized_positions)
+
+
+@router.get("/api/positions/by-evaluation/{evaluation_id}", tags=["positions"])
+async def get_position_by_evaluation_id(
+        evaluation_id: int,
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> TradingPositionPayload:
+    logger.debug("[HTTP][POSITIONS][FETCH] Retrieving position for evaluation_id=%s", evaluation_id)
+    linked_position = resolve_linked_position_payload_for_evaluation(evaluation_id, database_session)
+    if linked_position is None:
+        logger.info("[HTTP][POSITIONS][FETCH] No position found for evaluation_id=%s", evaluation_id)
+        raise HTTPException(status_code=404, detail="Position not found for evaluation")
+
+    logger.info(
+        "[HTTP][POSITIONS][FETCH] Successfully retrieved position id=%s for evaluation_id=%s",
+        linked_position.id,
+        evaluation_id,
+    )
+    return linked_position
 
 
 @router.post("/api/dca/strategies", tags=["dca"])

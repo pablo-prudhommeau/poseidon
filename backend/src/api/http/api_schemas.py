@@ -178,6 +178,7 @@ class TradingPositionPayload(BaseModel):
     updated_at: str
     closed_at: Optional[str] = None
     last_price: Optional[float] = None
+    exit_trigger_reason: Optional[str] = None
 
 
 class TradingTradePayload(BaseModel):
@@ -196,7 +197,7 @@ class TradingTradePayload(BaseModel):
     dex_id: str
     realized_profit_and_loss: Optional[float] = None
     transaction_hash: Optional[str] = None
-    linked_position: TradingPositionPayload
+    linked_position_id: int
 
 
 class TradingPositionPricePayload(BaseModel):
@@ -391,6 +392,7 @@ class TradingEvaluationPayload(BaseModel):
     shadow_diagnostics: TradingEvaluationShadowDiagnosticsPayload
     raw_dexscreener_payload: dict[str, object]
     raw_configuration_settings: dict[str, object]
+    linked_position: Optional[TradingPositionPayload] = None
 
 
 class TradingPositionsResponse(BaseModel):

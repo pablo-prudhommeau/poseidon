@@ -201,7 +201,8 @@
                                             [ngClass]="{
                                                 'poseidon-grid-pill--info': selectedPosition()?.position_phase === 'OPEN',
                                                 'poseidon-grid-pill--warn': selectedPosition()?.position_phase === 'PARTIAL',
-                                                'poseidon-grid-pill--neutral': selectedPosition()?.position_phase !== 'OPEN' && selectedPosition()?.position_phase !== 'PARTIAL',
+                                                'poseidon-grid-pill--closing': selectedPosition()?.position_phase === 'CLOSING',
+                                                'poseidon-grid-pill--neutral': selectedPosition()?.position_phase !== 'OPEN' && selectedPosition()?.position_phase !== 'PARTIAL' && selectedPosition()?.position_phase !== 'CLOSING',
                                             }"
                                         >
                                             {{ selectedPosition()?.position_phase || '—' }}

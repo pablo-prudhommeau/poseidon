@@ -1,9 +1,9 @@
-import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { WebSocketService } from '../core/websocket.service';
-import { ConnectionOverlayPillComponent } from '../widgets/connection-overlay-pill/connection-overlay-pill.component';
-import { PaperModeControlComponent } from '../widgets/paper-mode-control/paper-mode-control.component';
+import {CommonModule} from '@angular/common';
+import {Component, inject, OnInit} from '@angular/core';
+import {RouterModule} from '@angular/router';
+import {WebSocketService} from '../core/websocket.service';
+import {ConnectionOverlayPillComponent} from '../widgets/connection-overlay-pill/connection-overlay-pill.component';
+import {PaperModeControlComponent} from '../widgets/paper-mode-control/paper-mode-control.component';
 
 interface NavigationItem {
     label: string;

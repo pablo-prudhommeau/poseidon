@@ -1,8 +1,8 @@
-import { CurrencyPipe, DatePipe, DecimalPipe, NgClass } from '@angular/common';
-import { Component, computed, input } from '@angular/core';
-import { CardModule } from 'primeng/card';
-import { PopoverModule } from 'primeng/popover';
-import { DcaOrderPayload, DcaStrategyPayload, OrderDueDateMarker, TimelineNode } from '../../../core/models';
+import {CurrencyPipe, DatePipe, DecimalPipe, NgClass} from '@angular/common';
+import {Component, computed, input} from '@angular/core';
+import {CardModule} from 'primeng/card';
+import {PopoverModule} from 'primeng/popover';
+import {DcaOrderPayload, DcaStrategyPayload, OrderDueDateMarker, TimelineNode} from '../../../core/models';
 
 const PROCESSING_STATUS_LIST: string[] = ['WAITING_USER_APPROVAL', 'APPROVED', 'WITHDRAWN_FROM_AAVE', 'SWAPPED', 'PROCESSING'];
 

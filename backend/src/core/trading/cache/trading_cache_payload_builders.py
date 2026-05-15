@@ -19,8 +19,17 @@ from src.api.serializers import (
 from src.configuration.config import MAX_TRADING_ALLOWED_CHAIN_COUNT, settings
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.structures.structures import RealizedProfitAndLoss, HoldingsAndUnrealizedProfitAndLoss
+from src.core.trading.cache.trading_cache import trading_cache
+from src.core.trading.shadowing.cache.trading_shadowing_cache_payload_builders import build_shadow_intelligence_status_payload
+from src.core.trading.shadowing.trading_shadowing_intelligence_service import compute_shadow_intelligence_snapshot
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
-from src.core.trading.trading_service import compute_realized_profit_and_loss, compute_available_cash_usd
+from src.core.trading.trading_service import (
+    compute_realized_profit_and_loss,
+    compute_available_cash_usd,
+    has_any_closing_positions,
+    compute_trade_ledger_available_cash_usd,
+)
+from src.core.trading.trading_utils import convert_trading_position_to_token
 from src.core.utils.date_utils import (
     get_current_local_datetime,
 )
@@ -38,7 +47,6 @@ logger = get_application_logger(__name__)
 
 
 def build_trading_prices_payload() -> dict[str, float]:
-    from src.core.trading.cache.trading_cache import trading_cache
     with get_database_session() as database_session:
         position_dao = TradingPositionDao(database_session)
         open_positions = position_dao.retrieve_open_positions()
@@ -70,7 +78,6 @@ def build_trading_prices_payload() -> dict[str, float]:
 
 
 def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[TradingPortfolioPayload]:
-    from src.core.trading.cache.trading_cache import trading_cache
     previous_portfolio = trading_cache.get_trading_state().portfolio
 
     base_prices = trading_cache.get_prices_by_pair_address()
@@ -98,8 +105,28 @@ def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[Trading
         database_session.expire_on_commit = False
         position_dao = TradingPositionDao(database_session)
         portfolio_dao = TradingPortfolioSnapshotDao(database_session)
-        open_positions = position_dao.retrieve_open_positions()
 
+        if has_any_closing_positions(database_session):
+            if previous_portfolio is not None:
+                logger.info(
+                    "[TRADING][CACHE][PORTFOLIO] Position is currently CLOSING — "
+                    "skipping equity snapshot to avoid transient spikes"
+                )
+            return previous_portfolio
+
+        available_cash_usd = compute_trade_ledger_available_cash_usd(database_session)
+        trading_cache.update_trading_available_cash_state(available_cash_balance_usd=available_cash_usd)
+
+        database_session.expire_all()
+        if has_any_closing_positions(database_session):
+            if previous_portfolio is not None:
+                logger.info(
+                    "[TRADING][CACHE][PORTFOLIO] Position entered CLOSING during snapshot — "
+                    "skipping equity snapshot to avoid transient spikes"
+                )
+            return previous_portfolio
+
+        open_positions = position_dao.retrieve_open_positions()
         if not _paired_open_positions_have_full_usable_prices(open_positions, prices_lookup):
             if previous_portfolio is not None:
                 logger.warning(
@@ -108,36 +135,18 @@ def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[Trading
                 )
             return previous_portfolio
 
-        cached_available_cash_usd = trading_cache.get_available_cash_usd()
-        if cached_available_cash_usd is None:
-            available_cash_usd = compute_available_cash_usd(
-                database_session=database_session if settings.PAPER_MODE else None,
-            )
-        else:
-            available_cash_usd = cached_available_cash_usd
-
         holdings_data = holdings_and_unrealized_from_positions(open_positions, prices_lookup)
-        total_equity_usd = round(available_cash_usd + holdings_data.total_holdings_value, 2)
+        total_equity_usd = float(quantize_2dp(decimal_from_primitive(available_cash_usd) + decimal_from_primitive(holdings_data.total_holdings_value)))
 
-        trading_portfolio_snapshot = portfolio_dao.retrieve_initial_snapshot()
-        if not trading_portfolio_snapshot:
-            portfolio_dao.create_snapshot(
-                equity=available_cash_usd,
-                cash=available_cash_usd,
-                holdings=0.0,
-            )
-            logger.debug(
-                "[TRADING][CACHE][PORTFOLIO] Equity snapshot initialized — equity=%.2f", available_cash_usd)
-        else:
-            portfolio_dao.create_snapshot(
-                equity=total_equity_usd,
-                cash=available_cash_usd,
-                holdings=holdings_data.total_holdings_value,
-            )
-            logger.debug(
-                "[TRADING][CACHE][PORTFOLIO] Equity snapshot created — equity=%.2f cash=%.2f holdings=%.2f",
-                total_equity_usd, available_cash_usd, holdings_data.total_holdings_value,
-            )
+        portfolio_dao.create_snapshot(
+            equity=total_equity_usd,
+            cash=available_cash_usd,
+            holdings=holdings_data.total_holdings_value,
+        )
+        logger.debug(
+            "[TRADING][CACHE][PORTFOLIO] Equity snapshot created — equity=%.2f cash=%.2f holdings=%.2f",
+            total_equity_usd, available_cash_usd, holdings_data.total_holdings_value,
+        )
 
     return build_trading_portfolio_payload_reusing_cached_chain_balances(prices_lookup)
 
@@ -146,7 +155,6 @@ def holdings_and_unrealized_from_positions(
         positions: Iterable[TradingPosition],
         prices_by_pair_address: dict[str, float],
 ) -> HoldingsAndUnrealizedProfitAndLoss:
-    from src.core.trading.trading_utils import convert_trading_position_to_token
     position_list = list(positions)
     holdings_value_dec = Decimal("0")
     unrealized_dec = Decimal("0")
@@ -198,7 +206,7 @@ def build_trading_trades_payloads() -> list[TradingTradePayload]:
                 raise ValueError(
                     f"Missing linked trading position for trade_id={trade_record.id} evaluation_id={trade_record.evaluation_id}"
                 )
-            payloads.append(serialize_trading_trade(trade_record, linked_position))
+            payloads.append(serialize_trading_trade(trade_record, linked_position.id))
         return payloads
 
 
@@ -293,7 +301,6 @@ def build_trading_portfolio_payload(
         portfolio_dao = TradingPortfolioSnapshotDao(database_session)
         portfolio_snapshot_bound_to_session = database_session.merge(trading_portfolio_snapshot)
 
-        from src.core.trading.shadowing.cache.trading_shadowing_cache_payload_builders import build_shadow_intelligence_status_payload
         shadow_status = build_shadow_intelligence_status_payload()
         realized_profit_and_loss_data: RealizedProfitAndLoss = compute_realized_profit_and_loss(trades, cutoff_hours=24)
         if blockchain_balances_override_payload is None:
@@ -328,8 +335,6 @@ def build_trading_portfolio_payload(
 def build_trading_portfolio_payload_reusing_cached_chain_balances(
         prices_lookup: dict[str, float],
 ) -> Optional[TradingPortfolioPayload]:
-    from src.core.trading.cache.trading_cache import trading_cache
-
     trading_cached_state = trading_cache.get_trading_state()
     trades_payload_list = trading_cached_state.trades if trading_cached_state.trades is not None else []
     prior_portfolio = trading_cached_state.portfolio
@@ -381,7 +386,6 @@ def build_trading_portfolio_payload_reusing_cached_chain_balances(
 
 
 def build_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapshot:
-    from src.core.trading.shadowing.trading_shadowing_intelligence_service import compute_shadow_intelligence_snapshot
     return compute_shadow_intelligence_snapshot()
 
 
@@ -431,7 +435,6 @@ def _merge_incremental_onchain_prices_for_open_positions(
         position_tokens_seed: Iterable[Token],
         prices_lookup: dict[str, float],
 ) -> Optional[dict[str, float]]:
-    from src.core.trading.cache.trading_cache import trading_cache
     tokens_missing = _tokens_missing_onchain_price(position_tokens_seed, prices_lookup)
     if not tokens_missing:
         return None

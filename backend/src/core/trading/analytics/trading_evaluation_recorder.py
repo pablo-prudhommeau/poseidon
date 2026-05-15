@@ -78,22 +78,22 @@ class TradingEvaluationRecorder:
             free_cash_after_execution_usd=free_cash_after_usd or 0.0,
             shadowing_summary=(
                 candidate.shadow_diagnostics.intelligence_snapshot.summary.model_dump(mode="json", exclude_none=True)
-                if candidate.shadow_diagnostics.intelligence_snapshot is not None 
-                and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
-                and settings.TRADING_SHADOWING_ENABLED
+                if candidate.shadow_diagnostics.intelligence_snapshot is not None
+                   and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+                   and settings.TRADING_SHADOWING_ENABLED
                 else None
             ),
             shadowing_metrics=(
                 [metric.model_dump(mode="json") for metric in candidate.shadow_diagnostics.intelligence_snapshot.metrics]
-                if candidate.shadow_diagnostics.intelligence_snapshot is not None 
-                and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
-                and settings.TRADING_SHADOWING_ENABLED
+                if candidate.shadow_diagnostics.intelligence_snapshot is not None
+                   and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+                   and settings.TRADING_SHADOWING_ENABLED
                 else None
             ),
             cortex_inference_summary=(
                 candidate.trading_cortex_inference_snapshot.model_dump(mode="json")
                 if candidate.trading_cortex_inference_snapshot is not None
-                and candidate.trading_cortex_inference_snapshot.model_ready
+                   and candidate.trading_cortex_inference_snapshot.model_ready
                 else None
             ),
             raw_dexscreener_payload=candidate.dexscreener_token_information.model_dump(mode="json"),

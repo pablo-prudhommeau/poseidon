@@ -6,12 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.websocket.telemetry import TelemetryService
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.execution.trading_executor import TradingExecutor
 from src.core.trading.execution.trading_order_builder import build_route_for_live_sell
-from src.core.trading.trading_service import invalidate_trading_positions_and_trades_cache
-from src.core.trading.trading_structures import AutosellTriggerReason
+from src.core.trading.trading_structures import PositionExitTriggerReason
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
@@ -44,7 +45,12 @@ def check_thresholds_and_autosell_for_token_address(
 
     if created_trades:
         database_session.commit()
-        invalidate_trading_positions_and_trades_cache()
+        cache_invalidator.mark_dirty(
+            CacheRealm.POSITIONS,
+            CacheRealm.TRADES,
+            CacheRealm.AVAILABLE_CASH,
+            CacheRealm.PORTFOLIO,
+        )
 
     return created_trades
 
@@ -54,14 +60,23 @@ def _execute_sell_operation(
         position: TradingPosition,
         execution_price: float,
         sell_quantity: float,
-        reason: AutosellTriggerReason,
+        reason: PositionExitTriggerReason,
 ) -> Optional[TradingTrade]:
+    previous_phase = position.position_phase
+    position.position_phase = PositionPhase.CLOSING
+
+    database_session.commit()
+    cache_invalidator.mark_dirty(CacheRealm.POSITIONS)
+
     if not settings.PAPER_MODE:
         chain_lower = position.blockchain_network.strip().lower()
         try:
             chain_enum = BlockchainNetwork(chain_lower)
         except ValueError:
             logger.error("[TRADING][AUTOSELL] Unknown chain in DB: %s", chain_lower)
+            position.position_phase = previous_phase
+            database_session.commit()
+            cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
             return None
 
         if chain_enum == BlockchainNetwork.SOLANA:
@@ -74,6 +89,9 @@ def _execute_sell_operation(
             decimals = get_spl_token_decimals(rpc_url, position.token_address)
             if decimals is None:
                 logger.error("[TRADING][AUTOSELL][LIVE] Failed to fetch decimals for %s. Sell aborted.", position.token_symbol)
+                position.position_phase = previous_phase
+                database_session.commit()
+                cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
                 return None
 
             try:
@@ -103,6 +121,9 @@ def _execute_sell_operation(
 
         if sell_quantity <= 0.0:
             logger.error("[TRADING][AUTOSELL][LIVE] Actual balance is zero or less for %s. Sell aborted.", position.token_symbol)
+            position.position_phase = previous_phase
+            database_session.commit()
+            cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
             return None
 
         execution_route = build_route_for_live_sell(
@@ -114,6 +135,9 @@ def _execute_sell_operation(
 
         if execution_route is None:
             logger.error("[TRADING][AUTOSELL][LIVE] Failed to build sell route for %s. Sell aborted.", position.token_symbol)
+            position.position_phase = previous_phase
+            database_session.commit()
+            cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
             return None
 
         executor = TradingExecutor()
@@ -131,6 +155,9 @@ def _execute_sell_operation(
 
         if execution_outcome is None:
             logger.warning("[TRADING][AUTOSELL][LIVE] Execution failed or aborted by slippage guard for %s. Ignoring autosell tick.", position.token_symbol)
+            position.position_phase = previous_phase
+            database_session.commit()
+            cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
             return None
 
     trade_dao = TradingTradeDao(database_session)
@@ -158,13 +185,15 @@ def _execute_sell_operation(
     )
     trade_dao.save(sell_trade)
 
-    if reason in (AutosellTriggerReason.STOP_LOSS, AutosellTriggerReason.TAKE_PROFIT_2):
+    if reason in (PositionExitTriggerReason.STOP_LOSS, PositionExitTriggerReason.TAKE_PROFIT_2):
         position.current_quantity = 0.0
         position.position_phase = PositionPhase.CLOSED
+        position.closed_at = get_current_local_datetime()
     else:
         position.current_quantity -= sell_quantity
         if position.current_quantity <= 0.0:
             position.position_phase = PositionPhase.CLOSED
+            position.closed_at = get_current_local_datetime()
         else:
             position.position_phase = PositionPhase.PARTIAL
 
@@ -207,30 +236,30 @@ def _evaluate_position_thresholds(
     if position_quantity <= 0.0:
         return created_trades
 
-    tp1 = position.take_profit_tier_1_price or 0.0
-    tp2 = position.take_profit_tier_2_price or 0.0
-    stop = position.stop_loss_price or 0.0
+    take_profit_1_price: float = position.take_profit_tier_1_price or 0.0
+    take_profit_2_price: float = position.take_profit_tier_2_price or 0.0
+    stop_loss_price: float = position.stop_loss_price or 0.0
 
-    if stop > 0.0 and last_price_value <= stop:
-        logger.info("[TRADING][AUTOSELL][SL] Triggered for %s @ %.12f (stop=%.12f)", position.token_symbol, last_price_value, stop)
-        trade = _execute_sell_operation(database_session, position, last_price_value, position_quantity, AutosellTriggerReason.STOP_LOSS)
+    if stop_loss_price > 0.0 and last_price_value <= stop_loss_price:
+        logger.info("[TRADING][AUTOSELL][SL] Triggered for %s @ %.12f (stop=%.12f)", position.token_symbol, last_price_value, stop_loss_price)
+        trade = _execute_sell_operation(database_session, position, last_price_value, position_quantity, PositionExitTriggerReason.STOP_LOSS)
         if trade:
             created_trades.append(trade)
         return created_trades
 
-    if tp2 > 0.0 and last_price_value >= tp2:
-        logger.info("[TRADING][AUTOSELL][TP2] Triggered for %s @ %.12f (tp2=%.12f)", position.token_symbol, last_price_value, tp2)
-        trade = _execute_sell_operation(database_session, position, last_price_value, position_quantity, AutosellTriggerReason.TAKE_PROFIT_2)
+    if take_profit_2_price > 0.0 and last_price_value >= take_profit_2_price:
+        logger.info("[TRADING][AUTOSELL][TP2] Triggered for %s @ %.12f (tp2=%.12f)", position.token_symbol, last_price_value, take_profit_2_price)
+        trade = _execute_sell_operation(database_session, position, last_price_value, position_quantity, PositionExitTriggerReason.TAKE_PROFIT_2)
         if trade:
             created_trades.append(trade)
         return created_trades
 
-    if tp1 > 0.0 and last_price_value >= tp1 and position.position_phase == PositionPhase.OPEN:
+    if take_profit_1_price > 0.0 and last_price_value >= take_profit_1_price and position.position_phase == PositionPhase.OPEN:
         take_profit_fraction = max(0.0, min(1.0, settings.TRADING_TP1_TAKE_PROFIT_FRACTION))
         partial_quantity = position_quantity * take_profit_fraction
         if partial_quantity > 0.0:
-            logger.info("[TRADING][AUTOSELL][TP1] Triggered for %s @ %.12f (tp1=%.12f)", position.token_symbol, last_price_value, tp1)
-            trade = _execute_sell_operation(database_session, position, last_price_value, partial_quantity, AutosellTriggerReason.TAKE_PROFIT_1)
+            logger.info("[TRADING][AUTOSELL][TP1] Triggered for %s @ %.12f (tp1=%.12f)", position.token_symbol, last_price_value, take_profit_1_price)
+            trade = _execute_sell_operation(database_session, position, last_price_value, partial_quantity, PositionExitTriggerReason.TAKE_PROFIT_1)
             if trade:
                 created_trades.append(trade)
 

@@ -1,8 +1,8 @@
-import { NgClass } from '@angular/common';
-import { Component, computed, input } from '@angular/core';
-import { ApexChart, ApexDataLabels, ApexFill, ApexGrid, ApexLegend, ApexStroke, ApexTheme, ApexXAxis, ApexYAxis, NgApexchartsModule } from 'ng-apexcharts';
-import { CardModule } from 'primeng/card';
-import { DcaBacktestSeriesPointPayload, DcaOrderPayload, DcaStrategyPayload } from '../../../core/models';
+import {NgClass} from '@angular/common';
+import {Component, computed, input} from '@angular/core';
+import {ApexChart, ApexDataLabels, ApexFill, ApexGrid, ApexLegend, ApexStroke, ApexTheme, ApexXAxis, ApexYAxis, NgApexchartsModule} from 'ng-apexcharts';
+import {CardModule} from 'primeng/card';
+import {DcaBacktestSeriesPointPayload, DcaOrderPayload, DcaStrategyPayload} from '../../../core/models';
 
 @Component({
     standalone: true,

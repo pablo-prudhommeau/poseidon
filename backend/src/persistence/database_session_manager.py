@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Generator, Any, Optional
 
 from sqlalchemy import TypeDecorator, DateTime
@@ -40,6 +40,7 @@ class DatabaseBaseModel(DeclarativeBase):
     type_annotation_map = {
         datetime: HybridAwareDateTime()
     }
+
 
 database_engine: Engine = build_database_engine()
 

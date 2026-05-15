@@ -4,7 +4,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.configuration.config import settings
-
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingStatusSummary
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao

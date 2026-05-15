@@ -8,10 +8,12 @@ from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
+from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.database_session_manager import get_database_session
+from src.persistence.models import PositionPhase
 
 logger = get_application_logger(__name__)
 
@@ -59,12 +61,44 @@ class TradingPositionGuardJob:
             ]
 
     @staticmethod
+    def _finalize_stuck_closing_positions_without_open_quantity(database_session) -> bool:
+        position_dao = TradingPositionDao(database_session)
+        closing_positions = position_dao.retrieve_by_phase(PositionPhase.CLOSING)
+        any_position_finalized = False
+
+        for position_record in closing_positions:
+            remaining_quantity = position_record.current_quantity or 0.0
+            if remaining_quantity > 0.0:
+                continue
+
+            position_record.position_phase = PositionPhase.CLOSED
+            position_record.closed_at = get_current_local_datetime()
+            any_position_finalized = True
+            logger.info(
+                "[TRADING][POSITION_GUARD][CLOSING] Finalized stuck closing position %s",
+                position_record.token_symbol,
+            )
+
+        return any_position_finalized
+
+    @staticmethod
     def _run_autosell_evaluations_for_tokens(
             position_tokens: list[Token],
             prices_by_pair_address: dict[str, float],
     ) -> None:
         with get_database_session() as database_session:
             database_session.expire_on_commit = False
+
+            any_closing_position_finalized = (
+                TradingPositionGuardJob._finalize_stuck_closing_positions_without_open_quantity(database_session)
+            )
+            if any_closing_position_finalized:
+                database_session.commit()
+                cache_invalidator.mark_dirty(
+                    CacheRealm.POSITIONS,
+                    CacheRealm.AVAILABLE_CASH,
+                    CacheRealm.PORTFOLIO,
+                )
 
             autosell_trade_records = []
 

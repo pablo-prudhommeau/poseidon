@@ -1,5 +1,5 @@
-import { DecimalPipe, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import {DecimalPipe, NgClass} from '@angular/common';
+import {ChangeDetectionStrategy, Component, computed, input} from '@angular/core';
 
 @Component({
     standalone: true,

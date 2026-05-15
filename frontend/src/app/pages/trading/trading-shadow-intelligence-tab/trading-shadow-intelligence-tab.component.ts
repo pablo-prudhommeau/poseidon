@@ -1,13 +1,9 @@
-import { CommonModule } from '@angular/common';
-import { Component, Input, inject } from '@angular/core';
-import { MetricsFormattingService } from '../../../core/metrics-formatting.service';
-import {
-    TradingEvaluationShadowIntelligenceSnapshotMetricPayload,
-    TradingEvaluationShadowIntelligenceSnapshotPayload,
-    TradingEvaluationShadowIntelligenceSnapshotSummaryPayload
-} from '../../../core/models';
-import { NumberFormattingService } from '../../../core/number-formatting.service';
-import { EXPLORATION_CATEGORIES, MetricCategory } from '../trading.constants';
+import {CommonModule} from '@angular/common';
+import {Component, inject, Input} from '@angular/core';
+import {MetricsFormattingService} from '../../../core/metrics-formatting.service';
+import {TradingEvaluationShadowIntelligenceSnapshotMetricPayload, TradingEvaluationShadowIntelligenceSnapshotPayload, TradingEvaluationShadowIntelligenceSnapshotSummaryPayload} from '../../../core/models';
+import {NumberFormattingService} from '../../../core/number-formatting.service';
+import {EXPLORATION_CATEGORIES, MetricCategory} from '../trading.constants';
 
 @Component({
     standalone: true,

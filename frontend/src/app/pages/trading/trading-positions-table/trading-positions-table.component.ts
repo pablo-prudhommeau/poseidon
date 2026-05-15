@@ -2,22 +2,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { AfterViewInit, Component, computed, DestroyRef, effect, inject, signal, TemplateRef, ViewChild } from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
 import { ColDef, GetRowIdParams, GridApi, GridReadyEvent, ITooltipParams, ValueFormatterParams, ValueGetterParams } from 'ag-grid-community';
-import {
-    ApexAxisChartSeries,
-    ApexChart,
-    ApexDataLabels,
-    ApexFill,
-    ApexGrid,
-    ApexLegend,
-    ApexNonAxisChartSeries,
-    ApexPlotOptions,
-    ApexResponsive,
-    ApexStates,
-    ApexStroke,
-    ApexTooltip,
-    ApexXAxis,
-    NgApexchartsModule
-} from 'ng-apexcharts';
+import { NgApexchartsModule } from 'ng-apexcharts';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { DialogModule } from 'primeng/dialog';
@@ -84,68 +69,22 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         suppressHeaderMenuButton: false,
         flex: 1
     };
-    public deltaChart: ApexChart = { type: 'bar', height: 260, toolbar: { show: false } };
-    public deltaColors: string[] = [];
-    public deltaDataLabels: ApexDataLabels = { enabled: true, formatter: (v: number) => `${v.toFixed(2)}%` };
-    public deltaPlot: ApexPlotOptions = { bar: { distributed: true, columnWidth: '45%' } };
 
-    public deltaSeries: ApexAxisChartSeries = [];
-
-    public deltaXaxis: ApexXAxis = { categories: ['5m', '1h', '24h'] };
     public readonly detailsVisible = signal<boolean>(false);
 
-    public fill: ApexFill = { opacity: 0.85 };
     public readonly getRowId = (params: GetRowIdParams<TradingPositionPayload>): string => String(params.data?.id ?? '');
 
-    public grid: ApexGrid = { padding: { left: 8, right: 8 } };
-
-    public liqVolChart: ApexChart = { type: 'donut', height: 260 };
-    public liqVolLabels: string[] = ['Liquidity (24h)', 'Volume (24h)'];
-    public liqVolResponsive: ApexResponsive[] = [{ breakpoint: 768, options: { chart: { height: 220 }, legend: { position: 'bottom' } } }];
-    public liqVolSeries: ApexNonAxisChartSeries = [];
-    public notionalChart: ApexChart = { type: 'bar', height: 220, toolbar: { show: false } };
-    private readonly numberFormattingService = inject(NumberFormattingService);
-    public notionalDataLabels: ApexDataLabels = {
-        enabled: true,
-        formatter: (v: number) => `$${this.numberFormattingService.formatNumber(v, 0, 0)}`
-    };
-
-    public notionalPlot: ApexPlotOptions = { bar: { horizontal: true, barHeight: '60%' } };
-
-    public notionalSeries: ApexAxisChartSeries = [];
-    public notionalXaxis: ApexXAxis = { categories: ['Entry', 'Last'] };
     private readonly webSocketService = inject(WebSocketService);
+
     public readonly positionsRowData = computed<TradingPositionPayload[]>(() => {
         const rows = this.webSocketService.positions() ?? [];
         return Array.isArray(rows) ? (rows as TradingPositionPayload[]) : [];
     });
-    public probChart: ApexChart = { type: 'radialBar', height: 220 };
 
-    public probLabels: string[] = ['take profit tier 1 before stop loss'];
-    public probPlot: ApexPlotOptions = {
-        radialBar: {
-            startAngle: -120,
-            endAngle: 120,
-            hollow: { margin: 0, size: '55%' },
-            dataLabels: { name: { show: true }, value: { show: true, formatter: (v: number) => `${v.toFixed(1)}%` } }
-        }
-    };
-    public probSeries: ApexNonAxisChartSeries = [];
-    public scoresChart: ApexChart = { type: 'radialBar', height: 260 };
-    public scoresLabels: string[] = [];
-    public scoresLegend: ApexLegend = { show: true, position: 'bottom' };
-
-    public scoresPlot: ApexPlotOptions = {
-        radialBar: {
-            hollow: { size: '22%' },
-            dataLabels: { name: { fontSize: '12px' }, value: { fontSize: '16px' } }
-        }
-    };
-    public scoresSeries: ApexNonAxisChartSeries = [];
     public readonly selectedAnalytics = signal<TradingEvaluationPayload | null>(null);
     private readonly selectedPositionId = signal<number | null>(null);
-
     private readonly selectedPositionSnapshot = signal<TradingPositionPayload | null>(null);
+
     public readonly selectedPosition = computed<TradingPositionPayload | null>(() => {
         const positionId = this.selectedPositionId();
         const snapshot = this.selectedPositionSnapshot();
@@ -154,17 +93,13 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
         return this.positionsRowData().find((position) => position.id === positionId) ?? snapshot;
     });
+
     public selectedPositionChainIconCandidates: string[] = [];
     public selectedPositionChainIconIndex: number = 0;
-
     public selectedPositionDexIconCandidates: string[] = [];
     public selectedPositionDexIconIndex: number = 0;
-    public states: ApexStates = { hover: { filter: { type: 'lighten' } } };
-    public stroke: ApexStroke = { width: 2 };
-    public tooltip: ApexTooltip = { enabled: true };
 
     private readonly apiService = inject(ApiService);
-    private cachedOriginBuyTrade: TradingTradePayload | null = null;
     private readonly datetimeDisplayService = inject(DatetimeDisplayService);
     private readonly defiIconsService = inject(DefiIconsService);
     private readonly destroyRef = inject(DestroyRef);
@@ -174,17 +109,17 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
         this.selectedPosition();
         this.selectedAnalytics();
-        this.recomputeCharts();
     });
     private readonly tradingPositionModalService = inject(TradingPositionModalService);
     private readonly externalPositionOpenEffect = effect(() => {
-        const requestedPosition = this.tradingPositionModalService.requestedPosition();
-        if (!requestedPosition) {
+        const modalRequest = this.tradingPositionModalService.request();
+        if (!modalRequest) {
             return;
         }
-        this.openDetails(requestedPosition);
+        this.openDetails(modalRequest.position, modalRequest.evaluation ?? null);
         this.tradingPositionModalService.clear();
     });
+    private readonly numberFormattingService = inject(NumberFormattingService);
     private positionsGridApi: GridApi | null = null;
 
     public ngAfterViewInit(): void {
@@ -227,10 +162,30 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 colId: 'positionPhase',
                 field: 'position_phase' as unknown as keyof TradingPositionPayload,
                 sortable: true,
-                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) => {
-                    const sev = this.phaseSeverity(String((p.value as any) ?? ''));
-                    const pillClass = sev === 'info' ? 'poseidon-grid-pill--info' : sev === 'warn' ? 'poseidon-grid-pill--warn' : 'poseidon-grid-pill--neutral';
-                    return `<span class="poseidon-grid-pill ${pillClass}">${p.value}</span>`;
+                cellRenderer: (params: ValueFormatterParams<TradingPositionPayload>) => {
+                    const value: string = String(params.value ?? '');
+                    const severity: string = this.phaseSeverity(value);
+                    let pillClass = 'poseidon-grid-pill--neutral';
+                    if (severity === 'info') {
+                        pillClass = 'poseidon-grid-pill--info';
+                    } else if (severity === 'warn') {
+                        pillClass = 'poseidon-grid-pill--warn';
+                    } else if (severity === 'secondary') {
+                        if (value === 'CLOSING') {
+                            const reason = params.data?.exit_trigger_reason;
+                            if (reason === 'STOP_LOSS') {
+                                pillClass = 'poseidon-grid-pill--closing-negative';
+                            } else if (reason?.startsWith('TAKE_PROFIT')) {
+                                pillClass = 'poseidon-grid-pill--closing-positive';
+                            } else {
+                                pillClass = 'poseidon-grid-pill--closing';
+                            }
+                        } else {
+                            pillClass = 'poseidon-grid-pill--neutral';
+                        }
+                    }
+
+                    return `<span class="poseidon-grid-pill ${pillClass}">${value}</span>`;
                 },
                 cellClass: 'poseidon-grid-phase-side-cell',
                 ...tradingGridsLeadingColumnLayout.phaseOrSide,
@@ -446,10 +401,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         };
     }
 
-    public buyTradeForSelectedPosition(): TradingTradePayload | null {
-        return this.cachedOriginBuyTrade;
-    }
-
     public async copyToClipboard(value: string | undefined | null): Promise<void> {
         if (!value) {
             return;
@@ -479,17 +430,9 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         return chain && pair ? `https://dexscreener.com/${chain}/${pair}` : '';
     }
 
-    public dexUrlForToken(row: { blockchain_network?: string; token_address?: string } | null): string {
-        const chain = (row as any)?.blockchain_network as string | undefined;
-        const token = row?.token_address;
-        return chain && token ? `https://dexscreener.com/${chain}/${token}` : '';
-    }
-
     public entryPositionPercentage(row: TradingPositionPayload | null): number {
         return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe((row as any)?.entry_price));
     }
-
-    public focusTradeInTable(_trade: TradingTradePayload): void {}
 
     public formatCompactQuantity(value: unknown): string {
         return this.numberFormattingService.formatQuantityHumanReadable(value) || '—';
@@ -542,15 +485,14 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         });
     }
 
-    public openDetails(row: TradingPositionPayload | null): void {
+    public openDetails(row: TradingPositionPayload | null, preloadedEvaluation: TradingEvaluationPayload | null = null): void {
         this.selectedPositionId.set(row?.id ?? null);
         this.selectedPositionSnapshot.set(row ?? null);
-        this.cachedOriginBuyTrade = null;
-        this.selectedAnalytics.set(null);
+        this.selectedAnalytics.set(preloadedEvaluation);
         this.resetSelectedPositionIcons(row);
         this.detailsVisible.set(true);
 
-        if (row && row.evaluation_id) {
+        if (!preloadedEvaluation && row && row.evaluation_id) {
             this.apiService.getEvaluationById(row.evaluation_id).subscribe({
                 next: (evalData) => {
                     this.selectedAnalytics.set(evalData);
@@ -560,8 +502,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 }
             });
         }
-
-        this.cachedOriginBuyTrade = this.findOriginBuyTrade(row);
     }
 
     public openNextPosition(): void {
@@ -604,6 +544,9 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
         if (phase === 'PARTIAL') {
             return 'warn';
+        }
+        if (phase === 'CLOSING') {
+            return 'secondary';
         }
         if (phase === 'CLOSED' || phase === 'STALED') {
             return 'secondary';
@@ -782,43 +725,6 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         return rows;
     }
 
-    private recomputeCharts(): void {
-        const pos = this.selectedPosition();
-        const a = this.selectedAnalytics();
-
-        const scoreValues: number[] = [];
-        const scoreLabels: string[] = [];
-        const pushScore = (label: string, raw: number | null | undefined): void => {
-            if (raw == null) {
-                return;
-            }
-            scoreLabels.push(label);
-            scoreValues.push(raw);
-        };
-        pushScore('Quality', (a as any)?.scores?.quality_score);
-        pushScore('AI adjusted', (a as any)?.scores?.ai_adjusted_quality_score);
-        this.scoresLabels = scoreLabels;
-        this.scoresSeries = scoreValues;
-
-        const pct5m = this.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_m5);
-        const pct1h = this.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h1);
-        const pct24h = this.toNumberSafe((a as any)?.fundamentals?.price_change_percentage_h24);
-        const deltas: number[] = [pct5m ?? 0, pct1h ?? 0, pct24h ?? 0];
-        this.deltaSeries = [{ name: 'Δ', data: deltas }];
-        this.deltaColors = deltas.map((v) => (v >= 0 ? '#22c55e' : '#ef4444'));
-
-        const liq = this.toNumberSafe((a as any)?.fundamentals?.liquidity_usd) ?? 0;
-        const vol = this.toNumberSafe((a as any)?.fundamentals?.volume_h24_usd) ?? 0;
-        this.liqVolSeries = [Math.max(liq, 0), Math.max(vol, 0)];
-
-        const prob = this.toPercent0to100((a as any)?.ai?.ai_probability_take_profit_before_stop_loss ?? null);
-        this.probSeries = Number.isFinite(prob) ? [prob] : [];
-
-        const entryNotional = this.orderNotionalUsd(pos, 'entry') ?? 0;
-        const lastNotional = this.orderNotionalUsd(pos, 'last') ?? 0;
-        this.notionalSeries = [{ name: 'Notional', data: [entryNotional, lastNotional] }];
-    }
-
     private resetSelectedPositionIcons(row: TradingPositionPayload | null): void {
         this.selectedPositionChainIconCandidates = this.defiIconsService.getChainIconCandidates(row?.blockchain_network);
         this.selectedPositionDexIconCandidates = this.defiIconsService.getProtocolIconCandidates(row?.dex_id);
@@ -840,19 +746,5 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 break;
         }
         return `poseidon-grid-price-stack-main poseidon-grid-price-stack-main--${modifierSuffix}`;
-    }
-
-    private toNumberSafe(value: unknown): number | null {
-        return this.numberFormattingService.toNumberSafe(value as number | null);
-    }
-
-    private toPercent0to100(value: number | null | undefined): number {
-        if (value == null) {
-            return 0;
-        }
-        if (value <= 1 && value >= 0) {
-            return value * 100;
-        }
-        return value;
     }
 }

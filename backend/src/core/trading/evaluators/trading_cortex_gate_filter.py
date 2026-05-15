@@ -10,8 +10,9 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingIntelligenceSnapshot,
     TradingShadowingPhase,
 )
-from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot, TradingFilterVerdict
-from src.logging.logger import get_application_logger
+from src.core.trading.trading_structures import TradingFilterVerdict, TradingCortexInferenceSnapshot, TradingCandidate
+from src.core.utils.log_utils import get_visual_width
+from src.logging.logger import get_application_logger, console_color_codes
 
 logger = get_application_logger(__name__)
 
@@ -109,31 +110,82 @@ def apply_trading_cortex_gate_filter(
 
         if gate_verdict.is_accepted:
             retained.append(candidate)
-            logger.info(
-                "[TRADING][PIPELINE][TRADING][CORTEX][GATE] RETAINED %s | Score: %.2f | Win: %.1f%% | Tox: %.1f%% | PnL: %.1f%%\033[0m",
-                candidate.token.symbol,
-                scoring_response.final_trade_score,
-                scoring_response.success_probability * 100,
-                scoring_response.toxicity_probability * 100,
-                scoring_response.expected_profit_and_loss_percentage,
-            )
-            continue
+        else:
+            rejected.append(candidate)
 
-        rejected.append(candidate)
-        logger.debug(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Rejected %s: %s",
-            candidate.token.symbol,
-            ", ".join(gate_verdict.rejection_reasons),
-        )
+    _log_cortex_evaluation_details(retained=retained, rejected=rejected)
 
     if rejected:
         logger.info(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Rejected %d/%d candidates",
-            len(rejected),
+            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Retained %d / %d candidates",
+            len(retained),
+            len(candidates),
+        )
+    else:
+        logger.debug(
+            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] All %d candidates passed cortex gate",
             len(candidates),
         )
 
     return retained
+
+
+def _log_cortex_evaluation_details(
+        retained: list[TradingCandidate],
+        rejected: list[TradingCandidate],
+) -> None:
+    red: str = console_color_codes["RED"]
+    green: str = console_color_codes["GREEN"]
+    grey: str = console_color_codes["GREY"]
+    reset: str = console_color_codes["RESET"]
+
+    for candidate in rejected:
+        snapshot = candidate.trading_cortex_inference_snapshot
+        if not snapshot:
+            continue
+
+        prefix: str = f"{candidate.token.symbol} {red}rejected{reset}"
+        visual_length: int = get_visual_width(prefix)
+        padding: str = " " * max(0, 45 - visual_length)
+
+        metrics_table: str = _format_cortex_metrics_table(snapshot)
+        logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Reasons: %s", prefix, padding, metrics_table)
+
+    for candidate in retained:
+        snapshot = candidate.trading_cortex_inference_snapshot
+        if not snapshot:
+            continue
+
+        prefix: str = f"{candidate.token.symbol} {green}retained{reset}"
+        visual_length: int = get_visual_width(prefix)
+        padding: str = " " * max(0, 45 - visual_length)
+
+        metrics_table: str = _format_cortex_metrics_table(snapshot)
+        logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Metrics: %s", prefix, padding, metrics_table)
+
+
+def _format_cortex_metrics_table(snapshot: TradingCortexInferenceSnapshot) -> str:
+    red: str = console_color_codes["RED"]
+    grey: str = console_color_codes["GREY"]
+    reset: str = console_color_codes["RESET"]
+
+    score_str: str = f"{snapshot.final_trade_score:>6.2f}"
+
+    wr_color: str = red if snapshot.success_probability < settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD else grey
+    wr_str: str = f"{snapshot.success_probability * 100:>5.1f}%"
+
+    tox_color: str = red if snapshot.toxicity_probability > settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD else grey
+    tox_str: str = f"{snapshot.toxicity_probability * 100:>5.1f}%"
+
+    pnl_color: str = red if snapshot.expected_profit_and_loss_percentage < settings.TRADING_CORTEX_PNL_THRESHOLD else grey
+    pnl_str: str = f"{snapshot.expected_profit_and_loss_percentage:>7.2f}%"
+
+    return (
+        f"{grey}Score:{reset} {score_str} {grey}|{reset} "
+        f"{grey}Win:{reset} {wr_color}{wr_str}{reset} {grey}|{reset} "
+        f"{grey}Tox:{reset} {tox_color}{tox_str}{reset} {grey}|{reset} "
+        f"{grey}PnL:{reset} {pnl_color}{pnl_str}{reset}"
+    )
 
 
 def _evaluate_gate_verdict(scoring_response: TradingCortexScoringResponse) -> TradingFilterVerdict:
