@@ -62,6 +62,7 @@ def build_shadow_intelligence_status_payload() -> ShadowIntelligenceStatusPayloa
 def build_trading_shadow_meta_payload(snapshot: TradingShadowingIntelligenceSnapshot) -> TradingShadowMetaPayload:
     return TradingShadowMetaPayload(
         is_enabled=settings.TRADING_SHADOWING_ENABLED,
+        shadow_regime_gate_enabled=settings.TRADING_GATE_SHADOWING_REGIME_ENABLED,
         phase=snapshot.summary.phase,
         total_outcomes_analyzed=snapshot.summary.total_outcomes_analyzed,
         resolved_outcome_count=snapshot.summary.resolved_outcome_count,

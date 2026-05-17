@@ -129,10 +129,11 @@ export class TradingOverviewComponent {
         }
         return this.mapNullable(this.shadowMeta(), (shadowMeta) => shadowMeta.chronicle_profit_factor);
     });
-
     readonly shadowChronicleProfitFactorThreshold = computed<number | null>(() =>
         this.mapNullable(this.shadowMeta(), (shadowMeta) => shadowMeta.chronicle_profit_factor_threshold)
     );
+
+    readonly shadowRegimeGateEnabled = computed(() => this.shadowMeta()?.shadow_regime_gate_enabled ?? true);
 
     readonly shadowSparseExpectedValueUsd = computed<number | null>(() => {
         if (this.shadowPhase() === 'LEARNING') {
@@ -146,17 +147,17 @@ export class TradingOverviewComponent {
     );
 
     readonly shadowTradable = computed(() => {
+        if (this.shadowPhase() !== 'ACTIVE') {
+            return false;
+        }
+        if (!this.shadowRegimeGateEnabled()) {
+            return true;
+        }
         const chronicleProfitFactor = this.shadowChronicleProfitFactor();
         const chronicleThreshold = this.shadowChronicleProfitFactorThreshold();
         const sparseExpectedValue = this.shadowSparseExpectedValueUsd();
         const sparseExpectedValueThreshold = this.shadowSparseExpectedValueUsdThreshold();
-        if (
-            this.shadowPhase() !== 'ACTIVE' ||
-            chronicleProfitFactor === null ||
-            chronicleThreshold === null ||
-            sparseExpectedValue === null ||
-            sparseExpectedValueThreshold === null
-        ) {
+        if (chronicleProfitFactor === null || chronicleThreshold === null || sparseExpectedValue === null || sparseExpectedValueThreshold === null) {
             return false;
         }
         return chronicleProfitFactor >= chronicleThreshold && sparseExpectedValue >= sparseExpectedValueThreshold;
@@ -171,6 +172,7 @@ export class TradingOverviewComponent {
         }
         if (
             this.shadowPhase() === 'ACTIVE' &&
+            this.shadowRegimeGateEnabled() &&
             (this.shadowChronicleProfitFactor() === null ||
                 this.shadowChronicleProfitFactorThreshold() === null ||
                 this.shadowSparseExpectedValueUsd() === null ||
@@ -220,7 +222,7 @@ export class TradingOverviewComponent {
         if (!meta) {
             return '—';
         }
-        return `momentum ${this.formatShadowMetricLookbackDays(meta.chronicle_profit_factor_lookback_days)}d ${meta.chronicle_profit_factor_bucket_width_seconds}s p${meta.chronicle_profit_factor_moving_average_period}`;
+        return `pf sma · ${this.formatShadowMetricLookbackDays(meta.chronicle_profit_factor_lookback_days)}d · ${meta.chronicle_profit_factor_bucket_width_seconds}s · ${meta.chronicle_profit_factor_moving_average_period} samples`;
     });
 
     readonly shadowChronicleGeometryTooltip = computed(() => {
@@ -231,10 +233,22 @@ export class TradingOverviewComponent {
         const lookback = this.formatShadowMetricLookbackDays(meta.chronicle_profit_factor_lookback_days);
         const bucket = meta.chronicle_profit_factor_bucket_width_seconds;
         const period = meta.chronicle_profit_factor_moving_average_period;
-        return `Measures the <span class="text-purple-300 font-bold uppercase tracking-widest text-[9px] mx-1">momentum</span> by averaging the <span class="text-slate-200 font-bold mx-0.5">Profit Factor</span> across ${period} sequential ${bucket}s timeframes, scanning a ${lookback}-day historical depth.`;
+        const sampleWindow = this.formatSampleWindowDuration(period, bucket);
+        return `Tracks the <span class="text-purple-200 font-black uppercase tracking-widest text-[9px] mx-1">profit factor regime</span>: gross winning dollars divided by gross losing dollars, smoothed over <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${period}</span> non-empty verdict buckets of <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${bucket}s</span> each (about <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${sampleWindow}</span> of samples), inside a rolling <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${lookback}-day</span> history.`;
+    });
+
+    readonly shadowChronicleProfitFactorFloorLabel = computed(() => {
+        if (!this.shadowRegimeGateEnabled()) {
+            return '-∞';
+        }
+        const threshold = this.shadowChronicleProfitFactorThreshold();
+        return threshold === null ? '—' : threshold.toFixed(2);
     });
 
     readonly shadowChronicleProfitFactorProgress = computed(() => {
+        if (!this.shadowRegimeGateEnabled()) {
+            return 100;
+        }
         const threshold = this.shadowChronicleProfitFactorThreshold();
         const value = this.shadowChronicleProfitFactor();
         if (threshold === null || value === null || threshold <= 0) {
@@ -303,12 +317,19 @@ export class TradingOverviewComponent {
         return 'bg-slate-500/10 text-slate-300 border-slate-500/20';
     });
 
+    readonly shadowSparseExpectedValueFloorLabel = computed(() => {
+        if (!this.shadowRegimeGateEnabled()) {
+            return '-∞';
+        }
+        return this.formatUsdValue(this.shadowSparseExpectedValueUsdThreshold());
+    });
+
     readonly shadowSparseExpectedValueGeometryLabel = computed(() => {
         const meta = this.shadowMeta();
         if (!meta) {
             return '—';
         }
-        return `sparse ev ${this.formatShadowMetricLookbackDays(meta.sparse_expected_value_lookback_days)}d ${meta.sparse_expected_value_bucket_width_seconds}s p${meta.sparse_expected_value_moving_average_period}`;
+        return `sparse ev sma · ${this.formatShadowMetricLookbackDays(meta.sparse_expected_value_lookback_days)}d · ${meta.sparse_expected_value_bucket_width_seconds}s · ${meta.sparse_expected_value_moving_average_period} samples`;
     });
 
     readonly shadowSparseExpectedValueGeometryTooltip = computed(() => {
@@ -318,11 +339,15 @@ export class TradingOverviewComponent {
         }
         const lookback = this.formatShadowMetricLookbackDays(meta.sparse_expected_value_lookback_days);
         const bucket = meta.sparse_expected_value_bucket_width_seconds;
-        const period = meta.sparse_expected_value_bucket_width_seconds;
-        return `Measures the <span class="text-purple-300 font-bold uppercase tracking-widest text-[9px] mx-1">Sparse EV</span> by averaging the <span class="text-slate-200 font-bold mx-0.5">Expected Value</span> across ${period} sequential ${bucket}s timeframes, scanning a ${lookback}-day historical depth.`;
+        const period = meta.sparse_expected_value_moving_average_period;
+        const sampleWindow = this.formatSampleWindowDuration(period, bucket);
+        return `Tracks the <span class="text-purple-200 font-black uppercase tracking-widest text-[9px] mx-1">estimated value regime</span>: average dollars won or lost per resolved verdict, smoothed over <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${period}</span> non-empty verdict buckets of <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${bucket}s</span> each (about <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${sampleWindow}</span> of samples), inside a rolling <span class="inline-flex rounded bg-white/10 px-1 text-white font-black">${lookback}-day</span> history.`;
     });
 
     readonly shadowSparseExpectedValueProgress = computed(() => {
+        if (!this.shadowRegimeGateEnabled()) {
+            return 100;
+        }
         const threshold = this.shadowSparseExpectedValueUsdThreshold();
         const value = this.shadowSparseExpectedValueUsd();
         if (threshold === null || value === null) {
@@ -391,12 +416,34 @@ export class TradingOverviewComponent {
         return value.toFixed(2);
     }
 
+    formatSampleWindowDuration(sampleCount: number, bucketSeconds: number): string {
+        if (!Number.isFinite(sampleCount) || !Number.isFinite(bucketSeconds) || sampleCount <= 0 || bucketSeconds <= 0) {
+            return '—';
+        }
+        const totalSeconds = sampleCount * bucketSeconds;
+        if (totalSeconds < 3600) {
+            return `${Math.round(totalSeconds / 60)} min`;
+        }
+        const totalHours = totalSeconds / 3600;
+        if (totalHours < 24) {
+            return `${totalHours.toFixed(totalHours >= 10 ? 0 : 1)} h`;
+        }
+        return `${(totalHours / 24).toFixed(1)} d`;
+    }
+
     formatShadowMetricLookbackDays(days: number): string {
         if (Number.isInteger(days)) {
             return String(days);
         }
         const rounded = Math.round(days * 10) / 10;
         return rounded % 1 === 0 ? String(Math.round(rounded)) : rounded.toFixed(1);
+    }
+
+    formatUsdValue(value: number | null | undefined): string {
+        if (value === null || value === undefined || !Number.isFinite(value)) {
+            return '—';
+        }
+        return `$ ${value.toFixed(2)}`;
     }
 
     isNonNegative(value: number | null): boolean {

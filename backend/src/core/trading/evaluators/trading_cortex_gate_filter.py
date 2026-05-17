@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from src.configuration.config import settings
 from src.core.trading.cortex.trading_cortex_inference_provider import get_trading_cortex_inference_service
 from src.core.trading.cortex.trading_cortex_request_builder import TradingCortexRequestBuilder
 from src.core.trading.cortex.trading_cortex_structures import TradingCortexScoringBatchRequest, TradingCortexScoringResponse
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingIntelligenceSnapshot,
-    TradingShadowingPhase,
 )
 from src.core.trading.trading_structures import TradingFilterVerdict, TradingCortexInferenceSnapshot, TradingCandidate
 from src.core.utils.log_utils import get_visual_width
@@ -19,26 +16,8 @@ logger = get_application_logger(__name__)
 
 def apply_trading_cortex_gate_filter(
         candidates: list[TradingCandidate],
-        shadow_snapshot: Optional[TradingShadowingIntelligenceSnapshot],
+        shadow_snapshot: TradingShadowingIntelligenceSnapshot,
 ) -> list[TradingCandidate]:
-    if not settings.TRADING_GATE_CORTEX_ENABLED:
-        logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] TradingCortex gate is disabled")
-        return candidates
-    if not candidates:
-        logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] No candidates available for cortex gate")
-        return candidates
-
-    if shadow_snapshot is None:
-        logger.info("[TRADING][PIPELINE][TRADING][CORTEX][GATE] Shadow intelligence snapshot is missing; bypassing cortex gate")
-        return candidates
-
-    if shadow_snapshot.summary.phase != TradingShadowingPhase.ACTIVE:
-        logger.info(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Shadow intelligence phase is %s; bypassing cortex gate",
-            shadow_snapshot.summary.phase.value,
-        )
-        return candidates
-
     request_builder = TradingCortexRequestBuilder()
     scoring_requests = [
         request_builder.build_trade_scoring_request(
@@ -161,7 +140,7 @@ def _log_cortex_evaluation_details(
         padding: str = " " * max(0, 45 - visual_length)
 
         metrics_table: str = _format_cortex_metrics_table(snapshot)
-        logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Metrics: %s", prefix, padding, metrics_table)
+        logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Reasons: %s", prefix, padding, metrics_table)
 
 
 def _format_cortex_metrics_table(snapshot: TradingCortexInferenceSnapshot) -> str:

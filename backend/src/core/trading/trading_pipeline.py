@@ -73,24 +73,47 @@ class TradingPipeline:
             return
 
         shadow_snapshot: TradingShadowingIntelligenceSnapshot | None = None
-        if settings.TRADING_GATE_SHADOWING_ENABLED:
+        shadow_gate_enabled = (
+                settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED
+                or settings.TRADING_GATE_SHADOWING_REGIME_ENABLED
+        )
+        shadow_snapshot_required = (
+                shadow_gate_enabled
+                or settings.TRADING_GATE_CORTEX_ENABLED
+        )
+        if not settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED:
+            logger.debug("[TRADING][PIPELINE][GATE][SHADOW_TOXIC] Shadow toxic metrics gate is disabled")
+        if not settings.TRADING_GATE_SHADOWING_REGIME_ENABLED:
+            logger.debug("[TRADING][PIPELINE][GATE][SHADOW_REGIME] Shadow regime hard gate is disabled")
+        if not settings.TRADING_GATE_CORTEX_ENABLED:
+            logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] TradingCortex gate is disabled")
+        if not settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
+            logger.debug("[TRADING][PIPELINE][GATE][FUNDAMENTALS] Fundamentals gate stack is disabled")
+
+        if shadow_snapshot_required:
             shadow_snapshot = self._step_load_shadow_intelligence()
             if shadow_snapshot is None:
                 logger.warning(
                     "[TRADING][PIPELINE][SHADOW] Shadow intelligence not yet in cache — "
-                    "shadowing job has not produced its first snapshot yet; aborting trading cycle"
+                    "at least one enabled gate requires it; aborting trading cycle"
                 )
                 return
             pipeline_context.shadow_intelligence_snapshot = shadow_snapshot
+
+        if shadow_gate_enabled:
             if shadow_snapshot.summary.phase != TradingShadowingPhase.ACTIVE:
                 logger.info("[TRADING][PIPELINE][GATE] Shadow intelligence in %s phase — live trading is paused until sufficient data is collected.", shadow_snapshot.summary.phase.value)
                 return
-            if not self._is_shadow_regime_tradable(shadow_snapshot):
+            if settings.TRADING_GATE_SHADOWING_REGIME_ENABLED and not self._is_shadow_regime_tradable(shadow_snapshot):
                 return
 
-        shadow_active = shadow_snapshot is not None and shadow_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+        shadow_active = (
+                shadow_gate_enabled
+                and shadow_snapshot is not None
+                and shadow_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+        )
 
-        if not shadow_active:
+        if settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             candidates = self._step_filter_volume(candidates)
             if not candidates:
                 return
@@ -113,7 +136,7 @@ class TradingPipeline:
 
         self._step_compute_quality_scores(candidates)
 
-        if not shadow_active:
+        if settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             candidates = self._step_apply_quality_gate(candidates)
             if not candidates:
                 return
@@ -125,7 +148,7 @@ class TradingPipeline:
         if not candidates:
             return
 
-        if not shadow_active:
+        if settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             candidates = self._step_risk_filter(candidates)
             if not candidates:
                 return
@@ -148,9 +171,24 @@ class TradingPipeline:
                 return
             self._step_shadowing_notional_boost(candidates, shadow_snapshot)
 
-        candidates = self._step_apply_trading_cortex_gate(candidates, shadow_snapshot)
-        if not candidates:
-            return
+        if settings.TRADING_GATE_CORTEX_ENABLED:
+            if shadow_snapshot is None:
+                logger.warning(
+                    "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Shadow intelligence snapshot is missing; "
+                    "blocking execution for %d candidates",
+                    len(candidates),
+                )
+                return
+            if shadow_snapshot.summary.phase != TradingShadowingPhase.ACTIVE:
+                logger.warning(
+                    "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Shadow intelligence phase is %s; "
+                    "blocking execution because cortex gate requires an active snapshot",
+                    shadow_snapshot.summary.phase.value,
+                )
+                return
+            candidates = self._step_apply_trading_cortex_gate(candidates, shadow_snapshot)
+            if not candidates:
+                return
         self._step_execute(candidates, pipeline_context)
 
     def _step_fetch_candidates(self) -> list[TradingCandidate]:
@@ -307,7 +345,7 @@ class TradingPipeline:
     def _step_apply_trading_cortex_gate(
             self,
             candidates: list[TradingCandidate],
-            shadow_snapshot: TradingShadowingIntelligenceSnapshot | None,
+            shadow_snapshot: TradingShadowingIntelligenceSnapshot,
     ) -> list[TradingCandidate]:
         return apply_trading_cortex_gate_filter(candidates, shadow_snapshot)
 

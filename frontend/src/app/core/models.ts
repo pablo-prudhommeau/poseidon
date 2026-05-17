@@ -238,6 +238,7 @@ export interface TradingLiquidityPayload {
 
 export interface TradingShadowMetaPayload {
     is_enabled: boolean;
+    shadow_regime_gate_enabled: boolean;
     phase: TradingShadowingPhase;
     total_outcomes_analyzed: number;
     resolved_outcome_count: number;

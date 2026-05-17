@@ -70,7 +70,7 @@ def apply_shadowing_toxic_exposure_filter(
             retained.append(candidate)
             continue
 
-        if settings.TRADING_GATE_SHADOWING_ENABLED and diagnostics.total_metrics_evaluated <= 0:
+        if settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED and diagnostics.total_metrics_evaluated <= 0:
             rejected.append(candidate)
             continue
 

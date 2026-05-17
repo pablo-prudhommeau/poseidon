@@ -234,6 +234,7 @@ class TradingLiquidityPayload(BaseModel):
 
 class TradingShadowMetaPayload(BaseModel):
     is_enabled: bool
+    shadow_regime_gate_enabled: bool
     phase: TradingShadowingPhase
     total_outcomes_analyzed: int
     resolved_outcome_count: int

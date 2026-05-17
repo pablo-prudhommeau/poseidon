@@ -133,10 +133,6 @@ def _has_valid_intraday_bars(candidate: TradingCandidate) -> bool:
 
 
 def compute_quality_scores(candidates: list[TradingCandidate]) -> None:
-    if not candidates:
-        logger.info("[TRADING][EVALUATOR][QUALITY] Empty candidate list, skipping score computation")
-        return
-
     for candidate in candidates:
         quality_result = _evaluate_quality(candidate=candidate)
         candidate.quality_score = quality_result.score
@@ -148,10 +144,6 @@ def compute_quality_scores(candidates: list[TradingCandidate]) -> None:
 
 
 def apply_quality_gate(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-    if not candidates:
-        logger.info("[TRADING][EVALUATOR][QUALITY] Empty candidate list, skipping quality gate")
-        return []
-
     minimum_quality_score = settings.TRADING_SCORE_MIN_QUALITY
     retained: list[TradingCandidate] = []
 
