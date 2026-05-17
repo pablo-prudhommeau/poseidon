@@ -8,6 +8,7 @@ import {
     formatChronicleAxisTickLabelMilliseconds,
     resolveChronicleStreamLagMilliseconds
 } from '../data/shadow-verdict-chronicle-arrays.utils';
+import { CHRONICLE_AXIS_TITLES, CHRONICLE_METRIC_COLORS } from '../data/shadow-verdict-chronicle-metrics.catalog';
 import type { ShadowVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
 import { buildChronicleSeriesBundle } from './shadow-verdict-chronicle-series.builder';
 
@@ -23,18 +24,18 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             sci;
 
         const customTheme = new SciChartJSDarkTheme();
-        customTheme.sciChartBackground = '#050914';
-        customTheme.axisBandsFill = '#00000000';
-        customTheme.gridBackgroundBrush = '#050914';
-        customTheme.majorGridLineBrush = 'rgba(148, 163, 184, 0.28)';
-        customTheme.minorGridLineBrush = 'rgba(148, 163, 184, 0.14)';
-        customTheme.axisBorder = 'rgba(255, 255, 255, 0.12)';
-        customTheme.tickTextBrush = '#c4b5fdcc';
-        customTheme.legendBackgroundBrush = '#0b102878';
+        customTheme.sciChartBackground = CHRONICLE_METRIC_COLORS.chartBackground;
+        customTheme.axisBandsFill = CHRONICLE_METRIC_COLORS.transparent;
+        customTheme.gridBackgroundBrush = CHRONICLE_METRIC_COLORS.chartBackground;
+        customTheme.majorGridLineBrush = CHRONICLE_METRIC_COLORS.majorGridLine;
+        customTheme.minorGridLineBrush = CHRONICLE_METRIC_COLORS.minorGridLine;
+        customTheme.axisBorder = CHRONICLE_METRIC_COLORS.axisBorder;
+        customTheme.tickTextBrush = CHRONICLE_METRIC_COLORS.themeTickText;
+        customTheme.legendBackgroundBrush = CHRONICLE_METRIC_COLORS.themeLegendBackground;
 
         const { sciChartSurface, wasmContext } = await SciChartSurface.create(host, {
             theme: customTheme,
-            background: '#050914',
+            background: CHRONICLE_METRIC_COLORS.chartBackground,
             padding: new Thickness(6, 6, 6, 6)
         });
 
@@ -56,7 +57,7 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             minorsPerMajor: 4,
             datePrecision: EDatePrecision.Milliseconds,
             showYearOnWiderDate: true,
-            labelStyle: { fontSize: 11, color: '#cbd5e1d9' }
+            labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
         const axisLabelProvider = xAxis.labelProvider as LabelProvider;
@@ -73,9 +74,9 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             drawMinorGridLines: true,
             maxAutoTicks: 12,
             minorsPerMajor: 4,
-            axisTitle: 'PnL % · win rate %',
-            axisTitleStyle: { fontSize: 11, color: '#e9d5ff' },
-            labelStyle: { fontSize: 11, color: '#cbd5e1d9' }
+            axisTitle: CHRONICLE_AXIS_TITLES.percentage,
+            axisTitleStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.percentageAxisTitle },
+            labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
         const yVolume = new NumericAxis(wasmContext, {
@@ -88,9 +89,9 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             drawMinorGridLines: false,
             maxAutoTicks: 10,
             minorsPerMajor: 4,
-            axisTitle: 'Verdict count / bucket',
-            axisTitleStyle: { fontSize: 10, color: '#c084fc' },
-            labelStyle: { fontSize: 11, color: '#cbd5e1d9' }
+            axisTitle: CHRONICLE_AXIS_TITLES.volume,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.cortexPrediction },
+            labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
         const yExpectedValueAxis = new NumericAxis(wasmContext, {
@@ -103,9 +104,9 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             drawMinorGridLines: false,
             maxAutoTicks: 10,
             minorsPerMajor: 4,
-            axisTitle: 'EV per trade ($)',
-            axisTitleStyle: { fontSize: 10, color: '#34d399' },
-            labelStyle: { fontSize: 11, color: '#cbd5e1d9' }
+            axisTitle: CHRONICLE_AXIS_TITLES.expectedValue,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.expectedValue },
+            labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
         const yProfitFactorAxis = new NumericAxis(wasmContext, {
@@ -118,12 +119,12 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             drawMinorGridLines: false,
             maxAutoTicks: 10,
             minorsPerMajor: 4,
-            axisTitle: 'Profit factor (gross win / gross loss)',
-            axisTitleStyle: { fontSize: 10, color: '#fbbf24' },
-            labelStyle: { fontSize: 11, color: '#cbd5e1d9' }
+            axisTitle: CHRONICLE_AXIS_TITLES.profitFactor,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.profitFactor },
+            labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
-        const yVelocityAxis = new NumericAxis(wasmContext, {
+        const yTradesPerHourAxis = new NumericAxis(wasmContext, {
             id: 'yVel',
             axisAlignment: EAxisAlignment.Right,
             autoRange: EAutoRange.Always,
@@ -133,13 +134,43 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             drawMinorGridLines: false,
             maxAutoTicks: 10,
             minorsPerMajor: 4,
-            axisTitle: 'Velocity (closed / hour)',
-            axisTitleStyle: { fontSize: 10, color: '#38bdf8' },
-            labelStyle: { fontSize: 11, color: '#cbd5e1d9' }
+            axisTitle: CHRONICLE_AXIS_TITLES.tradesPerHour,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.tradesPerHour },
+            labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
+        });
+
+        const yRegimeEvAxis = new NumericAxis(wasmContext, {
+            id: 'yRegimeEv',
+            axisAlignment: EAxisAlignment.Right,
+            autoRange: EAutoRange.Always,
+            growBy: new NumberRange(0, 0),
+            drawMajorBands: false,
+            drawMajorGridLines: false,
+            drawMinorGridLines: false,
+            maxAutoTicks: 7,
+            minorsPerMajor: 4,
+            axisTitle: CHRONICLE_AXIS_TITLES.regimeExpectedValue,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.regimeExpectedValue },
+            labelStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.axisTick }
+        });
+
+        const yRegimePfAxis = new NumericAxis(wasmContext, {
+            id: 'yRegimePf',
+            axisAlignment: EAxisAlignment.Right,
+            autoRange: EAutoRange.Always,
+            growBy: new NumberRange(0, 0),
+            drawMajorBands: false,
+            drawMajorGridLines: false,
+            drawMinorGridLines: false,
+            maxAutoTicks: 7,
+            minorsPerMajor: 4,
+            axisTitle: CHRONICLE_AXIS_TITLES.regimeProfitFactor,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.regimeProfitFactor },
+            labelStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
         sciChartSurface.xAxes.add(xAxis);
-        sciChartSurface.yAxes.add(yPercentage, yVolume, yExpectedValueAxis, yProfitFactorAxis, yVelocityAxis);
+        sciChartSurface.yAxes.add(yPercentage, yVolume, yExpectedValueAxis, yProfitFactorAxis, yTradesPerHourAxis, yRegimeEvAxis, yRegimePfAxis);
 
         const seriesBundle = buildChronicleSeriesBundle(sci, wasmContext, sciChartSurface, chronicleArrays, meta);
 
@@ -149,25 +180,32 @@ export class ShadowVerdictChronicleSurfaceBuilder {
             sci,
             xAxis,
             viewportWidthMilliseconds,
-            volumeMountainDataSeries: seriesBundle.volumeMountainDataSeries,
             volumeColumnDataSeries: seriesBundle.volumeColumnDataSeries,
             volumeColumnRenderableSeries: seriesBundle.volumeColumnRenderableSeries,
             yVolumeAxis: yVolume,
             yExpectedValueAxis,
             yProfitFactorAxis,
-            yVelocityAxis,
+            yTradesPerHourAxis,
+            yRegimeEvAxis,
+            yRegimePfAxis,
             goldenZoneExpectedValueBandDataSeries: seriesBundle.goldenZoneExpectedValueBandDataSeries,
             goldenZoneProfitFactorBandDataSeries: seriesBundle.goldenZoneProfitFactorBandDataSeries,
             goldenZoneExpectedValueBandSeries: seriesBundle.goldenZoneExpectedValueBandSeries,
             goldenZoneProfitFactorBandSeries: seriesBundle.goldenZoneProfitFactorBandSeries,
-            goldenZoneExpectedValueSmaPaletteController: seriesBundle.goldenZoneExpectedValueSmaPaletteController,
-            goldenZoneProfitFactorSmaPaletteController: seriesBundle.goldenZoneProfitFactorSmaPaletteController,
+            regimeEvGateSubmergedBandSegmentBundles: seriesBundle.regimeEvGateSubmergedBandSegmentBundles,
+            regimePfGateSubmergedBandSegmentBundles: seriesBundle.regimePfGateSubmergedBandSegmentBundles,
             metricLineRenderableSeries: seriesBundle.metricLineRenderableSeries,
             movingAverageLineRenderableSeries: seriesBundle.movingAverageLineRenderableSeries,
-            profitableVerdictXyzDataSeries: seriesBundle.profitableVerdictXyzDataSeries,
-            lossVerdictXyzDataSeries: seriesBundle.lossVerdictXyzDataSeries,
+            profitableVerdictXyDataSeries: seriesBundle.profitableVerdictXyDataSeries,
+            lossVerdictXyDataSeries: seriesBundle.lossVerdictXyDataSeries,
+            cortexCalibrationBandSegmentBundles: seriesBundle.cortexCalibrationBandSegmentBundles,
+            cortexCalibrationBandUserVisible: true,
+            cortexModelRolloutUserVisible: true,
+            evGateThresholdUserVisible: true,
+            pfGateThresholdUserVisible: true,
             goldenZoneExpectedValueAnnotation: seriesBundle.goldenZoneExpectedValueAnnotation,
-            goldenZoneProfitFactorAnnotation: seriesBundle.goldenZoneProfitFactorAnnotation
+            goldenZoneProfitFactorAnnotation: seriesBundle.goldenZoneProfitFactorAnnotation,
+            cortexModelRolloutAnnotationBundles: []
         };
     }
 }

@@ -39,8 +39,10 @@ class TradingCortexPreparedTrainingDataset(BaseModel):
     validation_toxicity_labels: numpy.ndarray
     training_expected_profit_and_loss_percentages: numpy.ndarray
     validation_expected_profit_and_loss_percentages: numpy.ndarray
+    training_exit_reasons: list[str]
     training_record_count: int
     validation_record_count: int
+    excluded_staled_verdict_count: int
     dataset_window_start_at: datetime
     dataset_window_end_at: datetime
 
@@ -94,3 +96,54 @@ class TradingCortexTrainingRunSummary(BaseModel):
     metrics: TradingCortexModelEvaluationMetrics
     training_device_used: str
     latest_resolved_at: Optional[datetime] = None
+
+
+class TradingCortexTrainingFeatureImportanceEntry(BaseModel):
+    feature_name: str
+    gain: float
+    weight: float
+    cover: float
+
+
+class TradingCortexTrainingLabelDistribution(BaseModel):
+    total_count: int
+    positive_count: int
+    negative_count: int
+    positive_ratio: float
+    scale_pos_weight: float
+
+
+class TradingCortexTrainingTargetDistribution(BaseModel):
+    total_count: int
+    minimum: float
+    maximum: float
+    mean: float
+    median: float
+    standard_deviation: float
+    percentile_5: float
+    percentile_25: float
+    percentile_75: float
+    percentile_95: float
+
+
+class TradingCortexTrainingExitReasonDistribution(BaseModel):
+    take_profit_2_count: int
+    stop_loss_count: int
+    lethargic_count: int
+    take_profit_2_ratio: float
+    stop_loss_ratio: float
+    lethargic_ratio: float
+
+
+class TradingCortexTrainingSummary(BaseModel):
+    training_device: str
+    xgboost_parameters: dict[str, object]
+    best_iteration_success_probability: Optional[int] = None
+    best_iteration_toxicity_probability: Optional[int] = None
+    best_iteration_expected_profit_and_loss: Optional[int] = None
+    success_label_distribution: TradingCortexTrainingLabelDistribution
+    toxicity_label_distribution: TradingCortexTrainingLabelDistribution
+    expected_profit_and_loss_target_distribution: TradingCortexTrainingTargetDistribution
+    exit_reason_distribution: TradingCortexTrainingExitReasonDistribution
+    feature_importance_by_gain: list[TradingCortexTrainingFeatureImportanceEntry]
+    excluded_staled_verdict_count: int

@@ -41,25 +41,47 @@ def evaluate_golden_condition(bucket_statistics: MetricBucketStatistics) -> bool
             and bucket_statistics.average_pnl > settings.TRADING_SHADOWING_GOLDEN_AVERAGE_PNL_THRESHOLD * 100.0
             and bucket_statistics.outlier_hit_rate > settings.TRADING_SHADOWING_GOLDEN_OUTLIER_HIT_RATE_THRESHOLD * 100.0
             and (bucket_statistics.average_holding_time_minutes / 60.0) < settings.TRADING_SHADOWING_GOLDEN_HOLDING_TIME_THRESHOLD
-            and bucket_statistics.capital_velocity > settings.TRADING_SHADOWING_GOLDEN_CAPITAL_VELOCITY_THRESHOLD
+            and bucket_statistics.expected_pnl_velocity > settings.TRADING_SHADOWING_GOLDEN_EXPECTED_PNL_VELOCITY_THRESHOLD
     )
 
 
 def evaluate_toxic_condition(bucket_statistics: MetricBucketStatistics, meta_statistics: MetaStatistics) -> bool:
-    toxic_win_rate = (meta_statistics.win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET) * 100.0
-    toxic_average_pnl = meta_statistics.average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0
-    toxic_max_holding_time_hours = meta_statistics.average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET
-    toxic_min_capital_velocity = meta_statistics.capital_velocity + settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET
+    if bucket_statistics.sample_count < MINIMUM_POINTS_PER_BUCKET:
+        return False
 
-    return (
-            bucket_statistics.sample_count >= MINIMUM_POINTS_PER_BUCKET
-            and (
-                    bucket_statistics.win_rate < toxic_win_rate
-                    or bucket_statistics.average_pnl < toxic_average_pnl
-                    or bucket_statistics.capital_velocity < toxic_min_capital_velocity
-                    or (bucket_statistics.average_holding_time_minutes / 60.0) > toxic_max_holding_time_hours
-            )
+    offset_win_rate = (meta_statistics.win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET) * 100.0
+    offset_average_pnl = meta_statistics.average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0
+    offset_max_holding_time_hours = meta_statistics.average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET
+    offset_min_expected_pnl_velocity = meta_statistics.expected_pnl_velocity + settings.TRADING_SHADOWING_TOXIC_EXPECTED_PNL_VELOCITY_OFFSET
+
+    toxic_win_rate = min(
+        max(offset_win_rate, settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_WIN_RATE * 100.0),
+        settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_WIN_RATE * 100.0
     )
+    toxic_average_pnl = min(
+        max(offset_average_pnl, settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_AVERAGE_PNL * 100.0),
+        settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_AVERAGE_PNL * 100.0
+    )
+    toxic_max_holding_time_hours = max(
+        min(offset_max_holding_time_hours, settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_HOLDING_TIME_HOURS),
+        settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_HOLDING_TIME_HOURS
+    )
+    toxic_min_expected_pnl_velocity = min(
+        max(offset_min_expected_pnl_velocity, settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_EXPECTED_PNL_VELOCITY),
+        settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_EXPECTED_PNL_VELOCITY
+    )
+
+    failing_criteria_count: int = 0
+    if bucket_statistics.win_rate < toxic_win_rate:
+        failing_criteria_count += 1
+    if bucket_statistics.average_pnl < toxic_average_pnl:
+        failing_criteria_count += 1
+    if bucket_statistics.expected_pnl_velocity < toxic_min_expected_pnl_velocity:
+        failing_criteria_count += 1
+    if (bucket_statistics.average_holding_time_minutes / 60.0) > toxic_max_holding_time_hours:
+        failing_criteria_count += 1
+
+    return failing_criteria_count >= 1
 
 
 def compute_metric_bucket_profile(
@@ -135,9 +157,9 @@ def compute_metric_bucket_profile(
 
         win_rate = (win_count / sample_count * 100.0) if sample_count > 0 else 0.0
         outlier_hit_rate = (bucket_outlier_counts[bucket_index] / sample_count * 100.0) if sample_count > 0 else 0.0
-        capital_velocity = 0.0
+        expected_pnl_velocity = 0.0
         if average_holding > 0:
-            capital_velocity = (average_pnl * win_rate / 100.0) / (average_holding / 60.0)
+            expected_pnl_velocity = (average_pnl * win_rate / 100.0) / (average_holding / 60.0)
 
         bucket_stats = MetricBucketStatistics(
             range_min=edges[bucket_index],
@@ -147,7 +169,7 @@ def compute_metric_bucket_profile(
             win_rate=win_rate,
             average_pnl=average_pnl,
             average_holding_time_minutes=average_holding,
-            capital_velocity=capital_velocity,
+            expected_pnl_velocity=expected_pnl_velocity,
             outlier_hit_rate=outlier_hit_rate,
             quartile_1_pnl=quartile_1,
             quartile_3_pnl=quartile_3,

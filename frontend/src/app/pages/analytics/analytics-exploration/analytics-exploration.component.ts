@@ -120,7 +120,7 @@ export class AnalyticsExplorationComponent implements OnChanges {
 
                 if (tab === 'non-linear') {
                     const winRateData = series.cells.map((cell) => parseFloat(cell.win_rate_percentage.toFixed(1)));
-                    const velocityData = series.cells.map((cell) => parseFloat(Math.abs(cell.capital_velocity).toFixed(2)));
+                    const velocityData = series.cells.map((cell) => parseFloat(Math.abs(cell.expected_pnl_velocity).toFixed(2)));
                     const pnlData = series.cells.map((cell) => parseFloat(cell.average_pnl.toFixed(2)));
 
                     newConfigs.push({

@@ -20,7 +20,7 @@ export interface ActionableNiche {
     winRate: number;
     sampleSize: number;
     averagePnl: number;
-    capitalVelocity: number;
+    expectedPnlVelocity: number;
     averageHoldingTime: number;
     outlierHitRatePercentage: number;
     type: 'GOLDEN' | 'TOXIC';
@@ -182,7 +182,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
                             winRate: cell.win_rate_percentage,
                             sampleSize: cell.sample_count,
                             averagePnl: cell.average_pnl,
-                            capitalVelocity: cell.capital_velocity,
+                            expectedPnlVelocity: cell.expected_pnl_velocity,
                             averageHoldingTime: cell.average_holding_time_minutes,
                             outlierHitRatePercentage: cell.outlier_hit_rate_percentage,
                             type: 'GOLDEN'
@@ -195,7 +195,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
                             winRate: cell.win_rate_percentage,
                             sampleSize: cell.sample_count,
                             averagePnl: cell.average_pnl,
-                            capitalVelocity: cell.capital_velocity,
+                            expectedPnlVelocity: cell.expected_pnl_velocity,
                             averageHoldingTime: cell.average_holding_time_minutes,
                             outlierHitRatePercentage: cell.outlier_hit_rate_percentage,
                             type: 'TOXIC'
@@ -209,7 +209,7 @@ export class AnalyticsSynthesisComponent implements OnChanges {
             if (b.outlierHitRatePercentage !== a.outlierHitRatePercentage) {
                 return b.outlierHitRatePercentage - a.outlierHitRatePercentage;
             }
-            return b.capitalVelocity - a.capitalVelocity;
+            return b.expectedPnlVelocity - a.expectedPnlVelocity;
         });
 
         this.goldenNiches = [];
@@ -225,8 +225,8 @@ export class AnalyticsSynthesisComponent implements OnChanges {
         }
 
         const toxicSorted = [...allToxicCells].sort((a, b) => {
-            if (a.capitalVelocity !== b.capitalVelocity) {
-                return a.capitalVelocity - b.capitalVelocity;
+            if (a.expectedPnlVelocity !== b.expectedPnlVelocity) {
+                return a.expectedPnlVelocity - b.expectedPnlVelocity;
             }
             return a.averagePnl - b.averagePnl;
         });

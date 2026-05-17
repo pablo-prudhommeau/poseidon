@@ -1,5 +1,10 @@
 import { easeOutCubic, linearInterpolate } from '../../../../core/math.utils';
-import type { ShadowVerdictChronicleBucketPayload, ShadowVerdictChronicleResponse, ShadowVerdictChronicleVerdictPointPayload } from '../../../../core/models';
+import type {
+    ShadowVerdictChronicleBucketPayload,
+    ShadowVerdictChronicleRegimeGatePointPayload,
+    ShadowVerdictChronicleResponse,
+    ShadowVerdictChronicleVerdictPointPayload
+} from '../../../../core/models';
 import type { ChronicleArrays, ChronicleBucketMeta, ChronicleCartesianPoint, SciChartModule } from './shadow-verdict-chronicle.models';
 
 export type { SciChartModule };
@@ -40,16 +45,19 @@ export function computeSimpleMovingAverage(values: number[], windowSize: number)
     if (values.length === 0 || windowSize <= 1) {
         return [...values];
     }
-    const effectiveWindow = Math.min(windowSize, values.length);
     const result: number[] = new Array(values.length);
-    let runningSum = 0;
     for (let index = 0; index < values.length; index++) {
-        runningSum += values[index];
-        if (index >= effectiveWindow) {
-            runningSum -= values[index - effectiveWindow];
+        let sum = 0;
+        let count = 0;
+        const start = Math.max(0, index - windowSize + 1);
+        for (let windowIndex = start; windowIndex <= index; windowIndex++) {
+            const value = values[windowIndex];
+            if (value != null && !Number.isNaN(value)) {
+                sum += value;
+                count++;
+            }
         }
-        const currentWindow = Math.min(index + 1, effectiveWindow);
-        result[index] = runningSum / currentWindow;
+        result[index] = count > 0 ? sum / count : NaN;
     }
     return result;
 }
@@ -60,7 +68,7 @@ export function shadowHistoryBucketLookbackMilliseconds(bucketLabel: ChronicleBu
             return 30 * 60 * 1000;
         case 'last_24h_1h':
             return 24 * 60 * 60 * 1000;
-        case 'last_7d_5m':
+        case 'last_7d_15m':
             return 7 * 24 * 60 * 60 * 1000;
         case 'last_30d_30m':
             return 30 * 24 * 60 * 60 * 1000;
@@ -129,15 +137,21 @@ export function chronicleMinimumDisplayXMilliseconds(arrays: ChronicleArrays): n
 }
 
 export function winsorizeSeries(values: number[], lowerQuantile = 0.02, upperQuantile = 0.98): number[] {
-    if (values.length < 4) {
+    const finiteValues = values.filter((value) => Number.isFinite(value));
+    if (finiteValues.length < 4) {
         return [...values];
     }
-    const sorted = [...values].sort((left, right) => left - right);
+    const sorted = [...finiteValues].sort((left, right) => left - right);
     const lowerIndex = Math.max(0, Math.floor((sorted.length - 1) * lowerQuantile));
     const upperIndex = Math.min(sorted.length - 1, Math.ceil((sorted.length - 1) * upperQuantile));
     const lowerBound = sorted[lowerIndex];
     const upperBound = sorted[upperIndex];
-    return values.map((value: number) => Math.min(upperBound, Math.max(lowerBound, value)));
+    return values.map((value: number) => {
+        if (!Number.isFinite(value)) {
+            return NaN;
+        }
+        return Math.min(upperBound, Math.max(lowerBound, value));
+    });
 }
 
 export function chronicleShouldShowTargetVerdictCloud(rawAlpha: number): boolean {
@@ -173,6 +187,40 @@ function sampleSortedXySeriesAtX(sortedXValues: number[], yValues: number[], xQu
     return linearInterpolate(yValues[lower], yValues[upper], interpolationWeight);
 }
 
+function alignRegimeGateSeriesToMetrics(
+    metrics: ShadowVerdictChronicleBucketPayload['metrics'],
+    regimeGate: ShadowVerdictChronicleRegimeGatePointPayload[] | undefined
+): Pick<
+    ChronicleArrays,
+    | 'regimeProfitFactorSmaSeries'
+    | 'regimeSparseExpectedValueUsdSmaSeries'
+    | 'profitFactorGateOpenSeries'
+    | 'sparseExpectedValueGateOpenSeries'
+    | 'hardGateOpenSeries'
+> {
+    const regimeGateByTimestamp = new Map((regimeGate ?? []).map((gatePoint) => [gatePoint.timestamp_milliseconds, gatePoint]));
+    const regimeProfitFactorSmaSeries: number[] = [];
+    const regimeSparseExpectedValueUsdSmaSeries: number[] = [];
+    const profitFactorGateOpenSeries: boolean[] = [];
+    const sparseExpectedValueGateOpenSeries: boolean[] = [];
+    const hardGateOpenSeries: boolean[] = [];
+    for (const metric of metrics) {
+        const gatePoint = regimeGateByTimestamp.get(metric.timestamp_milliseconds);
+        regimeProfitFactorSmaSeries.push(gatePoint?.regime_profit_factor_sma ?? NaN);
+        regimeSparseExpectedValueUsdSmaSeries.push(gatePoint?.regime_sparse_expected_value_usd_sma ?? NaN);
+        profitFactorGateOpenSeries.push(gatePoint?.profit_factor_gate_open ?? false);
+        sparseExpectedValueGateOpenSeries.push(gatePoint?.sparse_expected_value_gate_open ?? false);
+        hardGateOpenSeries.push(gatePoint?.hard_gate_open ?? false);
+    }
+    return {
+        regimeProfitFactorSmaSeries,
+        regimeSparseExpectedValueUsdSmaSeries,
+        profitFactorGateOpenSeries,
+        sparseExpectedValueGateOpenSeries,
+        hardGateOpenSeries
+    };
+}
+
 export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
     return {
         metricTimestampsMilliseconds: [...source.metricTimestampsMilliseconds],
@@ -180,12 +228,19 @@ export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
         averageWinRatePercentageSeries: [...source.averageWinRatePercentageSeries],
         expectedValuePerTradeUsdSeries: [...source.expectedValuePerTradeUsdSeries],
         profitFactorSeries: [...source.profitFactorSeries],
-        capitalVelocityPerHourSeries: [...source.capitalVelocityPerHourSeries],
+        closedVerdictsPerHourSeries: [...source.closedVerdictsPerHourSeries],
+        averageCortexPredictionWinRatePercentageSeries: [...source.averageCortexPredictionWinRatePercentageSeries],
         movingAveragePnlSeries: [...source.movingAveragePnlSeries],
         movingAverageWinRateSeries: [...source.movingAverageWinRateSeries],
         movingAverageExpectedValueSeries: [...source.movingAverageExpectedValueSeries],
         movingAverageProfitFactorSeries: [...source.movingAverageProfitFactorSeries],
-        movingAverageVelocitySeries: [...source.movingAverageVelocitySeries],
+        movingAverageTradesPerHourSeries: [...source.movingAverageTradesPerHourSeries],
+        movingAverageCortexPredictionWinRatePercentageSeries: [...source.movingAverageCortexPredictionWinRatePercentageSeries],
+        regimeProfitFactorSmaSeries: [...source.regimeProfitFactorSmaSeries],
+        regimeSparseExpectedValueUsdSmaSeries: [...source.regimeSparseExpectedValueUsdSmaSeries],
+        profitFactorGateOpenSeries: [...source.profitFactorGateOpenSeries],
+        sparseExpectedValueGateOpenSeries: [...source.sparseExpectedValueGateOpenSeries],
+        hardGateOpenSeries: [...source.hardGateOpenSeries],
         volumeBucketTimestampsMilliseconds: [...source.volumeBucketTimestampsMilliseconds],
         volumeBucketVerdictCounts: [...source.volumeBucketVerdictCounts],
         verdictCloudProfitablePoints: source.verdictCloudProfitablePoints.map((point) => ({ ...point })),
@@ -227,10 +282,17 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
             alpha
         )
     );
-    const capitalVelocityPerHourSeries = metricTimestampsMilliseconds.map((x, index) =>
+    const closedVerdictsPerHourSeries = metricTimestampsMilliseconds.map((x, index) =>
         linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.capitalVelocityPerHourSeries, x),
-            toArrays.capitalVelocityPerHourSeries[index] ?? 0,
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.closedVerdictsPerHourSeries, x),
+            toArrays.closedVerdictsPerHourSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const averageCortexPredictionWinRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.averageCortexPredictionWinRatePercentageSeries, x),
+            toArrays.averageCortexPredictionWinRatePercentageSeries[index] ?? 0,
             alpha
         )
     );
@@ -252,6 +314,20 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
                 alpha
             )
         );
+    const blendRegimeSmaSeries = (fieldName: 'regimeProfitFactorSmaSeries' | 'regimeSparseExpectedValueUsdSmaSeries'): number[] =>
+        metricTimestampsMilliseconds.map((x, index) => {
+            const fromValue = sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays[fieldName], x);
+            const toValue = toArrays[fieldName][index] ?? NaN;
+            if (!Number.isFinite(fromValue)) {
+                return toValue;
+            }
+            if (!Number.isFinite(toValue)) {
+                return fromValue;
+            }
+            return linearInterpolate(fromValue, toValue, alpha);
+        });
+    const blendGateOpenSeries = (fieldName: 'profitFactorGateOpenSeries' | 'sparseExpectedValueGateOpenSeries' | 'hardGateOpenSeries'): boolean[] =>
+        metricTimestampsMilliseconds.map((x, index) => (alpha >= 0.5 ? toArrays[fieldName][index] : fromArrays[fieldName][index]) ?? false);
 
     return {
         metricTimestampsMilliseconds,
@@ -259,12 +335,19 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
         averageWinRatePercentageSeries,
         expectedValuePerTradeUsdSeries,
         profitFactorSeries,
-        capitalVelocityPerHourSeries,
+        closedVerdictsPerHourSeries,
+        averageCortexPredictionWinRatePercentageSeries,
         movingAveragePnlSeries: blendMovingAverageSeries('movingAveragePnlSeries'),
         movingAverageWinRateSeries: blendMovingAverageSeries('movingAverageWinRateSeries'),
         movingAverageExpectedValueSeries: blendMovingAverageSeries('movingAverageExpectedValueSeries'),
         movingAverageProfitFactorSeries: blendMovingAverageSeries('movingAverageProfitFactorSeries'),
-        movingAverageVelocitySeries: blendMovingAverageSeries('movingAverageVelocitySeries'),
+        movingAverageTradesPerHourSeries: blendMovingAverageSeries('movingAverageTradesPerHourSeries'),
+        movingAverageCortexPredictionWinRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexPredictionWinRatePercentageSeries'),
+        regimeProfitFactorSmaSeries: blendRegimeSmaSeries('regimeProfitFactorSmaSeries'),
+        regimeSparseExpectedValueUsdSmaSeries: blendRegimeSmaSeries('regimeSparseExpectedValueUsdSmaSeries'),
+        profitFactorGateOpenSeries: blendGateOpenSeries('profitFactorGateOpenSeries'),
+        sparseExpectedValueGateOpenSeries: blendGateOpenSeries('sparseExpectedValueGateOpenSeries'),
+        hardGateOpenSeries: blendGateOpenSeries('hardGateOpenSeries'),
         volumeBucketTimestampsMilliseconds,
         volumeBucketVerdictCounts,
         verdictCloudProfitablePoints: takeCloudFromSource
@@ -318,28 +401,45 @@ export function buildChronicleArraysFromBucket(
     let averageWinRatePercentageSeries = winsorizeSeries(metrics.map((metric) => metric.average_win_rate_percentage));
     let expectedValuePerTradeUsdSeries = winsorizeSeries(metrics.map((metric) => metric.expected_value_per_trade_usd));
     let profitFactorSeries = winsorizeSeries(metrics.map((metric) => metric.profit_factor));
-    let capitalVelocityPerHourSeries = winsorizeSeries(metrics.map((metric) => metric.capital_velocity_per_hour));
+    let closedVerdictsPerHourSeries = winsorizeSeries(metrics.map((metric) => metric.closed_verdicts_per_hour));
+    let averageCortexPredictionWinRatePercentageSeries = metrics.map((metric) => metric.average_cortex_prediction_win_rate_percentage ?? NaN);
 
     const effectiveSmaWindow = smaWindowBuckets > 0 ? smaWindowBuckets : metrics.length;
     let movingAveragePnlSeries = computeSimpleMovingAverage(averagePnlPercentageSeries, effectiveSmaWindow);
     let movingAverageWinRateSeries = computeSimpleMovingAverage(averageWinRatePercentageSeries, effectiveSmaWindow);
     let movingAverageExpectedValueSeries = computeSimpleMovingAverage(expectedValuePerTradeUsdSeries, effectiveSmaWindow);
     let movingAverageProfitFactorSeries = computeSimpleMovingAverage(profitFactorSeries, effectiveSmaWindow);
-    let movingAverageVelocitySeries = computeSimpleMovingAverage(capitalVelocityPerHourSeries, effectiveSmaWindow);
+    let movingAverageTradesPerHourSeries = computeSimpleMovingAverage(closedVerdictsPerHourSeries, effectiveSmaWindow);
+    let movingAverageCortexPredictionWinRatePercentageSeries = computeSimpleMovingAverage(averageCortexPredictionWinRatePercentageSeries, effectiveSmaWindow);
+    let {
+        regimeProfitFactorSmaSeries,
+        regimeSparseExpectedValueUsdSmaSeries,
+        profitFactorGateOpenSeries,
+        sparseExpectedValueGateOpenSeries,
+        hardGateOpenSeries
+    } = alignRegimeGateSeriesToMetrics(metrics, meta.bucket.regime_gate);
 
     const metricDownsampledIndices = buildDownsampledIndices(metricTimestampsMilliseconds.length, CHRONICLE_MAX_METRIC_POINTS);
     const downsampleSeriesByMetricIndices = (values: number[]): number[] => metricDownsampledIndices.map((index) => values[index] ?? 0);
+    const downsampleBooleanSeriesByMetricIndices = (values: boolean[]): boolean[] => metricDownsampledIndices.map((index) => values[index] ?? false);
     const downsampledMetricTimestampsMilliseconds = metricDownsampledIndices.map((index) => metricTimestampsMilliseconds[index] ?? 0);
     averagePnlPercentageSeries = downsampleSeriesByMetricIndices(averagePnlPercentageSeries);
     averageWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageWinRatePercentageSeries);
     expectedValuePerTradeUsdSeries = downsampleSeriesByMetricIndices(expectedValuePerTradeUsdSeries);
     profitFactorSeries = downsampleSeriesByMetricIndices(profitFactorSeries);
-    capitalVelocityPerHourSeries = downsampleSeriesByMetricIndices(capitalVelocityPerHourSeries);
+    closedVerdictsPerHourSeries = downsampleSeriesByMetricIndices(closedVerdictsPerHourSeries);
+    averageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageCortexPredictionWinRatePercentageSeries);
     movingAveragePnlSeries = downsampleSeriesByMetricIndices(movingAveragePnlSeries);
     movingAverageWinRateSeries = downsampleSeriesByMetricIndices(movingAverageWinRateSeries);
     movingAverageExpectedValueSeries = downsampleSeriesByMetricIndices(movingAverageExpectedValueSeries);
     movingAverageProfitFactorSeries = downsampleSeriesByMetricIndices(movingAverageProfitFactorSeries);
-    movingAverageVelocitySeries = downsampleSeriesByMetricIndices(movingAverageVelocitySeries);
+    movingAverageTradesPerHourSeries = downsampleSeriesByMetricIndices(movingAverageTradesPerHourSeries);
+    movingAverageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexPredictionWinRatePercentageSeries);
+    regimeProfitFactorSmaSeries = downsampleSeriesByMetricIndices(regimeProfitFactorSmaSeries);
+    regimeSparseExpectedValueUsdSmaSeries = downsampleSeriesByMetricIndices(regimeSparseExpectedValueUsdSmaSeries);
+    profitFactorGateOpenSeries = downsampleBooleanSeriesByMetricIndices(profitFactorGateOpenSeries);
+    sparseExpectedValueGateOpenSeries = downsampleBooleanSeriesByMetricIndices(sparseExpectedValueGateOpenSeries);
+    hardGateOpenSeries = downsampleBooleanSeriesByMetricIndices(hardGateOpenSeries);
 
     const volumeBucketTimestampsMilliseconds = volumes.map((volume) => displayTimeMilliseconds(volume.timestamp_milliseconds));
     const volumeBucketVerdictCounts = winsorizeSeries(
@@ -400,7 +500,8 @@ export function buildChronicleArraysFromBucket(
         const row: ChronicleCartesianPoint = {
             x: displayTimeMilliseconds(xServerMilliseconds),
             y: point.pnl_percentage,
-            z: Math.max(6.5, point.point_size * 1.15)
+            cortexProbability: point.cortex_probability,
+            orderNotionalUsd: point.order_notional_usd
         };
         if (point.is_profitable) {
             verdictCloudProfitablePoints.push(row);
@@ -415,12 +516,19 @@ export function buildChronicleArraysFromBucket(
         averageWinRatePercentageSeries,
         expectedValuePerTradeUsdSeries,
         profitFactorSeries,
-        capitalVelocityPerHourSeries,
+        closedVerdictsPerHourSeries,
+        averageCortexPredictionWinRatePercentageSeries,
         movingAveragePnlSeries,
         movingAverageWinRateSeries,
         movingAverageExpectedValueSeries,
         movingAverageProfitFactorSeries,
-        movingAverageVelocitySeries,
+        movingAverageTradesPerHourSeries,
+        movingAverageCortexPredictionWinRatePercentageSeries,
+        regimeProfitFactorSmaSeries,
+        regimeSparseExpectedValueUsdSmaSeries,
+        profitFactorGateOpenSeries,
+        sparseExpectedValueGateOpenSeries,
+        hardGateOpenSeries,
         volumeBucketTimestampsMilliseconds: downsampledVolumeBucketTimestampsMilliseconds,
         volumeBucketVerdictCounts: downsampledVolumeBucketVerdictCounts,
         verdictCloudProfitablePoints,
@@ -437,6 +545,13 @@ export function extendChronicleArraysToTapeRight(source: ChronicleArrays, tapeRi
         const copy = values.slice();
         if (extendMetric) {
             copy.push(values[values.length - 1] ?? 0);
+        }
+        return copy;
+    };
+    const appendBooleanMetricTail = (values: boolean[]): boolean[] => {
+        const copy = values.slice();
+        if (extendMetric) {
+            copy.push(values[values.length - 1] ?? false);
         }
         return copy;
     };
@@ -458,12 +573,19 @@ export function extendChronicleArraysToTapeRight(source: ChronicleArrays, tapeRi
         averageWinRatePercentageSeries: appendMetricTail(source.averageWinRatePercentageSeries),
         expectedValuePerTradeUsdSeries: appendMetricTail(source.expectedValuePerTradeUsdSeries),
         profitFactorSeries: appendMetricTail(source.profitFactorSeries),
-        capitalVelocityPerHourSeries: appendMetricTail(source.capitalVelocityPerHourSeries),
+        closedVerdictsPerHourSeries: appendMetricTail(source.closedVerdictsPerHourSeries),
+        averageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.averageCortexPredictionWinRatePercentageSeries),
         movingAveragePnlSeries: appendMetricTail(source.movingAveragePnlSeries),
         movingAverageWinRateSeries: appendMetricTail(source.movingAverageWinRateSeries),
         movingAverageExpectedValueSeries: appendMetricTail(source.movingAverageExpectedValueSeries),
         movingAverageProfitFactorSeries: appendMetricTail(source.movingAverageProfitFactorSeries),
-        movingAverageVelocitySeries: appendMetricTail(source.movingAverageVelocitySeries),
+        movingAverageTradesPerHourSeries: appendMetricTail(source.movingAverageTradesPerHourSeries),
+        movingAverageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.movingAverageCortexPredictionWinRatePercentageSeries),
+        regimeProfitFactorSmaSeries: appendMetricTail(source.regimeProfitFactorSmaSeries),
+        regimeSparseExpectedValueUsdSmaSeries: appendMetricTail(source.regimeSparseExpectedValueUsdSmaSeries),
+        profitFactorGateOpenSeries: appendBooleanMetricTail(source.profitFactorGateOpenSeries),
+        sparseExpectedValueGateOpenSeries: appendBooleanMetricTail(source.sparseExpectedValueGateOpenSeries),
+        hardGateOpenSeries: appendBooleanMetricTail(source.hardGateOpenSeries),
         volumeBucketTimestampsMilliseconds,
         volumeBucketVerdictCounts,
         verdictCloudProfitablePoints: source.verdictCloudProfitablePoints,

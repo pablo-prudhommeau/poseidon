@@ -33,7 +33,7 @@ class TradingCortexTrainingDatasetService:
             training_run_request: TradingCortexTrainingRunRequest,
             ordered_feature_names: list[str],
     ) -> tuple[TradingCortexPreparedTrainingDataset, datetime]:
-        shadow_training_records = self._load_shadow_training_records()
+        shadow_training_records, excluded_staled_count = self._load_shadow_training_records()
         labeled_record_count = len(shadow_training_records)
         if labeled_record_count < training_run_request.minimum_labeled_record_count:
             raise TradingCortexInsufficientTrainingDataError(
@@ -45,6 +45,7 @@ class TradingCortexTrainingDatasetService:
         success_labels: list[float] = []
         toxicity_labels: list[float] = []
         expected_profit_and_loss_percentages: list[float] = []
+        exit_reasons: list[str] = []
 
         dataset_window_start_at = shadow_training_records[0].resolved_at
         dataset_window_end_at = shadow_training_records[-1].resolved_at
@@ -63,6 +64,7 @@ class TradingCortexTrainingDatasetService:
             success_labels.append(1.0 if shadow_training_record.is_profitable else 0.0)
             toxicity_labels.append(1.0 if shadow_training_record.exit_reason == "STOP_LOSS" else 0.0)
             expected_profit_and_loss_percentages.append(shadow_training_record.realized_profit_and_loss_percentage)
+            exit_reasons.append(shadow_training_record.exit_reason)
 
         feature_matrix = numpy.asarray(feature_matrix_rows, dtype=numpy.float32)
         success_label_array = numpy.asarray(success_labels, dtype=numpy.float32)
@@ -91,18 +93,22 @@ class TradingCortexTrainingDatasetService:
             validation_toxicity_labels=toxicity_label_array[training_record_count:],
             training_expected_profit_and_loss_percentages=expected_profit_and_loss_percentage_array[:training_record_count],
             validation_expected_profit_and_loss_percentages=expected_profit_and_loss_percentage_array[training_record_count:],
+            training_exit_reasons=exit_reasons[:training_record_count],
             training_record_count=training_record_count,
             validation_record_count=validation_record_count,
+            excluded_staled_verdict_count=excluded_staled_count,
             dataset_window_start_at=dataset_window_start_at,
             dataset_window_end_at=dataset_window_end_at,
         )
         return prepared_training_dataset, latest_resolved_at
 
-    def _load_shadow_training_records(self) -> list[TradingCortexShadowTrainingRecord]:
+    def _load_shadow_training_records(self) -> tuple[list[TradingCortexShadowTrainingRecord], int]:
         shadow_training_records: list[TradingCortexShadowTrainingRecord] = []
+        staled_count: int = 0
 
         with get_database_session() as database_session:
             verdict_dao = TradingShadowingVerdictDao(database_session)
+            staled_count = verdict_dao.count_staled_verdicts()
             resolved_verdicts = verdict_dao.retrieve_resolved_for_cortex_training()
 
             for verdict in resolved_verdicts:
@@ -159,7 +165,8 @@ class TradingCortexTrainingDatasetService:
                 )
 
         logger.info(
-            "[TRADING][CORTEX][TRAINING][DATASET] Loaded %d shadowing rows from database",
+            "[TRADING][CORTEX][TRAINING][DATASET] Loaded %d shadowing rows from database (%d STALED excluded)",
             len(shadow_training_records),
+            staled_count,
         )
-        return shadow_training_records
+        return shadow_training_records, staled_count

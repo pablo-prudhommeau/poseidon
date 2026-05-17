@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-trading_cortex_poseidon_shadow_v1_ordered_feature_names: list[str] = [
-    "candidate_rank",
+trading_cortex_poseidon_shadow_ordered_feature_names: list[str] = [
     "candidate_quality_score",
     "candidate_token_age_hours",
     "candidate_liquidity_usd",
@@ -21,7 +20,6 @@ trading_cortex_poseidon_shadow_v1_ordered_feature_names: list[str] = [
     "candidate_transaction_count_6h",
     "candidate_transaction_count_24h",
     "candidate_buy_to_sell_ratio",
-    "candidate_order_notional_value_usd",
     "candidate_liquidity_usd_logarithmic",
     "candidate_market_cap_usd_logarithmic",
     "candidate_fully_diluted_valuation_usd_logarithmic",
@@ -44,7 +42,6 @@ trading_cortex_poseidon_shadow_v1_ordered_feature_names: list[str] = [
     "candidate_buy_pressure_5m",
     "candidate_market_cap_to_liquidity_ratio",
     "candidate_fully_diluted_valuation_to_liquidity_ratio",
-    "candidate_order_notional_to_liquidity_ratio",
     "candidate_is_recent_token",
     "candidate_is_micro_cap_token",
     "candidate_is_high_boost_token",

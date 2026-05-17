@@ -132,7 +132,7 @@ class TradingShadowingPipeline:
                     if scoring_response.request_identifier
                 }
                 for rank, candidate, _ in admissible_candidates:
-                    request_identifier = request_builder._build_request_identifier(candidate, rank)
+                    request_identifier = request_builder.build_request_identifier(candidate, rank)
                     scoring_response = response_by_request_identifier.get(request_identifier)
                     if scoring_response:
                         candidate.trading_cortex_inference_snapshot = TradingCortexInferenceSnapshot(

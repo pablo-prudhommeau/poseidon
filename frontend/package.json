@@ -14,6 +14,7 @@
         "format:biome": "biome format --write src eslint.config.ts tailwind.config.ts",
         "format:biome:check": "biome check src eslint.config.ts tailwind.config.ts --formatter-enabled=true --linter-enabled=false --assist-enabled=true",
         "lint": "eslint src --max-warnings=0",
+        "lint:fix": "eslint src --max-warnings=0 --fix",
         "watch": "ng build --watch --configuration development",
         "test": "ng test",
         "test:ci": "ng test --watch=false --browsers=ChromeHeadlessNoSandbox --no-progress"

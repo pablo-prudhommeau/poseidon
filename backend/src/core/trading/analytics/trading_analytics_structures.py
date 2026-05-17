@@ -54,7 +54,7 @@ class MetricBucketStatistics(BaseModel):
     win_rate: float
     average_pnl: float
     average_holding_time_minutes: float
-    capital_velocity: float
+    expected_pnl_velocity: float
     outlier_hit_rate: float
     quartile_1_pnl: float
     quartile_3_pnl: float
@@ -88,4 +88,4 @@ class MetaStatistics(BaseModel):
     win_rate: float = 0.0
     average_pnl: float = 0.0
     average_holding_time_hours: float = 0.0
-    capital_velocity: float = 0.0
+    expected_pnl_velocity: float = 0.0

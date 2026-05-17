@@ -22,7 +22,6 @@
         <div class="relative z-[1] w-full min-h-[520px]">
             @if (showChronicleLoader()) {
                 <div class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-slate-950/85 backdrop-blur-md">
-                    <div class="chronicle-aurora pointer-events-none absolute inset-0 opacity-70"></div>
                     <div class="chronicle-grid pointer-events-none absolute inset-0 opacity-90"></div>
                     <div class="chronicle-loader-ring relative z-[1]"></div>
                     <div class="relative z-[1] text-[12px] uppercase font-black tracking-[0.25em] text-fuchsia-300/80">waiting for shadow verdict chronicle stream…</div>
@@ -39,8 +38,8 @@
                     @for (item of legendItems(); track item.name) {
                         <label class="chronicle-custom-legend-item">
                             <input type="checkbox" [checked]="item.visible" (change)="onLegendItemToggle(item.name, $any($event.target).checked)" />
-                            <span class="chronicle-legend-swatch" [class.is-dashed]="item.dashed" [class.is-area]="item.swatchKind === 'area'" [class.is-column]="item.swatchKind === 'column'" [class.is-verdict]="item.swatchKind === 'verdict'" [style.--legend-color]="item.stroke"></span>
-                            <span class="chronicle-legend-label">{{ item.name }}</span>
+                            <span class="chronicle-legend-swatch" [class.is-line]="item.swatchKind === 'line'" [class.is-dashed-line]="item.swatchKind === 'dashed-line'" [class.is-area]="item.swatchKind === 'area'" [class.is-column]="item.swatchKind === 'column'" [class.is-bubble]="item.swatchKind === 'bubble'" [class.is-band]="item.swatchKind === 'band'" [class.is-threshold]="item.swatchKind === 'threshold'" [class.is-marker]="item.swatchKind === 'marker'" [style.--legend-color]="item.stroke"></span>
+                            <span class="chronicle-legend-label" [title]="item.name">{{ legendSeriesLabel(item.name) }}</span>
                         </label>
                     }
                 </div>

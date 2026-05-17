@@ -69,11 +69,11 @@ def compute_kpis(
     expected_value_usd = (total_pnl_usd / total_outcomes) if total_outcomes > 0 else 0.0
 
     average_holding_duration_hours = average_holding_duration / 60.0
-    capital_velocity = 0.0
+    expected_pnl_velocity = 0.0
     if average_holding_duration_hours > 0:
-        capital_velocity = (average_pnl_percentage * (win_rate / 100.0)) / average_holding_duration_hours
+        expected_pnl_velocity = (average_pnl_percentage * (win_rate / 100.0)) / average_holding_duration_hours
 
-    logger.info("[ANALYTICS][AGGREGATION][KPIS] Computed KPIs — %d outcomes from %d evaluations, win_rate=%.1f%%, PF=%.2f, Vel=%.2f", total_outcomes, total_evaluations, win_rate, profit_factor, capital_velocity)
+    logger.info("[ANALYTICS][AGGREGATION][KPIS] Computed KPIs — %d outcomes from %d evaluations, win_rate=%.1f%%, PF=%.2f, Vel=%.2f", total_outcomes, total_evaluations, win_rate, profit_factor, expected_pnl_velocity)
 
     return AnalyticsKpiPayload(
         total_evaluations=total_evaluations,
@@ -88,7 +88,7 @@ def compute_kpis(
         worst_trade_pnl_percentage=worst_trade_pnl,
         profit_factor=profit_factor,
         expected_value_usd=expected_value_usd,
-        capital_velocity=capital_velocity,
+        expected_pnl_velocity=expected_pnl_velocity,
     )
 
 
@@ -123,7 +123,7 @@ def _convert_bucket_profile_to_heatmap_series(profile: MetricBucketProfile) -> A
                 bucket.win_rate, bucket.average_pnl,
                 bucket.outlier_hit_rate,
                 bucket.average_holding_time_minutes / 60.0,
-                bucket.capital_velocity, bucket.is_golden,
+                bucket.expected_pnl_velocity, bucket.is_golden,
             )
 
         cells.append(AnalyticsHeatmapCellPayload(
@@ -132,7 +132,7 @@ def _convert_bucket_profile_to_heatmap_series(profile: MetricBucketProfile) -> A
             range_max=bucket.range_max,
             average_pnl=bucket.average_pnl,
             average_holding_time_minutes=bucket.average_holding_time_minutes,
-            capital_velocity=bucket.capital_velocity,
+            expected_pnl_velocity=bucket.expected_pnl_velocity,
             quartile_1_pnl=bucket.quartile_1_pnl,
             quartile_3_pnl=bucket.quartile_3_pnl,
             sample_count=bucket.sample_count,

@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.configuration.config import settings
+
 
 class TradingCortexNamedFeatureValue(BaseModel):
     feature_name: str
@@ -43,7 +45,7 @@ class TradingCortexShadowRegimeFeatureSnapshot(BaseModel):
     meta_win_rate: Optional[float] = None
     meta_average_profit_and_loss_percentage: Optional[float] = None
     meta_average_holding_time_hours: Optional[float] = None
-    meta_capital_velocity: Optional[float] = None
+    meta_expected_pnl_velocity: Optional[float] = None
     meta_profit_factor: Optional[float] = None
     meta_expected_value_usd: Optional[float] = None
     chronicle_profit_factor: Optional[float] = None
@@ -57,7 +59,7 @@ class TradingCortexShadowMetricFeatureSnapshot(BaseModel):
     bucket_win_rate: Optional[float] = None
     bucket_average_profit_and_loss_percentage: Optional[float] = None
     bucket_average_holding_time_hours: Optional[float] = None
-    bucket_capital_velocity: Optional[float] = None
+    bucket_expected_pnl_velocity: Optional[float] = None
     bucket_outlier_hit_rate: Optional[float] = None
     bucket_sample_count: Optional[int] = None
     is_toxic: bool = False
@@ -67,7 +69,7 @@ class TradingCortexShadowMetricFeatureSnapshot(BaseModel):
 
 class TradingCortexScoringRequest(BaseModel):
     request_identifier: Optional[str] = None
-    feature_set_version: str = "poseidon_shadow_v1"
+    feature_set_version: str = settings.TRADING_CORTEX_FEATURE_SET_VERSION
     candidate_features: TradingCortexCandidateFeatureSnapshot
     shadow_regime_features: Optional[TradingCortexShadowRegimeFeatureSnapshot] = None
     shadow_metric_features: list[TradingCortexShadowMetricFeatureSnapshot] = Field(default_factory=list)

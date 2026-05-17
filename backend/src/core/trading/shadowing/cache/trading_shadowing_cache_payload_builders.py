@@ -10,6 +10,8 @@ from src.api.http.api_schemas import (
     ShadowVerdictChronicleMetricPointPayload,
     ShadowVerdictChronicleVolumePointPayload,
     ShadowVerdictChronicleVerdictPointPayload,
+    ShadowVerdictChronicleRegimeGatePointPayload,
+    ShadowVerdictChronicleCortexModelRolloutPayload,
     ShadowVerdictChronicleDeltaVerdictPayload,
 )
 from src.configuration.config import settings
@@ -67,7 +69,7 @@ def build_trading_shadow_meta_payload(snapshot: TradingShadowingIntelligenceSnap
         win_rate_percentage=(snapshot.summary.meta_win_rate * 100.0) if snapshot.summary.meta_win_rate is not None else None,
         global_profit_factor=snapshot.summary.meta_profit_factor,
         expected_value_usd=snapshot.summary.meta_expected_value_usd,
-        capital_velocity=snapshot.summary.meta_capital_velocity,
+        expected_pnl_velocity=snapshot.summary.meta_expected_pnl_velocity,
         chronicle_profit_factor=snapshot.summary.chronicle_profit_factor,
         chronicle_profit_factor_threshold=snapshot.summary.chronicle_profit_factor_threshold,
         chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
@@ -94,6 +96,10 @@ def _build_bucket_payload(bucket: TradingShadowingVerdictChronicleBucket) -> Sha
         ShadowVerdictChronicleVerdictPointPayload(**v.model_dump())
         for v in bucket.verdict_cloud
     ]
+    regime_gate = [
+        ShadowVerdictChronicleRegimeGatePointPayload(**gate_point.model_dump())
+        for gate_point in bucket.regime_gate
+    ]
     return ShadowVerdictChronicleBucketPayload(
         bucket_label=bucket.bucket_label,
         granularity_seconds=bucket.granularity_seconds,
@@ -102,11 +108,16 @@ def _build_bucket_payload(bucket: TradingShadowingVerdictChronicleBucket) -> Sha
         metrics=metrics,
         volumes=volumes,
         verdict_cloud=verdict_cloud,
+        regime_gate=regime_gate,
     )
 
 
 def build_shadow_verdict_chronicle_payload(chronicle: TradingShadowingVerdictChronicle) -> ShadowVerdictChroniclePayload:
     buckets = [_build_bucket_payload(b) for b in chronicle.buckets]
+    cortex_model_rollouts = [
+        ShadowVerdictChronicleCortexModelRolloutPayload(**rollout.model_dump())
+        for rollout in chronicle.cortex_model_rollouts
+    ]
     return ShadowVerdictChroniclePayload(
         generated_at_iso=format_datetime_to_local_iso(chronicle.generated_at) or "",
         as_of_iso=format_datetime_to_local_iso(chronicle.as_of) or "",
@@ -116,6 +127,7 @@ def build_shadow_verdict_chronicle_payload(chronicle: TradingShadowingVerdictChr
         source=chronicle.source,
         series_end_lag_seconds=settings.TRADING_SHADOWING_HISTORY_SERIES_END_LAG_SECONDS,
         buckets=buckets,
+        cortex_model_rollouts=cortex_model_rollouts,
     )
 
 
@@ -147,8 +159,9 @@ def build_shadow_verdict_chronicle_incremental_delta_payload(
                     average_pnl_percentage=m.average_pnl_percentage,
                     average_win_rate_percentage=m.average_win_rate_percentage,
                     expected_value_per_trade_usd=m.expected_value_per_trade_usd,
-                    capital_velocity_per_hour=m.capital_velocity_per_hour,
+                    closed_verdicts_per_hour=m.closed_verdicts_per_hour,
                     profit_factor=m.profit_factor,
+                    average_cortex_prediction_win_rate_percentage=m.average_cortex_prediction_win_rate_percentage,
                 ) for m in new_metrics
             ],
             volumes_upsert=[
@@ -156,6 +169,11 @@ def build_shadow_verdict_chronicle_incremental_delta_payload(
                     timestamp_milliseconds=v.timestamp_milliseconds,
                     verdict_count=v.verdict_count,
                 ) for v in new_volumes
+            ],
+            regime_gate_upsert=[
+                ShadowVerdictChronicleRegimeGatePointPayload(**gate_point.model_dump())
+                for gate_point in new_bucket.regime_gate
+                if gate_point.timestamp_milliseconds >= previous_as_of_ms
             ],
             verdict_cloud_replace=None,
         )
@@ -170,6 +188,7 @@ def build_shadow_verdict_chronicle_incremental_delta_payload(
             is_profitable=v.is_profitable,
             exit_reason=v.exit_reason,
             order_notional_value_usd=v.order_notional_value_usd,
+            cortex_probability=v.cortex_probability,
         ) for v in new_verdicts
     ]
 

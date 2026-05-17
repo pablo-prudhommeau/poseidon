@@ -1,5 +1,5 @@
-import {formatNumber} from '@angular/common';
-import {inject, LOCALE_ID, Pipe, PipeTransform} from '@angular/core';
+import { formatNumber } from '@angular/common';
+import { inject, LOCALE_ID, Pipe, PipeTransform } from '@angular/core';
 
 @Pipe({
     name: 'optionalNumber',

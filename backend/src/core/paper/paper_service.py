@@ -18,11 +18,11 @@ logger = get_application_logger(__name__)
 
 
 def reset_paper(database_session: Session) -> None:
-    database_session.execute(delete(TradingTrade))
     database_session.execute(delete(TradingPosition))
     database_session.execute(delete(TradingPortfolioSnapshot))
-    database_session.execute(delete(TradingEvaluation))
     database_session.execute(delete(TradingOutcome))
+    database_session.execute(delete(TradingTrade))
+    database_session.execute(delete(TradingEvaluation))
     database_session.execute(delete(DcaOrder))
     database_session.execute(delete(DcaStrategy))
     database_session.commit()

@@ -1,59 +1,70 @@
-import type { ChronicleAdjustTooltipPositionHost, ChronicleTooltipSeriesInfoLike } from './shadow-verdict-chronicle.models';
+import type {
+    ChronicleAdjustTooltipPositionHost,
+    ChronicleTooltipSeriesInfoLike,
+    ChronicleVerdictBubblePointMetadata
+} from './shadow-verdict-chronicle.models';
+import {
+    type ChronicleLegendSwatchKind,
+    chronicleLegendHidesTooltipHit,
+    chronicleLegendSwatchKind,
+    chronicleSeriesDisplayLabel,
+    chronicleSeriesUsesDashedLegendSwatch
+} from './shadow-verdict-chronicle-legend.utils';
+import { CHRONICLE_METRIC_COLORS, CHRONICLE_TOOLTIP_COMPACT_LABEL, CHRONICLE_TOOLTIP_PREFERRED_ORDER } from './shadow-verdict-chronicle-metrics.catalog';
 
-export type ChronicleTooltipSwatchKind = 'line' | 'area' | 'column' | 'verdict';
-
-export const CHRONICLE_TOOLTIP_SERIES_ALIAS: Record<string, string> = {
-    'Average PnL % (bucket)': 'Avg PnL %',
-    'Average win rate % (bucket)': 'Avg win rate %',
-    'EV per trade ($) (bucket)': 'EV / trade',
-    'Profit factor (bucket)': 'Profit factor',
-    'Velocity (closed / hour, bucket)': 'Velocity / h',
-    'SMA average PnL %': 'SMA PnL %',
-    'SMA win rate %': 'SMA win rate %',
-    'SMA EV per trade': 'SMA EV / trade',
-    'SMA profit factor': 'SMA profit factor',
-    'SMA velocity': 'SMA velocity',
-    'Non-staled verdict · win (PnL %)': 'Verdict win',
-    'Non-staled verdict · loss (PnL %)': 'Verdict loss',
-    'Volume · area': 'Volume area',
-    'Volume · columns': 'Volume columns',
-    'SMA EV per trade (area)': 'SMA EV area',
-    'SMA profit factor (area)': 'SMA PF area'
-};
-
-export const CHRONICLE_TOOLTIP_PREFERRED_ORDER = [
-    'Average PnL % (bucket)',
-    'Average win rate % (bucket)',
-    'EV per trade ($) (bucket)',
-    'SMA EV per trade',
-    'Profit factor (bucket)',
-    'SMA profit factor',
-    'Velocity (closed / hour, bucket)',
-    'Volume · columns',
-    'Non-staled verdict · win (PnL %)',
-    'Non-staled verdict · loss (PnL %)'
-] as const;
+export type ChronicleTooltipSwatchKind = ChronicleLegendSwatchKind;
 
 function escapeSvgText(value: string): string {
     return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
-export function chronicleTooltipAlias(seriesName: string): string {
-    return CHRONICLE_TOOLTIP_SERIES_ALIAS[seriesName] ?? seriesName;
+function formatUsdCompact(usd: number): string {
+    const absoluteUsd = Math.abs(usd);
+    if (absoluteUsd >= 1_000_000) {
+        return `$${(usd / 1_000_000).toFixed(2)}M`;
+    }
+    if (absoluteUsd >= 1_000) {
+        return `$${(usd / 1_000).toFixed(1)}k`;
+    }
+    return `$${usd.toFixed(0)}`;
+}
+
+export function chronicleTooltipLabel(seriesName: string): string {
+    return CHRONICLE_TOOLTIP_COMPACT_LABEL[seriesName] ?? chronicleSeriesDisplayLabel(seriesName);
 }
 
 export function chronicleTooltipSwatchKind(seriesName: string): ChronicleTooltipSwatchKind {
-    const normalized = seriesName.toLowerCase();
-    if (normalized.includes('columns')) {
-        return 'column';
+    return chronicleLegendSwatchKind(seriesName);
+}
+
+function readVerdictBubbleMetadata(entry: ChronicleTooltipSeriesInfoLike): ChronicleVerdictBubblePointMetadata | undefined {
+    return entry.pointMetadata as ChronicleVerdictBubblePointMetadata | undefined;
+}
+
+function formatVerdictBubbleTooltipValue(entry: ChronicleTooltipSeriesInfoLike): string {
+    const pnlText = (entry.formattedYValue ?? '').trim();
+    const detailParts: string[] = [];
+    const metadata = readVerdictBubbleMetadata(entry);
+    const orderNotionalUsd = metadata?.orderNotionalUsd;
+    if (typeof orderNotionalUsd === 'number' && Number.isFinite(orderNotionalUsd) && orderNotionalUsd > 0) {
+        detailParts.push(`${formatUsdCompact(orderNotionalUsd)} notional`);
     }
-    if (normalized.includes('(area)') || normalized.includes(' area')) {
-        return 'area';
+    const cortexProbability = metadata?.cortexProbability;
+    if (typeof cortexProbability === 'number' && Number.isFinite(cortexProbability)) {
+        detailParts.push(`cortex win ${(cortexProbability * 100).toFixed(1)}%`);
     }
-    if (normalized.includes('verdict')) {
-        return 'verdict';
+    if (detailParts.length === 0) {
+        return pnlText;
     }
-    return 'line';
+    return `${pnlText} · ${detailParts.join(' · ')}`;
+}
+
+function formatChronicleTooltipValue(seriesName: string, entry: ChronicleTooltipSeriesInfoLike): string {
+    const kind = chronicleLegendSwatchKind(seriesName);
+    if (kind === 'bubble') {
+        return formatVerdictBubbleTooltipValue(entry);
+    }
+    return (entry.formattedYValue ?? '').trim();
 }
 
 export function buildChronicleCursorTooltipSvg(
@@ -64,7 +75,7 @@ export function buildChronicleCursorTooltipSvg(
     const hits = seriesInfos
         .filter((entry) => entry.isHit)
         .filter((entry) => (entry.seriesName ?? '').trim().length > 0)
-        .filter((entry) => !(entry.seriesName ?? '').includes('(area)'));
+        .filter((entry) => !chronicleLegendHidesTooltipHit((entry.seriesName ?? '').trim()));
     if (hits.length === 0) {
         return '<svg width="1" height="1" xmlns="http://www.w3.org/2000/svg"></svg>';
     }
@@ -87,16 +98,15 @@ export function buildChronicleCursorTooltipSvg(
 
     const rows = ordered.slice(0, 10).map((entry) => {
         const seriesName = (entry.seriesName ?? '').trim();
-        const label = chronicleTooltipAlias(seriesName);
-        const value = entry.formattedYValue ?? '';
-        const bubble = typeof entry.zValue === 'number' && Number.isFinite(entry.zValue) ? ` | bubble ${entry.zValue.toFixed(1)}` : '';
-        const stroke = entry.stroke ?? '#94a3b8';
-        const isDashed = Array.isArray(entry.renderableSeries?.strokeDashArray) && (entry.renderableSeries?.strokeDashArray?.length ?? 0) > 0;
+        const label = chronicleTooltipLabel(seriesName);
+        const text = formatChronicleTooltipValue(seriesName, entry);
+        const stroke = entry.stroke ?? CHRONICLE_METRIC_COLORS.tooltipFallbackStroke;
+        const dashed = chronicleSeriesUsesDashedLegendSwatch(seriesName, entry.renderableSeries?.strokeDashArray);
         return {
             label: escapeSvgText(label),
-            text: escapeSvgText(`${value}${bubble}`),
+            text: escapeSvgText(text),
             stroke,
-            dashed: isDashed,
+            dashed,
             kind: chronicleTooltipSwatchKind(seriesName)
         };
     });
@@ -104,7 +114,7 @@ export function buildChronicleCursorTooltipSvg(
     const lineHeight = 17;
     const paddingTop = 20;
     const paddingBottom = 5;
-    const width = 260;
+    const width = 300;
     const height = paddingTop + 16 + rows.length * lineHeight + paddingBottom;
     sci.adjustTooltipPosition?.(width, height, svgAnnotation);
 
@@ -119,17 +129,21 @@ export function buildChronicleCursorTooltipSvg(
             if (row.kind === 'column') {
                 return `<rect x="${x + 1}" y="${y - 9}" width="8" height="9" rx="1.2" fill="${row.stroke}" fill-opacity="0.62" stroke="${row.stroke}" stroke-width="1"/>`;
             }
-            if (row.kind === 'verdict') {
+            if (row.kind === 'bubble') {
                 return `<circle cx="${x + 6}" cy="${y - 4}" r="3.2" fill="${row.stroke}" fill-opacity="0.7" stroke="${row.stroke}" stroke-width="1"/>`;
             }
-            return `<line x1="${x}" y1="${y - 4}" x2="${x + 12}" y2="${y - 4}" stroke="${row.stroke}" stroke-width="2" stroke-dasharray="${row.dashed ? '4,3' : '0'}"/>`;
+            if (row.kind === 'band') {
+                return `<rect x="${x}" y="${y - 8}" width="12" height="8" rx="1.5" fill="${CHRONICLE_METRIC_COLORS.tooltipBandAbove}" fill-opacity="0.45"/><rect x="${x}" y="${y - 4}" width="12" height="4" rx="0 0 1.5 1.5" fill="${CHRONICLE_METRIC_COLORS.tooltipBandBelow}" fill-opacity="0.45"/>`;
+            }
+            const dash = row.kind === 'dashed-line' || row.dashed ? '4,3' : '0';
+            return `<line x1="${x}" y1="${y - 4}" x2="${x + 12}" y2="${y - 4}" stroke="${row.stroke}" stroke-width="2" stroke-dasharray="${dash}"/>`;
         })
         .join('');
 
     const textSvg = rows
         .map((row, index) => {
             const y = paddingTop + 22 + index * lineHeight;
-            return `<text x="30" y="${y}" font-size="11" fill="#f8fafc">${row.label}: ${row.text}</text>`;
+            return `<text x="30" y="${y}" font-size="11" fill="${CHRONICLE_METRIC_COLORS.tooltipTextPrimary}">${row.label}: ${row.text}</text>`;
         })
         .join('');
 
@@ -137,12 +151,12 @@ export function buildChronicleCursorTooltipSvg(
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <defs>
         <linearGradient id="tooltipGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#101b38" stop-opacity="0.95"/>
-            <stop offset="100%" stop-color="#0b1227" stop-opacity="0.9"/>
+            <stop offset="0%" stop-color="${CHRONICLE_METRIC_COLORS.tooltipGradientTop}" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="${CHRONICLE_METRIC_COLORS.tooltipGradientBottom}" stop-opacity="0.9"/>
         </linearGradient>
     </defs>
-    <rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="url(#tooltipGrad)" stroke="rgba(148,163,184,0.45)" stroke-width="1"/>
-    <text x="12" y="${paddingTop + 2}" font-size="11" font-weight="700" fill="#e9d5ff">${timeLabel}</text>
+    <rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="url(#tooltipGrad)" stroke="${CHRONICLE_METRIC_COLORS.tooltipBorder}" stroke-width="1"/>
+    <text x="12" y="${paddingTop + 2}" font-size="11" font-weight="700" fill="${CHRONICLE_METRIC_COLORS.tooltipTitle}">${timeLabel}</text>
     ${swatchSvg}
     ${textSvg}
 </svg>`;

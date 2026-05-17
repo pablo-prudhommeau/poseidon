@@ -72,20 +72,18 @@ class ProfitFactorSweepMatrixRow(BaseModel):
 
 
 from src.configuration.config import settings
-from src.core.trading.shadowing.trading_shadowing_intelligence_service import (
-    _simple_moving_average_like_shadow_verdict_chronicle_chart,
-    _winsorize_series_like_shadow_verdict_chronicle_chart,
-)
-from src.core.trading.shadowing.trading_shadowing_service import (
-    _chronicle_display_lag_timedelta,
-    _compute_profit_factor,
-    _floor_datetime_to_granularity,
-    _series_end_datetime,
+from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
+    chronicle_display_lag_timedelta as _chronicle_display_lag_timedelta,
+    compute_profit_factor as _compute_profit_factor,
+    floor_datetime_to_granularity as _floor_datetime_to_granularity,
+    series_end_datetime as _series_end_datetime,
+    simple_moving_average_like_shadow_verdict_chronicle_chart as _simple_moving_average_like_shadow_verdict_chronicle_chart,
+    winsorize_series_like_shadow_verdict_chronicle_chart as _winsorize_series_like_shadow_verdict_chronicle_chart,
 )
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
-from src.persistence.db import get_database_session
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 

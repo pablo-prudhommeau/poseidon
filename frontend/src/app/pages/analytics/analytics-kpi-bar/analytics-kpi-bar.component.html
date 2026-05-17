@@ -39,7 +39,7 @@
                 </div>
                 <div class="flex flex-col border-l border-white/5 pl-4">
                     <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">Velocity</span>
-                    <span class="font-bold text-xs" [class.text-emerald-400]="kpis.capital_velocity > 0" [class.text-red-400]="kpis.capital_velocity < 0" [class.text-slate-400]="kpis.capital_velocity === 0">{{ kpis.capital_velocity | number: '1.2-2' }}</span>
+                    <span class="font-bold text-xs" [class.text-emerald-400]="kpis.expected_pnl_velocity > 0" [class.text-red-400]="kpis.expected_pnl_velocity < 0" [class.text-slate-400]="kpis.expected_pnl_velocity === 0">{{ kpis.expected_pnl_velocity | number: '1.2-2' }}</span>
                 </div>
             </div>
         </div>

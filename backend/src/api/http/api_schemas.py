@@ -240,7 +240,7 @@ class TradingShadowMetaPayload(BaseModel):
     elapsed_hours: float
     win_rate_percentage: Optional[float] = None
     expected_value_usd: Optional[float] = None
-    capital_velocity: Optional[float] = None
+    expected_pnl_velocity: Optional[float] = None
     global_profit_factor: Optional[float] = None
     chronicle_profit_factor: Optional[float] = None
     chronicle_profit_factor_threshold: Optional[float] = None
@@ -293,7 +293,7 @@ class TradingShadowingIntelligenceSummaryPayload(BaseModel):
     meta_win_rate: Optional[float] = None
     meta_average_pnl: Optional[float] = None
     meta_average_holding_time_hours: Optional[float] = None
-    meta_capital_velocity: Optional[float] = None
+    meta_expected_pnl_velocity: Optional[float] = None
     meta_profit_factor: Optional[float] = None
     meta_expected_value_usd: Optional[float] = None
     chronicle_profit_factor: Optional[float] = None
@@ -309,7 +309,7 @@ class TradingShadowingIntelligenceMetricPayload(BaseModel):
     bucket_win_rate: Optional[float] = None
     bucket_average_pnl: Optional[float] = None
     bucket_average_holding_time: Optional[float] = None
-    bucket_capital_velocity: Optional[float] = None
+    bucket_expected_pnl_velocity: Optional[float] = None
     bucket_outlier_hit_rate: Optional[float] = None
     bucket_sample_count: Optional[int] = None
     is_toxic: bool = False
@@ -405,7 +405,7 @@ class AnalyticsHeatmapCellPayload(BaseModel):
     range_max: float
     average_pnl: float
     average_holding_time_minutes: float
-    capital_velocity: float
+    expected_pnl_velocity: float
     quartile_1_pnl: float
     quartile_3_pnl: float
     sample_count: int
@@ -458,7 +458,7 @@ class AnalyticsKpiPayload(BaseModel):
     worst_trade_pnl_percentage: float
     profit_factor: float
     expected_value_usd: float
-    capital_velocity: float
+    expected_pnl_velocity: float
 
 
 class AnalyticsResponse(BaseModel):
@@ -473,8 +473,9 @@ class ShadowVerdictChronicleMetricPointPayload(BaseModel):
     average_pnl_percentage: float
     average_win_rate_percentage: float
     expected_value_per_trade_usd: float
-    capital_velocity_per_hour: float
+    closed_verdicts_per_hour: float
     profit_factor: float
+    average_cortex_prediction_win_rate_percentage: Optional[float] = None
 
 
 class ShadowVerdictChronicleVolumePointPayload(BaseModel):
@@ -491,6 +492,27 @@ class ShadowVerdictChronicleVerdictPointPayload(BaseModel):
     order_notional_usd: float
     point_size: float
     is_profitable: bool
+    cortex_probability: Optional[float] = None
+
+
+class ShadowVerdictChronicleRegimeGatePointPayload(BaseModel):
+    timestamp_milliseconds: int
+    regime_profit_factor_sma: Optional[float] = None
+    regime_sparse_expected_value_usd_sma: Optional[float] = None
+    profit_factor_gate_open: bool = False
+    sparse_expected_value_gate_open: bool = False
+    hard_gate_open: bool = False
+
+
+class ShadowVerdictChronicleCortexModelRolloutPayload(BaseModel):
+    activated_at_milliseconds: int
+    model_version: str
+    feature_set_version: str
+    training_record_count: int
+    validation_record_count: int
+    success_probability_accuracy: float
+    is_active: bool
+    label: str
 
 
 class ShadowVerdictChronicleBucketPayload(BaseModel):
@@ -501,6 +523,7 @@ class ShadowVerdictChronicleBucketPayload(BaseModel):
     metrics: List[ShadowVerdictChronicleMetricPointPayload] = Field(default_factory=list)
     volumes: List[ShadowVerdictChronicleVolumePointPayload] = Field(default_factory=list)
     verdict_cloud: List[ShadowVerdictChronicleVerdictPointPayload] = Field(default_factory=list)
+    regime_gate: List[ShadowVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
 
 
 class ShadowVerdictChroniclePayload(BaseModel):
@@ -512,6 +535,7 @@ class ShadowVerdictChroniclePayload(BaseModel):
     source: str
     series_end_lag_seconds: int
     buckets: List[ShadowVerdictChronicleBucketPayload] = Field(default_factory=list)
+    cortex_model_rollouts: List[ShadowVerdictChronicleCortexModelRolloutPayload] = Field(default_factory=list)
 
 
 class ShadowVerdictChronicleDeltaBucketPayload(BaseModel):
@@ -522,6 +546,7 @@ class ShadowVerdictChronicleDeltaBucketPayload(BaseModel):
     volumes_remove_timestamps_ms: List[int] = Field(default_factory=list)
     metrics_upsert: List[ShadowVerdictChronicleMetricPointPayload] = Field(default_factory=list)
     volumes_upsert: List[ShadowVerdictChronicleVolumePointPayload] = Field(default_factory=list)
+    regime_gate_upsert: List[ShadowVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
     verdict_cloud_replace: Optional[List[ShadowVerdictChronicleVerdictPointPayload]] = None
 
 
@@ -533,6 +558,7 @@ class ShadowVerdictChronicleDeltaVerdictPayload(BaseModel):
     is_profitable: bool
     exit_reason: str
     order_notional_value_usd: float
+    cortex_probability: Optional[float] = None
 
 
 class ShadowVerdictChronicleDeltaPayload(BaseModel):

@@ -48,13 +48,15 @@ class TradingShadowingVerdictDao:
             raise
 
     def retrieve_pending_verdicts(self, limit_count: int) -> list[TradingShadowingVerdict]:
+        from sqlalchemy.orm import joinedload
         try:
             return list(self.database_session.scalars(
                 select(TradingShadowingVerdict)
+                .options(joinedload(TradingShadowingVerdict.probe))
                 .where(TradingShadowingVerdict.exit_reason.is_(None))
                 .order_by(TradingShadowingVerdict.created_at.desc())
                 .limit(limit_count)
-            ).all())
+            ).unique().all())
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve pending verdicts — %s", error)
             raise
@@ -71,6 +73,7 @@ class TradingShadowingVerdictDao:
                 .where(TradingShadowingVerdict.holding_duration_minutes.is_not(None))
                 .where(TradingShadowingVerdict.is_profitable.is_not(None))
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
                 .where(TradingShadowingVerdict.resolved_at.is_not(None))
                 .where(TradingShadowingProbe.shadowing_summary.is_not(None))
                 .where(TradingShadowingProbe.shadowing_metrics.is_not(None))
@@ -78,6 +81,18 @@ class TradingShadowingVerdictDao:
             ).unique().all())
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve cortex training verdicts — %s", error)
+            raise
+
+    def count_staled_verdicts(self) -> int:
+        from sqlalchemy import func
+        try:
+            return self.database_session.scalar(
+                select(func.count())
+                .select_from(TradingShadowingVerdict)
+                .where(TradingShadowingVerdict.exit_reason == "STALED")
+            ) or 0
+        except Exception as error:
+            logger.exception("[DAO][SHADOWING_VERDICT] Failed to count STALED verdicts — %s", error)
             raise
 
     def retrieve_recent_resolved(self, limit_count: int) -> list[TradingShadowingVerdict]:
@@ -184,17 +199,19 @@ class TradingShadowingVerdictDao:
             raise
 
     def retrieve_resolved_for_pair(self, pair_address: str, limit_count: int) -> list[TradingShadowingVerdict]:
+        from sqlalchemy.orm import joinedload
         try:
             return list(self.database_session.scalars(
                 select(TradingShadowingVerdict)
                 .join(TradingShadowingProbe)
+                .options(joinedload(TradingShadowingVerdict.probe))
                 .where(
                     TradingShadowingVerdict.exit_reason.is_not(None),
                     TradingShadowingProbe.pair_address == pair_address
                 )
                 .order_by(TradingShadowingVerdict.resolved_at.desc())
                 .limit(limit_count)
-            ).all())
+            ).unique().all())
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts for pair %s — %s", pair_address, error)
             raise

@@ -5,6 +5,17 @@ from datetime import datetime, timedelta
 from typing import Optional, Iterable
 
 from src.configuration.config import settings
+from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
+    chronicle_display_lag_timedelta as _chronicle_display_lag_timedelta,
+    compute_profit_factor as _compute_profit_factor,
+    floor_datetime_to_granularity as _floor_datetime_to_granularity,
+    series_end_datetime as _series_end_datetime,
+    to_epoch_milliseconds as _to_epoch_milliseconds,
+)
+from src.core.trading.shadowing.trading_shadowing_cortex_rollout_timeline import load_cortex_model_rollouts_for_chronicle
+from src.core.trading.shadowing.trading_shadowing_regime_gate_timeline import (
+    build_regime_gate_timeline_for_metric_timestamps,
+)
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleBucketConfiguration,
     TradingShadowingVerdictChronicleVerdict,
@@ -15,6 +26,7 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicle,
     TradingShadowingVerdictChronicleComputationResult,
 )
+from src.core.trading.trading_structures import TradingCortexInferenceSnapshot
 from src.core.utils.date_utils import (
     ensure_timezone_aware,
     get_current_local_datetime,
@@ -132,6 +144,7 @@ def _build_shadow_verdict_chronicle(
             bucket_configuration=bucket_configuration,
             from_datetime=bucket_from_datetime,
             to_datetime=bucket_to_datetime,
+            series_end_datetime=series_end_datetime,
         ))
 
     return TradingShadowingVerdictChronicle(
@@ -142,6 +155,7 @@ def _build_shadow_verdict_chronicle(
         total_verdicts_considered=len(verdicts),
         source="computed",
         buckets=buckets,
+        cortex_model_rollouts=load_cortex_model_rollouts_for_chronicle(global_from_datetime, fetch_end_datetime),
     )
 
 
@@ -150,6 +164,7 @@ def _build_bucket(
         bucket_configuration: TradingShadowingVerdictChronicleBucketConfiguration,
         from_datetime: datetime,
         to_datetime: datetime,
+        series_end_datetime: datetime,
 ) -> TradingShadowingVerdictChronicleBucket:
     window_from = ensure_timezone_aware(from_datetime)
     window_to = ensure_timezone_aware(to_datetime)
@@ -179,17 +194,23 @@ def _build_bucket(
 
         pnl_usd_values = [item.realized_pnl_usd for item in items]
         pnl_percentage_values = [item.realized_pnl_percentage for item in items]
+        cortex_probabilities = [item.cortex_probability for item in items if item.cortex_probability is not None]
         win_count = sum(1 for item in items if item.is_profitable)
         gross_profit_usd = sum(value for value in pnl_usd_values if value > 0.0)
         gross_loss_usd = abs(sum(value for value in pnl_usd_values if value < 0.0))
+
+        average_cortex_prediction_win_rate_percentage = None
+        if len(cortex_probabilities) > 0:
+            average_cortex_prediction_win_rate_percentage = (sum(cortex_probabilities) / len(cortex_probabilities)) * 100.0
 
         metric_points.append(TradingShadowingVerdictChronicleMetricPoint(
             timestamp_milliseconds=bucket_timestamp,
             average_pnl_percentage=sum(pnl_percentage_values) / verdict_count,
             average_win_rate_percentage=(win_count / verdict_count) * 100.0,
             expected_value_per_trade_usd=sum(pnl_usd_values) / verdict_count,
-            capital_velocity_per_hour=_compute_velocity_per_hour(verdict_count, bucket_configuration.granularity_seconds),
+            closed_verdicts_per_hour=_compute_closed_verdicts_per_hour(verdict_count, bucket_configuration.granularity_seconds),
             profit_factor=_compute_profit_factor(gross_profit_usd, gross_loss_usd),
+            average_cortex_prediction_win_rate_percentage=average_cortex_prediction_win_rate_percentage,
         ))
         volume_points.append(TradingShadowingVerdictChronicleVolumePoint(
             timestamp_milliseconds=bucket_timestamp,
@@ -211,10 +232,17 @@ def _build_bucket(
                 order_notional_usd=chronicle_verdict.order_notional_value_usd,
                 point_size=_clamp_point_size(chronicle_verdict.order_notional_value_usd),
                 is_profitable=chronicle_verdict.is_profitable,
+                cortex_probability=chronicle_verdict.cortex_probability,
             )
             for chronicle_verdict in cloud_source
         ),
         key=lambda payload: (payload.timestamp_milliseconds, payload.verdict_id),
+    )
+
+    regime_gate = build_regime_gate_timeline_for_metric_timestamps(
+        verdicts=bounded_verdicts,
+        series_end_datetime=series_end_datetime,
+        metric_timestamps_milliseconds=[metric_point.timestamp_milliseconds for metric_point in metric_points],
     )
 
     return TradingShadowingVerdictChronicleBucket(
@@ -225,6 +253,7 @@ def _build_bucket(
         metrics=metric_points,
         volumes=volume_points,
         verdict_cloud=verdict_cloud,
+        regime_gate=regime_gate,
     )
 
 
@@ -240,6 +269,12 @@ def _convert_shadow_verdict_to_chronicle_verdict(
         return None
     if verdict.probe is None:
         return None
+
+    cortex_probability: Optional[float] = None
+    if verdict.probe.cortex_inference_summary is not None:
+        cortex_inference_snapshot = TradingCortexInferenceSnapshot.model_validate(verdict.probe.cortex_inference_summary)
+        cortex_probability = cortex_inference_snapshot.success_probability
+
     return TradingShadowingVerdictChronicleVerdict(
         id=verdict.id,
         resolved_at=resolved_at,
@@ -248,6 +283,7 @@ def _convert_shadow_verdict_to_chronicle_verdict(
         is_profitable=bool(verdict.is_profitable),
         exit_reason=verdict.exit_reason or "UNRESOLVED",
         order_notional_value_usd=verdict.probe.order_notional_value_usd,
+        cortex_probability=cortex_probability,
     )
 
 
@@ -255,19 +291,9 @@ def _shadow_verdict_chronicle_bucket_configurations() -> list[TradingShadowingVe
     return [
         TradingShadowingVerdictChronicleBucketConfiguration(label="last_30m_1m", lookback=timedelta(minutes=30), granularity_seconds=60),
         TradingShadowingVerdictChronicleBucketConfiguration(label="last_24h_1h", lookback=timedelta(hours=24), granularity_seconds=3600),
-        TradingShadowingVerdictChronicleBucketConfiguration(label="last_7d_5m", lookback=timedelta(days=7), granularity_seconds=300),
+        TradingShadowingVerdictChronicleBucketConfiguration(label="last_7d_15m", lookback=timedelta(days=7), granularity_seconds=900),
         TradingShadowingVerdictChronicleBucketConfiguration(label="last_30d_30m", lookback=timedelta(days=30), granularity_seconds=1800),
     ]
-
-
-def _series_end_datetime(now_local: datetime) -> datetime:
-    delay_cutoff = now_local - timedelta(minutes=settings.TRADING_SHADOWING_HISTORY_DELAY_MINUTES)
-    lag_cutoff = now_local - timedelta(seconds=settings.TRADING_SHADOWING_HISTORY_SERIES_END_LAG_SECONDS)
-    return max(delay_cutoff, lag_cutoff)
-
-
-def _chronicle_display_lag_timedelta() -> timedelta:
-    return timedelta(seconds=settings.TRADING_SHADOWING_HISTORY_SERIES_END_LAG_SECONDS)
 
 
 def _verdict_fetch_end_datetime(
@@ -314,23 +340,7 @@ def _trim_verdicts_for_window(
     return filtered[-max_count:]
 
 
-def _to_epoch_milliseconds(target_datetime: datetime) -> int:
-    return int(target_datetime.timestamp() * 1000)
-
-
-def _floor_datetime_to_granularity(target_datetime: datetime, granularity_seconds: int) -> datetime:
-    epoch_seconds = int(target_datetime.timestamp())
-    floored_epoch_seconds = (epoch_seconds // granularity_seconds) * granularity_seconds
-    return datetime.fromtimestamp(floored_epoch_seconds, tz=target_datetime.tzinfo)
-
-
-def _compute_profit_factor(gross_profit_usd: float, gross_loss_usd: float) -> float:
-    if gross_loss_usd <= 0.0:
-        return 999.0 if gross_profit_usd > 0.0 else 0.0
-    return gross_profit_usd / gross_loss_usd
-
-
-def _compute_velocity_per_hour(verdict_count: int, granularity_seconds: int) -> float:
+def _compute_closed_verdicts_per_hour(verdict_count: int, granularity_seconds: int) -> float:
     if granularity_seconds <= 0:
         return 0.0
     return verdict_count * 3600.0 / float(granularity_seconds)

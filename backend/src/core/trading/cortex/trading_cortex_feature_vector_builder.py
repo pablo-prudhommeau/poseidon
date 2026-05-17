@@ -156,7 +156,7 @@ class TradingCortexFeatureVectorBuilder:
         toxic_metric_ratio = 0.0
         average_bucket_win_rate = math.nan
         average_bucket_profit_and_loss_percentage = math.nan
-        average_bucket_capital_velocity = math.nan
+        average_bucket_expected_pnl_velocity = math.nan
         average_bucket_outlier_hit_rate = math.nan
         average_normalized_influence = math.nan
         cumulative_golden_influence = 0.0
@@ -172,9 +172,9 @@ class TradingCortexFeatureVectorBuilder:
                 if shadow_metric_feature.bucket_average_profit_and_loss_percentage is not None
             ]
             bucket_capital_velocities = [
-                shadow_metric_feature.bucket_capital_velocity
+                shadow_metric_feature.bucket_expected_pnl_velocity
                 for shadow_metric_feature in scoring_request.shadow_metric_features
-                if shadow_metric_feature.bucket_capital_velocity is not None
+                if shadow_metric_feature.bucket_expected_pnl_velocity is not None
             ]
             bucket_outlier_hit_rates = [
                 shadow_metric_feature.bucket_outlier_hit_rate
@@ -191,7 +191,7 @@ class TradingCortexFeatureVectorBuilder:
             if bucket_profit_and_loss_percentages:
                 average_bucket_profit_and_loss_percentage = sum(bucket_profit_and_loss_percentages) / len(bucket_profit_and_loss_percentages)
             if bucket_capital_velocities:
-                average_bucket_capital_velocity = sum(bucket_capital_velocities) / len(bucket_capital_velocities)
+                average_bucket_expected_pnl_velocity = sum(bucket_capital_velocities) / len(bucket_capital_velocities)
             if bucket_outlier_hit_rates:
                 average_bucket_outlier_hit_rate = sum(bucket_outlier_hit_rates) / len(bucket_outlier_hit_rates)
             if normalized_influences:
@@ -214,7 +214,7 @@ class TradingCortexFeatureVectorBuilder:
         self._append_feature(named_feature_values, "shadow_metric_toxic_ratio", toxic_metric_ratio)
         self._append_feature(named_feature_values, "shadow_metric_average_bucket_win_rate", average_bucket_win_rate)
         self._append_feature(named_feature_values, "shadow_metric_average_bucket_profit_and_loss_percentage", average_bucket_profit_and_loss_percentage)
-        self._append_feature(named_feature_values, "shadow_metric_average_bucket_capital_velocity", average_bucket_capital_velocity)
+        self._append_feature(named_feature_values, "shadow_metric_average_bucket_expected_pnl_velocity", average_bucket_expected_pnl_velocity)
         self._append_feature(named_feature_values, "shadow_metric_average_bucket_outlier_hit_rate", average_bucket_outlier_hit_rate)
         self._append_feature(named_feature_values, "shadow_metric_average_normalized_influence", average_normalized_influence)
         self._append_feature(named_feature_values, "shadow_metric_cumulative_golden_influence", cumulative_golden_influence)
@@ -232,7 +232,7 @@ class TradingCortexFeatureVectorBuilder:
             )
 
         return TradingCortexFeatureVectorSnapshot(
-            feature_set_version=scoring_request.feature_set_version or settings.TRADING_CORTEX_DEFAULT_FEATURE_SET_VERSION,
+            feature_set_version=scoring_request.feature_set_version,
             named_feature_values=named_feature_values,
             shadow_metric_count=shadow_metric_count,
             golden_metric_count=golden_metric_count,
@@ -252,7 +252,7 @@ class TradingCortexFeatureVectorBuilder:
             self._append_feature(named_feature_values, "shadow_regime_meta_win_rate", math.nan)
             self._append_feature(named_feature_values, "shadow_regime_meta_average_profit_and_loss_percentage", math.nan)
             self._append_feature(named_feature_values, "shadow_regime_meta_average_holding_time_hours", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_meta_capital_velocity", math.nan)
+            self._append_feature(named_feature_values, "shadow_regime_meta_expected_pnl_velocity", math.nan)
             self._append_feature(named_feature_values, "shadow_regime_meta_profit_factor", math.nan)
             self._append_feature(named_feature_values, "shadow_regime_meta_expected_value_usd", math.nan)
             self._append_feature(named_feature_values, "shadow_regime_chronicle_profit_factor", math.nan)
@@ -273,8 +273,8 @@ class TradingCortexFeatureVectorBuilder:
         )
         self._append_feature(
             named_feature_values,
-            "shadow_regime_meta_capital_velocity",
-            optional_float_to_feature_value(regime_features.meta_capital_velocity),
+            "shadow_regime_meta_expected_pnl_velocity",
+            optional_float_to_feature_value(regime_features.meta_expected_pnl_velocity),
         )
         self._append_feature(
             named_feature_values,
@@ -314,12 +314,12 @@ class TradingCortexFeatureVectorBuilder:
             regime_features.meta_expected_value_usd,
             settings.TRADING_CORTEX_REGIME_EXPECTED_VALUE_TEMPERATURE,
         )
-        meta_capital_velocity_signal = bounded_hyperbolic_signal(regime_features.meta_capital_velocity, 2.0)
+        meta_expected_pnl_velocity_signal = bounded_hyperbolic_signal(regime_features.meta_expected_pnl_velocity, 2.0)
         composite_signal = (
                 0.35 * chronicle_profit_factor_signal
                 + 0.25 * sparse_expected_value_signal
                 + 0.20 * meta_expected_value_signal
-                + 0.20 * meta_capital_velocity_signal
+                + 0.20 * meta_expected_pnl_velocity_signal
         )
         return clamp(composite_signal, -1.0, 1.0)
 
@@ -336,7 +336,7 @@ class TradingCortexFeatureVectorBuilder:
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_win_rate", math.nan)
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_average_profit_and_loss_percentage", math.nan)
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_average_holding_time_hours", math.nan)
-            self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_capital_velocity", math.nan)
+            self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_expected_pnl_velocity", math.nan)
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_outlier_hit_rate", math.nan)
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_sample_count", math.nan)
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_is_toxic", 0.0)
@@ -359,8 +359,8 @@ class TradingCortexFeatureVectorBuilder:
         )
         self._append_feature(
             named_feature_values,
-            f"{metric_feature_prefix}_bucket_capital_velocity",
-            optional_float_to_feature_value(shadow_metric_feature.bucket_capital_velocity),
+            f"{metric_feature_prefix}_bucket_expected_pnl_velocity",
+            optional_float_to_feature_value(shadow_metric_feature.bucket_expected_pnl_velocity),
         )
         self._append_feature(
             named_feature_values,

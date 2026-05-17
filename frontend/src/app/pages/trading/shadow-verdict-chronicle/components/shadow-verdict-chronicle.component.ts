@@ -10,6 +10,7 @@ import type { ChronicleLegendSeriesItem } from '../chart/shadow-verdict-chronicl
 import { ShadowVerdictChronicleSurfaceCoordinator } from '../chart/shadow-verdict-chronicle-surface.coordinator';
 import type { ChronicleBucketMeta } from '../data/shadow-verdict-chronicle.models';
 import { buildChronicleSnapshotFingerprint, type ChronicleBucketLabel } from '../data/shadow-verdict-chronicle-arrays.utils';
+import { chronicleSeriesDisplayLabel } from '../data/shadow-verdict-chronicle-legend.utils';
 import { ShadowVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
 
 interface ChronicleBucketOption {
@@ -32,7 +33,7 @@ interface ChronicleSmaWindowOption {
 export class ShadowVerdictChronicleComponent {
     readonly payload = signal<ShadowVerdictChronicleResponse | null>(null);
 
-    selectedBucket = signal<ChronicleBucketLabel>('last_7d_5m');
+    selectedBucket = signal<ChronicleBucketLabel>('last_7d_15m');
 
     private readonly webSocketService: WebSocketService = inject(WebSocketService);
 
@@ -57,7 +58,7 @@ export class ShadowVerdictChronicleComponent {
     readonly bucketOptions: ChronicleBucketOption[] = [
         { label: '30m · 1m', value: 'last_30m_1m' satisfies ChronicleBucketLabel },
         { label: '24h · 1h', value: 'last_24h_1h' satisfies ChronicleBucketLabel },
-        { label: '7d · 5m', value: 'last_7d_5m' satisfies ChronicleBucketLabel },
+        { label: '7d · 15m', value: 'last_7d_15m' satisfies ChronicleBucketLabel },
         { label: '30d · 30m', value: 'last_30d_30m' satisfies ChronicleBucketLabel }
     ];
     readonly chartReady = signal<boolean>(false);
@@ -125,6 +126,10 @@ export class ShadowVerdictChronicleComponent {
         if (hist) {
             void this.applySnapshot(hist);
         }
+    }
+
+    legendSeriesLabel(seriesName: string): string {
+        return chronicleSeriesDisplayLabel(seriesName);
     }
 
     onBucketChange(): void {

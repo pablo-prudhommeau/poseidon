@@ -3,28 +3,39 @@ import type {
     ChronicleAdjustTooltipPositionHost,
     ChronicleArrays,
     ChronicleBucketMeta,
+    ChronicleCartesianPoint,
     ChronicleChartModel,
-    ChronicleThresholdPaletteBinding,
+    ChronicleVerdictBubblePointMetadata,
     SciChartModule
 } from '../data/shadow-verdict-chronicle.models';
+import { CHRONICLE_METRIC_COLORS } from '../data/shadow-verdict-chronicle-metrics.catalog';
+import { CHRONICLE_SERIES } from '../data/shadow-verdict-chronicle-series-names';
 import { buildChronicleCursorTooltipSvg } from '../data/shadow-verdict-chronicle-tooltip.formatter';
+import { buildCortexCalibrationBandSegmentBundles, buildCortexCalibrationBandSegments } from './shadow-verdict-chronicle-cortex-calibration-band.utils';
+import { buildChronicleGoldenZoneExpectedValueBandValues, buildChronicleGoldenZoneProfitFactorBandValues } from './shadow-verdict-chronicle-golden-zone.utils';
+import {
+    buildRegimeEvGateSubmergedBandSegmentBundles,
+    buildRegimeEvGateSubmergedBandSegmentsFromArrays,
+    buildRegimePfGateSubmergedBandSegmentBundles,
+    buildRegimePfGateSubmergedBandSegmentsFromArrays
+} from './shadow-verdict-chronicle-gate-submerged-band.utils';
 
 export interface ChronicleSeriesBundle {
-    volumeMountainDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     volumeColumnDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     volumeColumnRenderableSeries: InstanceType<SciChartModule['FastColumnRenderableSeries']>;
     goldenZoneExpectedValueBandDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     goldenZoneProfitFactorBandDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     goldenZoneExpectedValueBandSeries: InstanceType<SciChartModule['SplineMountainRenderableSeries']>;
     goldenZoneProfitFactorBandSeries: InstanceType<SciChartModule['SplineMountainRenderableSeries']>;
-    goldenZoneExpectedValueSmaPaletteController: ChronicleThresholdPaletteBinding;
-    goldenZoneProfitFactorSmaPaletteController: ChronicleThresholdPaletteBinding;
+    regimeEvGateSubmergedBandSegmentBundles: ChronicleChartModel['regimeEvGateSubmergedBandSegmentBundles'];
+    regimePfGateSubmergedBandSegmentBundles: ChronicleChartModel['regimePfGateSubmergedBandSegmentBundles'];
     metricLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
     movingAverageLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
-    profitableVerdictXyzDataSeries: InstanceType<SciChartModule['XyzDataSeries']>;
-    lossVerdictXyzDataSeries: InstanceType<SciChartModule['XyzDataSeries']>;
+    profitableVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    lossVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     goldenZoneExpectedValueAnnotation: InstanceType<SciChartModule['HorizontalLineAnnotation']>;
     goldenZoneProfitFactorAnnotation: InstanceType<SciChartModule['HorizontalLineAnnotation']>;
+    cortexCalibrationBandSegmentBundles: ChronicleChartModel['cortexCalibrationBandSegmentBundles'];
 }
 
 function resolveFiniteThreshold(value: number | string | null | undefined): number | undefined {
@@ -54,39 +65,28 @@ function createGoldenZoneAnnotation(
     });
 }
 
-function createSmaThresholdPaletteController(sci: SciChartModule, highlightedColor: string, belowThresholdColor: string): ChronicleThresholdPaletteBinding {
-    const highlightedArgb = sci.parseColorToUIntArgb(highlightedColor);
-    const belowThresholdArgb = sci.parseColorToUIntArgb(belowThresholdColor);
+function createCortexHaloPaletteProvider(sci: SciChartModule, _baseStrokeColor: string, _baseFillColor: string): unknown {
     const defaultPaletteProviderConstructor = sci.DefaultPaletteProvider as unknown as new () => Record<string, unknown>;
 
-    class ThresholdPaletteProvider extends defaultPaletteProviderConstructor {
+    const winPredictedHaloArgb = sci.parseColorToUIntArgb(CHRONICLE_METRIC_COLORS.cortexHaloWin);
+    const lossPredictedHaloArgb = sci.parseColorToUIntArgb(CHRONICLE_METRIC_COLORS.cortexHaloLoss);
+
+    class CortexHaloPaletteProvider extends defaultPaletteProviderConstructor {
         strokePaletteMode: unknown;
-        thresholdValue: number | undefined;
 
         constructor() {
             super();
             this.strokePaletteMode = sci.EStrokePaletteMode.SOLID;
-            this.thresholdValue = undefined;
         }
 
-        overrideStrokeArgb(_xValue: number, yValue: number): number | undefined {
-            if (!Number.isFinite(yValue)) {
-                return undefined;
+        overrideStrokeArgb(_xValue: number, _yValue: number, _index: number, _opacity?: number, metadata?: any): number | undefined {
+            if (metadata && typeof metadata.cortexProbability === 'number' && !Number.isNaN(metadata.cortexProbability)) {
+                return metadata.cortexProbability >= 0.5 ? winPredictedHaloArgb : lossPredictedHaloArgb;
             }
-            if (this.thresholdValue == null) {
-                return belowThresholdArgb;
-            }
-            return yValue >= this.thresholdValue ? highlightedArgb : belowThresholdArgb;
+            return undefined;
         }
     }
-
-    const provider = new ThresholdPaletteProvider();
-    return {
-        paletteProvider: provider,
-        setThreshold: (value: number | undefined): void => {
-            provider.thresholdValue = value;
-        }
-    };
+    return new CortexHaloPaletteProvider();
 }
 
 function applyUniformColumnWidthForTimeBuckets(
@@ -97,6 +97,14 @@ function applyUniformColumnWidthForTimeBuckets(
     const bucketMilliseconds = Math.max(1000, granularitySeconds * 1000);
     columnSeries.dataPointWidthMode = sci.EDataPointWidthMode.Range;
     columnSeries.dataPointWidth = bucketMilliseconds * 0.88;
+}
+
+function buildVerdictCloudPointMetadata(point: ChronicleCartesianPoint): ChronicleVerdictBubblePointMetadata {
+    return {
+        cortexProbability: point.cortexProbability,
+        orderNotionalUsd: point.orderNotionalUsd,
+        isSelected: false
+    };
 }
 
 function createSplineMetricLine(
@@ -115,7 +123,7 @@ function createSplineMetricLine(
         yValues,
         dataSeriesName,
         isSorted: true,
-        containsNaN: false
+        containsNaN: true
     });
     return new SplineLineRenderableSeries(wasmContext, {
         yAxisId,
@@ -144,7 +152,7 @@ function createSplineMovingAverageLine(
         yValues,
         dataSeriesName,
         isSorted: true,
-        containsNaN: false
+        containsNaN: true
     });
     return new SplineLineRenderableSeries(wasmContext, {
         yAxisId,
@@ -166,139 +174,126 @@ export function buildChronicleSeriesBundle(
     meta: ChronicleBucketMeta
 ): ChronicleSeriesBundle {
     const {
-        BubbleAnimation,
         ColumnAnimation,
         CursorModifier,
         ELegendPlacement,
         EllipsePointMarker,
-        FastBubbleRenderableSeries,
         FastColumnRenderableSeries,
         GlowEffect,
         GradientParams,
         LegendModifier,
         MouseWheelZoomModifier,
-        MountainAnimation,
         Point,
-        ShadowEffect,
         SplineMountainRenderableSeries,
         SweepAnimation,
         XyDataSeries,
-        XyzDataSeries,
+        XyScatterRenderableSeries,
         ZoomExtentsModifier,
         ZoomPanModifier,
         easing
     } = sci;
 
-    const goldenZoneExpectedValueAnnotation = createGoldenZoneAnnotation(sci, 'yUsd', meta.sparseExpectedValueUsdThreshold, 'rgba(52, 211, 153, 0.95)');
-    const goldenZoneProfitFactorAnnotation = createGoldenZoneAnnotation(sci, 'yPf', meta.chronicleProfitFactorThreshold, 'rgba(251, 191, 36, 0.95)');
-    sciChartSurface.annotations.add(goldenZoneExpectedValueAnnotation);
-    sciChartSurface.annotations.add(goldenZoneProfitFactorAnnotation);
+    const goldenZoneExpectedValueAnnotation = createGoldenZoneAnnotation(
+        sci,
+        'yRegimeEv',
+        meta.sparseExpectedValueUsdThreshold,
+        CHRONICLE_METRIC_COLORS.expectedValueThreshold
+    );
+    const goldenZoneProfitFactorAnnotation = createGoldenZoneAnnotation(
+        sci,
+        'yRegimePf',
+        meta.chronicleProfitFactorThreshold,
+        CHRONICLE_METRIC_COLORS.profitFactorThreshold
+    );
 
     const expectedValueThreshold = resolveFiniteThreshold(meta.sparseExpectedValueUsdThreshold);
     const profitFactorThreshold = resolveFiniteThreshold(meta.chronicleProfitFactorThreshold);
 
+    const regimeEvGateSubmergedBandSegments = buildRegimeEvGateSubmergedBandSegmentsFromArrays(
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays,
+        expectedValueThreshold
+    );
+    const regimeEvGateSubmergedBandSegmentBundles = buildRegimeEvGateSubmergedBandSegmentBundles(sci, wasmContext, regimeEvGateSubmergedBandSegments, true);
+
     const goldenZoneExpectedValueBandDataSeries = new XyDataSeries(wasmContext, {
         xValues: chronicleArrays.metricTimestampsMilliseconds,
-        yValues:
-            expectedValueThreshold == null
-                ? chronicleArrays.movingAverageExpectedValueSeries.map(() => 0)
-                : chronicleArrays.movingAverageExpectedValueSeries.map((value: number) => (value > expectedValueThreshold ? value : expectedValueThreshold)),
-        dataSeriesName: 'SMA EV per trade (area)',
+        yValues: buildChronicleGoldenZoneExpectedValueBandValues(chronicleArrays, expectedValueThreshold),
+        dataSeriesName: CHRONICLE_SERIES.evGateThreshold,
         isSorted: true,
-        containsNaN: false
+        containsNaN: true
     });
 
     const goldenZoneExpectedValueBandSeries = new SplineMountainRenderableSeries(wasmContext, {
-        yAxisId: 'yUsd',
+        yAxisId: 'yRegimeEv',
         xAxisId: 'xTime',
         dataSeries: goldenZoneExpectedValueBandDataSeries,
-        seriesName: 'SMA EV per trade (area)',
-        stroke: '#34d399',
+        seriesName: CHRONICLE_SERIES.evGateThreshold,
+        stroke: CHRONICLE_METRIC_COLORS.expectedValue,
         strokeThickness: 1,
         fillLinearGradient: new GradientParams(new Point(0, 0), new Point(0, 1), [
-            { offset: 0, color: 'rgba(52, 211, 153, 0.58)' },
-            { offset: 0.55, color: 'rgba(52, 211, 153, 0.26)' },
-            { offset: 1, color: 'rgba(52, 211, 153, 0.04)' }
+            { offset: 0, color: CHRONICLE_METRIC_COLORS.expectedValueBandFillHigh },
+            { offset: 0.55, color: CHRONICLE_METRIC_COLORS.expectedValueBandFillMid },
+            { offset: 1, color: CHRONICLE_METRIC_COLORS.expectedValueBandFillLow }
         ]),
         zeroLineY: expectedValueThreshold ?? 0,
         opacity: 0.95,
         effect: new GlowEffect(wasmContext, { intensity: 0.52, range: 2 })
     });
 
+    const regimePfGateSubmergedBandSegments = buildRegimePfGateSubmergedBandSegmentsFromArrays(
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays,
+        profitFactorThreshold
+    );
+    const regimePfGateSubmergedBandSegmentBundles = buildRegimePfGateSubmergedBandSegmentBundles(sci, wasmContext, regimePfGateSubmergedBandSegments, true);
+
     const goldenZoneProfitFactorBandDataSeries = new XyDataSeries(wasmContext, {
         xValues: chronicleArrays.metricTimestampsMilliseconds,
-        yValues:
-            profitFactorThreshold == null
-                ? chronicleArrays.movingAverageProfitFactorSeries.map(() => 0)
-                : chronicleArrays.movingAverageProfitFactorSeries.map((value: number) => (value > profitFactorThreshold ? value : profitFactorThreshold)),
-        dataSeriesName: 'SMA profit factor (area)',
+        yValues: buildChronicleGoldenZoneProfitFactorBandValues(chronicleArrays, profitFactorThreshold),
+        dataSeriesName: CHRONICLE_SERIES.pfGateThreshold,
         isSorted: true,
-        containsNaN: false
+        containsNaN: true
     });
     const goldenZoneProfitFactorBandSeries = new SplineMountainRenderableSeries(wasmContext, {
-        yAxisId: 'yPf',
+        yAxisId: 'yRegimePf',
         xAxisId: 'xTime',
         dataSeries: goldenZoneProfitFactorBandDataSeries,
-        seriesName: 'SMA profit factor (area)',
-        stroke: '#fbbf24',
+        seriesName: CHRONICLE_SERIES.pfGateThreshold,
+        stroke: CHRONICLE_METRIC_COLORS.profitFactor,
         strokeThickness: 1,
         fillLinearGradient: new GradientParams(new Point(0, 0), new Point(0, 1), [
-            { offset: 0, color: 'rgba(251, 191, 36, 0.55)' },
-            { offset: 0.55, color: 'rgba(251, 191, 36, 0.24)' },
-            { offset: 1, color: 'rgba(251, 191, 36, 0.04)' }
+            { offset: 0, color: CHRONICLE_METRIC_COLORS.profitFactorBandFillHigh },
+            { offset: 0.55, color: CHRONICLE_METRIC_COLORS.profitFactorBandFillMid },
+            { offset: 1, color: CHRONICLE_METRIC_COLORS.profitFactorBandFillLow }
         ]),
         zeroLineY: profitFactorThreshold ?? 0,
         opacity: 0.95,
         effect: new GlowEffect(wasmContext, { intensity: 0.5, range: 2 })
     });
 
-    const volumeMountainDataSeries = new XyDataSeries(wasmContext, {
-        xValues: chronicleArrays.volumeBucketTimestampsMilliseconds,
-        yValues: chronicleArrays.volumeBucketVerdictCounts,
-        dataSeriesName: 'Volume · area',
-        isSorted: true,
-        containsNaN: false
-    });
-
-    const volumeMountainSeries = new SplineMountainRenderableSeries(wasmContext, {
-        yAxisId: 'yVol',
-        xAxisId: 'xTime',
-        dataSeries: volumeMountainDataSeries,
-        seriesName: 'Volume · area',
-        stroke: 'rgba(168, 85, 247, 0.35)',
-        strokeThickness: 2,
-        fillLinearGradient: new GradientParams(new Point(0, 0), new Point(0, 1), [
-            { offset: 0, color: 'rgba(168, 85, 247, 0.55)' },
-            { offset: 0.55, color: 'rgba(6, 182, 212, 0.22)' },
-            { offset: 1, color: 'rgba(6, 182, 212, 0.01)' }
-        ]),
-        effect: new ShadowEffect(wasmContext, { offset: new Point(0, 3), range: 4, brightness: 42 })
-    });
-    volumeMountainSeries.isVisible = false;
-
     const volumeColumnDataSeries = new XyDataSeries(wasmContext, {
         xValues: chronicleArrays.volumeBucketTimestampsMilliseconds,
         yValues: chronicleArrays.volumeBucketVerdictCounts,
-        dataSeriesName: 'Volume · columns',
+        dataSeriesName: CHRONICLE_SERIES.volumeColumns,
         isSorted: true,
-        containsNaN: false
+        containsNaN: true
     });
 
     const volumeColumnRenderableSeries = new FastColumnRenderableSeries(wasmContext, {
         yAxisId: 'yVol',
         xAxisId: 'xTime',
         dataSeries: volumeColumnDataSeries,
-        seriesName: 'Volume · columns',
+        seriesName: CHRONICLE_SERIES.volumeColumns,
         fillLinearGradient: new GradientParams(new Point(0, 0), new Point(0, 1), [
-            { offset: 0, color: 'rgba(236, 72, 153, 0.42)' },
-            { offset: 1, color: 'rgba(99, 102, 241, 0.06)' }
+            { offset: 0, color: CHRONICLE_METRIC_COLORS.volumeColumnFillHigh },
+            { offset: 1, color: CHRONICLE_METRIC_COLORS.volumeColumnFillLow }
         ]),
-        stroke: 'rgba(244, 114, 182, 0.35)',
+        stroke: CHRONICLE_METRIC_COLORS.volumeColumnStroke,
         strokeThickness: 1,
         cornerRadius: 4,
         opacity: 0.88
     });
-    volumeColumnRenderableSeries.isVisible = false;
     applyUniformColumnWidthForTimeBuckets(volumeColumnRenderableSeries, meta.bucket.granularity_seconds, sci);
 
     const averagePnlLineSeries = createSplineMetricLine(
@@ -306,64 +301,78 @@ export function buildChronicleSeriesBundle(
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.averagePnlPercentageSeries,
-        'Average PnL % (bucket)',
-        '#f472b6',
+        CHRONICLE_SERIES.averagePnlLine,
+        CHRONICLE_METRIC_COLORS.pnl,
         'yPct',
         new GlowEffect(wasmContext, { intensity: 0.52, range: 2.5 })
     );
     averagePnlLineSeries.isVisible = false;
+
     const averageWinRateLineSeries = createSplineMetricLine(
         sci,
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.averageWinRatePercentageSeries,
-        'Average win rate % (bucket)',
-        '#a78bfa',
+        CHRONICLE_SERIES.averageWinRateLine,
+        CHRONICLE_METRIC_COLORS.winRate,
         'yPct',
         new GlowEffect(wasmContext, { intensity: 0.45, range: 2 })
     );
-    averageWinRateLineSeries.isVisible = false;
+
+    const averageCortexPredictionWinRateLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.averageCortexPredictionWinRatePercentageSeries,
+        CHRONICLE_SERIES.averageCortexPredictionWinRateLine,
+        CHRONICLE_METRIC_COLORS.cortexPrediction,
+        'yPct',
+        new GlowEffect(wasmContext, { intensity: 0.42, range: 2 })
+    );
+
     const expectedValueLineSeries = createSplineMetricLine(
         sci,
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.expectedValuePerTradeUsdSeries,
-        'EV per trade ($) (bucket)',
-        '#34d399',
+        CHRONICLE_SERIES.expectedValueLine,
+        CHRONICLE_METRIC_COLORS.expectedValue,
         'yUsd',
         new GlowEffect(wasmContext, { intensity: 0.48, range: 2 })
     );
     expectedValueLineSeries.isVisible = false;
+
     const profitFactorLineSeries = createSplineMetricLine(
         sci,
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.profitFactorSeries,
-        'Profit factor (bucket)',
-        '#fbbf24',
+        CHRONICLE_SERIES.profitFactorLine,
+        CHRONICLE_METRIC_COLORS.profitFactor,
         'yPf',
         new GlowEffect(wasmContext, { intensity: 0.46, range: 2 })
     );
     profitFactorLineSeries.isVisible = false;
-    const velocityLineSeries = createSplineMetricLine(
+
+    const tradesPerHourLineSeries = createSplineMetricLine(
         sci,
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
-        chronicleArrays.capitalVelocityPerHourSeries,
-        'Velocity (closed / hour, bucket)',
-        '#38bdf8',
+        chronicleArrays.closedVerdictsPerHourSeries,
+        CHRONICLE_SERIES.tradesPerHourLine,
+        CHRONICLE_METRIC_COLORS.tradesPerHour,
         'yVel',
         new GlowEffect(wasmContext, { intensity: 0.46, range: 2 })
     );
-    velocityLineSeries.isVisible = false;
+    tradesPerHourLineSeries.isVisible = false;
 
     const movingAveragePnlLineSeries = createSplineMovingAverageLine(
         sci,
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.movingAveragePnlSeries,
-        'SMA average PnL %',
-        '#f472b6',
+        CHRONICLE_SERIES.smaPnlLine,
+        CHRONICLE_METRIC_COLORS.pnl,
         'yPct'
     );
     movingAveragePnlLineSeries.isVisible = false;
@@ -372,18 +381,28 @@ export function buildChronicleSeriesBundle(
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.movingAverageWinRateSeries,
-        'SMA win rate %',
-        '#a78bfa',
+        CHRONICLE_SERIES.smaWinRateLine,
+        CHRONICLE_METRIC_COLORS.winRate,
         'yPct'
     );
     movingAverageWinRateLineSeries.isVisible = false;
+    const movingAverageCortexPredictionWinRateLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAverageCortexPredictionWinRatePercentageSeries,
+        CHRONICLE_SERIES.smaCortexPredictionWinRateLine,
+        CHRONICLE_METRIC_COLORS.cortexPrediction,
+        'yPct'
+    );
+    movingAverageCortexPredictionWinRateLineSeries.isVisible = false;
     const movingAverageExpectedValueLineSeries = createSplineMovingAverageLine(
         sci,
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.movingAverageExpectedValueSeries,
-        'SMA EV per trade',
-        '#A7F3D0',
+        CHRONICLE_SERIES.smaExpectedValueLine,
+        CHRONICLE_METRIC_COLORS.smaExpectedValue,
         'yUsd'
     );
     movingAverageExpectedValueLineSeries.opacity = 1;
@@ -392,130 +411,137 @@ export function buildChronicleSeriesBundle(
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays.movingAverageProfitFactorSeries,
-        'SMA profit factor',
-        '#FDE68A',
+        CHRONICLE_SERIES.smaProfitFactorLine,
+        CHRONICLE_METRIC_COLORS.smaProfitFactor,
         'yPf'
     );
     movingAverageProfitFactorLineSeries.opacity = 1;
-    const movingAverageVelocityLineSeries = createSplineMovingAverageLine(
+    const movingAverageTradesPerHourLineSeries = createSplineMovingAverageLine(
         sci,
         wasmContext,
         chronicleArrays.metricTimestampsMilliseconds,
-        chronicleArrays.movingAverageVelocitySeries,
-        'SMA velocity',
-        '#38bdf8',
+        chronicleArrays.movingAverageTradesPerHourSeries,
+        CHRONICLE_SERIES.smaTradesPerHourLine,
+        CHRONICLE_METRIC_COLORS.tradesPerHour,
         'yVel'
     );
-    movingAverageVelocityLineSeries.isVisible = false;
+    movingAverageTradesPerHourLineSeries.isVisible = false;
 
-    const goldenZoneExpectedValueSmaPaletteController = createSmaThresholdPaletteController(sci, '#A7F3D0', '#3F8F75');
-    const goldenZoneProfitFactorSmaPaletteController = createSmaThresholdPaletteController(sci, '#FDE68A', '#9B7A22');
-    goldenZoneExpectedValueSmaPaletteController.setThreshold(expectedValueThreshold);
-    goldenZoneProfitFactorSmaPaletteController.setThreshold(profitFactorThreshold);
-    movingAverageExpectedValueLineSeries.paletteProvider = goldenZoneExpectedValueSmaPaletteController.paletteProvider as never;
-    movingAverageProfitFactorLineSeries.paletteProvider = goldenZoneProfitFactorSmaPaletteController.paletteProvider as never;
+    const cortexCalibrationBandSegments = buildCortexCalibrationBandSegments(
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.averageWinRatePercentageSeries,
+        chronicleArrays.averageCortexPredictionWinRatePercentageSeries
+    );
+    const cortexCalibrationBandSegmentBundles = buildCortexCalibrationBandSegmentBundles(sci, wasmContext, cortexCalibrationBandSegments);
 
-    const profitableVerdictXyzDataSeries = new XyzDataSeries(wasmContext, {
-        dataSeriesName: 'Non-staled verdict · win (PnL %)'
+    const verdictCloudMarkerSize = 7;
+    const profitableVerdictXyDataSeries = new XyDataSeries(wasmContext, {
+        dataSeriesName: CHRONICLE_SERIES.winnerVerdictBubble,
+        containsNaN: true
     });
-    const lossVerdictXyzDataSeries = new XyzDataSeries(wasmContext, {
-        dataSeriesName: 'Non-staled verdict · loss (PnL %)'
+    const lossVerdictXyDataSeries = new XyDataSeries(wasmContext, {
+        dataSeriesName: CHRONICLE_SERIES.loserVerdictBubble,
+        containsNaN: true
     });
     for (const row of chronicleArrays.verdictCloudProfitablePoints) {
-        profitableVerdictXyzDataSeries.append(row.x, row.y, row.z);
+        profitableVerdictXyDataSeries.append(row.x, row.y, buildVerdictCloudPointMetadata(row));
     }
     for (const row of chronicleArrays.verdictCloudLossPoints) {
-        lossVerdictXyzDataSeries.append(row.x, row.y, row.z);
+        lossVerdictXyDataSeries.append(row.x, row.y, buildVerdictCloudPointMetadata(row));
     }
 
-    const profitableVerdictBubbleSeries = new FastBubbleRenderableSeries(wasmContext, {
+    const profitableVerdictBubbleSeries = new XyScatterRenderableSeries(wasmContext, {
         yAxisId: 'yPct',
         xAxisId: 'xTime',
-        dataSeries: profitableVerdictXyzDataSeries,
-        seriesName: 'Non-staled verdict · win (PnL %)',
+        dataSeries: profitableVerdictXyDataSeries,
+        seriesName: CHRONICLE_SERIES.winnerVerdictBubble,
         pointMarker: new EllipsePointMarker(wasmContext, {
-            width: 64,
-            height: 64,
-            stroke: 'rgba(16, 185, 129, 0.75)',
-            fill: 'rgba(16, 185, 129, 0.46)',
-            strokeThickness: 1.2
+            width: verdictCloudMarkerSize,
+            height: verdictCloudMarkerSize,
+            stroke: CHRONICLE_METRIC_COLORS.winnerVerdictStroke,
+            fill: CHRONICLE_METRIC_COLORS.winnerVerdictFill,
+            strokeThickness: 1
         }),
-        stroke: 'rgba(16, 185, 129, 0.75)',
-        strokeThickness: 1.2,
-        zMultiplier: 0.48,
-        opacity: 0.82,
-        effect: new GlowEffect(wasmContext, { intensity: 1.1, range: 3 })
+        stroke: CHRONICLE_METRIC_COLORS.winnerVerdictStroke,
+        strokeThickness: 0,
+        opacity: 0.88,
+        effect: new GlowEffect(wasmContext, { intensity: 0.65, range: 2 })
     });
 
-    const lossVerdictBubbleSeries = new FastBubbleRenderableSeries(wasmContext, {
+    const lossVerdictBubbleSeries = new XyScatterRenderableSeries(wasmContext, {
         yAxisId: 'yPct',
         xAxisId: 'xTime',
-        dataSeries: lossVerdictXyzDataSeries,
-        seriesName: 'Non-staled verdict · loss (PnL %)',
+        dataSeries: lossVerdictXyDataSeries,
+        seriesName: CHRONICLE_SERIES.loserVerdictBubble,
         pointMarker: new EllipsePointMarker(wasmContext, {
-            width: 64,
-            height: 64,
-            stroke: 'rgba(239, 68, 68, 0.78)',
-            fill: 'rgba(239, 68, 68, 0.48)',
-            strokeThickness: 1.2
+            width: verdictCloudMarkerSize,
+            height: verdictCloudMarkerSize,
+            stroke: CHRONICLE_METRIC_COLORS.loserVerdictStroke,
+            fill: CHRONICLE_METRIC_COLORS.loserVerdictFill,
+            strokeThickness: 1
         }),
-        stroke: 'rgba(239, 68, 68, 0.78)',
-        strokeThickness: 1.2,
-        zMultiplier: 0.48,
-        opacity: 0.78,
-        effect: new GlowEffect(wasmContext, { intensity: 0.95, range: 2 })
+        stroke: CHRONICLE_METRIC_COLORS.loserVerdictStroke,
+        strokeThickness: 0,
+        opacity: 0.84,
+        effect: new GlowEffect(wasmContext, { intensity: 0.55, range: 2 })
     });
 
     sciChartSurface.renderableSeries.add(
-        volumeMountainSeries,
         volumeColumnRenderableSeries,
         averagePnlLineSeries,
         averageWinRateLineSeries,
+        averageCortexPredictionWinRateLineSeries,
         expectedValueLineSeries,
         profitFactorLineSeries,
-        velocityLineSeries,
+        tradesPerHourLineSeries,
         movingAveragePnlLineSeries,
         movingAverageWinRateLineSeries,
+        movingAverageCortexPredictionWinRateLineSeries,
         movingAverageExpectedValueLineSeries,
+        ...regimeEvGateSubmergedBandSegmentBundles.map((bundle) => bundle.series),
         goldenZoneExpectedValueBandSeries,
         movingAverageProfitFactorLineSeries,
+        ...regimePfGateSubmergedBandSegmentBundles.map((bundle) => bundle.series),
         goldenZoneProfitFactorBandSeries,
-        movingAverageVelocityLineSeries,
+        movingAverageTradesPerHourLineSeries,
+        ...cortexCalibrationBandSegmentBundles.map((bundle) => bundle.series),
         lossVerdictBubbleSeries,
         profitableVerdictBubbleSeries
     );
+    sciChartSurface.annotations.add(goldenZoneExpectedValueAnnotation, goldenZoneProfitFactorAnnotation);
 
     const sweep = { duration: 2200, ease: easing.outExpo };
-    volumeMountainSeries.runAnimation(new MountainAnimation({ ...sweep, dataSeries: volumeMountainDataSeries }));
     volumeColumnRenderableSeries.runAnimation(new ColumnAnimation({ ...sweep, dataSeries: volumeColumnDataSeries }));
     for (const series of [
         averagePnlLineSeries,
         averageWinRateLineSeries,
+        averageCortexPredictionWinRateLineSeries,
         expectedValueLineSeries,
         profitFactorLineSeries,
-        velocityLineSeries,
+        tradesPerHourLineSeries,
         movingAveragePnlLineSeries,
         movingAverageWinRateLineSeries,
+        movingAverageCortexPredictionWinRateLineSeries,
         movingAverageExpectedValueLineSeries,
         movingAverageProfitFactorLineSeries,
-        movingAverageVelocityLineSeries
+        movingAverageTradesPerHourLineSeries
     ]) {
         series.runAnimation(new SweepAnimation(sweep));
     }
-    profitableVerdictBubbleSeries.runAnimation(new BubbleAnimation({ ...sweep, dataSeries: profitableVerdictXyzDataSeries }));
-    lossVerdictBubbleSeries.runAnimation(new BubbleAnimation({ ...sweep, dataSeries: lossVerdictXyzDataSeries }));
+    profitableVerdictBubbleSeries.runAnimation(new SweepAnimation(sweep));
+    lossVerdictBubbleSeries.runAnimation(new SweepAnimation(sweep));
 
     sciChartSurface.chartModifiers.add(
         new ZoomPanModifier(),
         new MouseWheelZoomModifier(),
         new ZoomExtentsModifier(),
         new CursorModifier({
-            crosshairStroke: 'rgba(167, 139, 250, 0.45)',
+            crosshairStroke: CHRONICLE_METRIC_COLORS.crosshair,
             crosshairStrokeThickness: 1,
             showTooltip: true,
-            tooltipContainerBackground: '#0f172acc',
-            tooltipTextStroke: '#f8fafc',
-            axisLabelFill: '#1e1b4b',
+            tooltipContainerBackground: CHRONICLE_METRIC_COLORS.tooltipContainerBackground,
+            tooltipTextStroke: CHRONICLE_METRIC_COLORS.tooltipText,
+            axisLabelFill: CHRONICLE_METRIC_COLORS.tooltipAxisLabelFill,
             tooltipSvgTemplate: (seriesInfos, svgAnnotation) =>
                 buildChronicleCursorTooltipSvg(sci as unknown as ChronicleAdjustTooltipPositionHost, seriesInfos as never, svgAnnotation)
         }),
@@ -525,32 +551,40 @@ export function buildChronicleSeriesBundle(
             showLegend: false,
             placement: ELegendPlacement.TopRight,
             margin: 10,
-            backgroundColor: '#110b2478',
-            textColor: '#f5f3ff'
+            backgroundColor: CHRONICLE_METRIC_COLORS.legendBackground,
+            textColor: CHRONICLE_METRIC_COLORS.legendText
         })
     );
 
     return {
-        volumeMountainDataSeries,
         volumeColumnDataSeries,
         volumeColumnRenderableSeries,
         goldenZoneExpectedValueBandDataSeries,
         goldenZoneProfitFactorBandDataSeries,
         goldenZoneExpectedValueBandSeries,
         goldenZoneProfitFactorBandSeries,
-        goldenZoneExpectedValueSmaPaletteController,
-        goldenZoneProfitFactorSmaPaletteController,
-        metricLineRenderableSeries: [averagePnlLineSeries, averageWinRateLineSeries, expectedValueLineSeries, profitFactorLineSeries, velocityLineSeries],
+        regimeEvGateSubmergedBandSegmentBundles,
+        regimePfGateSubmergedBandSegmentBundles,
+        metricLineRenderableSeries: [
+            averagePnlLineSeries,
+            averageWinRateLineSeries,
+            averageCortexPredictionWinRateLineSeries,
+            expectedValueLineSeries,
+            profitFactorLineSeries,
+            tradesPerHourLineSeries
+        ],
         movingAverageLineRenderableSeries: [
             movingAveragePnlLineSeries,
             movingAverageWinRateLineSeries,
+            movingAverageCortexPredictionWinRateLineSeries,
             movingAverageExpectedValueLineSeries,
             movingAverageProfitFactorLineSeries,
-            movingAverageVelocityLineSeries
+            movingAverageTradesPerHourLineSeries
         ],
-        profitableVerdictXyzDataSeries,
-        lossVerdictXyzDataSeries,
+        profitableVerdictXyDataSeries,
+        lossVerdictXyDataSeries,
         goldenZoneExpectedValueAnnotation,
-        goldenZoneProfitFactorAnnotation
+        goldenZoneProfitFactorAnnotation,
+        cortexCalibrationBandSegmentBundles
     };
 }

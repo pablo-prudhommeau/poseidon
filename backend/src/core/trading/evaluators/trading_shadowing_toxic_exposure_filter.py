@@ -30,27 +30,39 @@ def apply_shadowing_toxic_exposure_filter(
 
     meta_win_rate: float = snapshot.summary.meta_win_rate or 0.0
     meta_average_pnl: float = snapshot.summary.meta_average_pnl or 0.0
-    meta_capital_velocity: float = snapshot.summary.meta_capital_velocity or 0.0
+    meta_expected_pnl_velocity: float = snapshot.summary.meta_expected_pnl_velocity or 0.0
     meta_average_holding_time_hours: float = snapshot.summary.meta_average_holding_time_hours or 0.0
 
-    toxic_win_rate_threshold: float = meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
-    toxic_max_average_pnl: float = (meta_average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0)
-    toxic_min_capital_velocity: float = meta_capital_velocity + settings.TRADING_SHADOWING_TOXIC_CAPITAL_VELOCITY_OFFSET
-    toxic_max_holding_time_minutes: float = (meta_average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET) * 60.0
+    offset_win_rate: float = meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
+    floor_win_rate: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_WIN_RATE
+    ceiling_win_rate: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_WIN_RATE
+    toxic_win_rate_threshold: float = min(max(offset_win_rate, floor_win_rate), ceiling_win_rate)
+    win_rate_label: str = _format_threshold_reason(toxic_win_rate_threshold * 100.0, floor_win_rate * 100.0, ceiling_win_rate * 100.0, "%.1f%%")
+
+    offset_average_pnl: float = meta_average_pnl + settings.TRADING_SHADOWING_TOXIC_AVERAGE_PNL_OFFSET * 100.0
+    floor_average_pnl: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_AVERAGE_PNL * 100.0
+    ceiling_average_pnl: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_AVERAGE_PNL * 100.0
+    toxic_max_average_pnl: float = min(max(offset_average_pnl, floor_average_pnl), ceiling_average_pnl)
+    average_pnl_label: str = _format_threshold_reason(toxic_max_average_pnl, floor_average_pnl, ceiling_average_pnl, "%.2f%%")
+
+    offset_expected_pnl_velocity: float = meta_expected_pnl_velocity + settings.TRADING_SHADOWING_TOXIC_EXPECTED_PNL_VELOCITY_OFFSET
+    floor_expected_pnl_velocity: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_EXPECTED_PNL_VELOCITY
+    ceiling_expected_pnl_velocity: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_EXPECTED_PNL_VELOCITY
+    toxic_min_expected_pnl_velocity: float = min(max(offset_expected_pnl_velocity, floor_expected_pnl_velocity), ceiling_expected_pnl_velocity)
+    expected_pnl_velocity_label: str = _format_threshold_reason(toxic_min_expected_pnl_velocity, floor_expected_pnl_velocity, ceiling_expected_pnl_velocity, "%.2f")
+
+    offset_holding_time_minutes: float = (meta_average_holding_time_hours + settings.TRADING_SHADOWING_TOXIC_HOLDING_TIME_OFFSET) * 60.0
+    floor_holding_time_minutes: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_HOLDING_TIME_HOURS * 60.0
+    ceiling_holding_time_minutes: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_CEILING_HOLDING_TIME_HOURS * 60.0
+    toxic_max_holding_time_minutes: float = max(min(offset_holding_time_minutes, floor_holding_time_minutes), ceiling_holding_time_minutes)
+    holding_time_label: str = _format_threshold_reason(toxic_max_holding_time_minutes / 60.0, floor_holding_time_minutes / 60.0, ceiling_holding_time_minutes / 60.0, "%.1fh")
+
     maximum_toxic_exposure: int = settings.TRADING_SHADOWING_TOXIC_MAX_EXPOSURE
 
     retained: list[TradingCandidate] = []
     rejected: list[TradingCandidate] = []
 
     for candidate in candidates:
-        if candidate.token.symbol == "RUNNER":
-            logger.info("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shunting toxicity for %s", candidate.token.symbol)
-            candidate.shadow_diagnostics.intelligence_snapshot = TradingShadowingIntelligenceSnapshot(
-                summary=snapshot.summary,
-            )
-            retained.append(candidate)
-            continue
-
         diagnostics = evaluate_candidate_shadow_intelligence(candidate, snapshot)
         candidate.shadow_diagnostics = diagnostics
 
@@ -76,14 +88,14 @@ def apply_shadowing_toxic_exposure_filter(
         toxic_win_rate_threshold=toxic_win_rate_threshold,
         toxic_max_average_pnl=toxic_max_average_pnl,
         toxic_max_holding_time_minutes=toxic_max_holding_time_minutes,
-        toxic_min_capital_velocity=toxic_min_capital_velocity,
+        toxic_min_expected_pnl_velocity=toxic_min_expected_pnl_velocity,
     )
 
     meta_summary: str = (
-            "meta(WR=%.1f%%, PnL=%.2f%%, Hold=%.1fh, Vel=%.2f) → toxic(WR<%.1f%%, PnL<%.2f%%, Hold>%.1fh, Vel<%.2f)"
+            "meta(WR=%.1f%%, PnL=%.2f%%, Hold=%.1fh, Vel=%.2f) → toxic(WR<%s, PnL<%s, Hold>%s, Vel<%s)"
             % (
-                meta_win_rate * 100, meta_average_pnl, meta_average_holding_time_hours, meta_capital_velocity,
-                toxic_win_rate_threshold * 100, toxic_max_average_pnl, toxic_max_holding_time_minutes / 60.0, toxic_min_capital_velocity,
+                meta_win_rate * 100, meta_average_pnl, meta_average_holding_time_hours, meta_expected_pnl_velocity,
+                win_rate_label, average_pnl_label, holding_time_label, expected_pnl_velocity_label,
             )
     )
 
@@ -95,6 +107,20 @@ def apply_shadowing_toxic_exposure_filter(
     return retained
 
 
+def _format_threshold_reason(value: float, floor_value: float, ceiling_value: float, format_specification: str) -> str:
+    grey: str = console_color_codes["GREY"]
+    yellow: str = console_color_codes["YELLOW"]
+    cyan: str = console_color_codes["CYAN"]
+    reset: str = console_color_codes["RESET"]
+
+    if abs(value - floor_value) < 1e-6:
+        return f"{yellow}{format_specification % value} (floor){reset}"
+    elif abs(value - ceiling_value) < 1e-6:
+        return f"{cyan}{format_specification % value} (ceiling){reset}"
+    else:
+        return f"{grey}{format_specification % value} (offset){reset}"
+
+
 def _log_shadow_evaluation_details(
         retained: list[TradingCandidate],
         rejected: list[TradingCandidate],
@@ -102,7 +128,7 @@ def _log_shadow_evaluation_details(
         toxic_win_rate_threshold: float,
         toxic_max_average_pnl: float,
         toxic_max_holding_time_minutes: float,
-        toxic_min_capital_velocity: float,
+        toxic_min_expected_pnl_velocity: float,
 ) -> None:
     red: str = console_color_codes["RED"]
     green: str = console_color_codes["GREEN"]
@@ -115,7 +141,7 @@ def _log_shadow_evaluation_details(
             toxic_win_rate_threshold=toxic_win_rate_threshold,
             toxic_max_average_pnl=toxic_max_average_pnl,
             toxic_max_holding_time_minutes=toxic_max_holding_time_minutes,
-            toxic_min_capital_velocity=toxic_min_capital_velocity,
+            toxic_min_expected_pnl_velocity=toxic_min_expected_pnl_velocity,
         )
 
         toxic_count: int = candidate.shadow_diagnostics.toxic_metric_count
@@ -136,7 +162,7 @@ def _log_shadow_evaluation_details(
             toxic_win_rate_threshold=toxic_win_rate_threshold,
             toxic_max_average_pnl=toxic_max_average_pnl,
             toxic_max_holding_time_minutes=toxic_max_holding_time_minutes,
-            toxic_min_capital_velocity=toxic_min_capital_velocity,
+            toxic_min_expected_pnl_velocity=toxic_min_expected_pnl_velocity,
         )
 
         prefix: str = f"{candidate.token.symbol} {green}retained{reset}"
@@ -152,7 +178,7 @@ def _format_candidate_shadow_metrics_table(
         toxic_win_rate_threshold: float,
         toxic_max_average_pnl: float,
         toxic_max_holding_time_minutes: float,
-        toxic_min_capital_velocity: float,
+        toxic_min_expected_pnl_velocity: float,
 ) -> str:
     if not candidate.shadow_diagnostics.intelligence_snapshot:
         return ""
@@ -191,8 +217,8 @@ def _format_candidate_shadow_metrics_table(
             hold_color: str = red if metric_data.bucket_average_holding_time > toxic_max_holding_time_minutes else content_color
             hold_str: str = f"{metric_data.bucket_average_holding_time / 60.0:>5.1f}h"
 
-            vel_color: str = red if metric_data.bucket_capital_velocity < toxic_min_capital_velocity else content_color
-            vel_str: str = f"{metric_data.bucket_capital_velocity:>6.2f}"
+            vel_color: str = red if metric_data.bucket_expected_pnl_velocity < toxic_min_expected_pnl_velocity else content_color
+            vel_str: str = f"{metric_data.bucket_expected_pnl_velocity:>6.2f}"
 
             ohr_color: str = content_color
             ohr_str: str = f"{metric_data.bucket_outlier_hit_rate * 100:>5.1f}%"

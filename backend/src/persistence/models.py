@@ -304,6 +304,7 @@ class TradingCortexModelManifest(DatabaseBaseModel):
     toxicity_probability_model_path: Mapped[str] = mapped_column(String(512), nullable=False)
     expected_profit_and_loss_model_path: Mapped[str] = mapped_column(String(512), nullable=False)
     ordered_feature_names: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    training_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
 

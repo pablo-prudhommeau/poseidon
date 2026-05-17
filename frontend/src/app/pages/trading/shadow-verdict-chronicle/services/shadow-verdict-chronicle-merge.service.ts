@@ -32,7 +32,8 @@ export class ShadowVerdictChronicleMergeService {
                 ...bucket,
                 metrics: bucket.metrics.map((metric) => ({ ...metric })),
                 volumes: bucket.volumes.map((volume) => ({ ...volume })),
-                verdict_cloud: bucket.verdict_cloud.map((point) => ({ ...point }))
+                verdict_cloud: bucket.verdict_cloud.map((point) => ({ ...point })),
+                regime_gate: (bucket.regime_gate ?? []).map((gatePoint) => ({ ...gatePoint }))
             };
             if (bucketDelta) {
                 this.applyBucketDelta(next, bucketDelta, bucket, referenceWallClockMilliseconds);
@@ -49,6 +50,7 @@ export class ShadowVerdictChronicleMergeService {
             total_verdicts_considered: incrementalPatch.total_verdicts_considered,
             source: incrementalPatch.source,
             series_end_lag_seconds: incrementalPatch.series_end_lag_seconds,
+            cortex_model_rollouts: baseSnapshot.cortex_model_rollouts,
             buckets
         };
     }
@@ -121,6 +123,15 @@ export class ShadowVerdictChronicleMergeService {
             bucket.verdict_cloud = [...mergedByVerdictId.values()].sort(
                 (left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds || left.verdict_id - right.verdict_id
             );
+        }
+
+        const regimeGateUpsert = delta.regime_gate_upsert ?? [];
+        if (regimeGateUpsert.length > 0) {
+            const byTimestamp = new Map((bucket.regime_gate ?? []).map((gatePoint) => [gatePoint.timestamp_milliseconds, gatePoint]));
+            for (const gatePoint of regimeGateUpsert) {
+                byTimestamp.set(gatePoint.timestamp_milliseconds, gatePoint);
+            }
+            bucket.regime_gate = [...byTimestamp.values()].sort((left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds);
         }
     }
 }

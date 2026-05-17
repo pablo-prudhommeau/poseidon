@@ -1,0 +1,21 @@
+export const CHRONICLE_SERIES = {
+    averagePnlLine: 'Average PnL % · line',
+    averageWinRateLine: 'Average win rate % · line',
+    averageCortexPredictionWinRateLine: 'Average cortex win rate prediction % · line',
+    expectedValueLine: 'EV per trade ($) · line',
+    profitFactorLine: 'Profit factor · line',
+    tradesPerHourLine: 'Trades / h · line',
+    smaPnlLine: 'SMA average PnL % · dashed-line',
+    smaWinRateLine: 'SMA win rate % · dashed-line',
+    smaCortexPredictionWinRateLine: 'SMA cortex win rate prediction % · dashed-line',
+    smaExpectedValueLine: 'SMA EV per trade · dashed-line',
+    smaProfitFactorLine: 'SMA profit factor · dashed-line',
+    smaTradesPerHourLine: 'SMA Trades / h · dashed-line',
+    evGateThreshold: 'EV gate threshold · threshold',
+    pfGateThreshold: 'PF gate threshold · threshold',
+    volumeColumns: 'Volume · columns',
+    winnerVerdictBubble: 'Winner verdict PnL % · bubble',
+    loserVerdictBubble: 'Loser verdict PnL % · bubble',
+    cortexCalibrationBand: 'Cortex calibration · band',
+    cortexModelRolloutMarker: 'Cortex model rollout · marker'
+} as const;

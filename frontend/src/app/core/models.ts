@@ -244,7 +244,7 @@ export interface TradingShadowMetaPayload {
     elapsed_hours: number;
     win_rate_percentage?: number | null;
     expected_value_usd?: number | null;
-    capital_velocity?: number | null;
+    expected_pnl_velocity?: number | null;
     global_profit_factor?: number | null;
     chronicle_profit_factor?: number | null;
     chronicle_profit_factor_threshold?: number | null;
@@ -297,7 +297,7 @@ export interface TradingEvaluationShadowIntelligenceSnapshotSummaryPayload {
     meta_win_rate?: number | null;
     meta_average_pnl?: number | null;
     meta_average_holding_time_hours?: number | null;
-    meta_capital_velocity?: number | null;
+    meta_expected_pnl_velocity?: number | null;
     meta_profit_factor?: number | null;
     meta_expected_value_usd?: number | null;
     chronicle_profit_factor?: number | null;
@@ -313,7 +313,7 @@ export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
     bucket_win_rate: number;
     bucket_average_pnl: number;
     bucket_average_holding_time: number;
-    bucket_capital_velocity: number;
+    bucket_expected_pnl_velocity: number;
     bucket_outlier_hit_rate: number;
     bucket_sample_count: number;
     is_toxic: boolean;
@@ -542,7 +542,7 @@ export interface AnalyticsHeatmapCellPayload {
     range_max: number;
     average_pnl: number;
     average_holding_time_minutes: number;
-    capital_velocity: number;
+    expected_pnl_velocity: number;
     quartile_1_pnl: number;
     quartile_3_pnl: number;
     sample_count: number;
@@ -595,7 +595,7 @@ export interface AnalyticsKpiPayload {
     worst_trade_pnl_percentage: number;
     profit_factor: number;
     expected_value_usd: number;
-    capital_velocity: number;
+    expected_pnl_velocity: number;
 }
 
 export interface AnalyticsResponse {
@@ -610,8 +610,9 @@ export interface ShadowVerdictChronicleMetricPointPayload {
     average_pnl_percentage: number;
     average_win_rate_percentage: number;
     expected_value_per_trade_usd: number;
-    capital_velocity_per_hour: number;
+    closed_verdicts_per_hour: number;
     profit_factor: number;
+    average_cortex_prediction_win_rate_percentage?: number | null;
 }
 
 export interface ShadowVerdictChronicleVolumePointPayload {
@@ -628,6 +629,27 @@ export interface ShadowVerdictChronicleVerdictPointPayload {
     order_notional_usd: number;
     point_size: number;
     is_profitable: boolean;
+    cortex_probability?: number | null;
+}
+
+export interface ShadowVerdictChronicleRegimeGatePointPayload {
+    timestamp_milliseconds: number;
+    regime_profit_factor_sma?: number | null;
+    regime_sparse_expected_value_usd_sma?: number | null;
+    profit_factor_gate_open: boolean;
+    sparse_expected_value_gate_open: boolean;
+    hard_gate_open: boolean;
+}
+
+export interface ShadowVerdictChronicleCortexModelRolloutPayload {
+    activated_at_milliseconds: number;
+    model_version: string;
+    feature_set_version: string;
+    training_record_count: number;
+    validation_record_count: number;
+    success_probability_accuracy: number;
+    is_active: boolean;
+    label: string;
 }
 
 export interface ShadowVerdictChronicleBucketPayload {
@@ -638,6 +660,7 @@ export interface ShadowVerdictChronicleBucketPayload {
     metrics: ShadowVerdictChronicleMetricPointPayload[];
     volumes: ShadowVerdictChronicleVolumePointPayload[];
     verdict_cloud: ShadowVerdictChronicleVerdictPointPayload[];
+    regime_gate?: ShadowVerdictChronicleRegimeGatePointPayload[];
 }
 
 export interface ShadowVerdictChronicleResponse {
@@ -649,6 +672,7 @@ export interface ShadowVerdictChronicleResponse {
     source: string;
     series_end_lag_seconds: number;
     buckets: ShadowVerdictChronicleBucketPayload[];
+    cortex_model_rollouts?: ShadowVerdictChronicleCortexModelRolloutPayload[];
 }
 
 export interface ShadowVerdictChronicleBucketDeltaPayload {
@@ -659,6 +683,7 @@ export interface ShadowVerdictChronicleBucketDeltaPayload {
     volumes_remove_timestamps_ms?: number[];
     metrics_upsert: ShadowVerdictChronicleMetricPointPayload[];
     volumes_upsert: ShadowVerdictChronicleVolumePointPayload[];
+    regime_gate_upsert?: ShadowVerdictChronicleRegimeGatePointPayload[];
     verdict_cloud_replace?: ShadowVerdictChronicleVerdictPointPayload[] | null;
 }
 

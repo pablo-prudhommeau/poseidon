@@ -1,5 +1,5 @@
-import {Injectable, signal} from '@angular/core';
-import {ShadowVerdictChronicleMergeService} from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
+import { Injectable, signal } from '@angular/core';
+import { ShadowVerdictChronicleMergeService } from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
 import {
     DcaStrategyPayload,
     ShadowVerdictChronicleDeltaPayload,

@@ -25,7 +25,7 @@ class TradingCortexRequestBuilder:
             shadow_snapshot: Optional[TradingShadowingIntelligenceSnapshot],
     ) -> TradingCortexScoringRequest:
         token_information = candidate.dexscreener_token_information
-        request_identifier = self._build_request_identifier(candidate, candidate_rank)
+        request_identifier = self.build_request_identifier(candidate, candidate_rank)
         return TradingCortexScoringRequest(
             request_identifier=request_identifier,
             feature_set_version=settings.TRADING_CORTEX_FEATURE_SET_VERSION,
@@ -34,7 +34,7 @@ class TradingCortexRequestBuilder:
             shadow_metric_features=self._build_shadow_metric_feature_snapshots(candidate),
         )
 
-    def _build_request_identifier(self, candidate: TradingCandidate, candidate_rank: int) -> str:
+    def build_request_identifier(self, candidate: TradingCandidate, candidate_rank: int) -> str:
         pair_address = candidate.dexscreener_token_information.pair_address
         return f"rank-{candidate_rank}:{candidate.token.symbol}:{pair_address}"
 
@@ -106,7 +106,7 @@ class TradingCortexRequestBuilder:
             meta_win_rate=shadow_snapshot.summary.meta_win_rate,
             meta_average_profit_and_loss_percentage=shadow_snapshot.summary.meta_average_pnl,
             meta_average_holding_time_hours=shadow_snapshot.summary.meta_average_holding_time_hours,
-            meta_capital_velocity=shadow_snapshot.summary.meta_capital_velocity,
+            meta_expected_pnl_velocity=shadow_snapshot.summary.meta_expected_pnl_velocity,
             meta_profit_factor=shadow_snapshot.summary.meta_profit_factor,
             meta_expected_value_usd=shadow_snapshot.summary.meta_expected_value_usd,
             chronicle_profit_factor=shadow_snapshot.summary.chronicle_profit_factor,
@@ -137,7 +137,7 @@ class TradingCortexRequestBuilder:
             bucket_win_rate=evaluated_metric.bucket_win_rate,
             bucket_average_profit_and_loss_percentage=evaluated_metric.bucket_average_pnl,
             bucket_average_holding_time_hours=evaluated_metric.bucket_average_holding_time / 60.0,
-            bucket_capital_velocity=evaluated_metric.bucket_capital_velocity,
+            bucket_expected_pnl_velocity=evaluated_metric.bucket_expected_pnl_velocity,
             bucket_outlier_hit_rate=evaluated_metric.bucket_outlier_hit_rate,
             bucket_sample_count=evaluated_metric.bucket_sample_count,
             is_toxic=evaluated_metric.is_toxic,

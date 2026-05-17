@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TradingShadowingPhase(Enum):
@@ -19,7 +19,7 @@ class TradingShadowingIntelligenceMetricSnapshot(BaseModel):
     bucket_win_rates: list[float]
     bucket_average_pnl: list[float]
     bucket_average_holding_time: list[float]
-    bucket_capital_velocity: list[float]
+    bucket_expected_pnl_velocity: list[float]
     bucket_outlier_hit_rates: list[float]
     bucket_sample_counts: list[int]
     bucket_is_golden: list[bool]
@@ -35,7 +35,7 @@ class TradingShadowingIntelligenceMetric(BaseModel):
     bucket_win_rate: Optional[float] = None
     bucket_average_pnl: Optional[float] = None
     bucket_average_holding_time: Optional[float] = None
-    bucket_capital_velocity: Optional[float] = None
+    bucket_expected_pnl_velocity: Optional[float] = None
     bucket_outlier_hit_rate: Optional[float] = None
     bucket_sample_count: Optional[int] = None
     is_toxic: bool = False
@@ -52,7 +52,7 @@ class TradingShadowingIntelligenceSummary(BaseModel):
     meta_win_rate: Optional[float] = None
     meta_average_pnl: Optional[float] = None
     meta_average_holding_time_hours: Optional[float] = None
-    meta_capital_velocity: Optional[float] = None
+    meta_expected_pnl_velocity: Optional[float] = None
     meta_profit_factor: Optional[float] = None
     meta_expected_value_usd: Optional[float] = None
     chronicle_profit_factor: Optional[float] = None
@@ -87,6 +87,7 @@ class TradingShadowingVerdictChronicleVerdict(BaseModel):
     is_profitable: bool
     exit_reason: str
     order_notional_value_usd: float
+    cortex_probability: Optional[float] = None
 
 
 class TradingShadowingVerdictChronicleMetricPoint(BaseModel):
@@ -95,7 +96,8 @@ class TradingShadowingVerdictChronicleMetricPoint(BaseModel):
     average_win_rate_percentage: float
     expected_value_per_trade_usd: float
     profit_factor: float
-    capital_velocity_per_hour: float
+    closed_verdicts_per_hour: float
+    average_cortex_prediction_win_rate_percentage: Optional[float] = None
 
 
 class TradingShadowingVerdictChronicleVolumePoint(BaseModel):
@@ -112,6 +114,16 @@ class TradingShadowingVerdictChronicleVerdictPoint(BaseModel):
     order_notional_usd: float
     point_size: float
     is_profitable: bool
+    cortex_probability: Optional[float] = None
+
+
+class TradingShadowingVerdictChronicleRegimeGatePoint(BaseModel):
+    timestamp_milliseconds: int
+    regime_profit_factor_sma: Optional[float] = None
+    regime_sparse_expected_value_usd_sma: Optional[float] = None
+    profit_factor_gate_open: bool = False
+    sparse_expected_value_gate_open: bool = False
+    hard_gate_open: bool = False
 
 
 class TradingShadowingVerdictChronicleBucket(BaseModel):
@@ -122,6 +134,20 @@ class TradingShadowingVerdictChronicleBucket(BaseModel):
     metrics: list[TradingShadowingVerdictChronicleMetricPoint]
     volumes: list[TradingShadowingVerdictChronicleVolumePoint]
     verdict_cloud: list[TradingShadowingVerdictChronicleVerdictPoint]
+    regime_gate: list[TradingShadowingVerdictChronicleRegimeGatePoint] = Field(default_factory=list)
+
+
+class TradingShadowingVerdictChronicleCortexModelRollout(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    activated_at_milliseconds: int
+    model_version: str
+    feature_set_version: str
+    training_record_count: int
+    validation_record_count: int
+    success_probability_accuracy: float
+    is_active: bool
+    label: str
 
 
 class TradingShadowingVerdictChronicle(BaseModel):
@@ -132,6 +158,7 @@ class TradingShadowingVerdictChronicle(BaseModel):
     total_verdicts_considered: int
     source: str
     buckets: list[TradingShadowingVerdictChronicleBucket]
+    cortex_model_rollouts: list[TradingShadowingVerdictChronicleCortexModelRollout] = Field(default_factory=list)
 
 
 class TradingShadowingVerdictChronicleComputationResult(BaseModel):

@@ -135,8 +135,8 @@
                         <div class="text-xs font-black text-slate-200 mt-1 leading-none">{{ shadowWinRate() | optionalNumber: '1.0-1' : '' : '%' }}</div>
                     </div>
                     <div class="flex flex-col justify-center border-l border-white/5 pl-2 leading-none">
-                        <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">velocity</span>
-                        <div class="text-xs font-black text-slate-200 mt-1 leading-none">{{ shadowCapitalVelocity() | optionalNumber: '1.2-2' }}</div>
+                        <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest whitespace-nowrap">exp. pnl / h</span>
+                        <div class="text-xs font-black text-slate-200 mt-1 leading-none">{{ shadowExpectedPnlVelocity() | optionalNumber: '1.2-2' : '' : '%' }}</div>
                     </div>
                     <div class="flex flex-col justify-center border-l border-white/5 pl-2 leading-none">
                         <span class="text-[9px] text-slate-600 uppercase font-black tracking-widest">meta ev</span>

@@ -47,7 +47,7 @@ def apply_shadowing_notional_boost(
                 continue
 
             bucket_win_rate = metric_snapshot.bucket_win_rates[bucket_index]
-            bucket_capital_velocity = metric_snapshot.bucket_capital_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_capital_velocity) else 0.0
+            bucket_expected_pnl_velocity = metric_snapshot.bucket_expected_pnl_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_expected_pnl_velocity) else 0.0
             normalized_influence = metric_snapshot.influence_score / total_influence_weight
             evaluated_influence_weight += normalized_influence
 
@@ -55,7 +55,7 @@ def apply_shadowing_notional_boost(
 
             if is_golden:
                 base_strength = (bucket_win_rate - golden_win_rate_threshold) / (1.0 - golden_win_rate_threshold) if golden_win_rate_threshold < 1.0 else 0.0
-                velocity_multiplier = max(0.0, 1.0 + bucket_capital_velocity)
+                velocity_multiplier = max(0.0, 1.0 + bucket_expected_pnl_velocity)
                 golden_strength = base_strength * velocity_multiplier
 
                 if golden_strength > 0:

@@ -1,7 +1,7 @@
-import {CommonModule} from '@angular/common';
-import {Component} from '@angular/core';
-import {IHeaderAngularComp} from 'ag-grid-angular';
-import {IHeaderParams} from 'ag-grid-community';
+import { CommonModule } from '@angular/common';
+import { Component } from '@angular/core';
+import { IHeaderAngularComp } from 'ag-grid-angular';
+import { IHeaderParams } from 'ag-grid-community';
 
 type IconHeaderConfig = {
     iconClass?: string;

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
@@ -12,11 +11,13 @@ from src.core.trading.analytics.trading_analytics_metric_bucket_statistics_engin
 )
 from src.core.trading.analytics.trading_analytics_service import compute_kpis
 from src.core.trading.analytics.trading_analytics_structures import MetricBucketProfile, MetaStatistics
-from src.core.trading.shadowing.trading_shadowing_service import (
-    _chronicle_display_lag_timedelta,
-    _compute_profit_factor,
-    _floor_datetime_to_granularity,
-    _series_end_datetime,
+from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
+    chronicle_display_lag_timedelta,
+    compute_profit_factor,
+    floor_datetime_to_granularity,
+    series_end_datetime,
+    simple_moving_average_like_shadow_verdict_chronicle_chart,
+    winsorize_series_like_shadow_verdict_chronicle_chart,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingIntelligenceMetric,
@@ -74,7 +75,7 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
         meta_win_rate = 0.0
         meta_average_pnl = 0.0
         meta_average_holding_time_hours = 0.0
-        meta_capital_velocity = 0.0
+        meta_expected_pnl_velocity = 0.0
         meta_profit_factor = 0.0
         meta_expected_value_usd = 0.0
 
@@ -83,7 +84,7 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
             meta_win_rate = meta_kpis.win_rate_percentage / 100.0
             meta_average_pnl = meta_kpis.average_pnl_percentage
             meta_average_holding_time_hours = meta_kpis.average_holding_duration_minutes / 60.0
-            meta_capital_velocity = meta_kpis.capital_velocity
+            meta_expected_pnl_velocity = meta_kpis.expected_pnl_velocity
             meta_profit_factor = meta_kpis.profit_factor
             meta_expected_value_usd = meta_kpis.expected_value_usd
 
@@ -91,7 +92,7 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
             win_rate=meta_win_rate,
             average_pnl=meta_average_pnl,
             average_holding_time_hours=meta_average_holding_time_hours,
-            capital_velocity=meta_capital_velocity,
+            expected_pnl_velocity=meta_expected_pnl_velocity,
         )
 
         bucket_profiles = compute_all_metric_bucket_profiles(analytics_records, meta_statistics)
@@ -133,7 +134,7 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
 
         logger.info(
             "[TRADING][SHADOW][INTELLIGENCE][SNAPSHOT] Shadow intelligence snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f chronicle_pf=%.2f sparse_ev_usd=%.2f",
-            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_capital_velocity, chronicle_profit_factor, sparse_expected_value_usd
+            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_expected_pnl_velocity, chronicle_profit_factor, sparse_expected_value_usd
         )
 
         is_aware_outcomes_sufficient = resolved_shadowing_and_cortex_inference_aware_count >= minimum_outcomes
@@ -159,7 +160,7 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
                 meta_win_rate=meta_win_rate,
                 meta_average_pnl=meta_average_pnl,
                 meta_average_holding_time_hours=meta_average_holding_time_hours,
-                meta_capital_velocity=meta_capital_velocity,
+                meta_expected_pnl_velocity=meta_expected_pnl_velocity,
                 meta_profit_factor=meta_profit_factor,
                 meta_expected_value_usd=meta_expected_value_usd,
                 chronicle_profit_factor=chronicle_profit_factor,
@@ -177,10 +178,10 @@ def _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
         lookback: timedelta,
         granularity_seconds: int,
 ) -> tuple[list[float], list[float], int]:
-    chronicle_lag_td = _chronicle_display_lag_timedelta()
+    chronicle_lag_td = chronicle_display_lag_timedelta()
     trailing = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
 
-    series_end = _series_end_datetime(current_time)
+    series_end = series_end_datetime(current_time)
     global_from_datetime = series_end - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
     bucket_from_datetime = max(global_from_datetime, series_end - lookback - chronicle_lag_td)
     bucket_to_datetime = series_end + timedelta(seconds=granularity_seconds * max(0, trailing))
@@ -194,7 +195,7 @@ def _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
             continue
         if verdict.realized_pnl_usd is None:
             continue
-        bucket_start = _floor_datetime_to_granularity(verdict_resolved_at, granularity_seconds)
+        bucket_start = floor_datetime_to_granularity(verdict_resolved_at, granularity_seconds)
         grouped_verdicts[bucket_start].append(verdict)
 
     profit_factors_sparse: list[float] = []
@@ -206,7 +207,7 @@ def _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
             continue
         gross_profit_usd = sum(value for value in pnl_usd_values if value > 0.0)
         gross_loss_usd = abs(sum(value for value in pnl_usd_values if value < 0.0))
-        profit_factors_sparse.append(_compute_profit_factor(gross_profit_usd, gross_loss_usd))
+        profit_factors_sparse.append(compute_profit_factor(gross_profit_usd, gross_loss_usd))
         mean_pnl_usd_sparse.append(sum(pnl_usd_values) / float(len(pnl_usd_values)))
 
     return profit_factors_sparse, mean_pnl_usd_sparse, len(profit_factors_sparse)
@@ -220,8 +221,8 @@ def _shadow_chart_sma_at_series_end(
 ) -> float:
     if not series_values:
         return empty_fallback
-    winsorized = _winsorize_series_like_shadow_verdict_chronicle_chart(series_values)
-    sma_series = _simple_moving_average_like_shadow_verdict_chronicle_chart(winsorized, sma_period)
+    winsorized = winsorize_series_like_shadow_verdict_chronicle_chart(series_values)
+    sma_series = simple_moving_average_like_shadow_verdict_chronicle_chart(winsorized, sma_period)
     return sma_series[-1]
 
 
@@ -259,32 +260,6 @@ def _compute_shadow_chart_sma_expected_value_usd_at_series_end(
     return sma_ev_usd, sparse_bucket_count
 
 
-def _winsorize_series_like_shadow_verdict_chronicle_chart(values: list[float]) -> list[float]:
-    if len(values) < 4:
-        return list(values)
-    sorted_values = sorted(values)
-    lower_index = max(0, math.floor((len(sorted_values) - 1) * 0.02))
-    upper_index = min(len(sorted_values) - 1, math.ceil((len(sorted_values) - 1) * 0.98))
-    lower_bound = sorted_values[lower_index]
-    upper_bound = sorted_values[upper_index]
-    return [min(upper_bound, max(lower_bound, value)) for value in values]
-
-
-def _simple_moving_average_like_shadow_verdict_chronicle_chart(values: list[float], window_size: int) -> list[float]:
-    if len(values) == 0 or window_size <= 1:
-        return list(values)
-    effective_window = min(window_size, len(values))
-    result: list[float] = [0.0] * len(values)
-    running_sum = 0.0
-    for index in range(len(values)):
-        running_sum += values[index]
-        if index >= effective_window:
-            running_sum -= values[index - effective_window]
-        current_window = min(index + 1, effective_window)
-        result[index] = running_sum / current_window
-    return result
-
-
 def _convert_bucket_profile_to_metric_snapshot(
         profile: MetricBucketProfile,
 ) -> Optional[TradingShadowingIntelligenceMetricSnapshot]:
@@ -297,7 +272,7 @@ def _convert_bucket_profile_to_metric_snapshot(
         bucket_win_rates=[bucket.win_rate / 100.0 for bucket in profile.bucket_statistics],
         bucket_average_pnl=[bucket.average_pnl for bucket in profile.bucket_statistics],
         bucket_average_holding_time=[bucket.average_holding_time_minutes for bucket in profile.bucket_statistics],
-        bucket_capital_velocity=[bucket.capital_velocity for bucket in profile.bucket_statistics],
+        bucket_expected_pnl_velocity=[bucket.expected_pnl_velocity for bucket in profile.bucket_statistics],
         bucket_outlier_hit_rates=[bucket.outlier_hit_rate / 100.0 for bucket in profile.bucket_statistics],
         bucket_sample_counts=[bucket.sample_count for bucket in profile.bucket_statistics],
         bucket_is_golden=[bucket.is_golden for bucket in profile.bucket_statistics],
@@ -347,7 +322,7 @@ def evaluate_candidate_shadow_intelligence(
             bucket_win_rate = metric_snapshot.bucket_win_rates[bucket_index]
             bucket_average_pnl = metric_snapshot.bucket_average_pnl[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_pnl) else 0.0
             bucket_average_holding_time = metric_snapshot.bucket_average_holding_time[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_holding_time) else 0.0
-            bucket_capital_velocity = metric_snapshot.bucket_capital_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_capital_velocity) else 0.0
+            bucket_expected_pnl_velocity = metric_snapshot.bucket_expected_pnl_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_expected_pnl_velocity) else 0.0
             bucket_outlier_hit_rate = metric_snapshot.bucket_outlier_hit_rates[bucket_index] if bucket_index < len(metric_snapshot.bucket_outlier_hit_rates) else 0.0
             bucket_sample_count = metric_snapshot.bucket_sample_counts[bucket_index] if bucket_index < len(metric_snapshot.bucket_sample_counts) else 0
 
@@ -368,7 +343,7 @@ def evaluate_candidate_shadow_intelligence(
                 bucket_win_rate=bucket_win_rate,
                 bucket_average_pnl=bucket_average_pnl,
                 bucket_average_holding_time=bucket_average_holding_time,
-                bucket_capital_velocity=bucket_capital_velocity,
+                bucket_expected_pnl_velocity=bucket_expected_pnl_velocity,
                 bucket_outlier_hit_rate=bucket_outlier_hit_rate,
                 bucket_sample_count=bucket_sample_count,
                 is_toxic=is_toxic,

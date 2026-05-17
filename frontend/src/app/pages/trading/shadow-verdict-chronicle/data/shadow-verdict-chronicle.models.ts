@@ -1,4 +1,4 @@
-import type { SciChartSurface, TSciChart, XyzDataSeries } from 'scichart';
+import type { SciChartSurface, TSciChart } from 'scichart';
 import type { ShadowVerdictChronicleBucketPayload, ShadowVerdictChronicleResponse } from '../../../../core/models';
 
 export type SciChartModule = typeof import('scichart');
@@ -6,7 +6,14 @@ export type SciChartModule = typeof import('scichart');
 export interface ChronicleCartesianPoint {
     x: number;
     y: number;
-    z: number;
+    cortexProbability?: number | null;
+    orderNotionalUsd?: number | null;
+}
+
+export interface ChronicleVerdictBubblePointMetadata {
+    cortexProbability?: number | null;
+    orderNotionalUsd?: number | null;
+    isSelected: boolean;
 }
 
 export interface ChronicleNumericBounds {
@@ -18,12 +25,19 @@ export interface ChronicleAxisTickBounds extends ChronicleNumericBounds {
     majorDelta: number;
 }
 
-export interface ChronicleThresholdPaletteController {
-    setThreshold: (value: number | undefined) => void;
+export interface CortexCalibrationBandSegmentBundle {
+    dataSeries: InstanceType<SciChartModule['XyyDataSeries']>;
+    series: InstanceType<SciChartModule['SplineBandRenderableSeries']>;
 }
 
-export interface ChronicleThresholdPaletteBinding extends ChronicleThresholdPaletteController {
-    paletteProvider: unknown;
+export interface GateSubmergedBandSegmentBundle {
+    dataSeries: InstanceType<SciChartModule['XyyDataSeries']>;
+    series: InstanceType<SciChartModule['FastBandRenderableSeries']>;
+}
+
+export interface CortexModelRolloutAnnotationBundle {
+    verticalLine: InstanceType<SciChartModule['VerticalLineAnnotation']>;
+    textLabel: InstanceType<SciChartModule['CustomAnnotation']>;
 }
 
 export interface ChronicleGoldenZoneThresholds {
@@ -54,6 +68,7 @@ export interface ChronicleTooltipSeriesInfoLike {
     renderableSeries?: ChronicleTooltipRenderableSeriesShape;
     zValue?: number;
     xValue?: number;
+    pointMetadata?: any;
 }
 
 export interface ChronicleRenderableSeriesCollectionLike {
@@ -83,6 +98,7 @@ export interface ChronicleConfigurableAxisOptions {
     autoTicks?: boolean;
     majorDelta?: number;
     minorDelta?: number;
+    isVisible?: boolean;
 }
 
 export interface ChronicleChartModel {
@@ -91,25 +107,32 @@ export interface ChronicleChartModel {
     sci: SciChartModule;
     xAxis: InstanceType<SciChartModule['DateTimeNumericAxis']>;
     viewportWidthMilliseconds: number;
-    volumeMountainDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     volumeColumnDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     volumeColumnRenderableSeries: InstanceType<SciChartModule['FastColumnRenderableSeries']>;
     yVolumeAxis: InstanceType<SciChartModule['NumericAxis']>;
     yExpectedValueAxis: InstanceType<SciChartModule['NumericAxis']>;
     yProfitFactorAxis: InstanceType<SciChartModule['NumericAxis']>;
-    yVelocityAxis: InstanceType<SciChartModule['NumericAxis']>;
+    yTradesPerHourAxis: InstanceType<SciChartModule['NumericAxis']>;
+    yRegimeEvAxis: InstanceType<SciChartModule['NumericAxis']>;
+    yRegimePfAxis: InstanceType<SciChartModule['NumericAxis']>;
     goldenZoneExpectedValueBandDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     goldenZoneProfitFactorBandDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     goldenZoneExpectedValueBandSeries: InstanceType<SciChartModule['SplineMountainRenderableSeries']>;
     goldenZoneProfitFactorBandSeries: InstanceType<SciChartModule['SplineMountainRenderableSeries']>;
-    goldenZoneExpectedValueSmaPaletteController: ChronicleThresholdPaletteController;
-    goldenZoneProfitFactorSmaPaletteController: ChronicleThresholdPaletteController;
+    regimeEvGateSubmergedBandSegmentBundles: GateSubmergedBandSegmentBundle[];
+    regimePfGateSubmergedBandSegmentBundles: GateSubmergedBandSegmentBundle[];
     metricLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
     movingAverageLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
-    profitableVerdictXyzDataSeries: XyzDataSeries;
-    lossVerdictXyzDataSeries: XyzDataSeries;
+    profitableVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    lossVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    cortexCalibrationBandSegmentBundles: CortexCalibrationBandSegmentBundle[];
+    cortexCalibrationBandUserVisible: boolean;
+    cortexModelRolloutUserVisible: boolean;
+    evGateThresholdUserVisible: boolean;
+    pfGateThresholdUserVisible: boolean;
     goldenZoneExpectedValueAnnotation?: InstanceType<SciChartModule['HorizontalLineAnnotation']>;
     goldenZoneProfitFactorAnnotation?: InstanceType<SciChartModule['HorizontalLineAnnotation']>;
+    cortexModelRolloutAnnotationBundles: CortexModelRolloutAnnotationBundle[];
 }
 
 export interface ChronicleBucketMeta {
@@ -125,12 +148,19 @@ export interface ChronicleArrays {
     averageWinRatePercentageSeries: number[];
     expectedValuePerTradeUsdSeries: number[];
     profitFactorSeries: number[];
-    capitalVelocityPerHourSeries: number[];
+    closedVerdictsPerHourSeries: number[];
+    averageCortexPredictionWinRatePercentageSeries: number[];
     movingAveragePnlSeries: number[];
     movingAverageWinRateSeries: number[];
     movingAverageExpectedValueSeries: number[];
     movingAverageProfitFactorSeries: number[];
-    movingAverageVelocitySeries: number[];
+    movingAverageTradesPerHourSeries: number[];
+    movingAverageCortexPredictionWinRatePercentageSeries: number[];
+    regimeProfitFactorSmaSeries: number[];
+    regimeSparseExpectedValueUsdSmaSeries: number[];
+    profitFactorGateOpenSeries: boolean[];
+    sparseExpectedValueGateOpenSeries: boolean[];
+    hardGateOpenSeries: boolean[];
     volumeBucketTimestampsMilliseconds: number[];
     volumeBucketVerdictCounts: number[];
     verdictCloudProfitablePoints: ChronicleCartesianPoint[];

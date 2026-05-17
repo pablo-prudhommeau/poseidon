@@ -1,8 +1,8 @@
-import {CommonModule} from '@angular/common';
-import {Component, Input, OnChanges, SimpleChanges} from '@angular/core';
-import {ApexAxisChartSeries, ApexChart, ApexFill, ApexStroke, ApexTooltip, NgApexchartsModule} from 'ng-apexcharts';
-import {POSEIDON_COLORS} from '../../../apex.theme';
-import {AnalyticsKpiPayload, AnalyticsTimelinePointPayload} from '../../../core/models';
+import { CommonModule } from '@angular/common';
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { ApexAxisChartSeries, ApexChart, ApexFill, ApexStroke, ApexTooltip, NgApexchartsModule } from 'ng-apexcharts';
+import { POSEIDON_COLORS } from '../../../apex.theme';
+import { AnalyticsKpiPayload, AnalyticsTimelinePointPayload } from '../../../core/models';
 
 @Component({
     selector: 'app-analytics-kpi-bar',

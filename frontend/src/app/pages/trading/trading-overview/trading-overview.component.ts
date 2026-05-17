@@ -215,13 +215,6 @@ export class TradingOverviewComponent {
         return `Counts outcomes where the <span class="text-amber-300 font-bold uppercase tracking-widest text-[9px] mx-1">Statistical Intelligence</span> has been fully processed and synchronized, enabling high-fidelity metric computation.`;
     });
 
-    readonly shadowCapitalVelocity = computed<number | null>(() => {
-        if (this.shadowPhase() === 'LEARNING') {
-            return null;
-        }
-        return this.mapNullable(this.shadowMeta(), (shadowMeta) => shadowMeta.capital_velocity);
-    });
-
     readonly shadowChronicleGeometryLabel = computed(() => {
         const meta = this.shadowMeta();
         if (!meta) {
@@ -255,6 +248,13 @@ export class TradingOverviewComponent {
     readonly shadowElapsedHours = computed(() => {
         const elapsed = this.shadowStatus()?.elapsed_hours ?? 0;
         return Math.min(elapsed, this.shadowRequiredHours());
+    });
+
+    readonly shadowExpectedPnlVelocity = computed<number | null>(() => {
+        if (this.shadowPhase() === 'LEARNING') {
+            return null;
+        }
+        return this.mapNullable(this.shadowMeta(), (shadowMeta) => shadowMeta.expected_pnl_velocity);
     });
 
     readonly shadowExpectedValue = computed<number | null>(() => {
@@ -331,7 +331,7 @@ export class TradingOverviewComponent {
         if (value >= threshold) {
             return 100;
         }
-        const worstValue: number = -15.0;
+        const worstValue: number = -30.0;
         const progress: number = Math.min(100, Math.max(0, (value / worstValue) * 100));
         return progress;
     });
