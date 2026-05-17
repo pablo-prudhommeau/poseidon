@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl nginx supe
 
 COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && pip install --no-cache-dir memray \
     && python -m playwright install --with-deps chromium \
     && rm -f /tmp/requirements.txt
 
@@ -37,10 +38,10 @@ COPY --from=frontend-build /app/frontend/dist/frontend/browser/ /usr/share/nginx
 
 RUN groupadd --system poseidon \
     && useradd --system --gid poseidon --create-home --home-dir /home/poseidon poseidon \
-    && mkdir -p /run/nginx \
+    && mkdir -p /app/backend/data/models /app/backend/data/memray /app/data/screenshots /app/db /run/nginx \
     && rm -f /etc/nginx/sites-enabled/default \
     && chmod +x /app/deploy/entrypoint.sh \
-    && chown -R poseidon:poseidon /app/backend /app/deploy /home/poseidon /ms-playwright
+    && chown -R poseidon:poseidon /app/backend /app/deploy /app/data /app/db /home/poseidon /ms-playwright
 
 EXPOSE 80
 

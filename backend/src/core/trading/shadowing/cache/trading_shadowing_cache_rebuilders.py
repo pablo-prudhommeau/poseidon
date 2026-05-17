@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi.encoders import jsonable_encoder
 
 from src.api.http.api_schemas import (
@@ -25,7 +23,6 @@ from src.core.trading.shadowing.trading_shadowing_service import (
     compute_shadow_verdict_chronicle,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingVerdictChronicleVerdict, TradingShadowingVerdictChronicle
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -72,13 +69,6 @@ class _ShadowVerdictChronicleRebuilder:
     realm = CacheRealm.SHADOW_VERDICT_CHRONICLE
     ttl_seconds = 120.0
 
-    _has_broadcasted_once = False
-    _cached_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
-    _previous_as_of_ms: int = 0
-
-    _new_chronicle: Optional[TradingShadowingVerdictChronicle] = None
-    _new_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
-
     def rebuild(self) -> ShadowVerdictChroniclePayload:
         result = compute_shadow_verdict_chronicle()
 
@@ -88,10 +78,8 @@ class _ShadowVerdictChronicleRebuilder:
         # else:
         #    result = compute_shadow_verdict_chronicle_incremental(self.__class__._cached_verdicts)
 
-        max_cached_id = max((verdict.id for verdict in self.__class__._cached_verdicts), default=0)
-        self.__class__._new_chronicle = result.chronicle
-        self.__class__._new_verdicts = [verdict for verdict in result.verdicts if verdict.id > max_cached_id]
-        self.__class__._cached_verdicts = result.verdicts
+        # Full recomputation is used, and we intentionally avoid retaining previous
+        # verdict lists in memory at class level while delta mode is disabled.
 
         return build_shadow_verdict_chronicle_payload(result.chronicle)
 
