@@ -44,7 +44,7 @@
             <p-tab value="shadows">
                 <div class="flex items-center gap-2">
                     <i class="fa fa-ghost text-purple-400/60"></i>
-                    <span>Shadow Intelligence</span>
+                    <span>Shadowing</span>
                 </div>
             </p-tab>
         </p-tablist>
@@ -391,7 +391,7 @@
                 </div>
             </p-tabpanel>
             <p-tabpanel value="shadows">
-                <trading-shadow-intelligence-tab [snapshot]="buildSnapshotFromDiagnostics(selectedAnalytics()?.shadow_diagnostics)" />
+                <trading-shadowing-snapshot-tab [snapshot]="buildSnapshotFromDiagnostics(selectedAnalytics()?.shadowing_diagnostics)" />
             </p-tabpanel>
         </p-tabpanels>
     </p-tabs>

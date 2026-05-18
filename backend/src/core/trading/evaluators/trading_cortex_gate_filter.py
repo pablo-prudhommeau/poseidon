@@ -5,7 +5,7 @@ from src.core.trading.cortex.trading_cortex_inference_provider import get_tradin
 from src.core.trading.cortex.trading_cortex_request_builder import TradingCortexRequestBuilder
 from src.core.trading.cortex.trading_cortex_structures import TradingCortexScoringBatchRequest, TradingCortexScoringResponse
 from src.core.trading.shadowing.trading_shadowing_structures import (
-    TradingShadowingIntelligenceSnapshot,
+    TradingShadowingSnapshot,
 )
 from src.core.trading.trading_structures import TradingFilterVerdict, TradingCortexInferenceSnapshot, TradingCandidate
 from src.core.utils.log_utils import get_visual_width
@@ -20,7 +20,7 @@ def _cortex_holding_time_max_minutes() -> float:
 
 def apply_trading_cortex_gate_filter(
         candidates: list[TradingCandidate],
-        shadow_snapshot: TradingShadowingIntelligenceSnapshot,
+        shadow_snapshot: TradingShadowingSnapshot,
         gate_enabled: bool,
 ) -> list[TradingCandidate]:
     request_builder = TradingCortexRequestBuilder()
@@ -238,3 +238,4 @@ def _build_inference_snapshot(
         model_ready=scoring_response.model_ready,
         gate_verdict=gate_verdict,
     )
+

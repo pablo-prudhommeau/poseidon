@@ -5,13 +5,13 @@ from typing import Optional
 from src.configuration.config import settings
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexCandidateFeatureSnapshot,
-    TradingCortexShadowMetricFeatureSnapshot,
-    TradingCortexShadowRegimeFeatureSnapshot,
+    TradingCortexShadowingMetricFeatureSnapshot,
+    TradingCortexShadowingRegimeFeatureSnapshot,
     TradingCortexScoringRequest,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import (
-    TradingShadowingIntelligenceMetric,
-    TradingShadowingIntelligenceSnapshot,
+    TradingCandidateShadowingMetricEvaluation,
+    TradingShadowingSnapshot,
 )
 from src.core.trading.trading_structures import TradingCandidate
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
@@ -22,7 +22,7 @@ class TradingCortexRequestBuilder:
             self,
             candidate: TradingCandidate,
             candidate_rank: int,
-            shadow_snapshot: Optional[TradingShadowingIntelligenceSnapshot],
+            shadow_snapshot: Optional[TradingShadowingSnapshot],
     ) -> TradingCortexScoringRequest:
         token_information = candidate.dexscreener_token_information
         request_identifier = self.build_request_identifier(candidate, candidate_rank)
@@ -30,8 +30,8 @@ class TradingCortexRequestBuilder:
             request_identifier=request_identifier,
             feature_set_version=settings.TRADING_CORTEX_FEATURE_SET_VERSION,
             candidate_features=self._build_candidate_feature_snapshot(candidate, candidate_rank, token_information),
-            shadow_regime_features=self._build_shadow_regime_feature_snapshot(shadow_snapshot),
-            shadow_metric_features=self._build_shadow_metric_feature_snapshots(candidate),
+            shadowing_regime_features=self._build_shadowing_regime_feature_snapshot(shadow_snapshot),
+            shadowing_metric_features=self._build_shadowing_metric_feature_snapshots(candidate),
         )
 
     def build_request_identifier(self, candidate: TradingCandidate, candidate_rank: int) -> str:
@@ -96,41 +96,41 @@ class TradingCortexRequestBuilder:
             return 0.5
         return reference_bucket.buys / total_transaction_count
 
-    def _build_shadow_regime_feature_snapshot(
+    def _build_shadowing_regime_feature_snapshot(
             self,
-            shadow_snapshot: Optional[TradingShadowingIntelligenceSnapshot],
-    ) -> Optional[TradingCortexShadowRegimeFeatureSnapshot]:
+            shadow_snapshot: Optional[TradingShadowingSnapshot],
+    ) -> Optional[TradingCortexShadowingRegimeFeatureSnapshot]:
         if shadow_snapshot is None:
             return None
-        return TradingCortexShadowRegimeFeatureSnapshot(
-            meta_win_rate=shadow_snapshot.summary.meta_win_rate,
-            meta_average_profit_and_loss_percentage=shadow_snapshot.summary.meta_average_pnl,
-            meta_average_holding_time_hours=shadow_snapshot.summary.meta_average_holding_time_hours,
-            meta_expected_pnl_velocity=shadow_snapshot.summary.meta_expected_pnl_velocity,
-            meta_profit_factor=shadow_snapshot.summary.meta_profit_factor,
-            meta_expected_value_usd=shadow_snapshot.summary.meta_expected_value_usd,
-            chronicle_profit_factor=shadow_snapshot.summary.chronicle_profit_factor,
-            sparse_expected_value_usd=shadow_snapshot.summary.sparse_expected_value_usd,
+        return TradingCortexShadowingRegimeFeatureSnapshot(
+            shadowing_metrics_meta_win_rate=shadow_snapshot.regime.shadowing_metrics_meta_win_rate,
+            shadowing_metrics_meta_average_pnl=shadow_snapshot.regime.shadowing_metrics_meta_average_pnl,
+            shadowing_metrics_meta_average_holding_time_hours=shadow_snapshot.regime.shadowing_metrics_meta_average_holding_time_hours,
+            shadowing_metrics_meta_expected_pnl_velocity=shadow_snapshot.regime.shadowing_metrics_meta_expected_pnl_velocity,
+            shadowing_metrics_meta_profit_factor=shadow_snapshot.regime.shadowing_metrics_meta_profit_factor,
+            shadowing_metrics_meta_expected_value_usd=shadow_snapshot.regime.shadowing_metrics_meta_expected_value_usd,
+            shadowing_performance_chronicle_profit_factor=shadow_snapshot.regime.shadowing_performance_chronicle_profit_factor,
+            shadowing_performance_sparse_expected_value_usd=shadow_snapshot.regime.shadowing_performance_sparse_expected_value_usd,
         )
 
-    def _build_shadow_metric_feature_snapshots(
+    def _build_shadowing_metric_feature_snapshots(
             self,
             candidate: TradingCandidate,
-    ) -> list[TradingCortexShadowMetricFeatureSnapshot]:
-        intelligence_snapshot = candidate.shadow_diagnostics.intelligence_snapshot
-        if intelligence_snapshot is None:
+    ) -> list[TradingCortexShadowingMetricFeatureSnapshot]:
+        shadowing_diagnostics = candidate.shadowing_diagnostics
+        if not shadowing_diagnostics.evaluated_metrics:
             return []
         return [
-            self._build_shadow_metric_feature_snapshot(evaluated_metric)
-            for evaluated_metric in intelligence_snapshot.metrics
+            self._build_shadowing_metric_feature_snapshot(evaluated_metric)
+            for evaluated_metric in shadowing_diagnostics.evaluated_metrics
             if evaluated_metric.candidate_value is not None
         ]
 
-    def _build_shadow_metric_feature_snapshot(
+    def _build_shadowing_metric_feature_snapshot(
             self,
-            evaluated_metric: TradingShadowingIntelligenceMetric,
-    ) -> TradingCortexShadowMetricFeatureSnapshot:
-        return TradingCortexShadowMetricFeatureSnapshot(
+            evaluated_metric: TradingCandidateShadowingMetricEvaluation,
+    ) -> TradingCortexShadowingMetricFeatureSnapshot:
+        return TradingCortexShadowingMetricFeatureSnapshot(
             metric_key=evaluated_metric.metric_key,
             candidate_value=evaluated_metric.candidate_value,
             bucket_index=evaluated_metric.bucket_index,
@@ -144,3 +144,6 @@ class TradingCortexRequestBuilder:
             is_golden=evaluated_metric.is_golden,
             normalized_influence=evaluated_metric.normalized_influence,
         )
+
+
+

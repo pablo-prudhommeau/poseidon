@@ -11,9 +11,9 @@ from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
     compute_profit_factor,
     floor_datetime_to_granularity,
     series_end_datetime,
-    simple_moving_average_like_shadow_verdict_chronicle_chart,
+    simple_moving_average_like_trading_shadowing_verdict_chronicle_chart,
     to_epoch_milliseconds,
-    winsorize_series_like_shadow_verdict_chronicle_chart,
+    winsorize_series_like_trading_shadowing_verdict_chronicle_chart,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleRegimeGatePoint,
@@ -36,24 +36,24 @@ def build_regime_gate_timeline_for_metric_timestamps(
     pf_timeline = _build_regime_sma_timeline(
         verdicts=verdicts,
         current_time=current_time,
-        lookback=timedelta(days=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS),
-        granularity_seconds=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
-        sma_period=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
+        lookback=timedelta(days=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS),
+        granularity_seconds=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
+        sma_period=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
         value_selector="profit_factor",
         empty_fallback=1.0,
     )
     ev_timeline = _build_regime_sma_timeline(
         verdicts=verdicts,
         current_time=current_time,
-        lookback=timedelta(days=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS),
-        granularity_seconds=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
-        sma_period=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
+        lookback=timedelta(days=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS),
+        granularity_seconds=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
+        sma_period=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
         value_selector="mean_pnl_usd",
         empty_fallback=0.0,
     )
 
-    pf_threshold = settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_THRESHOLD
-    ev_threshold = settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_USD_THRESHOLD
+    pf_threshold = settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_THRESHOLD
+    ev_threshold = settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_USD_THRESHOLD
     series_end_milliseconds = to_epoch_milliseconds(current_time)
 
     regime_gate_points: list[TradingShadowingVerdictChronicleRegimeGatePoint] = []
@@ -102,8 +102,8 @@ def _build_regime_sma_timeline(
 
     sparse_values = [value for _, value in timestamped_sparse_values]
     sparse_timestamps = [timestamp for timestamp, _ in timestamped_sparse_values]
-    winsorized_values = winsorize_series_like_shadow_verdict_chronicle_chart(sparse_values)
-    sma_values = simple_moving_average_like_shadow_verdict_chronicle_chart(winsorized_values, sma_period)
+    winsorized_values = winsorize_series_like_trading_shadowing_verdict_chronicle_chart(sparse_values)
+    sma_values = simple_moving_average_like_trading_shadowing_verdict_chronicle_chart(winsorized_values, sma_period)
     if not sma_values:
         return []
 

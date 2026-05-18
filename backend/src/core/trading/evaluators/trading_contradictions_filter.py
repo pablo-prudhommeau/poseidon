@@ -73,7 +73,7 @@ def apply_contradictions_filter(
         candidates: list[TradingCandidate],
         token_price_information_list: list[DexscreenerTokenInformation],
 ) -> list[TradingCandidate]:
-    from src.core.trading.analytics.trading_evaluation_recorder import TradingEvaluationRecorder
+    from src.core.trading.trading_service import record_skipped_trading_evaluation
 
     checker = TradingContradictionsChecker()
     retained: list[TradingCandidate] = []
@@ -87,7 +87,7 @@ def apply_contradictions_filter(
         else:
             reason = "CONTRAD:" + "|".join(verdict.rejection_reasons)
             logger.debug("[TRADING][FILTER][CONTRAD] %s — %s", candidate.token.symbol, reason)
-            TradingEvaluationRecorder.persist_and_broadcast_skip(candidate, rank, reason)
+            record_skipped_trading_evaluation(candidate, rank, reason)
 
     if not retained:
         logger.info("[TRADING][FILTER][CONTRAD] Zero candidates after contradictions check")

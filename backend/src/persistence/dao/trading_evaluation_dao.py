@@ -6,8 +6,11 @@ from typing import List, Optional
 from sqlalchemy import desc, select, and_
 from sqlalchemy.orm import Session
 
+from src.api.http.api_schemas import TradingEvaluationPayload
+from src.api.serializers import serialize_trading_evaluation
 from src.logging.logger import get_application_logger
-from src.persistence.models import TradingEvaluation
+from src.persistence.dao.trading_outcome_dao import TradingOutcomeDao
+from src.persistence.models import TradingEvaluation, TradingOutcome
 
 logger = get_application_logger(__name__)
 
@@ -21,6 +24,50 @@ class TradingEvaluationDao:
         self.database_session.add(trading_evaluation)
         self.database_session.flush()
         return trading_evaluation
+
+    def record_evaluation(self, trading_evaluation: TradingEvaluation) -> TradingEvaluationPayload:
+        logger.debug("[DATABASE][DAO][TRADING_EVALUATION][RECORD] Recording trading evaluation")
+        self.save(trading_evaluation)
+        self.database_session.flush()
+        logger.info("[DATABASE][DAO][TRADING_EVALUATION][RECORD] Successfully recorded trading evaluation")
+        return serialize_trading_evaluation(trading_evaluation)
+
+    def link_trade_outcome(
+            self,
+            token_address: str,
+            trade_id: int,
+            closed_at: datetime,
+            realized_profit_and_loss_percentage: float,
+            realized_profit_and_loss_usd: float,
+            holding_duration_minutes: float,
+            was_profitable: bool,
+            exit_reason: Optional[str] = None,
+    ) -> Optional[TradingEvaluationPayload]:
+        logger.debug("[DATABASE][DAO][TRADING_EVALUATION][OUTCOME] Linking trade outcome for trade id %s", trade_id)
+
+        evaluation = self.retrieve_latest_buy_decision(token_address, closed_at.timestamp())
+        if not evaluation:
+            logger.warning(
+                "[DATABASE][DAO][TRADING_EVALUATION][OUTCOME] No evaluation record found for token %s",
+                token_address,
+            )
+            return None
+
+        outcome_record = TradingOutcome(
+            evaluation_id=evaluation.id,
+            trade_id=trade_id,
+            occurred_at=closed_at,
+            realized_profit_and_loss_percentage=realized_profit_and_loss_percentage,
+            realized_profit_and_loss_usd=realized_profit_and_loss_usd,
+            holding_duration_minutes=holding_duration_minutes,
+            is_profitable=was_profitable,
+            exit_reason=exit_reason,
+        )
+
+        TradingOutcomeDao(self.database_session).save(outcome_record)
+        self.database_session.flush()
+        logger.info("[DATABASE][DAO][TRADING_EVALUATION][OUTCOME] Successfully linked outcome for trade id %s", trade_id)
+        return serialize_trading_evaluation(evaluation)
 
     def retrieve_by_id(self, evaluation_id: int) -> Optional[TradingEvaluation]:
         from sqlalchemy.orm import joinedload

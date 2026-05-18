@@ -1,71 +1,52 @@
-@keyframes matrixFlow {
-    from {
-        transform: translateY(0);
-    }
-    to {
-        transform: translateY(-50%);
-    }
+.trading-overview-label {
+    font-size: 9px;
+    color: rgb(100 116 139);
+    text-transform: uppercase;
+    font-weight: 900;
+    letter-spacing: 0.025em;
 }
 
-@keyframes reserveRadarSpin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.trading-overview-subtitlle {
+    font-size: 10px;
+    color: rgb(100 116 139);
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.1em;
 }
 
-.matrix-column {
-    animation-name: matrixFlow;
-    animation-timing-function: linear;
-    animation-iteration-count: infinite;
-    will-change: transform;
+.trading-overview-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.1em;
 }
 
-.matrix-col-1 {
-    animation-duration: 9s;
+.paper-reserve-panel {
+    background:
+        linear-gradient(135deg, rgba(8, 47, 73, 0.3), rgba(15, 23, 42, 0.64) 46%, rgba(8, 47, 73, 0.16)),
+        radial-gradient(circle at 72% 38%, rgba(34, 211, 238, 0.1), transparent 32%),
+        radial-gradient(circle at 18% 16%, rgba(34, 211, 238, 0.1), transparent 30%);
 }
 
-.matrix-col-2 {
-    animation-duration: 13s;
-    animation-delay: -2s;
+.paper-reserve-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(125, 211, 252, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(125, 211, 252, 0.05) 1px, transparent 1px);
+    background-size: 18px 18px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent 78%);
 }
 
-.matrix-col-3 {
-    animation-duration: 11s;
-    animation-delay: -5s;
-}
-
-.matrix-col-4 {
-    animation-duration: 15s;
-    animation-delay: -8s;
-}
-
-.matrix-col-5 {
-    animation-duration: 10s;
-    animation-delay: -3s;
-}
-
-.matrix-col-6 {
-    animation-duration: 12s;
-    animation-delay: -6s;
-}
-
-.reserve-matrix-mask {
-    -webkit-mask-image: radial-gradient(ellipse at center, transparent 0%, transparent 30%, black 80%);
-    mask-image: radial-gradient(ellipse at center, transparent 0%, transparent 30%, black 80%);
-}
-
-.reserve-radar-sweep {
-    background: conic-gradient(
-        from 0deg,
-        transparent 0deg,
-        rgba(252, 211, 77, 0.35) 60deg,
-        transparent 120deg,
-        transparent 360deg
-    );
-    animation: reserveRadarSpin 4s linear infinite;
+.paper-reserve-panel::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    pointer-events: none;
+    border-radius: 0.7rem;
+    border: 1px solid rgba(34, 211, 238, 0.08);
 }
 
 .chronicle-ghost-btn {

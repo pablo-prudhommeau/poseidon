@@ -20,8 +20,8 @@ import { DatetimeDisplayService } from '../../../core/datetime-display.service';
 import { DefiIconsService } from '../../../core/defi-icons.service';
 import {
     TradingEvaluationPayload,
-    TradingEvaluationShadowDiagnosticsPayload,
-    TradingEvaluationShadowIntelligenceSnapshotPayload,
+    TradingEvaluationShadowingDiagnosticsPayload,
+    TradingEvaluationShadowingSnapshotPayload,
     TradingPositionPayload,
     TradingTradePayload
 } from '../../../core/models';
@@ -32,7 +32,7 @@ import { SymbolChipRendererComponent } from '../../../renderers/symbol-chip.rend
 import { TemplateCellRendererComponent } from '../../../renderers/template-cell.renderer';
 import { tradingGridsLeadingColumnLayout } from '../trading.constants';
 import { TradingPositionModalService } from '../trading-position-modal.service';
-import { TradingShadowIntelligenceTabComponent } from '../trading-shadow-intelligence-tab/trading-shadow-intelligence-tab.component';
+import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snapshot-tab/trading-shadowing-snapshot-tab.component';
 
 @Component({
     standalone: true,
@@ -52,7 +52,7 @@ import { TradingShadowIntelligenceTabComponent } from '../trading-shadow-intelli
         PanelModule,
         SkeletonModule,
         NgApexchartsModule,
-        TradingShadowIntelligenceTabComponent
+        TradingShadowingSnapshotTabComponent
     ],
     templateUrl: './trading-positions-table.component.html',
     styleUrl: './trading-positions-table.component.css'
@@ -390,14 +390,14 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     }
 
     public buildSnapshotFromDiagnostics(
-        diagnostics: TradingEvaluationShadowDiagnosticsPayload | null | undefined
-    ): TradingEvaluationShadowIntelligenceSnapshotPayload | null {
+        diagnostics: TradingEvaluationShadowingDiagnosticsPayload | null | undefined
+    ): TradingEvaluationShadowingSnapshotPayload | null {
         if (!diagnostics || !diagnostics.shadowing_regime) {
             return null;
         }
         return {
-            summary: diagnostics.shadowing_regime as TradingEvaluationShadowIntelligenceSnapshotPayload['summary'],
-            metrics: (diagnostics.shadowing_metrics ?? []) as TradingEvaluationShadowIntelligenceSnapshotPayload['metrics']
+            regime: diagnostics.shadowing_regime as TradingEvaluationShadowingSnapshotPayload['regime'],
+            metrics: (diagnostics.shadowing_metrics ?? []) as TradingEvaluationShadowingSnapshotPayload['metrics']
         };
     }
 

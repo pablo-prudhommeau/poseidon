@@ -30,7 +30,7 @@ else:
 from pydantic import BaseModel, ConfigDict
 
 
-class ShadowVerdictMaterializedSnapshot(BaseModel):
+class TradingShadowingVerdictMaterializedSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     resolved_at: datetime | None
@@ -77,8 +77,8 @@ from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
     compute_profit_factor as _compute_profit_factor,
     floor_datetime_to_granularity as _floor_datetime_to_granularity,
     series_end_datetime as _series_end_datetime,
-    simple_moving_average_like_shadow_verdict_chronicle_chart as _simple_moving_average_like_shadow_verdict_chronicle_chart,
-    winsorize_series_like_shadow_verdict_chronicle_chart as _winsorize_series_like_shadow_verdict_chronicle_chart,
+    simple_moving_average_like_trading_shadowing_verdict_chronicle_chart as _simple_moving_average_like_trading_shadowing_verdict_chronicle_chart,
+    winsorize_series_like_trading_shadowing_verdict_chronicle_chart as _winsorize_series_like_trading_shadowing_verdict_chronicle_chart,
 )
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime
 from src.logging.logger import get_application_logger
@@ -130,13 +130,13 @@ def format_profit_factor_sweep_matrix_as_padded_text_lines(
     return padded_lines
 
 
-def materialize_shadow_verdict_rows(orm_verdicts: list) -> list[ShadowVerdictMaterializedSnapshot]:
-    materialized_rows: list[ShadowVerdictMaterializedSnapshot] = []
+def materialize_trading_shadowing_verdict_rows(orm_verdicts: list) -> list[TradingShadowingVerdictMaterializedSnapshot]:
+    materialized_rows: list[TradingShadowingVerdictMaterializedSnapshot] = []
     for verdict in orm_verdicts:
         resolved_at = ensure_timezone_aware(verdict.resolved_at)
         profit_and_loss_usd = verdict.realized_pnl_usd
         materialized_rows.append(
-            ShadowVerdictMaterializedSnapshot(
+            TradingShadowingVerdictMaterializedSnapshot(
                 resolved_at=resolved_at,
                 realized_profit_and_loss_usd=float(profit_and_loss_usd)
                 if profit_and_loss_usd is not None
@@ -148,7 +148,7 @@ def materialize_shadow_verdict_rows(orm_verdicts: list) -> list[ShadowVerdictMat
 
 
 def compute_bucket_gross_profit_and_loss_usd(
-        verdicts_in_bucket: list[ShadowVerdictMaterializedSnapshot],
+        verdicts_in_bucket: list[TradingShadowingVerdictMaterializedSnapshot],
 ) -> tuple[float, float]:
     profit_and_loss_values = [
         row.realized_profit_and_loss_usd
@@ -161,7 +161,7 @@ def compute_bucket_gross_profit_and_loss_usd(
 
 
 def build_sparse_profit_factor_series_for_chronicle_window(
-        verdict_rows: list[ShadowVerdictMaterializedSnapshot],
+        verdict_rows: list[TradingShadowingVerdictMaterializedSnapshot],
         *,
         series_end: datetime,
         lookback: timedelta,
@@ -208,10 +208,10 @@ def compute_simple_moving_average_line_over_sparse_profit_factors(
         winsorize_enabled: bool,
 ) -> list[float]:
     if winsorize_enabled:
-        adjusted_series = _winsorize_series_like_shadow_verdict_chronicle_chart(sparse_profit_factors)
+        adjusted_series = _winsorize_series_like_trading_shadowing_verdict_chronicle_chart(sparse_profit_factors)
     else:
         adjusted_series = list(sparse_profit_factors)
-    return _simple_moving_average_like_shadow_verdict_chronicle_chart(
+    return _simple_moving_average_like_trading_shadowing_verdict_chronicle_chart(
         adjusted_series,
         simple_moving_average_period,
     )
@@ -256,7 +256,7 @@ def _finalize_regime_pentaptych(
 
 
 def aggregate_verdict_regime_pentaptychs(
-        verdict_rows: list[ShadowVerdictMaterializedSnapshot],
+        verdict_rows: list[TradingShadowingVerdictMaterializedSnapshot],
         ordered_bucket_starts: list[datetime],
         simple_moving_average_profit_factor_per_bucket: list[float],
         granularity_seconds: int,
@@ -456,10 +456,10 @@ def run_profit_factor_parameter_sweep(
             end_datetime=fetch_upper_bound,
             limit_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
         )
-        verdict_rows = materialize_shadow_verdict_rows(orm_verdicts)
+        verdict_rows = materialize_trading_shadowing_verdict_rows(orm_verdicts)
 
     logger.info(
-        "[SCRIPT][SHADOW][PF_SWEEP] Loaded verdict materialized snapshots — series_end=%s count=%d",
+        "[SCRIPT][SHADOWING][PF_SWEEP] Loaded verdict materialized snapshots — series_end=%s count=%d",
         series_end.isoformat(),
         len(verdict_rows),
     )
@@ -481,7 +481,7 @@ def run_profit_factor_parameter_sweep(
             )
             if len(sparse_profit_factors) < 2:
                 logger.debug(
-                    "[SCRIPT][SHADOW][PF_SWEEP] Skipped sparse series — lookback_days=%s granularity_seconds=%s "
+                    "[SCRIPT][SHADOWING][PF_SWEEP] Skipped sparse series — lookback_days=%s granularity_seconds=%s "
                     "sparse_bucket_count=%d",
                     lookback_days,
                     granularity_seconds,
@@ -615,7 +615,7 @@ def run_profit_factor_parameter_sweep(
                 writer.writerow(row.model_dump())
 
     logger.info(
-        "[SCRIPT][SHADOW][PF_SWEEP] Sweep finished — printable_rows=%d total_rows=%d "
+        "[SCRIPT][SHADOWING][PF_SWEEP] Sweep finished — printable_rows=%d total_rows=%d "
         "min_verdicts_above=%d min_verdicts_below=%d rank_by=%s",
         len(printable_rows),
         len(sweep_rows),
@@ -625,7 +625,7 @@ def run_profit_factor_parameter_sweep(
     )
 
     logger.info(
-        "[SCRIPT][SHADOW][PF_SWEEP] printable_rows=%d total_rows=%d "
+        "[SCRIPT][SHADOWING][PF_SWEEP] printable_rows=%d total_rows=%d "
         "(verdicts_above >= %d and verdicts_below >= %d)",
         len(printable_rows),
         len(sweep_rows),
@@ -635,13 +635,13 @@ def run_profit_factor_parameter_sweep(
 
     table_lines = format_profit_factor_sweep_matrix_as_padded_text_lines(printable_rows[:80])
     if table_lines:
-        logger.info("[SCRIPT][SHADOW][PF_SWEEP] Result matrix:")
+        logger.info("[SCRIPT][SHADOWING][PF_SWEEP] Result matrix:")
         for table_line in table_lines:
             logger.info(table_line)
 
     if len(printable_rows) > 80:
         logger.info(
-            "[SCRIPT][SHADOW][PF_SWEEP] ... %d additional rows not shown",
+            "[SCRIPT][SHADOWING][PF_SWEEP] ... %d additional rows not shown",
             len(printable_rows) - 80,
         )
 
@@ -679,7 +679,7 @@ def attach_timestamped_sweep_log_file() -> Path:
 
 def main() -> None:
     argument_parser = argparse.ArgumentParser(
-        description="Profit factor simple moving average and lookback parameter sweep for shadow verdicts",
+        description="Profit factor simple moving average and lookback parameter sweep for shadowing verdicts",
         epilog=(
             "Example runs:\n"
             "  Focus split signal — coarse sweep:\n"
@@ -776,7 +776,7 @@ def main() -> None:
     log_file_path: Path | None = None
     if not parsed.no_log_file:
         log_file_path = attach_timestamped_sweep_log_file()
-        logger.info("[SCRIPT][SHADOW][PF_SWEEP] Writing log file to %s", log_file_path.as_posix())
+        logger.info("[SCRIPT][SHADOWING][PF_SWEEP] Writing log file to %s", log_file_path.as_posix())
 
     resolved_csv_path = resolve_sweep_csv_output_path(parsed.csv_output_path)
 
@@ -793,7 +793,7 @@ def main() -> None:
             csv_output_path=resolved_csv_path,
         )
     except Exception:
-        logger.exception("[SCRIPT][SHADOW][PF_SWEEP] Profit factor parameter sweep terminated with error")
+        logger.exception("[SCRIPT][SHADOWING][PF_SWEEP] Profit factor parameter sweep terminated with error")
         raise
 
 

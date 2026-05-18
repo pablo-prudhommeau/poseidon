@@ -6,7 +6,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict
 
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
+from src.core.trading.shadowing.trading_shadowing_structures import TradingCandidateShadowingDiagnostics
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 
 
@@ -19,15 +19,6 @@ class PositionExitTriggerReason(str, enum.Enum):
 class TradingFilterVerdict(BaseModel):
     is_accepted: bool
     rejection_reasons: List[str]
-
-
-class ShadowDiagnostics(BaseModel):
-    toxic_metric_count: int = 0
-    total_metrics_evaluated: int = 0
-    toxic_metric_keys: list[str] = []
-    golden_metric_keys: list[str] = []
-    notional_boost_factor: float = 1.0
-    intelligence_snapshot: Optional[TradingShadowingIntelligenceSnapshot] = None
 
 
 class TradingCortexInferenceSnapshot(BaseModel):
@@ -50,7 +41,7 @@ class TradingCandidate(BaseModel):
     ai_quality_delta: float
     ai_buy_probability: float
     shadow_notional_multiplier: float = 1.0
-    shadow_diagnostics: ShadowDiagnostics = ShadowDiagnostics()
+    shadowing_diagnostics: TradingCandidateShadowingDiagnostics = TradingCandidateShadowingDiagnostics()
     trading_cortex_inference_snapshot: Optional[TradingCortexInferenceSnapshot] = None
     dexscreener_token_information: DexscreenerTokenInformation
     pair_address: Optional[str] = None
@@ -164,7 +155,7 @@ class TradingPipelineContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     token_price_information_list: list[DexscreenerTokenInformation] = []
-    shadow_intelligence_snapshot: Optional[object] = None
+    shadowing_snapshot: Optional[object] = None
     free_cash_usd: float = 0.0
     per_order_budget_usd: float = 0.0
     executed_buy_count: int = 0
@@ -181,3 +172,4 @@ from src.core.structures.structures import Token
 
 TradingCandidate.model_rebuild()
 TradingOrderPayload.model_rebuild()
+

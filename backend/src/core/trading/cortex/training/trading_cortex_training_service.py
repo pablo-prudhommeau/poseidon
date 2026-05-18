@@ -50,7 +50,7 @@ class TradingCortexTrainingService:
         if not settings.TRADING_SHADOWING_ENABLED:
             raise RuntimeError(
                 "[TRADING][CORTEX][TRAINING] Shadowing must be enabled to train; "
-                "training on data without shadow verdicts would produce biased models"
+                "training on data without shadowing verdicts would produce biased models"
             )
 
         ordered_feature_names = self._resolve_ordered_feature_names(training_run_request.feature_set_version)

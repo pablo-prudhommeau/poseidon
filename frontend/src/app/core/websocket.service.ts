@@ -1,15 +1,15 @@
 import { Injectable, signal } from '@angular/core';
-import { ShadowVerdictChronicleMergeService } from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
+import { TradingShadowingVerdictChronicleMergeService } from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
 import {
     DcaStrategyPayload,
-    ShadowVerdictChronicleDeltaPayload,
-    ShadowVerdictChronicleResponse,
     TradingEvaluationPayload,
     TradingLiquidityPayload,
     TradingPortfolioPayload,
     TradingPositionPayload,
     TradingPositionPricePayload,
-    TradingShadowingRegimeStatusPayload,
+    TradingShadowingRegimePayload,
+    TradingShadowingVerdictChronicleDeltaPayload,
+    TradingShadowingVerdictChroniclePayload,
     TradingTradePayload,
     WebsocketMessageType,
     WebsocketMessageUnion
@@ -24,15 +24,15 @@ export class WebSocketService {
     public readonly liquidity = signal<TradingLiquidityPayload | null>(null);
     public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
     public readonly positions = signal<TradingPositionPayload[]>([]);
-    public readonly shadowHistory = signal<ShadowVerdictChronicleResponse | null>(null);
-    public readonly shadowRegime = signal<TradingShadowingRegimeStatusPayload | null>(null);
+    public readonly shadowingRegime = signal<TradingShadowingRegimePayload | null>(null);
+    public readonly shadowingVerdictChronicle = signal<TradingShadowingVerdictChroniclePayload | null>(null);
     public readonly status = signal<WebsocketConnectionStatus>('closed');
     public readonly trades = signal<TradingTradePayload[]>([]);
 
     private pendingPositionPriceUpdates: TradingPositionPricePayload[] = [];
     private socket?: WebSocket;
 
-    constructor(private readonly shadowHistoryMerge: ShadowVerdictChronicleMergeService) {}
+    constructor(private readonly shadowingVerdictChronicleMerge: TradingShadowingVerdictChronicleMergeService) {}
 
     public connect(url = this.defaultWebsocketUrl()): void {
         if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)) {
@@ -85,22 +85,22 @@ export class WebSocketService {
                 this.liquidity.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.SHADOW_REGIME: {
-                this.shadowRegime.set(message.payload);
+            case WebsocketMessageType.SHADOWING_REGIME: {
+                this.shadowingRegime.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.SHADOW_VERDICT_CHRONICLE: {
-                this.shadowHistory.set(message.payload);
+            case WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE: {
+                this.shadowingVerdictChronicle.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.SHADOW_VERDICT_CHRONICLE_DELTA: {
-                const baseline = this.shadowHistory();
-                const patch = message.payload as ShadowVerdictChronicleDeltaPayload;
+            case WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE_DELTA: {
+                const baseline = this.shadowingVerdictChronicle();
+                const patch = message.payload as TradingShadowingVerdictChronicleDeltaPayload;
                 if (!baseline) {
                     this.requestCachedStateRefresh();
                     break;
                 }
-                this.shadowHistory.set(this.shadowHistoryMerge.mergeShadowVerdictChronicleDelta(baseline, patch));
+                this.shadowingVerdictChronicle.set(this.shadowingVerdictChronicleMerge.mergeTradingShadowingVerdictChronicleDelta(baseline, patch));
                 break;
             }
             case WebsocketMessageType.POSITIONS: {

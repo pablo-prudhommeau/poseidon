@@ -14,8 +14,8 @@ from src.core.trading.cortex.trading_cortex_numerical_utils import (
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexFeatureVectorSnapshot,
     TradingCortexNamedFeatureValue,
-    TradingCortexShadowMetricFeatureSnapshot,
-    TradingCortexShadowRegimeFeatureSnapshot,
+    TradingCortexShadowingMetricFeatureSnapshot,
+    TradingCortexShadowingRegimeFeatureSnapshot,
     TradingCortexScoringRequest,
 )
 from src.logging.logger import get_application_logger
@@ -40,7 +40,7 @@ trading_cortex_supported_dex_identifiers: list[str] = [
     "pancakeswap",
 ]
 
-trading_cortex_supported_shadow_metric_keys: list[str] = [
+trading_cortex_supported_shadowing_metric_keys: list[str] = [
     "quality_score",
     "liquidity_usd",
     "market_cap_usd",
@@ -144,13 +144,13 @@ class TradingCortexFeatureVectorBuilder:
             trading_cortex_supported_dex_identifiers,
         )
 
-        regime_features = scoring_request.shadow_regime_features
+        regime_features = scoring_request.shadowing_regime_features
         regime_signal = self._compute_regime_signal(regime_features)
         self._append_regime_features(named_feature_values, regime_features, regime_signal)
 
-        shadow_metric_count = len(scoring_request.shadow_metric_features)
-        golden_metric_count = sum(1 for shadow_metric_feature in scoring_request.shadow_metric_features if shadow_metric_feature.is_golden)
-        toxic_metric_count = sum(1 for shadow_metric_feature in scoring_request.shadow_metric_features if shadow_metric_feature.is_toxic)
+        shadowing_metric_count = len(scoring_request.shadowing_metric_features)
+        golden_metric_count = sum(1 for shadowing_metric_feature in scoring_request.shadowing_metric_features if shadowing_metric_feature.is_golden)
+        toxic_metric_count = sum(1 for shadowing_metric_feature in scoring_request.shadowing_metric_features if shadowing_metric_feature.is_toxic)
 
         golden_metric_ratio = 0.0
         toxic_metric_ratio = 0.0
@@ -162,29 +162,29 @@ class TradingCortexFeatureVectorBuilder:
         cumulative_golden_influence = 0.0
         cumulative_toxic_influence = 0.0
 
-        if shadow_metric_count > 0:
-            golden_metric_ratio = golden_metric_count / shadow_metric_count
-            toxic_metric_ratio = toxic_metric_count / shadow_metric_count
-            bucket_win_rates = [shadow_metric_feature.bucket_win_rate for shadow_metric_feature in scoring_request.shadow_metric_features if shadow_metric_feature.bucket_win_rate is not None]
+        if shadowing_metric_count > 0:
+            golden_metric_ratio = golden_metric_count / shadowing_metric_count
+            toxic_metric_ratio = toxic_metric_count / shadowing_metric_count
+            bucket_win_rates = [shadowing_metric_feature.bucket_win_rate for shadowing_metric_feature in scoring_request.shadowing_metric_features if shadowing_metric_feature.bucket_win_rate is not None]
             bucket_profit_and_loss_percentages = [
-                shadow_metric_feature.bucket_average_profit_and_loss_percentage
-                for shadow_metric_feature in scoring_request.shadow_metric_features
-                if shadow_metric_feature.bucket_average_profit_and_loss_percentage is not None
+                shadowing_metric_feature.bucket_average_profit_and_loss_percentage
+                for shadowing_metric_feature in scoring_request.shadowing_metric_features
+                if shadowing_metric_feature.bucket_average_profit_and_loss_percentage is not None
             ]
             bucket_capital_velocities = [
-                shadow_metric_feature.bucket_expected_pnl_velocity
-                for shadow_metric_feature in scoring_request.shadow_metric_features
-                if shadow_metric_feature.bucket_expected_pnl_velocity is not None
+                shadowing_metric_feature.bucket_expected_pnl_velocity
+                for shadowing_metric_feature in scoring_request.shadowing_metric_features
+                if shadowing_metric_feature.bucket_expected_pnl_velocity is not None
             ]
             bucket_outlier_hit_rates = [
-                shadow_metric_feature.bucket_outlier_hit_rate
-                for shadow_metric_feature in scoring_request.shadow_metric_features
-                if shadow_metric_feature.bucket_outlier_hit_rate is not None
+                shadowing_metric_feature.bucket_outlier_hit_rate
+                for shadowing_metric_feature in scoring_request.shadowing_metric_features
+                if shadowing_metric_feature.bucket_outlier_hit_rate is not None
             ]
             normalized_influences = [
-                shadow_metric_feature.normalized_influence
-                for shadow_metric_feature in scoring_request.shadow_metric_features
-                if shadow_metric_feature.normalized_influence is not None
+                shadowing_metric_feature.normalized_influence
+                for shadowing_metric_feature in scoring_request.shadowing_metric_features
+                if shadowing_metric_feature.normalized_influence is not None
             ]
             if bucket_win_rates:
                 average_bucket_win_rate = sum(bucket_win_rates) / len(bucket_win_rates)
@@ -197,44 +197,44 @@ class TradingCortexFeatureVectorBuilder:
             if normalized_influences:
                 average_normalized_influence = sum(normalized_influences) / len(normalized_influences)
             cumulative_golden_influence = sum(
-                shadow_metric_feature.normalized_influence or 0.0
-                for shadow_metric_feature in scoring_request.shadow_metric_features
-                if shadow_metric_feature.is_golden
+                shadowing_metric_feature.normalized_influence or 0.0
+                for shadowing_metric_feature in scoring_request.shadowing_metric_features
+                if shadowing_metric_feature.is_golden
             )
             cumulative_toxic_influence = sum(
-                shadow_metric_feature.normalized_influence or 0.0
-                for shadow_metric_feature in scoring_request.shadow_metric_features
-                if shadow_metric_feature.is_toxic
+                shadowing_metric_feature.normalized_influence or 0.0
+                for shadowing_metric_feature in scoring_request.shadowing_metric_features
+                if shadowing_metric_feature.is_toxic
             )
 
-        self._append_feature(named_feature_values, "shadow_metric_count", float(shadow_metric_count))
-        self._append_feature(named_feature_values, "shadow_metric_golden_count", float(golden_metric_count))
-        self._append_feature(named_feature_values, "shadow_metric_toxic_count", float(toxic_metric_count))
-        self._append_feature(named_feature_values, "shadow_metric_golden_ratio", golden_metric_ratio)
-        self._append_feature(named_feature_values, "shadow_metric_toxic_ratio", toxic_metric_ratio)
-        self._append_feature(named_feature_values, "shadow_metric_average_bucket_win_rate", average_bucket_win_rate)
-        self._append_feature(named_feature_values, "shadow_metric_average_bucket_profit_and_loss_percentage", average_bucket_profit_and_loss_percentage)
-        self._append_feature(named_feature_values, "shadow_metric_average_bucket_expected_pnl_velocity", average_bucket_expected_pnl_velocity)
-        self._append_feature(named_feature_values, "shadow_metric_average_bucket_outlier_hit_rate", average_bucket_outlier_hit_rate)
-        self._append_feature(named_feature_values, "shadow_metric_average_normalized_influence", average_normalized_influence)
-        self._append_feature(named_feature_values, "shadow_metric_cumulative_golden_influence", cumulative_golden_influence)
-        self._append_feature(named_feature_values, "shadow_metric_cumulative_toxic_influence", cumulative_toxic_influence)
+        self._append_feature(named_feature_values, "shadowing_metric_count", float(shadowing_metric_count))
+        self._append_feature(named_feature_values, "shadowing_metric_golden_count", float(golden_metric_count))
+        self._append_feature(named_feature_values, "shadowing_metric_toxic_count", float(toxic_metric_count))
+        self._append_feature(named_feature_values, "shadowing_metric_golden_ratio", golden_metric_ratio)
+        self._append_feature(named_feature_values, "shadowing_metric_toxic_ratio", toxic_metric_ratio)
+        self._append_feature(named_feature_values, "shadowing_metric_average_bucket_win_rate", average_bucket_win_rate)
+        self._append_feature(named_feature_values, "shadowing_metric_average_bucket_profit_and_loss_percentage", average_bucket_profit_and_loss_percentage)
+        self._append_feature(named_feature_values, "shadowing_metric_average_bucket_expected_pnl_velocity", average_bucket_expected_pnl_velocity)
+        self._append_feature(named_feature_values, "shadowing_metric_average_bucket_outlier_hit_rate", average_bucket_outlier_hit_rate)
+        self._append_feature(named_feature_values, "shadowing_metric_average_normalized_influence", average_normalized_influence)
+        self._append_feature(named_feature_values, "shadowing_metric_cumulative_golden_influence", cumulative_golden_influence)
+        self._append_feature(named_feature_values, "shadowing_metric_cumulative_toxic_influence", cumulative_toxic_influence)
 
-        for supported_shadow_metric_key in trading_cortex_supported_shadow_metric_keys:
-            shadow_metric_feature = self._find_shadow_metric_feature(
-                scoring_request.shadow_metric_features,
-                supported_shadow_metric_key,
+        for supported_shadowing_metric_key in trading_cortex_supported_shadowing_metric_keys:
+            shadowing_metric_feature = self._find_shadowing_metric_feature(
+                scoring_request.shadowing_metric_features,
+                supported_shadowing_metric_key,
             )
-            self._append_shadow_metric_features(
+            self._append_shadowing_metric_features(
                 named_feature_values,
-                supported_shadow_metric_key,
-                shadow_metric_feature,
+                supported_shadowing_metric_key,
+                shadowing_metric_feature,
             )
 
         return TradingCortexFeatureVectorSnapshot(
             feature_set_version=scoring_request.feature_set_version,
             named_feature_values=named_feature_values,
-            shadow_metric_count=shadow_metric_count,
+            shadowing_metric_count=shadowing_metric_count,
             golden_metric_count=golden_metric_count,
             toxic_metric_count=toxic_metric_count,
             golden_metric_ratio=golden_metric_ratio,
@@ -245,76 +245,76 @@ class TradingCortexFeatureVectorBuilder:
     def _append_regime_features(
             self,
             named_feature_values: list[TradingCortexNamedFeatureValue],
-            regime_features: Optional[TradingCortexShadowRegimeFeatureSnapshot],
+            regime_features: Optional[TradingCortexShadowingRegimeFeatureSnapshot],
             regime_signal: float,
     ) -> None:
         if regime_features is None:
-            self._append_feature(named_feature_values, "shadow_regime_meta_win_rate", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_meta_average_profit_and_loss_percentage", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_meta_average_holding_time_hours", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_meta_expected_pnl_velocity", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_meta_profit_factor", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_meta_expected_value_usd", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_chronicle_profit_factor", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_sparse_expected_value_usd", math.nan)
-            self._append_feature(named_feature_values, "shadow_regime_signal", regime_signal)
+            self._append_feature(named_feature_values, "shadowing_regime_meta_win_rate", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_meta_average_profit_and_loss_percentage", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_meta_average_holding_time_hours", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_meta_expected_pnl_velocity", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_meta_profit_factor", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_meta_expected_value_usd", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_chronicle_profit_factor", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_sparse_expected_value_usd", math.nan)
+            self._append_feature(named_feature_values, "shadowing_regime_signal", regime_signal)
             return
 
-        self._append_feature(named_feature_values, "shadow_regime_meta_win_rate", optional_float_to_feature_value(regime_features.meta_win_rate))
+        self._append_feature(named_feature_values, "shadowing_regime_meta_win_rate", optional_float_to_feature_value(regime_features.shadowing_metrics_meta_win_rate))
         self._append_feature(
             named_feature_values,
-            "shadow_regime_meta_average_profit_and_loss_percentage",
-            optional_float_to_feature_value(regime_features.meta_average_profit_and_loss_percentage),
+            "shadowing_regime_meta_average_profit_and_loss_percentage",
+            optional_float_to_feature_value(regime_features.shadowing_metrics_meta_average_pnl),
         )
         self._append_feature(
             named_feature_values,
-            "shadow_regime_meta_average_holding_time_hours",
-            optional_float_to_feature_value(regime_features.meta_average_holding_time_hours),
+            "shadowing_regime_meta_average_holding_time_hours",
+            optional_float_to_feature_value(regime_features.shadowing_metrics_meta_average_holding_time_hours),
         )
         self._append_feature(
             named_feature_values,
-            "shadow_regime_meta_expected_pnl_velocity",
-            optional_float_to_feature_value(regime_features.meta_expected_pnl_velocity),
+            "shadowing_regime_meta_expected_pnl_velocity",
+            optional_float_to_feature_value(regime_features.shadowing_metrics_meta_expected_pnl_velocity),
         )
         self._append_feature(
             named_feature_values,
-            "shadow_regime_meta_profit_factor",
-            optional_float_to_feature_value(regime_features.meta_profit_factor),
+            "shadowing_regime_meta_profit_factor",
+            optional_float_to_feature_value(regime_features.shadowing_metrics_meta_profit_factor),
         )
         self._append_feature(
             named_feature_values,
-            "shadow_regime_meta_expected_value_usd",
-            optional_float_to_feature_value(regime_features.meta_expected_value_usd),
+            "shadowing_regime_meta_expected_value_usd",
+            optional_float_to_feature_value(regime_features.shadowing_metrics_meta_expected_value_usd),
         )
         self._append_feature(
             named_feature_values,
-            "shadow_regime_chronicle_profit_factor",
-            optional_float_to_feature_value(regime_features.chronicle_profit_factor),
+            "shadowing_regime_chronicle_profit_factor",
+            optional_float_to_feature_value(regime_features.shadowing_performance_chronicle_profit_factor),
         )
         self._append_feature(
             named_feature_values,
-            "shadow_regime_sparse_expected_value_usd",
-            optional_float_to_feature_value(regime_features.sparse_expected_value_usd),
+            "shadowing_regime_sparse_expected_value_usd",
+            optional_float_to_feature_value(regime_features.shadowing_performance_sparse_expected_value_usd),
         )
-        self._append_feature(named_feature_values, "shadow_regime_signal", regime_signal)
+        self._append_feature(named_feature_values, "shadowing_regime_signal", regime_signal)
 
-    def _compute_regime_signal(self, regime_features: Optional[TradingCortexShadowRegimeFeatureSnapshot]) -> float:
+    def _compute_regime_signal(self, regime_features: Optional[TradingCortexShadowingRegimeFeatureSnapshot]) -> float:
         if regime_features is None:
             return 0.0
 
         chronicle_profit_factor_signal = bounded_hyperbolic_signal(
-            None if regime_features.chronicle_profit_factor is None else regime_features.chronicle_profit_factor - settings.TRADING_CORTEX_REGIME_PROFIT_FACTOR_CENTER,
+            None if regime_features.shadowing_performance_chronicle_profit_factor is None else regime_features.shadowing_performance_chronicle_profit_factor - settings.TRADING_CORTEX_REGIME_PROFIT_FACTOR_CENTER,
             settings.TRADING_CORTEX_REGIME_PROFIT_FACTOR_TEMPERATURE,
         )
         sparse_expected_value_signal = bounded_hyperbolic_signal(
-            regime_features.sparse_expected_value_usd,
+            regime_features.shadowing_performance_sparse_expected_value_usd,
             settings.TRADING_CORTEX_REGIME_EXPECTED_VALUE_TEMPERATURE,
         )
         meta_expected_value_signal = bounded_hyperbolic_signal(
-            regime_features.meta_expected_value_usd,
+            regime_features.shadowing_metrics_meta_expected_value_usd,
             settings.TRADING_CORTEX_REGIME_EXPECTED_VALUE_TEMPERATURE,
         )
-        meta_expected_pnl_velocity_signal = bounded_hyperbolic_signal(regime_features.meta_expected_pnl_velocity, 2.0)
+        meta_expected_pnl_velocity_signal = bounded_hyperbolic_signal(regime_features.shadowing_metrics_meta_expected_pnl_velocity, 2.0)
         composite_signal = (
                 0.35 * chronicle_profit_factor_signal
                 + 0.25 * sparse_expected_value_signal
@@ -323,14 +323,14 @@ class TradingCortexFeatureVectorBuilder:
         )
         return clamp(composite_signal, -1.0, 1.0)
 
-    def _append_shadow_metric_features(
+    def _append_shadowing_metric_features(
             self,
             named_feature_values: list[TradingCortexNamedFeatureValue],
             metric_key: str,
-            shadow_metric_feature: Optional[TradingCortexShadowMetricFeatureSnapshot],
+            shadowing_metric_feature: Optional[TradingCortexShadowingMetricFeatureSnapshot],
     ) -> None:
-        metric_feature_prefix = f"shadow_metric_{metric_key}"
-        if shadow_metric_feature is None:
+        metric_feature_prefix = f"shadowing_metric_{metric_key}"
+        if shadowing_metric_feature is None:
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_candidate_value", math.nan)
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_index", math.nan)
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_win_rate", math.nan)
@@ -344,50 +344,50 @@ class TradingCortexFeatureVectorBuilder:
             self._append_feature(named_feature_values, f"{metric_feature_prefix}_normalized_influence", math.nan)
             return
 
-        self._append_feature(named_feature_values, f"{metric_feature_prefix}_candidate_value", shadow_metric_feature.candidate_value)
-        self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_index", float(shadow_metric_feature.bucket_index) if shadow_metric_feature.bucket_index is not None else math.nan)
-        self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_win_rate", optional_float_to_feature_value(shadow_metric_feature.bucket_win_rate))
+        self._append_feature(named_feature_values, f"{metric_feature_prefix}_candidate_value", shadowing_metric_feature.candidate_value)
+        self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_index", float(shadowing_metric_feature.bucket_index) if shadowing_metric_feature.bucket_index is not None else math.nan)
+        self._append_feature(named_feature_values, f"{metric_feature_prefix}_bucket_win_rate", optional_float_to_feature_value(shadowing_metric_feature.bucket_win_rate))
         self._append_feature(
             named_feature_values,
             f"{metric_feature_prefix}_bucket_average_profit_and_loss_percentage",
-            optional_float_to_feature_value(shadow_metric_feature.bucket_average_profit_and_loss_percentage),
+            optional_float_to_feature_value(shadowing_metric_feature.bucket_average_profit_and_loss_percentage),
         )
         self._append_feature(
             named_feature_values,
             f"{metric_feature_prefix}_bucket_average_holding_time_hours",
-            optional_float_to_feature_value(shadow_metric_feature.bucket_average_holding_time_hours),
+            optional_float_to_feature_value(shadowing_metric_feature.bucket_average_holding_time_hours),
         )
         self._append_feature(
             named_feature_values,
             f"{metric_feature_prefix}_bucket_expected_pnl_velocity",
-            optional_float_to_feature_value(shadow_metric_feature.bucket_expected_pnl_velocity),
+            optional_float_to_feature_value(shadowing_metric_feature.bucket_expected_pnl_velocity),
         )
         self._append_feature(
             named_feature_values,
             f"{metric_feature_prefix}_bucket_outlier_hit_rate",
-            optional_float_to_feature_value(shadow_metric_feature.bucket_outlier_hit_rate),
+            optional_float_to_feature_value(shadowing_metric_feature.bucket_outlier_hit_rate),
         )
         self._append_feature(
             named_feature_values,
             f"{metric_feature_prefix}_bucket_sample_count",
-            float(shadow_metric_feature.bucket_sample_count) if shadow_metric_feature.bucket_sample_count is not None else math.nan,
+            float(shadowing_metric_feature.bucket_sample_count) if shadowing_metric_feature.bucket_sample_count is not None else math.nan,
         )
-        self._append_feature(named_feature_values, f"{metric_feature_prefix}_is_toxic", 1.0 if shadow_metric_feature.is_toxic else 0.0)
-        self._append_feature(named_feature_values, f"{metric_feature_prefix}_is_golden", 1.0 if shadow_metric_feature.is_golden else 0.0)
+        self._append_feature(named_feature_values, f"{metric_feature_prefix}_is_toxic", 1.0 if shadowing_metric_feature.is_toxic else 0.0)
+        self._append_feature(named_feature_values, f"{metric_feature_prefix}_is_golden", 1.0 if shadowing_metric_feature.is_golden else 0.0)
         self._append_feature(
             named_feature_values,
             f"{metric_feature_prefix}_normalized_influence",
-            optional_float_to_feature_value(shadow_metric_feature.normalized_influence),
+            optional_float_to_feature_value(shadowing_metric_feature.normalized_influence),
         )
 
-    def _find_shadow_metric_feature(
+    def _find_shadowing_metric_feature(
             self,
-            shadow_metric_features: list[TradingCortexShadowMetricFeatureSnapshot],
+            shadowing_metric_features: list[TradingCortexShadowingMetricFeatureSnapshot],
             metric_key: str,
-    ) -> Optional[TradingCortexShadowMetricFeatureSnapshot]:
-        for shadow_metric_feature in shadow_metric_features:
-            if shadow_metric_feature.metric_key == metric_key:
-                return shadow_metric_feature
+    ) -> Optional[TradingCortexShadowingMetricFeatureSnapshot]:
+        for shadowing_metric_feature in shadowing_metric_features:
+            if shadowing_metric_feature.metric_key == metric_key:
+                return shadowing_metric_feature
         return None
 
     def _append_feature(

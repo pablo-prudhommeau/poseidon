@@ -9,14 +9,14 @@ import {
     resolveChronicleStreamLagMilliseconds
 } from '../data/shadow-verdict-chronicle-arrays.utils';
 import { CHRONICLE_AXIS_TITLES, CHRONICLE_METRIC_COLORS } from '../data/shadow-verdict-chronicle-metrics.catalog';
-import type { ShadowVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
+import type { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
 import { buildChronicleSeriesBundle } from './shadow-verdict-chronicle-series.builder';
 
-export class ShadowVerdictChronicleSurfaceBuilder {
+export class TradingShadowingVerdictChronicleSurfaceBuilder {
     async buildFullChartSurface(
         host: HTMLDivElement,
         meta: ChronicleBucketMeta,
-        sciChartLoader: ShadowVerdictChronicleSciChartLoaderService,
+        sciChartLoader: TradingShadowingVerdictChronicleSciChartLoaderService,
         smaWindowBuckets: number
     ): Promise<ChronicleChartModel> {
         const sci = await sciChartLoader.loadModule();

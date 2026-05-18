@@ -4,15 +4,15 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { SelectButtonModule } from 'primeng/selectbutton';
-import type { ShadowVerdictChronicleResponse } from '../../../../core/models';
+import type { TradingShadowingVerdictChroniclePayload } from '../../../../core/models';
 import { WebSocketService } from '../../../../core/websocket.service';
 import type { ChronicleLegendSeriesItem } from '../chart/shadow-verdict-chronicle-legend.adapter';
-import { ShadowVerdictChronicleSurfaceCoordinator } from '../chart/shadow-verdict-chronicle-surface.coordinator';
+import { TradingShadowingVerdictChronicleSurfaceCoordinator } from '../chart/shadow-verdict-chronicle-surface.coordinator';
 import type { ChronicleBucketMeta } from '../data/shadow-verdict-chronicle.models';
 import { buildChronicleSnapshotFingerprint, type ChronicleBucketLabel } from '../data/shadow-verdict-chronicle-arrays.utils';
 import { chronicleSeriesDisplayLabel } from '../data/shadow-verdict-chronicle-legend.utils';
 import { CHRONICLE_SERIES } from '../data/shadow-verdict-chronicle-series-names';
-import { ShadowVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
+import { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
 
 interface ChronicleBucketOption {
     label: string;
@@ -49,7 +49,7 @@ const CHRONICLE_CORTEX_METRIC_SERIES_NAMES = new Set<string>([
     templateUrl: './shadow-verdict-chronicle.component.html',
     styleUrl: './shadow-verdict-chronicle.component.css'
 })
-export class ShadowVerdictChronicleComponent {
+export class TradingShadowingVerdictChronicleComponent {
     readonly legendItems = signal<ChronicleLegendSeriesItem[]>([]);
 
     readonly allMetricsAvailable = computed<boolean>(() => this.legendItems().length > 0);
@@ -62,12 +62,12 @@ export class ShadowVerdictChronicleComponent {
         const items = this.legendItems();
         return items.some((item) => item.visible) && !items.every((item) => item.visible);
     });
-    readonly payload = signal<ShadowVerdictChronicleResponse | null>(null);
+    readonly payload = signal<TradingShadowingVerdictChroniclePayload | null>(null);
     selectedBucket = signal<ChronicleBucketLabel>('last_7d_15m');
     private readonly webSocketService: WebSocketService = inject(WebSocketService);
     readonly bucketMeta = computed<ChronicleBucketMeta | null>(() => {
-        const response: ShadowVerdictChronicleResponse | null = this.payload();
-        const shadowRegime = this.webSocketService.shadowRegime();
+        const response: TradingShadowingVerdictChroniclePayload | null = this.payload();
+        const shadowingRegime = this.webSocketService.shadowingRegime();
         const bucketId: ChronicleBucketLabel = this.selectedBucket();
         if (!response) {
             return null;
@@ -77,8 +77,8 @@ export class ShadowVerdictChronicleComponent {
             ? {
                   bucket,
                   response,
-                  sparseExpectedValueUsdThreshold: shadowRegime?.sparse_expected_value_usd_threshold,
-                  chronicleProfitFactorThreshold: shadowRegime?.chronicle_profit_factor_threshold
+                  sparseExpectedValueUsdThreshold: shadowingRegime?.shadowing_performance_sparse_expected_value_usd_threshold,
+                  chronicleProfitFactorThreshold: shadowingRegime?.shadowing_performance_chronicle_profit_factor_threshold
               }
             : null;
     });
@@ -118,13 +118,15 @@ export class ShadowVerdictChronicleComponent {
     ];
 
     private readonly chartHost = viewChild<ElementRef<HTMLDivElement>>('chartHost');
-    private readonly sciChartLoader: ShadowVerdictChronicleSciChartLoaderService = inject(ShadowVerdictChronicleSciChartLoaderService);
+    private readonly sciChartLoader: TradingShadowingVerdictChronicleSciChartLoaderService = inject(TradingShadowingVerdictChronicleSciChartLoaderService);
 
-    private readonly surfaceCoordinator: ShadowVerdictChronicleSurfaceCoordinator = new ShadowVerdictChronicleSurfaceCoordinator(this.sciChartLoader);
+    private readonly surfaceCoordinator: TradingShadowingVerdictChronicleSurfaceCoordinator = new TradingShadowingVerdictChronicleSurfaceCoordinator(
+        this.sciChartLoader
+    );
 
     constructor() {
         effect(() => {
-            const hist = this.webSocketService.shadowHistory();
+            const hist = this.webSocketService.shadowingVerdictChronicle();
             const open = this.visible();
             if (!open || !hist) {
                 return;
@@ -137,9 +139,9 @@ export class ShadowVerdictChronicleComponent {
         effect(() => {
             const open = this.visible();
             const payload = this.payload();
-            const shadowRegime = this.webSocketService.shadowRegime();
+            const shadowingRegime = this.webSocketService.shadowingRegime();
             const chartReady = this.chartReady();
-            if (!open || !payload || !shadowRegime || !chartReady) {
+            if (!open || !payload || !shadowingRegime || !chartReady) {
                 return;
             }
             untracked(() => {
@@ -157,7 +159,7 @@ export class ShadowVerdictChronicleComponent {
     }
 
     handleDialogShow(): void {
-        const hist = this.webSocketService.shadowHistory();
+        const hist = this.webSocketService.shadowingVerdictChronicle();
         if (hist) {
             void this.applySnapshot(hist);
         }
@@ -218,7 +220,7 @@ export class ShadowVerdictChronicleComponent {
         this.showLegendPanel.update((value) => !value);
     }
 
-    private async applySnapshot(hist: ShadowVerdictChronicleResponse): Promise<void> {
+    private async applySnapshot(hist: TradingShadowingVerdictChroniclePayload): Promise<void> {
         const existing = this.payload();
         if (this.surfaceCoordinator.hasChartModel() && existing && buildChronicleSnapshotFingerprint(existing) === buildChronicleSnapshotFingerprint(hist)) {
             return;

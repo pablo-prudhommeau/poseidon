@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexCandidateFeatureSnapshot,
-    TradingCortexShadowMetricFeatureSnapshot,
-    TradingCortexShadowRegimeFeatureSnapshot,
+    TradingCortexShadowingMetricFeatureSnapshot,
+    TradingCortexShadowingRegimeFeatureSnapshot,
 )
 
 
@@ -17,8 +17,8 @@ class TradingCortexShadowTrainingRecord(BaseModel):
     probe_identifier: int
     resolved_at: datetime
     candidate_features: TradingCortexCandidateFeatureSnapshot
-    shadow_regime_features: TradingCortexShadowRegimeFeatureSnapshot
-    shadow_metric_features: list[TradingCortexShadowMetricFeatureSnapshot]
+    shadowing_regime_features: TradingCortexShadowingRegimeFeatureSnapshot
+    shadowing_metric_features: list[TradingCortexShadowingMetricFeatureSnapshot]
     realized_profit_and_loss_percentage: float
     realized_profit_and_loss_usd: float
     holding_duration_minutes: float

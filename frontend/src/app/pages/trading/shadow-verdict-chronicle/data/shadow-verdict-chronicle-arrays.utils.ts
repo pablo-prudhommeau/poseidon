@@ -1,9 +1,9 @@
 import { easeOutCubic, linearInterpolate } from '../../../../core/math.utils';
 import type {
-    ShadowVerdictChronicleBucketPayload,
-    ShadowVerdictChronicleRegimeGatePointPayload,
-    ShadowVerdictChronicleResponse,
-    ShadowVerdictChronicleVerdictPointPayload
+    TradingShadowingVerdictChronicleBucketPayload,
+    TradingShadowingVerdictChroniclePayload,
+    TradingShadowingVerdictChronicleRegimeGatePointPayload,
+    TradingShadowingVerdictChronicleVerdictPointPayload
 } from '../../../../core/models';
 import type { ChronicleArrays, ChronicleBucketMeta, ChronicleCartesianPoint, SciChartModule } from './shadow-verdict-chronicle.models';
 
@@ -15,8 +15,8 @@ export const CHRONICLE_SNAPSHOT_BLEND_MS = 1400;
 const CHRONICLE_MAX_METRIC_POINTS = 500;
 const CHRONICLE_MAX_VOLUME_POINTS = 900;
 
-export type ChronicleBucketLabel = ShadowVerdictChronicleBucketPayload['bucket_label'];
-export type ShadowVerdictChronicleBucketLabel = ChronicleBucketLabel;
+export type ChronicleBucketLabel = TradingShadowingVerdictChronicleBucketPayload['bucket_label'];
+export type TradingShadowingVerdictChronicleBucketLabel = ChronicleBucketLabel;
 
 function buildDownsampledIndices(length: number, maxPoints: number): number[] {
     if (length <= maxPoints) {
@@ -62,7 +62,7 @@ export function computeSimpleMovingAverage(values: number[], windowSize: number)
     return result;
 }
 
-export function shadowHistoryBucketLookbackMilliseconds(bucketLabel: ChronicleBucketLabel): number {
+export function shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel: ChronicleBucketLabel): number {
     switch (bucketLabel) {
         case 'last_30m_1m':
             return 30 * 60 * 1000;
@@ -82,7 +82,7 @@ export function computeChronicleRetentionFloorServerEpochMilliseconds(
     granularitySeconds: number,
     referenceWallClockMilliseconds: number = Date.now()
 ): number {
-    const lookbackMilliseconds = shadowHistoryBucketLookbackMilliseconds(bucketLabel);
+    const lookbackMilliseconds = shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel);
     const viewportSpanMilliseconds = lookbackMilliseconds * 1.18;
     const trailingSafetyMilliseconds = 10 * Math.max(1, granularitySeconds) * 1000;
     return referenceWallClockMilliseconds - viewportSpanMilliseconds - trailingSafetyMilliseconds;
@@ -188,8 +188,8 @@ function sampleSortedXySeriesAtX(sortedXValues: number[], yValues: number[], xQu
 }
 
 function alignRegimeGateSeriesToMetrics(
-    metrics: ShadowVerdictChronicleBucketPayload['metrics'],
-    regimeGate: ShadowVerdictChronicleRegimeGatePointPayload[] | undefined
+    metrics: TradingShadowingVerdictChronicleBucketPayload['metrics'],
+    regimeGate: TradingShadowingVerdictChronicleRegimeGatePointPayload[] | undefined
 ): Pick<
     ChronicleArrays,
     | 'regimeProfitFactorSmaSeries'
@@ -425,7 +425,7 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
     };
 }
 
-export function buildChronicleSnapshotFingerprint(historySnapshot: ShadowVerdictChronicleResponse): string {
+export function buildChronicleSnapshotFingerprint(historySnapshot: TradingShadowingVerdictChroniclePayload): string {
     const bucketParts = historySnapshot.buckets.map((bucket) => {
         const lastMetricTimestamp = bucket.metrics[bucket.metrics.length - 1]?.timestamp_milliseconds ?? 0;
         const lastVolumeTimestamp = bucket.volumes[bucket.volumes.length - 1]?.timestamp_milliseconds ?? 0;
@@ -449,14 +449,14 @@ export function buildChronicleArraysFromBucket(
     const displayTimeMilliseconds = (timestampMilliseconds: number): number => timestampMilliseconds - streamLagMilliseconds;
 
     const metrics = (() => {
-        const metricByTimestamp = new Map<number, ShadowVerdictChronicleBucketPayload['metrics'][number]>();
+        const metricByTimestamp = new Map<number, TradingShadowingVerdictChronicleBucketPayload['metrics'][number]>();
         for (const metric of meta.bucket.metrics) {
             metricByTimestamp.set(metric.timestamp_milliseconds, metric);
         }
         return [...metricByTimestamp.values()].sort((left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds);
     })();
     const volumes = (() => {
-        const volumeByTimestamp = new Map<number, ShadowVerdictChronicleBucketPayload['volumes'][number]>();
+        const volumeByTimestamp = new Map<number, TradingShadowingVerdictChronicleBucketPayload['volumes'][number]>();
         for (const volume of meta.bucket.volumes) {
             volumeByTimestamp.set(volume.timestamp_milliseconds, volume);
         }
@@ -548,7 +548,7 @@ export function buildChronicleArraysFromBucket(
     const bucketSpanMilliseconds = Math.max(1000, granularitySeconds * 1000);
     const organicVerdictCloud = meta.bucket.verdict_cloud.filter((point) => point.exit_reason !== 'LETHARGIC');
 
-    const cohortByBucketStartServerMilliseconds = new Map<number, ShadowVerdictChronicleVerdictPointPayload[]>();
+    const cohortByBucketStartServerMilliseconds = new Map<number, TradingShadowingVerdictChronicleVerdictPointPayload[]>();
     for (const point of organicVerdictCloud) {
         const bucketStartServerMilliseconds = floorEpochMillisecondsToBucketStart(point.timestamp_milliseconds, granularitySeconds);
         const cohort = cohortByBucketStartServerMilliseconds.get(bucketStartServerMilliseconds);
@@ -728,6 +728,6 @@ export function computeChronicleViewportWidthMilliseconds(arrays: ChronicleArray
 }
 
 export {
-    buildChronicleSnapshotFingerprint as buildShadowVerdictChronicleFingerprint,
-    computeChronicleRetentionFloorServerEpochMilliseconds as computeShadowVerdictChronicleVisibilityRetentionFloorServerEpochMilliseconds
+    buildChronicleSnapshotFingerprint as buildTradingShadowingVerdictChronicleFingerprint,
+    computeChronicleRetentionFloorServerEpochMilliseconds as computeTradingShadowingVerdictChronicleVisibilityRetentionFloorServerEpochMilliseconds
 };

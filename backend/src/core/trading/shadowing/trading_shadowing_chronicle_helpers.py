@@ -32,7 +32,7 @@ def compute_profit_factor(gross_profit_usd: float, gross_loss_usd: float) -> flo
     return gross_profit_usd / gross_loss_usd
 
 
-def winsorize_series_like_shadow_verdict_chronicle_chart(values: list[float]) -> list[float]:
+def winsorize_series_like_trading_shadowing_verdict_chronicle_chart(values: list[float]) -> list[float]:
     if len(values) < 4:
         return list(values)
     sorted_values = sorted(values)
@@ -43,7 +43,7 @@ def winsorize_series_like_shadow_verdict_chronicle_chart(values: list[float]) ->
     return [min(upper_bound, max(lower_bound, value)) for value in values]
 
 
-def simple_moving_average_like_shadow_verdict_chronicle_chart(values: list[float], window_size: int) -> list[float]:
+def simple_moving_average_like_trading_shadowing_verdict_chronicle_chart(values: list[float], window_size: int) -> list[float]:
     if len(values) == 0 or window_size <= 1:
         return list(values)
     effective_window = min(window_size, len(values))

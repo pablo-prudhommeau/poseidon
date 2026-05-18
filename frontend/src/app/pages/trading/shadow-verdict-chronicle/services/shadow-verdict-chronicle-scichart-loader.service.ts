@@ -16,7 +16,7 @@ function unwrapSciChartModule(imported: unknown): SciChartModule {
 @Injectable({
     providedIn: 'root'
 })
-export class ShadowVerdictChronicleSciChartLoaderService {
+export class TradingShadowingVerdictChronicleSciChartLoaderService {
     private static runtimeConfigured: boolean = false;
 
     private moduleImport: Promise<SciChartModule> | null = null;
@@ -25,13 +25,13 @@ export class ShadowVerdictChronicleSciChartLoaderService {
         if (!this.moduleImport) {
             this.moduleImport = import('scichart').then((raw) => {
                 const sci = unwrapSciChartModule(raw);
-                if (!ShadowVerdictChronicleSciChartLoaderService.runtimeConfigured) {
+                if (!TradingShadowingVerdictChronicleSciChartLoaderService.runtimeConfigured) {
                     sci.SciChartSurface.UseCommunityLicense();
                     sci.SciChartSurface.configure({
                         wasmUrl: '/scichart-wasm/scichart2d.wasm',
                         wasmNoSimdUrl: '/scichart-wasm/scichart2d-nosimd.wasm'
                     });
-                    ShadowVerdictChronicleSciChartLoaderService.runtimeConfigured = true;
+                    TradingShadowingVerdictChronicleSciChartLoaderService.runtimeConfigured = true;
                 }
                 return sci;
             });

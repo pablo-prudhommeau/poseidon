@@ -24,15 +24,15 @@ class TradingShadowingJob:
         while not stop_event.is_set():
             try:
                 if settings.TRADING_SHADOWING_ENABLED:
-                    logger.info("[TRADING][SHADOWING][JOB] Starting shadow intelligence synchronization cycle")
+                    logger.info("[TRADING][SHADOWING][JOB] Starting shadowing snapshot synchronization cycle")
                     self._pipeline.run_once()
                     self._verdict_tracker.check_pending_verdicts()
                     cache_invalidator.mark_dirty(
-                        CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT,
-                        CacheRealm.SHADOW_VERDICT_CHRONICLE,
-                        CacheRealm.SHADOW_REGIME
+                        CacheRealm.SHADOWING_SNAPSHOT,
+                        CacheRealm.SHADOWING_VERDICT_CHRONICLE,
+                        CacheRealm.SHADOWING_REGIME
                     )
-                    logger.info("[TRADING][SHADOWING][JOB] Shadow intelligence synchronization cycle complete")
+                    logger.info("[TRADING][SHADOWING][JOB] Shadowing snapshot synchronization cycle complete")
                 else:
                     logger.debug("[TRADING][SHADOWING][JOB] Shadowing is disabled in settings, skipping cycle")
             except Exception as exception:
@@ -44,3 +44,4 @@ class TradingShadowingJob:
                 time.sleep(0.5)
 
         logger.info("[TRADING][SHADOWING][JOB] Shadowing loop successfully terminated")
+

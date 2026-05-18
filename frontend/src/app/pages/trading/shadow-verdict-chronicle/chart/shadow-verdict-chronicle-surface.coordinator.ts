@@ -18,7 +18,7 @@ import {
     parseIsoTimestampToEpochMilliseconds,
     resolveChronicleStreamLagMilliseconds
 } from '../data/shadow-verdict-chronicle-arrays.utils';
-import type { ShadowVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
+import type { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
 import { synchronizeCortexModelRolloutAnnotations } from './shadow-verdict-chronicle-cortex-rollout.utils';
 import { applyChronicleGoldenZoneVisualState, resolveChronicleGoldenZoneThresholds } from './shadow-verdict-chronicle-golden-zone.utils';
 import type { ChronicleLegendSeriesItem } from './shadow-verdict-chronicle-legend.adapter';
@@ -29,9 +29,9 @@ import {
     synchronizeChronicleTapeBoundSeries,
     synchronizeChronicleVerdictCloudSeries
 } from './shadow-verdict-chronicle-series-sync.utils';
-import { ShadowVerdictChronicleSurfaceBuilder } from './shadow-verdict-chronicle-surface.builder';
+import { TradingShadowingVerdictChronicleSurfaceBuilder } from './shadow-verdict-chronicle-surface.builder';
 
-export class ShadowVerdictChronicleSurfaceCoordinator {
+export class TradingShadowingVerdictChronicleSurfaceCoordinator {
     private static readonly RIGHT_AXIS_MAJOR_TICK_COUNT: number = 8;
 
     private blendFromArrays: ChronicleArrays | null = null;
@@ -46,11 +46,11 @@ export class ShadowVerdictChronicleSurfaceCoordinator {
     private pendingTapeAnchorWallClockMs: number | undefined;
     private playbackRequestAnimationFrameId: number | null = null;
     private sciChartSurface: ChronicleChartModel['sciChartSurface'] | undefined;
-    private readonly surfaceBuilder: ShadowVerdictChronicleSurfaceBuilder = new ShadowVerdictChronicleSurfaceBuilder();
+    private readonly surfaceBuilder: TradingShadowingVerdictChronicleSurfaceBuilder = new TradingShadowingVerdictChronicleSurfaceBuilder();
     private tapeAnchorPerformanceMs: number | null = null;
     private tapeAnchorWallClockMs: number = 0;
 
-    constructor(private readonly sciChartLoader: ShadowVerdictChronicleSciChartLoaderService) {}
+    constructor(private readonly sciChartLoader: TradingShadowingVerdictChronicleSciChartLoaderService) {}
 
     hasChartModel(): boolean {
         return this.chartModel !== undefined;
@@ -152,7 +152,12 @@ export class ShadowVerdictChronicleSurfaceCoordinator {
         if (!model || !this.displayArrays) {
             return;
         }
-        harmonizeChronicleRightAxes(model, this.displayArrays, ShadowVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT, this.goldenZoneThresholds);
+        harmonizeChronicleRightAxes(
+            model,
+            this.displayArrays,
+            TradingShadowingVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT,
+            this.goldenZoneThresholds
+        );
     }
 
     private queueTapeAnchorFromMeta(meta: ChronicleBucketMeta): void {
@@ -199,7 +204,12 @@ export class ShadowVerdictChronicleSurfaceCoordinator {
                 const tapeArrays = extendChronicleArraysToTapeRight(this.displayArrays, rightEdgeMs);
                 synchronizeChronicleTapeBoundSeries(model, tapeArrays, this.goldenZoneThresholds);
                 this.applyGoldenZoneVisualState();
-                harmonizeChronicleRightAxes(model, tapeArrays, ShadowVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT, this.goldenZoneThresholds);
+                harmonizeChronicleRightAxes(
+                    model,
+                    tapeArrays,
+                    TradingShadowingVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT,
+                    this.goldenZoneThresholds
+                );
                 const earliestDisplayXMilliseconds = chronicleMinimumDisplayXMilliseconds(tapeArrays);
                 const naturalLeftEdgeMilliseconds = rightEdgeMs - model.viewportWidthMilliseconds;
                 const leftEdgeClampMilliseconds = earliestDisplayXMilliseconds - 45_000;

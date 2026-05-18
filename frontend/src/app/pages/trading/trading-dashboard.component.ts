@@ -7,7 +7,7 @@ import { AnalyticsResponse } from '../../core/models';
 import { AnalyticsExplorationComponent } from '../analytics/analytics-exploration/analytics-exploration.component';
 import { AnalyticsKpiBarComponent } from '../analytics/analytics-kpi-bar/analytics-kpi-bar.component';
 import { AnalyticsSynthesisComponent } from '../analytics/analytics-synthesis/analytics-synthesis.component';
-import { ShadowVerdictChronicleComponent } from './shadow-verdict-chronicle/components/shadow-verdict-chronicle.component';
+import { TradingShadowingVerdictChronicleComponent } from './shadow-verdict-chronicle/components/shadow-verdict-chronicle.component';
 import { TradingOverviewComponent } from './trading-overview/trading-overview.component';
 
 @Component({
@@ -21,7 +21,7 @@ import { TradingOverviewComponent } from './trading-overview/trading-overview.co
         AnalyticsKpiBarComponent,
         AnalyticsSynthesisComponent,
         AnalyticsExplorationComponent,
-        ShadowVerdictChronicleComponent
+        TradingShadowingVerdictChronicleComponent
     ],
     templateUrl: './trading-dashboard.component.html',
     styleUrl: './trading-dashboard.component.css'
@@ -91,7 +91,7 @@ export class TradingDashboardComponent implements OnInit {
             error: (error: unknown) => {
                 this.shadowLoading.set(false);
                 this.shadowError.set('Failed to load shadow analytics');
-                console.error('[TRADING][ANALYTICS][SHADOW] Load error', error);
+                console.error('[TRADING][ANALYTICS][SHADOWING] Load error', error);
             }
         });
     }

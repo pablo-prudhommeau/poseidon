@@ -164,7 +164,7 @@ def get_shadow_trades_for_pair(
     from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
     from src.persistence.models import TradingEvaluation
 
-    logger.debug("[HTTP][ANALYTICS][SHADOW] Retrieving shadow verdicts for pair %s", pair_address)
+    logger.debug("[HTTP][ANALYTICS][SHADOWING] Retrieving shadowing verdicts for pair %s", pair_address)
     verdict_dao = TradingShadowingVerdictDao(database_session)
     verdicts = verdict_dao.retrieve_resolved_for_pair(pair_address, limit_count=100)
 

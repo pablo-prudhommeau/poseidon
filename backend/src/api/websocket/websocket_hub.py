@@ -59,15 +59,15 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
             })
 
         trading_shadowing_state: TradingShadowingState = trading_shadowing_cache.get_shadowing_trading_state()
-        if trading_shadowing_state.shadow_regime is not None:
+        if trading_shadowing_state.shadowing_regime is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.SHADOW_REGIME.value,
-                "payload": jsonable_encoder(trading_shadowing_state.shadow_regime),
+                "type": WebsocketMessageType.SHADOWING_REGIME.value,
+                "payload": jsonable_encoder(trading_shadowing_state.shadowing_regime),
             })
-        if trading_shadowing_state.shadow_verdict_chronicle is not None:
+        if trading_shadowing_state.shadowing_verdict_chronicle is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.SHADOW_VERDICT_CHRONICLE.value,
-                "payload": jsonable_encoder(trading_shadowing_state.shadow_verdict_chronicle),
+                "type": WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE.value,
+                "payload": jsonable_encoder(trading_shadowing_state.shadowing_verdict_chronicle),
             })
 
         dca_state: DcaState = dca_state_cache.get_dca_state()

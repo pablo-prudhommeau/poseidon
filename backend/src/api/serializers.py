@@ -14,7 +14,7 @@ from src.api.http.api_schemas import (
     TradingEvaluationDecisionPayload,
     DcaOrderPayload,
     DcaStrategyPayload,
-    TradingEvaluationShadowDiagnosticsPayload,
+    TradingEvaluationShadowingDiagnosticsPayload,
     BlockchainCashBalancePayload,
 )
 from src.core.structures.structures import EquityCurve, BlockchainNetwork
@@ -143,7 +143,7 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
             free_cash_before_execution_usd=row.free_cash_before_execution_usd,
             free_cash_after_execution_usd=row.free_cash_after_execution_usd,
         ),
-        shadow_diagnostics=TradingEvaluationShadowDiagnosticsPayload(
+        shadowing_diagnostics=TradingEvaluationShadowingDiagnosticsPayload(
             cortex_inference_summary=row.cortex_inference_summary,
             shadowing_regime=row.shadowing_regime,
             shadowing_metrics=row.shadowing_metrics,
@@ -209,3 +209,5 @@ def serialize_dca_strategy(strategy: DcaStrategy, live_metrics: AaveLiveMetrics)
         live_aave_apy=live_metrics.supply_apy,
         live_market_price=live_metrics.asset_out_price_usd
     )
+
+

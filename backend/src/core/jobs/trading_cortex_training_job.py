@@ -63,7 +63,7 @@ class TradingCortexTrainingJob:
             feature_set_version=settings.TRADING_CORTEX_FEATURE_SET_VERSION,
             model_output_directory=settings.TRADING_CORTEX_MODEL_OUTPUT_DIRECTORY,
             validation_fraction=settings.TRADING_CORTEX_TRAINING_VALIDATION_FRACTION,
-            minimum_labeled_record_count=settings.TRADING_CORTEX_TRAINING_MINIMUM_LABELED_RECORD_COUNT,
+            minimum_labeled_record_count=settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
             preferred_training_device=settings.TRADING_CORTEX_XGBOOST_TRAINING_DEVICE,
         )
         feature_vector_builder = TradingCortexFeatureVectorBuilder()

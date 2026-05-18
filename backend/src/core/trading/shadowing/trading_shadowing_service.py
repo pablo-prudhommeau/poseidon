@@ -168,9 +168,9 @@ def _build_cortex_reliability_diagram(
     return result
 
 
-def compute_shadow_verdict_chronicle() -> TradingShadowingVerdictChronicleComputationResult:
+def compute_trading_shadowing_verdict_chronicle() -> TradingShadowingVerdictChronicleComputationResult:
     now_local = get_current_local_datetime()
-    bucket_configurations = _shadow_verdict_chronicle_bucket_configurations()
+    bucket_configurations = _trading_shadowing_verdict_chronicle_bucket_configurations()
     series_end_datetime = _series_end_datetime(now_local)
     fetch_end_datetime = _verdict_fetch_end_datetime(series_end_datetime, bucket_configurations)
     global_from_datetime = series_end_datetime - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
@@ -185,21 +185,21 @@ def compute_shadow_verdict_chronicle() -> TradingShadowingVerdictChronicleComput
         verdicts = _convert_verdicts(resolved_verdicts)
 
     logger.info(
-        "[TRADING][SHADOW][HISTORY] Full chronicle built — verdict_count=%d bucket_layer_count=%d",
+        "[TRADING][SHADOWING][HISTORY] Full chronicle built — verdict_count=%d bucket_layer_count=%d",
         len(verdicts),
         len(bucket_configurations),
     )
     return TradingShadowingVerdictChronicleComputationResult(
-        chronicle=_build_shadow_verdict_chronicle(verdicts, now_local, bucket_configurations, series_end_datetime, fetch_end_datetime, global_from_datetime),
+        chronicle=_build_trading_shadowing_verdict_chronicle(verdicts, now_local, bucket_configurations, series_end_datetime, fetch_end_datetime, global_from_datetime),
         verdicts=verdicts,
     )
 
 
-def compute_shadow_verdict_chronicle_incremental(
+def compute_trading_shadowing_verdict_chronicle_incremental(
         previous_verdicts: list[TradingShadowingVerdictChronicleVerdict],
 ) -> TradingShadowingVerdictChronicleComputationResult:
     now_local = get_current_local_datetime()
-    bucket_configurations = _shadow_verdict_chronicle_bucket_configurations()
+    bucket_configurations = _trading_shadowing_verdict_chronicle_bucket_configurations()
     series_end_datetime = _series_end_datetime(now_local)
     fetch_end_datetime = _verdict_fetch_end_datetime(series_end_datetime, bucket_configurations)
     global_from_datetime = series_end_datetime - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
@@ -211,7 +211,7 @@ def compute_shadow_verdict_chronicle_incremental(
         max_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
     )
     if not working_verdicts:
-        return compute_shadow_verdict_chronicle()
+        return compute_trading_shadowing_verdict_chronicle()
 
     max_id = max(chronicle_verdict.id for chronicle_verdict in working_verdicts)
     new_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
@@ -237,9 +237,9 @@ def compute_shadow_verdict_chronicle_incremental(
             max_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
         )
 
-    new_chronicle = _build_shadow_verdict_chronicle(working_verdicts, now_local, bucket_configurations, series_end_datetime, fetch_end_datetime, global_from_datetime)
+    new_chronicle = _build_trading_shadowing_verdict_chronicle(working_verdicts, now_local, bucket_configurations, series_end_datetime, fetch_end_datetime, global_from_datetime)
     logger.debug(
-        "[TRADING][SHADOW][HISTORY] Incremental chronicle — verdict_count=%d new_verdict_count_from_database=%d",
+        "[TRADING][SHADOWING][HISTORY] Incremental chronicle — verdict_count=%d new_verdict_count_from_database=%d",
         len(working_verdicts),
         len(new_verdicts),
     )
@@ -249,7 +249,7 @@ def compute_shadow_verdict_chronicle_incremental(
     )
 
 
-def _build_shadow_verdict_chronicle(
+def _build_trading_shadowing_verdict_chronicle(
         verdicts: list[TradingShadowingVerdictChronicleVerdict],
         now_local: datetime,
         bucket_configurations: list[TradingShadowingVerdictChronicleBucketConfiguration],
@@ -420,7 +420,7 @@ def _build_bucket(
     )
 
 
-def _convert_shadow_verdict_to_chronicle_verdict(
+def _convert_trading_shadowing_verdict_to_chronicle_verdict(
         verdict: TradingShadowingVerdict,
 ) -> Optional[TradingShadowingVerdictChronicleVerdict]:
     resolved_at = ensure_timezone_aware(verdict.resolved_at)
@@ -446,7 +446,7 @@ def _convert_shadow_verdict_to_chronicle_verdict(
             cortex_predicted_holding_time_minutes = cortex_inference_snapshot.predicted_holding_time_minutes
         except ValidationError:
             logger.debug(
-                "[TRADING][SHADOW][HISTORY][CORTEX] Ignoring incomplete legacy cortex_inference_summary for verdict_id=%s",
+                "[TRADING][SHADOWING][HISTORY][CORTEX] Ignoring incomplete legacy cortex_inference_summary for verdict_id=%s",
                 verdict.id,
             )
 
@@ -465,7 +465,7 @@ def _convert_shadow_verdict_to_chronicle_verdict(
     )
 
 
-def _shadow_verdict_chronicle_bucket_configurations() -> list[TradingShadowingVerdictChronicleBucketConfiguration]:
+def _trading_shadowing_verdict_chronicle_bucket_configurations() -> list[TradingShadowingVerdictChronicleBucketConfiguration]:
     return [
         TradingShadowingVerdictChronicleBucketConfiguration(label="last_30m_1m", lookback=timedelta(minutes=30), granularity_seconds=60),
         TradingShadowingVerdictChronicleBucketConfiguration(label="last_24h_1h", lookback=timedelta(hours=24), granularity_seconds=3600),
@@ -488,7 +488,7 @@ def _verdict_fetch_end_datetime(
 def _convert_verdicts(verdicts: list[TradingShadowingVerdict]) -> list[TradingShadowingVerdictChronicleVerdict]:
     chronicle_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
     for verdict in verdicts:
-        chronicle_verdict = _convert_shadow_verdict_to_chronicle_verdict(verdict)
+        chronicle_verdict = _convert_trading_shadowing_verdict_to_chronicle_verdict(verdict)
         if chronicle_verdict is not None:
             chronicle_verdicts.append(chronicle_verdict)
     return chronicle_verdicts

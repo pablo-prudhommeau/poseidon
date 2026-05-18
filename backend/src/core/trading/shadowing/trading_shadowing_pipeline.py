@@ -11,8 +11,8 @@ from src.core.trading.cortex.trading_cortex_request_builder import TradingCortex
 from src.core.trading.cortex.trading_cortex_structures import TradingCortexScoringBatchRequest
 from src.core.trading.evaluators.trading_quality_scorer import _evaluate_quality
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
-from src.core.trading.shadowing.trading_shadowing_intelligence_service import (
-    evaluate_candidate_shadow_intelligence,
+from src.core.trading.shadowing.trading_shadowing_snapshot_service import (
+    evaluate_candidate_shadowing,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 from src.core.trading.trading_service import fetch_trading_candidates_sync
@@ -31,15 +31,15 @@ class TradingShadowingPipeline:
 
     def run_once(self) -> None:
         if not settings.TRADING_SHADOWING_ENABLED:
-            logger.debug("[TRADING][SHADOW][PIPELINE] Shadow tracking is disabled, skipping")
+            logger.debug("[TRADING][SHADOWING][PIPELINE] Shadowing tracking is disabled, skipping")
             return
 
-        logger.info("[TRADING][SHADOW][PIPELINE] Starting shadow tracking cycle")
+        logger.info("[TRADING][SHADOWING][PIPELINE] Starting shadowing tracking cycle")
         try:
             self._execute_shadow_pipeline()
         except Exception as exception:
-            logger.exception("[TRADING][SHADOW][PIPELINE] Shadow tracking cycle failed — %s", exception)
-        logger.info("[TRADING][SHADOW][PIPELINE] Shadow tracking cycle complete")
+            logger.exception("[TRADING][SHADOWING][PIPELINE] Shadowing tracking cycle failed — %s", exception)
+        logger.info("[TRADING][SHADOWING][PIPELINE] Shadowing tracking cycle complete")
 
     def _execute_shadow_pipeline(self) -> None:
         if settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING < MINIMUM_POINTS_PER_BUCKET:
@@ -50,7 +50,7 @@ class TradingShadowingPipeline:
 
         candidates = fetch_trading_candidates_sync()
         if not candidates:
-            logger.info("[TRADING][SHADOW][PIPELINE] No candidates fetched")
+            logger.info("[TRADING][SHADOWING][PIPELINE] No candidates fetched")
             return
 
         candidates = self._filter_allowed_chains(candidates)
@@ -95,21 +95,21 @@ class TradingShadowingPipeline:
 
             admissible_candidates.append((rank, candidate, entry_price))
 
-        cached_snapshot = trading_shadowing_cache.get_shadow_intelligence_snapshot()
+        cached_snapshot = trading_shadowing_cache.get_shadowing_snapshot()
         if cached_snapshot is None:
-            logger.info("[TRADING][SHADOW][PIPELINE] Shadow intelligence snapshot missing from cache, triggering background rebuild and skipping cycle")
-            cache_invalidator.mark_dirty(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
+            logger.info("[TRADING][SHADOWING][PIPELINE] Shadowing snapshot missing from cache, triggering background rebuild and skipping cycle")
+            cache_invalidator.mark_dirty(CacheRealm.SHADOWING_SNAPSHOT)
             return
 
-        current_phase = cached_snapshot.summary.phase
-        shadow_can_simulate = len(cached_snapshot.metric_snapshots) > 0
+        current_phase = cached_snapshot.regime.phase
+        shadow_can_simulate = len(cached_snapshot.metric_profiles) > 0
 
         if current_phase == TradingShadowingPhase.TRADABLE and not shadow_can_simulate:
-            logger.info("[TRADING][SHADOW][PIPELINE] Shadowing phase is TRADABLE but intelligence metrics are not yet ready, skipping cycle")
+            logger.info("[TRADING][SHADOWING][PIPELINE] Shadowing phase is TRADABLE but metric profiles are not yet ready, skipping cycle")
             return
 
         if current_phase == TradingShadowingPhase.DISABLED:
-            logger.debug("[TRADING][SHADOW][PIPELINE] Shadowing phase is DISABLED, skipping")
+            logger.debug("[TRADING][SHADOWING][PIPELINE] Shadowing phase is DISABLED, skipping")
             return
 
         if settings.TRADING_CORTEX_ENABLED and admissible_candidates and shadow_can_simulate:
@@ -155,11 +155,11 @@ class TradingShadowingPipeline:
                             gate_verdict=TradingFilterVerdict(is_accepted=True, rejection_reasons=[]),
                         )
             except Exception as exc:
-                logger.exception("[TRADING][SHADOW][PIPELINE] TradingCortex inference failed for probes: %s", exc)
+                logger.exception("[TRADING][SHADOWING][PIPELINE] TradingCortex inference failed for probes: %s", exc)
 
         for rank, candidate, entry_price in admissible_candidates:
             if shadow_can_simulate and cached_snapshot is not None:
-                candidate.shadow_diagnostics = evaluate_candidate_shadow_intelligence(candidate, cached_snapshot)
+                candidate.shadowing_diagnostics = evaluate_candidate_shadowing(candidate, cached_snapshot)
 
             tp1_price = entry_price * (1.0 + settings.TRADING_TP1_EXIT_FRACTION)
             tp2_price = entry_price * (1.0 + settings.TRADING_TP2_EXIT_FRACTION)
@@ -179,7 +179,7 @@ class TradingShadowingPipeline:
             shadow_probe_count += 1
 
         logger.info(
-            "[TRADING][SHADOW][PIPELINE] Recorded %d shadow probes from %d candidates (%d skipped by cooldown)",
+            "[TRADING][SHADOWING][PIPELINE] Recorded %d shadowing probes from %d candidates (%d skipped by cooldown)",
             shadow_probe_count, len(candidates), cooldown_skip_count,
         )
 
@@ -190,7 +190,7 @@ class TradingShadowingPipeline:
             if candidate.dexscreener_token_information.chain_id.value in allowed_chains
         ]
         if len(retained) < len(candidates):
-            logger.debug("[TRADING][SHADOW][PIPELINE] Chain filter retained %d / %d", len(retained), len(candidates))
+            logger.debug("[TRADING][SHADOWING][PIPELINE] Chain filter retained %d / %d", len(retained), len(candidates))
         return retained
 
     def _persist_shadow_probe(
@@ -239,14 +239,13 @@ class TradingShadowingPipeline:
             fully_diluted_valuation_usd=token_information.fully_diluted_valuation or 0.0,
             dexscreener_boost=token_information.boost or 0.0,
             order_notional_value_usd=notional,
-            shadowing_regime=self._build_cached_shadow_intelligence_summary(),
+            shadowing_regime=self._build_cached_shadowing_regime_payload(),
             shadowing_metrics=(
                 [
                     metric.model_dump(mode="json")
-                    for metric in candidate.shadow_diagnostics.intelligence_snapshot.metrics
+                    for metric in candidate.shadowing_diagnostics.evaluated_metrics
                 ]
-                if shadow_can_simulate
-                   and candidate.shadow_diagnostics.intelligence_snapshot is not None
+                if shadow_can_simulate and candidate.shadowing_diagnostics.evaluated_metrics
                 else None
             ),
             cortex_inference_summary=(
@@ -269,12 +268,12 @@ class TradingShadowingPipeline:
         with get_database_session() as database_session:
             database_session.add(probe)
 
-        logger.debug("[TRADING][SHADOW][PERSIST] Recorded shadow probe for %s at price %.10f", base_token.symbol, token_information.price_usd or 0.0)
+        logger.debug("[TRADING][SHADOWING][PERSIST] Recorded shadowing probe for %s at price %.10f", base_token.symbol, token_information.price_usd or 0.0)
 
-    def _build_cached_shadow_intelligence_summary(self) -> dict | None:
-        cached_snapshot = trading_shadowing_cache.get_shadow_intelligence_snapshot()
-        if cached_snapshot is not None:
-            return cached_snapshot.summary.model_dump(mode="json", exclude_none=True)
+    def _build_cached_shadowing_regime_payload(self) -> dict | None:
+        cached_shadowing_regime = trading_shadowing_cache.get_trading_shadowing_regime_state()
+        if cached_shadowing_regime is not None:
+            return cached_shadowing_regime.model_dump(mode="json", exclude_none=True)
         return None
 
     def _compute_buy_to_sell_ratio(self, transactions) -> float:
@@ -285,3 +284,7 @@ class TradingShadowingPipeline:
         if total_transaction_count <= 0:
             return 0.5
         return reference_bucket.buys / total_transaction_count
+
+
+
+

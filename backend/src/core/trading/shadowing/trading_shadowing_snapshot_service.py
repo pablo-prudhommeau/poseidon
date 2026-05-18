@@ -16,17 +16,18 @@ from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
     compute_profit_factor,
     floor_datetime_to_granularity,
     series_end_datetime,
-    simple_moving_average_like_shadow_verdict_chronicle_chart,
-    winsorize_series_like_shadow_verdict_chronicle_chart,
+    simple_moving_average_like_trading_shadowing_verdict_chronicle_chart,
+    winsorize_series_like_trading_shadowing_verdict_chronicle_chart,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import (
-    TradingShadowingIntelligenceMetric,
-    TradingShadowingIntelligenceMetricSnapshot,
-    TradingShadowingIntelligenceSnapshot,
-    TradingShadowingIntelligenceSummary,
+    TradingCandidateShadowingDiagnostics,
+    TradingCandidateShadowingMetricEvaluation,
+    TradingShadowingMetricProfile,
+    TradingShadowingSnapshot,
     TradingShadowingPhase,
+    TradingShadowingRegimePayload,
 )
-from src.core.trading.trading_structures import ShadowDiagnostics, TradingCandidate
+from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
@@ -36,7 +37,7 @@ from src.persistence.database_session_manager import get_database_session
 logger = get_application_logger(__name__)
 
 
-def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapshot:
+def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
     lookback_limit = settings.TRADING_SHADOWING_LOOKBACK_EVALUATIONS
     minimum_outcomes_for_shadowing = settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING
     minimum_outcomes_for_shadow_gate = settings.TRADING_GATE_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_ACTIVATION
@@ -59,16 +60,28 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
 
         if outcomes_insufficient or hours_insufficient:
             logger.info(
-                "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence not yet computed — resolved=%d/%d, elapsed_hours=%.1f/%.1f",
+                "[TRADING][SHADOWING][SNAPSHOT] Shadowing snapshot not yet computed — resolved=%d/%d, elapsed_hours=%.1f/%.1f",
                 resolved_count, minimum_outcomes_for_shadowing, elapsed_hours, minimum_hours,
             )
-            return TradingShadowingIntelligenceSnapshot(
-                summary=TradingShadowingIntelligenceSummary(
+            return TradingShadowingSnapshot(
+                regime=TradingShadowingRegimePayload(
                     phase=TradingShadowingPhase.DISABLED if not settings.TRADING_SHADOWING_ENABLED else TradingShadowingPhase.SHADOWING,
-                    total_outcomes_analyzed=total_outcomes,
-                    resolved_outcome_count=resolved_count,
-                    resolved_shadowing_and_cortex_inference_aware_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
-                    elapsed_hours=elapsed_hours,
+                    performance_gate_enabled=settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED,
+                    cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
+                    shadowing_resolved_outcome_count=resolved_count,
+                    shadowing_required_outcome_count=minimum_outcomes_for_shadowing,
+                    shadowing_elapsed_hours=elapsed_hours,
+                    shadowing_required_hours=minimum_hours,
+                    shadowing_performance_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
+                    shadowing_performance_required_outcome_count=minimum_outcomes_for_shadow_gate,
+                    shadowing_performance_chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
+                    shadowing_performance_chronicle_profit_factor_bucket_width_seconds=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
+                    shadowing_performance_chronicle_profit_factor_moving_average_period=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
+                    shadowing_performance_sparse_expected_value_lookback_days=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
+                    shadowing_performance_sparse_expected_value_bucket_width_seconds=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
+                    shadowing_performance_sparse_expected_value_moving_average_period=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
+                    cortex_training_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
+                    cortex_training_required_outcome_count=settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
                 ),
             )
 
@@ -100,15 +113,15 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
 
         bucket_profiles = compute_all_metric_bucket_profiles(analytics_records, meta_statistics)
 
-        metric_snapshots: list[TradingShadowingIntelligenceMetricSnapshot] = []
+        metric_profiles: list[TradingShadowingMetricProfile] = []
         for profile in bucket_profiles:
-            snapshot = _convert_bucket_profile_to_metric_snapshot(profile)
+            snapshot = _convert_bucket_profile_to_metric_profile(profile)
             if snapshot is not None:
-                metric_snapshots.append(snapshot)
+                metric_profiles.append(snapshot)
 
         current_time = get_current_local_datetime()
-        chronicle_moving_average_period = settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD
-        sparse_moving_average_period = settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD
+        chronicle_moving_average_period = settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD
+        sparse_moving_average_period = settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD
         chronicle_profit_factor, sparse_pf_buckets = _compute_shadow_chart_sma_profit_factor_at_series_end(
             resolved_verdicts=resolved_verdicts,
             current_time=current_time,
@@ -121,62 +134,89 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
         )
 
         logger.info(
-            "[TRADING][SHADOW][INTELLIGENCE][CHRONICLE_PF] Chronicle profit factor SMA — period=%d sparse_buckets=%d chronicle_pf=%.2f",
+            "[TRADING][SHADOWING][SNAPSHOT][CHRONICLE_PF] Chronicle profit factor SMA — period=%d sparse_buckets=%d chronicle_pf=%.2f",
             chronicle_moving_average_period,
             sparse_pf_buckets,
             chronicle_profit_factor,
         )
         logger.info(
-            "[TRADING][SHADOW][INTELLIGENCE][SPARSE_EV] Sparse expected value USD — lookback_days=%.1f bucket_width_seconds=%d period=%d sparse_buckets=%d sparse_ev_usd=%.2f",
-            settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
-            settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
+            "[TRADING][SHADOWING][SNAPSHOT][SPARSE_EV] Sparse expected value USD — lookback_days=%.1f bucket_width_seconds=%d period=%d sparse_buckets=%d sparse_ev_usd=%.2f",
+            settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
+            settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
             sparse_moving_average_period,
             sparse_ev_buckets,
             sparse_expected_value_usd,
         )
 
         logger.info(
-            "[TRADING][SHADOW][INTELLIGENCE][SNAPSHOT] Shadow intelligence snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f chronicle_pf=%.2f sparse_ev_usd=%.2f",
-            total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_expected_pnl_velocity, chronicle_profit_factor, sparse_expected_value_usd
+            "[TRADING][SHADOWING][SNAPSHOT] Shadowing snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f chronicle_pf=%.2f sparse_ev_usd=%.2f",
+            total_outcomes, len(metric_profiles), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_expected_pnl_velocity, chronicle_profit_factor, sparse_expected_value_usd
         )
 
         is_shadow_gate_eligible_outcomes_sufficient = (
             resolved_shadowing_and_cortex_inference_aware_count >= minimum_outcomes_for_shadow_gate
         )
+        is_cortex_training_sufficient = (
+            resolved_shadowing_and_cortex_inference_aware_count >= settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING
+        )
+        is_shadow_performance_gate_enabled = settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED
+        is_cortex_gate_enabled = settings.TRADING_GATE_CORTEX_ENABLED
+        shadowing_snapshot_ready = len(metric_profiles) > 0
+        shadow_gate_requirement_satisfied = is_shadow_gate_eligible_outcomes_sufficient or not is_shadow_performance_gate_enabled
+        trading_unblocked = (
+            shadow_gate_requirement_satisfied
+            and (is_cortex_training_sufficient or not is_cortex_gate_enabled)
+        )
 
         if not settings.TRADING_SHADOWING_ENABLED:
             phase = TradingShadowingPhase.DISABLED
-        elif is_shadow_gate_eligible_outcomes_sufficient:
+        elif trading_unblocked and shadowing_snapshot_ready:
             phase = TradingShadowingPhase.TRADABLE
+        elif trading_unblocked:
+            phase = TradingShadowingPhase.SYNCING
+        elif is_cortex_gate_enabled and is_shadow_gate_eligible_outcomes_sufficient:
+            phase = TradingShadowingPhase.CORTEXING
         else:
             phase = TradingShadowingPhase.SHADOWING
             logger.info(
-                "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence computed but not yet tradable — shadowing_cortex_aware_outcomes=%d/%d cortex_training_outcomes=%d/%d",
+                "[TRADING][SHADOWING][SNAPSHOT] Shadowing snapshot computed but not yet tradable — shadowing_cortex_aware_outcomes=%d/%d cortex_training_outcomes=%d/%d",
                 resolved_shadowing_and_cortex_inference_aware_count,
                 minimum_outcomes_for_shadow_gate,
                 resolved_shadowing_and_cortex_inference_aware_count,
                 settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
             )
 
-        return TradingShadowingIntelligenceSnapshot(
-            summary=TradingShadowingIntelligenceSummary(
+        return TradingShadowingSnapshot(
+            regime=TradingShadowingRegimePayload(
                 phase=phase,
-                total_outcomes_analyzed=total_outcomes,
-                resolved_outcome_count=resolved_count,
-                resolved_shadowing_and_cortex_inference_aware_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
-                elapsed_hours=elapsed_hours,
-                meta_win_rate=meta_win_rate,
-                meta_average_pnl=meta_average_pnl,
-                meta_average_holding_time_hours=meta_average_holding_time_hours,
-                meta_expected_pnl_velocity=meta_expected_pnl_velocity,
-                meta_profit_factor=meta_profit_factor,
-                meta_expected_value_usd=meta_expected_value_usd,
-                chronicle_profit_factor=chronicle_profit_factor,
-                sparse_expected_value_usd=sparse_expected_value_usd,
-                chronicle_profit_factor_threshold=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_THRESHOLD,
-                sparse_expected_value_usd_threshold=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_USD_THRESHOLD,
+                performance_gate_enabled=settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED,
+                cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
+                shadowing_resolved_outcome_count=resolved_count,
+                shadowing_required_outcome_count=minimum_outcomes_for_shadowing,
+                shadowing_elapsed_hours=elapsed_hours,
+                shadowing_required_hours=minimum_hours,
+                shadowing_performance_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
+                shadowing_performance_required_outcome_count=minimum_outcomes_for_shadow_gate,
+                shadowing_performance_chronicle_profit_factor=chronicle_profit_factor,
+                shadowing_performance_chronicle_profit_factor_threshold=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_THRESHOLD,
+                shadowing_performance_chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
+                shadowing_performance_chronicle_profit_factor_bucket_width_seconds=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
+                shadowing_performance_chronicle_profit_factor_moving_average_period=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
+                shadowing_performance_sparse_expected_value_usd=sparse_expected_value_usd,
+                shadowing_performance_sparse_expected_value_usd_threshold=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_USD_THRESHOLD,
+                shadowing_performance_sparse_expected_value_lookback_days=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
+                shadowing_performance_sparse_expected_value_bucket_width_seconds=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
+                shadowing_performance_sparse_expected_value_moving_average_period=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
+                shadowing_metrics_meta_win_rate=meta_win_rate,
+                shadowing_metrics_meta_average_pnl=meta_average_pnl,
+                shadowing_metrics_meta_average_holding_time_hours=meta_average_holding_time_hours,
+                shadowing_metrics_meta_expected_pnl_velocity=meta_expected_pnl_velocity,
+                shadowing_metrics_meta_profit_factor=meta_profit_factor,
+                shadowing_metrics_meta_expected_value_usd=meta_expected_value_usd,
+                cortex_training_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
+                cortex_training_required_outcome_count=settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
             ),
-            metric_snapshots=metric_snapshots,
+            metric_profiles=metric_profiles,
         )
 
 
@@ -229,8 +269,8 @@ def _shadow_chart_sma_at_series_end(
 ) -> float:
     if not series_values:
         return empty_fallback
-    winsorized = winsorize_series_like_shadow_verdict_chronicle_chart(series_values)
-    sma_series = simple_moving_average_like_shadow_verdict_chronicle_chart(winsorized, sma_period)
+    winsorized = winsorize_series_like_trading_shadowing_verdict_chronicle_chart(series_values)
+    sma_series = simple_moving_average_like_trading_shadowing_verdict_chronicle_chart(winsorized, sma_period)
     return sma_series[-1]
 
 
@@ -239,8 +279,8 @@ def _compute_shadow_chart_sma_profit_factor_at_series_end(
         current_time: datetime,
         sma_period: int,
 ) -> tuple[float, int]:
-    chronicle_lookback = timedelta(days=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS)
-    chronicle_bucket_width_seconds = settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS
+    chronicle_lookback = timedelta(days=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS)
+    chronicle_bucket_width_seconds = settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS
     profit_factors_sparse, _, sparse_bucket_count = _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
         resolved_verdicts,
         current_time,
@@ -256,8 +296,8 @@ def _compute_shadow_chart_sma_expected_value_usd_at_series_end(
         current_time: datetime,
         sma_period: int,
 ) -> tuple[float, int]:
-    lookback = timedelta(days=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS)
-    granularity_seconds = settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS
+    lookback = timedelta(days=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS)
+    granularity_seconds = settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS
     _, mean_pnl_usd_sparse, sparse_bucket_count = _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
         resolved_verdicts,
         current_time,
@@ -268,13 +308,13 @@ def _compute_shadow_chart_sma_expected_value_usd_at_series_end(
     return sma_ev_usd, sparse_bucket_count
 
 
-def _convert_bucket_profile_to_metric_snapshot(
+def _convert_bucket_profile_to_metric_profile(
         profile: MetricBucketProfile,
-) -> Optional[TradingShadowingIntelligenceMetricSnapshot]:
+) -> Optional[TradingShadowingMetricProfile]:
     if not profile.bucket_statistics:
         return None
 
-    return TradingShadowingIntelligenceMetricSnapshot(
+    return TradingShadowingMetricProfile(
         metric_key=profile.metric_key,
         bucket_edges=profile.bucket_edges,
         bucket_win_rates=[bucket.win_rate / 100.0 for bucket in profile.bucket_statistics],
@@ -304,19 +344,19 @@ def find_bucket_index_for_value(value: float, bucket_edges: list[float]) -> int:
     return last_valid_bucket
 
 
-def evaluate_candidate_shadow_intelligence(
+def evaluate_candidate_shadowing(
         candidate: TradingCandidate,
-        snapshot: TradingShadowingIntelligenceSnapshot,
-) -> ShadowDiagnostics:
+        snapshot: TradingShadowingSnapshot,
+) -> TradingCandidateShadowingDiagnostics:
     toxic_metric_count = 0
     total_metrics_evaluated = 0
-    evaluated_metrics: list[TradingShadowingIntelligenceMetric] = []
+    evaluated_metrics: list[TradingCandidateShadowingMetricEvaluation] = []
     toxic_metric_keys: list[str] = []
     golden_metric_keys: list[str] = []
 
-    for metric_snapshot in snapshot.metric_snapshots:
+    for metric_profile in snapshot.metric_profiles:
         try:
-            candidate_value = extract_metric_value_from_candidate(candidate, metric_snapshot.metric_key)
+            candidate_value = extract_metric_value_from_candidate(candidate, metric_profile.metric_key)
         except Exception:
             continue
 
@@ -324,28 +364,28 @@ def evaluate_candidate_shadow_intelligence(
             continue
 
         total_metrics_evaluated += 1
-        bucket_index = find_bucket_index_for_value(candidate_value, metric_snapshot.bucket_edges)
+        bucket_index = find_bucket_index_for_value(candidate_value, metric_profile.bucket_edges)
 
-        if bucket_index < len(metric_snapshot.bucket_win_rates):
-            bucket_win_rate = metric_snapshot.bucket_win_rates[bucket_index]
-            bucket_average_pnl = metric_snapshot.bucket_average_pnl[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_pnl) else 0.0
-            bucket_average_holding_time = metric_snapshot.bucket_average_holding_time[bucket_index] if bucket_index < len(metric_snapshot.bucket_average_holding_time) else 0.0
-            bucket_expected_pnl_velocity = metric_snapshot.bucket_expected_pnl_velocity[bucket_index] if bucket_index < len(metric_snapshot.bucket_expected_pnl_velocity) else 0.0
-            bucket_outlier_hit_rate = metric_snapshot.bucket_outlier_hit_rates[bucket_index] if bucket_index < len(metric_snapshot.bucket_outlier_hit_rates) else 0.0
-            bucket_sample_count = metric_snapshot.bucket_sample_counts[bucket_index] if bucket_index < len(metric_snapshot.bucket_sample_counts) else 0
+        if bucket_index < len(metric_profile.bucket_win_rates):
+            bucket_win_rate = metric_profile.bucket_win_rates[bucket_index]
+            bucket_average_pnl = metric_profile.bucket_average_pnl[bucket_index] if bucket_index < len(metric_profile.bucket_average_pnl) else 0.0
+            bucket_average_holding_time = metric_profile.bucket_average_holding_time[bucket_index] if bucket_index < len(metric_profile.bucket_average_holding_time) else 0.0
+            bucket_expected_pnl_velocity = metric_profile.bucket_expected_pnl_velocity[bucket_index] if bucket_index < len(metric_profile.bucket_expected_pnl_velocity) else 0.0
+            bucket_outlier_hit_rate = metric_profile.bucket_outlier_hit_rates[bucket_index] if bucket_index < len(metric_profile.bucket_outlier_hit_rates) else 0.0
+            bucket_sample_count = metric_profile.bucket_sample_counts[bucket_index] if bucket_index < len(metric_profile.bucket_sample_counts) else 0
 
-            is_toxic = metric_snapshot.bucket_is_toxic[bucket_index] if bucket_index < len(metric_snapshot.bucket_is_toxic) else False
-            is_golden = metric_snapshot.bucket_is_golden[bucket_index] if bucket_index < len(metric_snapshot.bucket_is_golden) else False
+            is_toxic = metric_profile.bucket_is_toxic[bucket_index] if bucket_index < len(metric_profile.bucket_is_toxic) else False
+            is_golden = metric_profile.bucket_is_golden[bucket_index] if bucket_index < len(metric_profile.bucket_is_golden) else False
 
             if is_toxic:
                 toxic_metric_count += 1
-                toxic_metric_keys.append(metric_snapshot.metric_key)
+                toxic_metric_keys.append(metric_profile.metric_key)
 
             if is_golden:
-                golden_metric_keys.append(metric_snapshot.metric_key)
+                golden_metric_keys.append(metric_profile.metric_key)
 
-            evaluated_metrics.append(TradingShadowingIntelligenceMetric(
-                metric_key=metric_snapshot.metric_key,
+            evaluated_metrics.append(TradingCandidateShadowingMetricEvaluation(
+                metric_key=metric_profile.metric_key,
                 candidate_value=candidate_value,
                 bucket_index=bucket_index,
                 bucket_win_rate=bucket_win_rate,
@@ -358,17 +398,12 @@ def evaluate_candidate_shadow_intelligence(
                 is_golden=is_golden,
             ))
 
-    intelligence_snapshot = TradingShadowingIntelligenceSnapshot(
-        summary=snapshot.summary,
-        metrics=evaluated_metrics,
-    )
-
-    return ShadowDiagnostics(
+    return TradingCandidateShadowingDiagnostics(
         toxic_metric_count=toxic_metric_count,
         total_metrics_evaluated=total_metrics_evaluated,
         toxic_metric_keys=toxic_metric_keys,
         golden_metric_keys=golden_metric_keys,
-        intelligence_snapshot=intelligence_snapshot,
+        evaluated_metrics=evaluated_metrics,
     )
 
 
@@ -417,3 +452,8 @@ def _compute_buy_to_sell_ratio(token_information) -> float | None:
     if total <= 0:
         return None
     return reference_bucket.buys / total
+
+
+
+
+

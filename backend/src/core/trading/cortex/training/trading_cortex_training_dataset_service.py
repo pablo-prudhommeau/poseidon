@@ -8,8 +8,8 @@ from src.core.trading.cortex.trading_cortex_feature_vector_builder import Tradin
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexCandidateFeatureSnapshot,
     TradingCortexScoringRequest,
-    TradingCortexShadowMetricFeatureSnapshot,
-    TradingCortexShadowRegimeFeatureSnapshot,
+    TradingCortexShadowingMetricFeatureSnapshot,
+    TradingCortexShadowingRegimeFeatureSnapshot,
 )
 from src.core.trading.cortex.training.trading_cortex_training_structures import (
     TradingCortexInsufficientTrainingDataError,
@@ -57,8 +57,8 @@ class TradingCortexTrainingDatasetService:
                 request_identifier=str(shadow_training_record.probe_identifier),
                 feature_set_version=training_run_request.feature_set_version,
                 candidate_features=shadow_training_record.candidate_features,
-                shadow_regime_features=shadow_training_record.shadow_regime_features,
-                shadow_metric_features=shadow_training_record.shadow_metric_features,
+                shadowing_regime_features=shadow_training_record.shadowing_regime_features,
+                shadowing_metric_features=shadow_training_record.shadowing_metric_features,
             )
             feature_vector_snapshot = self._feature_vector_builder.build_feature_vector(scoring_request)
             feature_matrix_rows.append(feature_vector_snapshot.extract_ordered_feature_values(ordered_feature_names))
@@ -122,9 +122,9 @@ class TradingCortexTrainingDatasetService:
                 if resolved_at is None:
                     continue
 
-                shadow_regime_features = TradingCortexShadowRegimeFeatureSnapshot(**probe.shadowing_regime)
-                shadow_metric_features = [
-                    TradingCortexShadowMetricFeatureSnapshot(**metric_dict)
+                shadowing_regime_features = TradingCortexShadowingRegimeFeatureSnapshot(**probe.shadowing_regime)
+                shadowing_metric_features = [
+                    TradingCortexShadowingMetricFeatureSnapshot(**metric_dict)
                     for metric_dict in probe.shadowing_metrics
                 ]
 
@@ -159,8 +159,8 @@ class TradingCortexTrainingDatasetService:
                             buy_to_sell_ratio=probe.buy_to_sell_ratio,
                             order_notional_value_usd=probe.order_notional_value_usd,
                         ),
-                        shadow_regime_features=shadow_regime_features,
-                        shadow_metric_features=shadow_metric_features,
+                        shadowing_regime_features=shadowing_regime_features,
+                        shadowing_metric_features=shadowing_metric_features,
                         realized_profit_and_loss_percentage=float(verdict.realized_pnl_percentage),
                         realized_profit_and_loss_usd=float(verdict.realized_pnl_usd),
                         holding_duration_minutes=float(verdict.holding_duration_minutes),

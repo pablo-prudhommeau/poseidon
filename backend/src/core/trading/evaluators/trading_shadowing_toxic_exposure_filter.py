@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Optional
 
 from src.configuration.config import settings
-from src.core.trading.shadowing.trading_shadowing_intelligence_service import (
-    evaluate_candidate_shadow_intelligence,
+from src.core.trading.shadowing.trading_shadowing_snapshot_service import (
+    evaluate_candidate_shadowing,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import (
-    TradingShadowingIntelligenceSnapshot,
+    TradingShadowingSnapshot,
     TradingShadowingPhase,
-    TradingShadowingIntelligenceMetric,
+    TradingCandidateShadowingMetricEvaluation,
 )
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.log_utils import get_visual_width
@@ -20,18 +20,18 @@ logger = get_application_logger(__name__)
 
 def apply_shadowing_toxic_exposure_filter(
         candidates: list[TradingCandidate],
-        snapshot: TradingShadowingIntelligenceSnapshot,
+        snapshot: TradingShadowingSnapshot,
 ) -> list[TradingCandidate]:
-    if snapshot.summary.phase == TradingShadowingPhase.DISABLED:
-        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shadow intelligence phase is %s, bypassing filter completely", snapshot.summary.phase.value)
+    if snapshot.regime.phase == TradingShadowingPhase.DISABLED:
+        logger.debug("[TRADING][EVALUATOR][SHADOWING_EXPOSURE] Shadowing snapshot phase is %s, bypassing filter completely", snapshot.regime.phase.value)
         return candidates
 
-    is_active: bool = snapshot.summary.phase == TradingShadowingPhase.TRADABLE
+    is_active: bool = snapshot.regime.phase == TradingShadowingPhase.TRADABLE
 
-    meta_win_rate: float = snapshot.summary.meta_win_rate or 0.0
-    meta_average_pnl: float = snapshot.summary.meta_average_pnl or 0.0
-    meta_expected_pnl_velocity: float = snapshot.summary.meta_expected_pnl_velocity or 0.0
-    meta_average_holding_time_hours: float = snapshot.summary.meta_average_holding_time_hours or 0.0
+    meta_win_rate: float = snapshot.regime.shadowing_metrics_meta_win_rate or 0.0
+    meta_average_pnl: float = snapshot.regime.shadowing_metrics_meta_average_pnl or 0.0
+    meta_expected_pnl_velocity: float = snapshot.regime.shadowing_metrics_meta_expected_pnl_velocity or 0.0
+    meta_average_holding_time_hours: float = snapshot.regime.shadowing_metrics_meta_average_holding_time_hours or 0.0
 
     offset_win_rate: float = meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
     floor_win_rate: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_WIN_RATE
@@ -64,11 +64,11 @@ def apply_shadowing_toxic_exposure_filter(
 
     for candidate in candidates:
         diagnostics = (
-            candidate.shadow_diagnostics
-            if candidate.shadow_diagnostics.intelligence_snapshot is not None
-            else evaluate_candidate_shadow_intelligence(candidate, snapshot)
+            candidate.shadowing_diagnostics
+            if candidate.shadowing_diagnostics.evaluated_metrics
+            else evaluate_candidate_shadowing(candidate, snapshot)
         )
-        candidate.shadow_diagnostics = diagnostics
+        candidate.shadowing_diagnostics = diagnostics
 
         if not is_active:
             retained.append(candidate)
@@ -83,7 +83,7 @@ def apply_shadowing_toxic_exposure_filter(
         else:
             retained.append(candidate)
 
-    rejected.sort(key=lambda c: c.shadow_diagnostics.toxic_metric_count, reverse=True)
+    rejected.sort(key=lambda c: c.shadowing_diagnostics.toxic_metric_count, reverse=True)
 
     _log_shadow_evaluation_details(
         retained=retained,
@@ -104,9 +104,9 @@ def apply_shadowing_toxic_exposure_filter(
     )
 
     if len(retained) < len(candidates):
-        logger.info("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Retained %d / %d candidates — %s", len(retained), len(candidates), meta_summary)
+        logger.info("[TRADING][EVALUATOR][SHADOWING_EXPOSURE] Retained %d / %d candidates — %s", len(retained), len(candidates), meta_summary)
     else:
-        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] All %d candidates passed — %s", len(candidates), meta_summary)
+        logger.debug("[TRADING][EVALUATOR][SHADOWING_EXPOSURE] All %d candidates passed — %s", len(candidates), meta_summary)
 
     return retained
 
@@ -128,7 +128,7 @@ def _format_threshold_reason(value: float, floor_value: float, ceiling_value: fl
 def _log_shadow_evaluation_details(
         retained: list[TradingCandidate],
         rejected: list[TradingCandidate],
-        snapshot: TradingShadowingIntelligenceSnapshot,
+        snapshot: TradingShadowingSnapshot,
         toxic_win_rate_threshold: float,
         toxic_max_average_pnl: float,
         toxic_max_holding_time_minutes: float,
@@ -139,7 +139,7 @@ def _log_shadow_evaluation_details(
     reset: str = console_color_codes["RESET"]
 
     for candidate in rejected:
-        metrics_table: str = _format_candidate_shadow_metrics_table(
+        metrics_table: str = _format_candidate_shadowing_metrics_table(
             candidate=candidate,
             snapshot=snapshot,
             toxic_win_rate_threshold=toxic_win_rate_threshold,
@@ -148,19 +148,19 @@ def _log_shadow_evaluation_details(
             toxic_min_expected_pnl_velocity=toxic_min_expected_pnl_velocity,
         )
 
-        toxic_count: int = candidate.shadow_diagnostics.toxic_metric_count
-        total_count: int = candidate.shadow_diagnostics.total_metrics_evaluated
+        toxic_count: int = candidate.shadowing_diagnostics.toxic_metric_count
+        total_count: int = candidate.shadowing_diagnostics.total_metrics_evaluated
         prefix: str = f"{candidate.token.symbol} {red}rejected{reset} (toxic {toxic_count}/{total_count})"
         visual_length: int = get_visual_width(prefix)
         padding: str = " " * max(0, 45 - visual_length)
 
-        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] %s%s Reasons: %s", prefix, padding, metrics_table)
+        logger.debug("[TRADING][EVALUATOR][SHADOWING_EXPOSURE] %s%s Reasons: %s", prefix, padding, metrics_table)
 
     for candidate in retained:
-        if not candidate.shadow_diagnostics.intelligence_snapshot:
+        if not candidate.shadowing_diagnostics.evaluated_metrics:
             continue
 
-        metrics_table: str = _format_candidate_shadow_metrics_table(
+        metrics_table: str = _format_candidate_shadowing_metrics_table(
             candidate=candidate,
             snapshot=snapshot,
             toxic_win_rate_threshold=toxic_win_rate_threshold,
@@ -173,23 +173,23 @@ def _log_shadow_evaluation_details(
         visual_length: int = get_visual_width(prefix)
         padding: str = " " * max(0, 45 - visual_length)
 
-        logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] %s%s Reasons: %s", prefix, padding, metrics_table)
+        logger.debug("[TRADING][EVALUATOR][SHADOWING_EXPOSURE] %s%s Reasons: %s", prefix, padding, metrics_table)
 
 
-def _format_candidate_shadow_metrics_table(
+def _format_candidate_shadowing_metrics_table(
         candidate: TradingCandidate,
-        snapshot: TradingShadowingIntelligenceSnapshot,
+        snapshot: TradingShadowingSnapshot,
         toxic_win_rate_threshold: float,
         toxic_max_average_pnl: float,
         toxic_max_holding_time_minutes: float,
         toxic_min_expected_pnl_velocity: float,
 ) -> str:
-    if not candidate.shadow_diagnostics.intelligence_snapshot:
+    if not candidate.shadowing_diagnostics.evaluated_metrics:
         return ""
 
-    evaluated_metrics: list[TradingShadowingIntelligenceMetric] = candidate.shadow_diagnostics.intelligence_snapshot.metrics
-    master_metric_keys: list[str] = sorted([m.metric_key for m in snapshot.metric_snapshots])
-    evaluated_lookup: dict[str, TradingShadowingIntelligenceMetric] = {m.metric_key: m for m in evaluated_metrics}
+    evaluated_metrics: list[TradingCandidateShadowingMetricEvaluation] = candidate.shadowing_diagnostics.evaluated_metrics
+    master_metric_keys: list[str] = sorted([m.metric_key for m in snapshot.metric_profiles])
+    evaluated_lookup: dict[str, TradingCandidateShadowingMetricEvaluation] = {m.metric_key: m for m in evaluated_metrics}
 
     grey: str = console_color_codes["GREY"]
     red: str = console_color_codes["RED"]
@@ -198,7 +198,7 @@ def _format_candidate_shadow_metrics_table(
 
     formatted_reasons: list[str] = []
     for key in master_metric_keys:
-        metric_data: Optional[TradingShadowingIntelligenceMetric] = evaluated_lookup.get(key)
+        metric_data: Optional[TradingCandidateShadowingMetricEvaluation] = evaluated_lookup.get(key)
         if metric_data:
             key_color: str = grey
             content_color: str = grey
@@ -245,3 +245,8 @@ def _format_candidate_shadow_metrics_table(
             formatted_reasons.append(f"{grey}{key}{grey} (V:{v_placeholder}, WR:{wr_placeholder}, PnL:{pnl_placeholder}, OHR:{ohr_placeholder}, H:{hold_placeholder}, Vel:{vel_placeholder}, T:{trades_placeholder}){reset}")
 
     return " |   ".join(formatted_reasons)
+
+
+
+
+

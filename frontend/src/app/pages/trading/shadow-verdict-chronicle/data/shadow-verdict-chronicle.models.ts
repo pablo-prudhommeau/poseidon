@@ -1,5 +1,5 @@
 import type { SciChartSurface, TSciChart } from 'scichart';
-import type { ShadowVerdictChronicleBucketPayload, ShadowVerdictChronicleResponse } from '../../../../core/models';
+import type { TradingShadowingVerdictChronicleBucketPayload, TradingShadowingVerdictChroniclePayload } from '../../../../core/models';
 
 export type SciChartModule = typeof import('scichart');
 
@@ -136,8 +136,8 @@ export interface ChronicleChartModel {
 }
 
 export interface ChronicleBucketMeta {
-    bucket: ShadowVerdictChronicleBucketPayload;
-    response: ShadowVerdictChronicleResponse;
+    bucket: TradingShadowingVerdictChronicleBucketPayload;
+    response: TradingShadowingVerdictChroniclePayload;
     sparseExpectedValueUsdThreshold?: number | string | null;
     chronicleProfitFactorThreshold?: number | string | null;
 }

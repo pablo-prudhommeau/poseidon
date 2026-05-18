@@ -15,7 +15,7 @@ class TradingShadowingPhase(Enum):
     TRADABLE = "TRADABLE"
 
 
-class TradingShadowingIntelligenceMetricSnapshot(BaseModel):
+class TradingShadowingMetricProfile(BaseModel):
     metric_key: str
     bucket_edges: list[float]
     bucket_win_rates: list[float]
@@ -30,7 +30,7 @@ class TradingShadowingIntelligenceMetricSnapshot(BaseModel):
     winner_deviation: float
 
 
-class TradingShadowingIntelligenceMetric(BaseModel):
+class TradingCandidateShadowingMetricEvaluation(BaseModel):
     metric_key: str
     candidate_value: Optional[float] = None
     bucket_index: Optional[int] = None
@@ -45,28 +45,48 @@ class TradingShadowingIntelligenceMetric(BaseModel):
     normalized_influence: Optional[float] = None
 
 
-class TradingShadowingIntelligenceSummary(BaseModel):
+class TradingShadowingRegimePayload(BaseModel):
     phase: TradingShadowingPhase
-    total_outcomes_analyzed: int
-    resolved_outcome_count: int = 0
-    resolved_shadowing_and_cortex_inference_aware_outcome_count: int = 0
-    elapsed_hours: float = 0.0
-    meta_win_rate: Optional[float] = None
-    meta_average_pnl: Optional[float] = None
-    meta_average_holding_time_hours: Optional[float] = None
-    meta_expected_pnl_velocity: Optional[float] = None
-    meta_profit_factor: Optional[float] = None
-    meta_expected_value_usd: Optional[float] = None
-    chronicle_profit_factor: Optional[float] = None
-    sparse_expected_value_usd: Optional[float] = None
-    chronicle_profit_factor_threshold: Optional[float] = None
-    sparse_expected_value_usd_threshold: Optional[float] = None
+    performance_gate_enabled: bool
+    cortex_gate_enabled: bool
+    shadowing_resolved_outcome_count: Optional[int] = None
+    shadowing_required_outcome_count: Optional[int] = None
+    shadowing_elapsed_hours: Optional[float] = None
+    shadowing_required_hours: Optional[float] = None
+    shadowing_performance_eligible_outcome_count: Optional[int] = None
+    shadowing_performance_required_outcome_count: Optional[int] = None
+    shadowing_performance_chronicle_profit_factor: Optional[float] = None
+    shadowing_performance_chronicle_profit_factor_threshold: Optional[float] = None
+    shadowing_performance_chronicle_profit_factor_lookback_days: Optional[float] = None
+    shadowing_performance_chronicle_profit_factor_bucket_width_seconds: Optional[int] = None
+    shadowing_performance_chronicle_profit_factor_moving_average_period: Optional[int] = None
+    shadowing_performance_sparse_expected_value_usd: Optional[float] = None
+    shadowing_performance_sparse_expected_value_usd_threshold: Optional[float] = None
+    shadowing_performance_sparse_expected_value_lookback_days: Optional[float] = None
+    shadowing_performance_sparse_expected_value_bucket_width_seconds: Optional[int] = None
+    shadowing_performance_sparse_expected_value_moving_average_period: Optional[int] = None
+    shadowing_metrics_meta_win_rate: Optional[float] = None
+    shadowing_metrics_meta_average_pnl: Optional[float] = None
+    shadowing_metrics_meta_average_holding_time_hours: Optional[float] = None
+    shadowing_metrics_meta_expected_pnl_velocity: Optional[float] = None
+    shadowing_metrics_meta_profit_factor: Optional[float] = None
+    shadowing_metrics_meta_expected_value_usd: Optional[float] = None
+    cortex_training_eligible_outcome_count: Optional[int] = None
+    cortex_training_required_outcome_count: Optional[int] = None
 
 
-class TradingShadowingIntelligenceSnapshot(BaseModel):
-    summary: TradingShadowingIntelligenceSummary
-    metric_snapshots: list[TradingShadowingIntelligenceMetricSnapshot] = Field(default_factory=list)
-    metrics: list[TradingShadowingIntelligenceMetric] = Field(default_factory=list)
+class TradingShadowingSnapshot(BaseModel):
+    regime: TradingShadowingRegimePayload
+    metric_profiles: list[TradingShadowingMetricProfile] = Field(default_factory=list)
+
+
+class TradingCandidateShadowingDiagnostics(BaseModel):
+    toxic_metric_count: int = 0
+    total_metrics_evaluated: int = 0
+    toxic_metric_keys: list[str] = Field(default_factory=list)
+    golden_metric_keys: list[str] = Field(default_factory=list)
+    notional_boost_factor: float = 1.0
+    evaluated_metrics: list[TradingCandidateShadowingMetricEvaluation] = Field(default_factory=list)
 
 
 class TradingShadowingVerdictChronicleBucketConfiguration(BaseModel):
@@ -178,3 +198,4 @@ class TradingShadowingVerdictChronicle(BaseModel):
 class TradingShadowingVerdictChronicleComputationResult(BaseModel):
     chronicle: TradingShadowingVerdictChronicle
     verdicts: list[TradingShadowingVerdictChronicleVerdict]
+

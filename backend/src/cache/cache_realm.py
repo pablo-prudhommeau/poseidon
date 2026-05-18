@@ -11,7 +11,8 @@ class CacheRealm(str, Enum):
     AVAILABLE_CASH = "available_cash"
     PORTFOLIO = "portfolio"
     DCA_STRATEGIES = "dca_strategies"
-    SHADOW_REGIME = "shadow_regime"
-    SHADOW_INTELLIGENCE_SNAPSHOT = "shadow_intelligence_snapshot"
-    SHADOW_VERDICT_CHRONICLE = "shadow_verdict_chronicle"
-    SHADOW_VERDICT_CHRONICLE_DELTA = "shadow_verdict_chronicle_delta"
+    SHADOWING_REGIME = "shadowing_regime"
+    SHADOWING_SNAPSHOT = "shadowing_snapshot"
+    SHADOWING_VERDICT_CHRONICLE = "shadowing_verdict_chronicle"
+    SHADOWING_VERDICT_CHRONICLE_DELTA = "shadowing_verdict_chronicle_delta"
+

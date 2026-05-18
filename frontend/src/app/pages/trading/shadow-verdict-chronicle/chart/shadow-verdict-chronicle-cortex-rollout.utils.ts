@@ -1,4 +1,4 @@
-import type { ShadowVerdictChronicleCortexModelRolloutPayload } from '../../../../core/models';
+import type { TradingShadowingVerdictChronicleCortexModelRolloutPayload } from '../../../../core/models';
 import type { ChronicleChartModel, CortexModelRolloutAnnotationBundle, SciChartModule } from '../data/shadow-verdict-chronicle.models';
 import { parseIsoTimestampToEpochMilliseconds } from '../data/shadow-verdict-chronicle-arrays.utils';
 import { CHRONICLE_METRIC_COLORS } from '../data/shadow-verdict-chronicle-metrics.catalog';
@@ -9,10 +9,10 @@ const CORTEX_ROLLOUT_LABEL_X_SHIFT = 0;
 const CORTEX_ROLLOUT_LABEL_Y_SHIFT = -6;
 
 export function filterCortexRolloutsForBucketWindow(
-    rollouts: ShadowVerdictChronicleCortexModelRolloutPayload[],
+    rollouts: TradingShadowingVerdictChronicleCortexModelRolloutPayload[],
     bucketFromIso: string,
     bucketToIso: string
-): ShadowVerdictChronicleCortexModelRolloutPayload[] {
+): TradingShadowingVerdictChronicleCortexModelRolloutPayload[] {
     const fromMilliseconds = parseIsoTimestampToEpochMilliseconds(bucketFromIso);
     const toMilliseconds = parseIsoTimestampToEpochMilliseconds(bucketToIso);
     if (fromMilliseconds == null || toMilliseconds == null) {
@@ -43,7 +43,7 @@ function truncateRolloutToken(value: string, maxLength: number): string {
     return `${value.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
-function buildCortexRolloutAnnotationLines(rollout: ShadowVerdictChronicleCortexModelRolloutPayload): string {
+function buildCortexRolloutAnnotationLines(rollout: TradingShadowingVerdictChronicleCortexModelRolloutPayload): string {
     const modelVersion = truncateRolloutToken(rollout.model_version, 28);
     const featureSetVersion = truncateRolloutToken(rollout.feature_set_version, 28);
     const trainingCount = formatRolloutRecordCount(rollout.training_record_count);
@@ -56,7 +56,7 @@ function escapeSvgText(value: string): string {
     return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildCortexRolloutLabelSvg(rollout: ShadowVerdictChronicleCortexModelRolloutPayload, isActive: boolean): string {
+function buildCortexRolloutLabelSvg(rollout: TradingShadowingVerdictChronicleCortexModelRolloutPayload, isActive: boolean): string {
     const [title, model, details] = buildCortexRolloutAnnotationLines(rollout).split('\n');
     const width = 178;
     const height = 34;
@@ -76,7 +76,10 @@ function buildCortexRolloutLabelSvg(rollout: ShadowVerdictChronicleCortexModelRo
     `;
 }
 
-function createCortexRolloutBundle(sci: SciChartModule, rollout: ShadowVerdictChronicleCortexModelRolloutPayload): CortexModelRolloutAnnotationBundle {
+function createCortexRolloutBundle(
+    sci: SciChartModule,
+    rollout: TradingShadowingVerdictChronicleCortexModelRolloutPayload
+): CortexModelRolloutAnnotationBundle {
     const { VerticalLineAnnotation, CustomAnnotation, EAnnotationLayer, ECoordinateMode, EVerticalAnchorPoint, EHorizontalAnchorPoint } = sci;
     const isActive = rollout.is_active;
     const isVisible = true;
@@ -128,7 +131,7 @@ export function clearCortexModelRolloutAnnotations(model: ChronicleChartModel): 
 
 export function synchronizeCortexModelRolloutAnnotations(
     model: ChronicleChartModel,
-    rollouts: ShadowVerdictChronicleCortexModelRolloutPayload[] | undefined,
+    rollouts: TradingShadowingVerdictChronicleCortexModelRolloutPayload[] | undefined,
     bucketFromIso: string,
     bucketToIso: string
 ): void {

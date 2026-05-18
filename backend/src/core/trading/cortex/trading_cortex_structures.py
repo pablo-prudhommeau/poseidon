@@ -41,18 +41,18 @@ class TradingCortexCandidateFeatureSnapshot(BaseModel):
     order_notional_value_usd: Optional[float] = None
 
 
-class TradingCortexShadowRegimeFeatureSnapshot(BaseModel):
-    meta_win_rate: Optional[float] = None
-    meta_average_profit_and_loss_percentage: Optional[float] = None
-    meta_average_holding_time_hours: Optional[float] = None
-    meta_expected_pnl_velocity: Optional[float] = None
-    meta_profit_factor: Optional[float] = None
-    meta_expected_value_usd: Optional[float] = None
-    chronicle_profit_factor: Optional[float] = None
-    sparse_expected_value_usd: Optional[float] = None
+class TradingCortexShadowingRegimeFeatureSnapshot(BaseModel):
+    shadowing_metrics_meta_win_rate: Optional[float] = None
+    shadowing_metrics_meta_average_pnl: Optional[float] = None
+    shadowing_metrics_meta_average_holding_time_hours: Optional[float] = None
+    shadowing_metrics_meta_expected_pnl_velocity: Optional[float] = None
+    shadowing_metrics_meta_profit_factor: Optional[float] = None
+    shadowing_metrics_meta_expected_value_usd: Optional[float] = None
+    shadowing_performance_chronicle_profit_factor: Optional[float] = None
+    shadowing_performance_sparse_expected_value_usd: Optional[float] = None
 
 
-class TradingCortexShadowMetricFeatureSnapshot(BaseModel):
+class TradingCortexShadowingMetricFeatureSnapshot(BaseModel):
     metric_key: str
     candidate_value: float
     bucket_index: Optional[int] = None
@@ -71,8 +71,8 @@ class TradingCortexScoringRequest(BaseModel):
     request_identifier: Optional[str] = None
     feature_set_version: str = settings.TRADING_CORTEX_FEATURE_SET_VERSION
     candidate_features: TradingCortexCandidateFeatureSnapshot
-    shadow_regime_features: Optional[TradingCortexShadowRegimeFeatureSnapshot] = None
-    shadow_metric_features: list[TradingCortexShadowMetricFeatureSnapshot] = Field(default_factory=list)
+    shadowing_regime_features: Optional[TradingCortexShadowingRegimeFeatureSnapshot] = None
+    shadowing_metric_features: list[TradingCortexShadowingMetricFeatureSnapshot] = Field(default_factory=list)
 
 
 class TradingCortexScoringBatchRequest(BaseModel):
@@ -90,7 +90,7 @@ class TradingCortexPrediction(BaseModel):
 class TradingCortexFeatureVectorSnapshot(BaseModel):
     feature_set_version: str
     named_feature_values: list[TradingCortexNamedFeatureValue]
-    shadow_metric_count: int
+    shadowing_metric_count: int
     golden_metric_count: int
     toxic_metric_count: int
     golden_metric_ratio: float

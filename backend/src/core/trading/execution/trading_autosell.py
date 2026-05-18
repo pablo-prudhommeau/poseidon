@@ -5,7 +5,6 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.api.websocket.telemetry import TelemetryService
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
@@ -15,6 +14,7 @@ from src.core.trading.execution.trading_order_builder import build_route_for_liv
 from src.core.trading.trading_structures import PositionExitTriggerReason
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
+from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.models import TradingPosition, TradingTrade, ExecutionStatus, PositionPhase, TradeSide
 
@@ -210,7 +210,7 @@ def _execute_sell_operation(
     opened_time = position.opened_at.replace(tzinfo=None) if position.opened_at else current_time
     holding_duration = (current_time - opened_time).total_seconds() / 60.0
 
-    TelemetryService.link_trade_outcome(
+    TradingEvaluationDao(database_session).link_trade_outcome(
         token_address=position.token_address,
         trade_id=sell_trade.id,
         closed_at=get_current_local_datetime(),

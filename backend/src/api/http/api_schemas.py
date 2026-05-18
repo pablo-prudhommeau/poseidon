@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic import Field
 
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase, TradingShadowingRegimePayload
 
 
 class SystemHealthComponentPayload(BaseModel):
@@ -262,25 +262,7 @@ class TradingEvaluationDecisionPayload(BaseModel):
     free_cash_after_execution_usd: float
 
 
-class TradingShadowingRegimePayload(BaseModel):
-    phase: TradingShadowingPhase
-    total_outcomes_analyzed: int
-    resolved_outcome_count: int = 0
-    resolved_shadowing_and_cortex_inference_aware_outcome_count: int = 0
-    elapsed_hours: float = 0.0
-    meta_win_rate: Optional[float] = None
-    meta_average_pnl: Optional[float] = None
-    meta_average_holding_time_hours: Optional[float] = None
-    meta_expected_pnl_velocity: Optional[float] = None
-    meta_profit_factor: Optional[float] = None
-    meta_expected_value_usd: Optional[float] = None
-    chronicle_profit_factor: Optional[float] = None
-    chronicle_profit_factor_threshold: Optional[float] = None
-    sparse_expected_value_usd: Optional[float] = None
-    sparse_expected_value_usd_threshold: Optional[float] = None
-
-
-class TradingShadowingIntelligenceMetricPayload(BaseModel):
+class TradingCandidateShadowingMetricEvaluationPayload(BaseModel):
     metric_key: str
     candidate_value: Optional[float] = None
     bucket_index: Optional[int] = None
@@ -295,14 +277,14 @@ class TradingShadowingIntelligenceMetricPayload(BaseModel):
     normalized_influence: Optional[float] = None
 
 
-class TradingShadowingIntelligenceSnapshotPayload(BaseModel):
-    summary: TradingShadowingRegimePayload
-    evaluated_metrics: List[TradingShadowingIntelligenceMetricPayload] = Field(default_factory=list)
+class TradingEvaluationShadowingSnapshotPayload(BaseModel):
+    regime: TradingShadowingRegimePayload
+    metrics: List[TradingCandidateShadowingMetricEvaluationPayload] = Field(default_factory=list)
 
 
-class TradingEvaluationShadowDiagnosticsPayload(BaseModel):
+class TradingEvaluationShadowingDiagnosticsPayload(BaseModel):
     cortex_inference_summary: Optional[dict] = None
-    shadowing_regime: Optional[dict] = None
+    shadowing_regime: Optional[TradingShadowingRegimePayload] = None
     shadowing_metrics: Optional[list] = None
 
 
@@ -320,38 +302,6 @@ class TradingEvaluationShadowSimulationPayload(BaseModel):
     holding_duration_minutes: Optional[float] = None
     is_profitable: Optional[bool] = None
     resolved_at: Optional[str] = None
-
-
-class TradingShadowingRegimeStatusPayload(BaseModel):
-    is_enabled: bool
-    shadow_regime_gate_enabled: bool
-    phase: TradingShadowingPhase
-    total_outcomes_analyzed: int
-    resolved_outcome_count: int
-    resolved_shadowing_and_cortex_inference_aware_outcome_count: int
-    required_shadowing_outcome_count: int
-    required_shadow_gate_outcome_count: int
-    required_cortex_training_outcome_count: int
-    elapsed_hours: float
-    required_hours: float
-    shadowing_progress_percentage: float
-    shadowing_gate_progress_percentage: float
-    cortex_training_progress_percentage: float
-    hours_progress_percentage: float
-    win_rate_percentage: Optional[float] = None
-    expected_value_usd: Optional[float] = None
-    expected_pnl_velocity: Optional[float] = None
-    global_profit_factor: Optional[float] = None
-    chronicle_profit_factor: Optional[float] = None
-    chronicle_profit_factor_threshold: Optional[float] = None
-    chronicle_profit_factor_lookback_days: float
-    chronicle_profit_factor_bucket_width_seconds: int
-    chronicle_profit_factor_moving_average_period: int
-    sparse_expected_value_usd: Optional[float] = None
-    sparse_expected_value_usd_threshold: Optional[float] = None
-    sparse_expected_value_lookback_days: float
-    sparse_expected_value_bucket_width_seconds: int
-    sparse_expected_value_moving_average_period: int
 
 
 class TradingEvaluationFundamentalsPayload(BaseModel):
@@ -387,7 +337,7 @@ class TradingEvaluationPayload(BaseModel):
     ai: TradingEvaluationAiPayload
     fundamentals: TradingEvaluationFundamentalsPayload
     decision: TradingEvaluationDecisionPayload
-    shadow_diagnostics: TradingEvaluationShadowDiagnosticsPayload
+    shadowing_diagnostics: TradingEvaluationShadowingDiagnosticsPayload
     raw_dexscreener_payload: dict[str, object]
     raw_configuration_settings: dict[str, object]
     linked_position: Optional[TradingPositionPayload] = None
@@ -466,7 +416,7 @@ class AnalyticsResponse(BaseModel):
     scatter_series: List[AnalyticsScatterSeriesPayload]
 
 
-class ShadowVerdictChronicleMetricPointPayload(BaseModel):
+class TradingShadowingVerdictChronicleMetricPointPayload(BaseModel):
     timestamp_milliseconds: int
     average_pnl_percentage: float
     average_win_rate_percentage: float
@@ -483,12 +433,12 @@ class ShadowVerdictChronicleMetricPointPayload(BaseModel):
     cortex_gate_pass_rate_percentage: Optional[float] = None
 
 
-class ShadowVerdictChronicleVolumePointPayload(BaseModel):
+class TradingShadowingVerdictChronicleVolumePointPayload(BaseModel):
     timestamp_milliseconds: int
     verdict_count: int
 
 
-class ShadowVerdictChronicleVerdictPointPayload(BaseModel):
+class TradingShadowingVerdictChronicleVerdictPointPayload(BaseModel):
     verdict_id: int
     timestamp_milliseconds: int
     pnl_percentage: float
@@ -500,14 +450,14 @@ class ShadowVerdictChronicleVerdictPointPayload(BaseModel):
     cortex_probability: Optional[float] = None
 
 
-class ShadowVerdictChronicleCortexReliabilityBinPayload(BaseModel):
+class TradingShadowingVerdictChronicleCortexReliabilityBinPayload(BaseModel):
     predicted_probability_bin_center: float
     mean_predicted_probability: float
     empirical_win_rate: float
     verdict_count: int
 
 
-class ShadowVerdictChronicleRegimeGatePointPayload(BaseModel):
+class TradingShadowingVerdictChronicleRegimeGatePointPayload(BaseModel):
     timestamp_milliseconds: int
     regime_profit_factor_sma: Optional[float] = None
     regime_sparse_expected_value_usd_sma: Optional[float] = None
@@ -516,7 +466,9 @@ class ShadowVerdictChronicleRegimeGatePointPayload(BaseModel):
     hard_gate_open: bool = False
 
 
-class ShadowVerdictChronicleCortexModelRolloutPayload(BaseModel):
+class TradingShadowingVerdictChronicleCortexModelRolloutPayload(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     activated_at_milliseconds: int
     model_version: str
     feature_set_version: str
@@ -527,19 +479,19 @@ class ShadowVerdictChronicleCortexModelRolloutPayload(BaseModel):
     label: str
 
 
-class ShadowVerdictChronicleBucketPayload(BaseModel):
+class TradingShadowingVerdictChronicleBucketPayload(BaseModel):
     bucket_label: str
     granularity_seconds: int
     from_iso: str
     to_iso: str
-    metrics: List[ShadowVerdictChronicleMetricPointPayload] = Field(default_factory=list)
-    volumes: List[ShadowVerdictChronicleVolumePointPayload] = Field(default_factory=list)
-    verdict_cloud: List[ShadowVerdictChronicleVerdictPointPayload] = Field(default_factory=list)
-    cortex_reliability_diagram: List[ShadowVerdictChronicleCortexReliabilityBinPayload] = Field(default_factory=list)
-    regime_gate: List[ShadowVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
+    metrics: List[TradingShadowingVerdictChronicleMetricPointPayload] = Field(default_factory=list)
+    volumes: List[TradingShadowingVerdictChronicleVolumePointPayload] = Field(default_factory=list)
+    verdict_cloud: List[TradingShadowingVerdictChronicleVerdictPointPayload] = Field(default_factory=list)
+    cortex_reliability_diagram: List[TradingShadowingVerdictChronicleCortexReliabilityBinPayload] = Field(default_factory=list)
+    regime_gate: List[TradingShadowingVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
 
 
-class ShadowVerdictChroniclePayload(BaseModel):
+class TradingShadowingVerdictChroniclePayload(BaseModel):
     generated_at_iso: str
     as_of_iso: str
     from_iso: str
@@ -547,24 +499,24 @@ class ShadowVerdictChroniclePayload(BaseModel):
     total_verdicts_considered: int
     source: str
     series_end_lag_seconds: int
-    buckets: List[ShadowVerdictChronicleBucketPayload] = Field(default_factory=list)
-    cortex_model_rollouts: List[ShadowVerdictChronicleCortexModelRolloutPayload] = Field(default_factory=list)
+    buckets: List[TradingShadowingVerdictChronicleBucketPayload] = Field(default_factory=list)
+    cortex_model_rollouts: List[TradingShadowingVerdictChronicleCortexModelRolloutPayload] = Field(default_factory=list)
 
 
-class ShadowVerdictChronicleDeltaBucketPayload(BaseModel):
+class TradingShadowingVerdictChronicleDeltaBucketPayload(BaseModel):
     bucket_label: str
     drop_metrics_before_ms: Optional[int] = None
     drop_volumes_before_ms: Optional[int] = None
     metrics_remove_timestamps_ms: List[int] = Field(default_factory=list)
     volumes_remove_timestamps_ms: List[int] = Field(default_factory=list)
-    metrics_upsert: List[ShadowVerdictChronicleMetricPointPayload] = Field(default_factory=list)
-    volumes_upsert: List[ShadowVerdictChronicleVolumePointPayload] = Field(default_factory=list)
-    regime_gate_upsert: List[ShadowVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
-    verdict_cloud_replace: Optional[List[ShadowVerdictChronicleVerdictPointPayload]] = None
-    cortex_reliability_diagram_replace: Optional[List[ShadowVerdictChronicleCortexReliabilityBinPayload]] = None
+    metrics_upsert: List[TradingShadowingVerdictChronicleMetricPointPayload] = Field(default_factory=list)
+    volumes_upsert: List[TradingShadowingVerdictChronicleVolumePointPayload] = Field(default_factory=list)
+    regime_gate_upsert: List[TradingShadowingVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
+    verdict_cloud_replace: Optional[List[TradingShadowingVerdictChronicleVerdictPointPayload]] = None
+    cortex_reliability_diagram_replace: Optional[List[TradingShadowingVerdictChronicleCortexReliabilityBinPayload]] = None
 
 
-class ShadowVerdictChronicleDeltaVerdictPayload(BaseModel):
+class TradingShadowingVerdictChronicleDeltaVerdictPayload(BaseModel):
     id: int
     resolved_at: datetime
     realized_pnl_percentage: float
@@ -575,7 +527,7 @@ class ShadowVerdictChronicleDeltaVerdictPayload(BaseModel):
     cortex_probability: Optional[float] = None
 
 
-class ShadowVerdictChronicleDeltaPayload(BaseModel):
+class TradingShadowingVerdictChronicleDeltaPayload(BaseModel):
     generated_at_iso: str
     as_of_iso: str
     from_iso: str
@@ -583,5 +535,7 @@ class ShadowVerdictChronicleDeltaPayload(BaseModel):
     total_verdicts_considered: int
     source: str
     series_end_lag_seconds: int
-    buckets: List[ShadowVerdictChronicleDeltaBucketPayload]
-    verdicts: List[ShadowVerdictChronicleDeltaVerdictPayload]
+    buckets: List[TradingShadowingVerdictChronicleDeltaBucketPayload]
+    verdicts: List[TradingShadowingVerdictChronicleDeltaVerdictPayload]
+
+

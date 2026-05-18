@@ -11,6 +11,7 @@ Pour chaque portion de code générée, je souhaiterais que tu te mettes dans un
 * Tu dois bannir toute forme de commentaire quels qu'ils soient (`# ...", docstrings `"""`, `/**`, etc.) qui sont complètement inutiles, car le code est autoporteur de l'information s'il est bien écrit avec des nommages explicites
 * Tout le code doit être évidemment en anglais  
 * Explicite systématiquement les types via `: type` sur les paramètres, les retours de fonctions, les propriétés de classe, et toute variable intermédiaire dont le type n'est pas immédiatement trivial. Tu ne dois pas t'appuyer sur une inférence implicite pour `[]`, `{}`, `null`, `undefined`, `Map`, `Set`, `Promise`, `signal`, `computed`, les objets littéraux structurants, ni sur des callbacks exportés ou publics. Un typage implicite qui affaiblit la structure du code est interdit.
+* Tu dois produire des lignes de codes et des fichiers en respectant les conventions générales de `.editorconfig` (ex : `indent_size`, `end_of_line`, etc.)
 
 # Backend (Python)
 
