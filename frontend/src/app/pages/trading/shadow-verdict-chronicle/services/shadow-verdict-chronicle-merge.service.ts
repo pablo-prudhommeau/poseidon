@@ -33,6 +33,7 @@ export class ShadowVerdictChronicleMergeService {
                 metrics: bucket.metrics.map((metric) => ({ ...metric })),
                 volumes: bucket.volumes.map((volume) => ({ ...volume })),
                 verdict_cloud: bucket.verdict_cloud.map((point) => ({ ...point })),
+                cortex_reliability_diagram: (bucket.cortex_reliability_diagram ?? []).map((point) => ({ ...point })),
                 regime_gate: (bucket.regime_gate ?? []).map((gatePoint) => ({ ...gatePoint }))
             };
             if (bucketDelta) {
@@ -123,6 +124,9 @@ export class ShadowVerdictChronicleMergeService {
             bucket.verdict_cloud = [...mergedByVerdictId.values()].sort(
                 (left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds || left.verdict_id - right.verdict_id
             );
+        }
+        if (delta.cortex_reliability_diagram_replace != null) {
+            bucket.cortex_reliability_diagram = delta.cortex_reliability_diagram_replace.map((point) => ({ ...point }));
         }
 
         const regimeGateUpsert = delta.regime_gate_upsert ?? [];

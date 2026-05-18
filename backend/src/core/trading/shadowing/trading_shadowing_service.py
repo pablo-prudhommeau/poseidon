@@ -4,6 +4,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional, Iterable
 
+from pydantic import ValidationError
+
 from src.configuration.config import settings
 from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
     chronicle_display_lag_timedelta as _chronicle_display_lag_timedelta,
@@ -18,6 +20,7 @@ from src.core.trading.shadowing.trading_shadowing_regime_gate_timeline import (
 )
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleBucketConfiguration,
+    TradingShadowingVerdictChronicleCortexReliabilityBin,
     TradingShadowingVerdictChronicleVerdict,
     TradingShadowingVerdictChronicleMetricPoint,
     TradingShadowingVerdictChronicleVolumePoint,
@@ -37,6 +40,132 @@ from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingShadowingVerdict
 
 logger = get_application_logger(__name__)
+
+
+_CORTEX_RELIABILITY_BIN_COUNT = 10
+_CORTEX_HIGH_CONVICTION_DISTANCE_FROM_HALF = 0.15
+
+
+def _cortex_holding_time_max_minutes() -> float:
+    return settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS * 60.0
+
+
+def _has_complete_cortex_inference(verdict: TradingShadowingVerdictChronicleVerdict) -> bool:
+    return (
+            verdict.cortex_probability is not None
+            and verdict.cortex_toxicity_probability is not None
+            and verdict.cortex_expected_pnl_percentage is not None
+            and verdict.cortex_predicted_holding_time_minutes is not None
+    )
+
+
+def _compute_cortex_skill_score_percentage(verdicts: list[TradingShadowingVerdictChronicleVerdict]) -> Optional[float]:
+    paired = [
+        (verdict.cortex_probability, 1.0 if verdict.is_profitable else 0.0)
+        for verdict in verdicts
+        if _has_complete_cortex_inference(verdict)
+    ]
+    if not paired:
+        return None
+    mean_score = sum((2.0 * probability - 1.0) * (2.0 * outcome - 1.0) for probability, outcome in paired) / len(paired)
+    return mean_score * 100.0
+
+
+def _compute_cortex_actionability_metrics(
+        verdicts: list[TradingShadowingVerdictChronicleVerdict],
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    paired = [
+        (verdict.cortex_probability, 1.0 if verdict.is_profitable else 0.0)
+        for verdict in verdicts
+        if _has_complete_cortex_inference(verdict)
+    ]
+    if not paired:
+        return None, None, None
+
+    average_prediction_percentage = sum(probability for probability, _ in paired) / len(paired) * 100.0
+    empirical_win_rate_percentage = sum(outcome for _, outcome in paired) / len(paired) * 100.0
+    calibration_gap_percentage_points = average_prediction_percentage - empirical_win_rate_percentage
+
+    high_conviction = [
+        (probability, outcome)
+        for probability, outcome in paired
+        if abs(probability - 0.5) >= _CORTEX_HIGH_CONVICTION_DISTANCE_FROM_HALF
+    ]
+    if not high_conviction:
+        return calibration_gap_percentage_points, None, 0.0
+
+    high_conviction_hit_count = sum(
+        1
+        for probability, outcome in high_conviction
+        if (probability >= 0.5 and outcome >= 0.5) or (probability < 0.5 and outcome < 0.5)
+    )
+    high_conviction_accuracy_percentage = high_conviction_hit_count / len(high_conviction) * 100.0
+    high_conviction_share_percentage = len(high_conviction) / len(paired) * 100.0
+    return calibration_gap_percentage_points, high_conviction_accuracy_percentage, high_conviction_share_percentage
+
+
+def _is_cortex_gate_accepted(verdict: TradingShadowingVerdictChronicleVerdict) -> bool:
+    if not _has_complete_cortex_inference(verdict):
+        return False
+    assert verdict.cortex_probability is not None
+    assert verdict.cortex_toxicity_probability is not None
+    assert verdict.cortex_expected_pnl_percentage is not None
+    assert verdict.cortex_predicted_holding_time_minutes is not None
+    return (
+            verdict.cortex_probability >= settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD
+            and verdict.cortex_toxicity_probability <= settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD
+            and verdict.cortex_expected_pnl_percentage >= settings.TRADING_CORTEX_PNL_THRESHOLD
+            and verdict.cortex_predicted_holding_time_minutes <= _cortex_holding_time_max_minutes()
+    )
+
+
+def _compute_cortex_gate_quality_metrics(
+        verdicts: list[TradingShadowingVerdictChronicleVerdict],
+) -> tuple[Optional[float], Optional[float]]:
+    inference_complete = [
+        verdict
+        for verdict in verdicts
+        if _has_complete_cortex_inference(verdict)
+    ]
+    if not inference_complete:
+        return None, None
+
+    accepted = [verdict for verdict in inference_complete if _is_cortex_gate_accepted(verdict)]
+    pass_rate_percentage = len(accepted) / len(inference_complete) * 100.0
+    if not accepted:
+        return 0.0, pass_rate_percentage
+
+    precision_percentage = sum(1 for verdict in accepted if verdict.is_profitable) / len(accepted) * 100.0
+    return precision_percentage, pass_rate_percentage
+
+
+def _build_cortex_reliability_diagram(
+        verdicts: list[TradingShadowingVerdictChronicleVerdict],
+) -> list[TradingShadowingVerdictChronicleCortexReliabilityBin]:
+    bins: list[list[tuple[float, float]]] = [[] for _ in range(_CORTEX_RELIABILITY_BIN_COUNT)]
+    for verdict in verdicts:
+        if not _has_complete_cortex_inference(verdict):
+            continue
+        probability = verdict.cortex_probability
+        assert probability is not None
+        clamped_probability = max(0.0, min(1.0, probability))
+        bin_index = min(_CORTEX_RELIABILITY_BIN_COUNT - 1, int(clamped_probability * _CORTEX_RELIABILITY_BIN_COUNT))
+        bins[bin_index].append((clamped_probability, 1.0 if verdict.is_profitable else 0.0))
+
+    result: list[TradingShadowingVerdictChronicleCortexReliabilityBin] = []
+    for index, points in enumerate(bins):
+        if not points:
+            continue
+        count = len(points)
+        mean_predicted_probability = sum(probability for probability, _ in points) / count
+        empirical_win_rate = sum(outcome for _, outcome in points) / count
+        result.append(TradingShadowingVerdictChronicleCortexReliabilityBin(
+            predicted_probability_bin_center=(index + 0.5) / _CORTEX_RELIABILITY_BIN_COUNT,
+            mean_predicted_probability=mean_predicted_probability,
+            empirical_win_rate=empirical_win_rate,
+            verdict_count=count,
+        ))
+    return result
 
 
 def compute_shadow_verdict_chronicle() -> TradingShadowingVerdictChronicleComputationResult:
@@ -194,7 +323,17 @@ def _build_bucket(
 
         pnl_usd_values = [item.realized_pnl_usd for item in items]
         pnl_percentage_values = [item.realized_pnl_percentage for item in items]
-        cortex_probabilities = [item.cortex_probability for item in items if item.cortex_probability is not None]
+        complete_cortex_items = [item for item in items if _has_complete_cortex_inference(item)]
+        cortex_probabilities = [
+            item.cortex_probability
+            for item in complete_cortex_items
+            if item.cortex_probability is not None
+        ]
+        cortex_predicted_holding_times_minutes = [
+            item.cortex_predicted_holding_time_minutes
+            for item in complete_cortex_items
+            if item.cortex_predicted_holding_time_minutes is not None
+        ]
         win_count = sum(1 for item in items if item.is_profitable)
         gross_profit_usd = sum(value for value in pnl_usd_values if value > 0.0)
         gross_loss_usd = abs(sum(value for value in pnl_usd_values if value < 0.0))
@@ -202,6 +341,21 @@ def _build_bucket(
         average_cortex_prediction_win_rate_percentage = None
         if len(cortex_probabilities) > 0:
             average_cortex_prediction_win_rate_percentage = (sum(cortex_probabilities) / len(cortex_probabilities)) * 100.0
+        average_cortex_predicted_holding_time_minutes = None
+        if cortex_predicted_holding_times_minutes:
+            average_cortex_predicted_holding_time_minutes = (
+                sum(cortex_predicted_holding_times_minutes) / len(cortex_predicted_holding_times_minutes)
+            )
+        cortex_skill_score_percentage = _compute_cortex_skill_score_percentage(items)
+        (
+            cortex_calibration_gap_percentage_points,
+            cortex_high_conviction_accuracy_percentage,
+            cortex_high_conviction_share_percentage,
+        ) = _compute_cortex_actionability_metrics(items)
+        (
+            cortex_gate_precision_percentage,
+            cortex_gate_pass_rate_percentage,
+        ) = _compute_cortex_gate_quality_metrics(items)
 
         metric_points.append(TradingShadowingVerdictChronicleMetricPoint(
             timestamp_milliseconds=bucket_timestamp,
@@ -211,6 +365,13 @@ def _build_bucket(
             closed_verdicts_per_hour=_compute_closed_verdicts_per_hour(verdict_count, bucket_configuration.granularity_seconds),
             profit_factor=_compute_profit_factor(gross_profit_usd, gross_loss_usd),
             average_cortex_prediction_win_rate_percentage=average_cortex_prediction_win_rate_percentage,
+            average_cortex_predicted_holding_time_minutes=average_cortex_predicted_holding_time_minutes,
+            cortex_skill_score_percentage=cortex_skill_score_percentage,
+            cortex_calibration_gap_percentage_points=cortex_calibration_gap_percentage_points,
+            cortex_high_conviction_accuracy_percentage=cortex_high_conviction_accuracy_percentage,
+            cortex_high_conviction_share_percentage=cortex_high_conviction_share_percentage,
+            cortex_gate_precision_percentage=cortex_gate_precision_percentage,
+            cortex_gate_pass_rate_percentage=cortex_gate_pass_rate_percentage,
         ))
         volume_points.append(TradingShadowingVerdictChronicleVolumePoint(
             timestamp_milliseconds=bucket_timestamp,
@@ -244,6 +405,7 @@ def _build_bucket(
         series_end_datetime=series_end_datetime,
         metric_timestamps_milliseconds=[metric_point.timestamp_milliseconds for metric_point in metric_points],
     )
+    cortex_reliability_diagram = _build_cortex_reliability_diagram(bounded_verdicts)
 
     return TradingShadowingVerdictChronicleBucket(
         bucket_label=bucket_configuration.label,
@@ -253,6 +415,7 @@ def _build_bucket(
         metrics=metric_points,
         volumes=volume_points,
         verdict_cloud=verdict_cloud,
+        cortex_reliability_diagram=cortex_reliability_diagram,
         regime_gate=regime_gate,
     )
 
@@ -271,9 +434,21 @@ def _convert_shadow_verdict_to_chronicle_verdict(
         return None
 
     cortex_probability: Optional[float] = None
+    cortex_toxicity_probability: Optional[float] = None
+    cortex_expected_pnl_percentage: Optional[float] = None
+    cortex_predicted_holding_time_minutes: Optional[float] = None
     if verdict.probe.cortex_inference_summary is not None:
-        cortex_inference_snapshot = TradingCortexInferenceSnapshot.model_validate(verdict.probe.cortex_inference_summary)
-        cortex_probability = cortex_inference_snapshot.success_probability
+        try:
+            cortex_inference_snapshot = TradingCortexInferenceSnapshot.model_validate(verdict.probe.cortex_inference_summary)
+            cortex_probability = cortex_inference_snapshot.success_probability
+            cortex_toxicity_probability = cortex_inference_snapshot.toxicity_probability
+            cortex_expected_pnl_percentage = cortex_inference_snapshot.expected_profit_and_loss_percentage
+            cortex_predicted_holding_time_minutes = cortex_inference_snapshot.predicted_holding_time_minutes
+        except ValidationError:
+            logger.debug(
+                "[TRADING][SHADOW][HISTORY][CORTEX] Ignoring incomplete legacy cortex_inference_summary for verdict_id=%s",
+                verdict.id,
+            )
 
     return TradingShadowingVerdictChronicleVerdict(
         id=verdict.id,
@@ -284,6 +459,9 @@ def _convert_shadow_verdict_to_chronicle_verdict(
         exit_reason=verdict.exit_reason or "UNRESOLVED",
         order_notional_value_usd=verdict.probe.order_notional_value_usd,
         cortex_probability=cortex_probability,
+        cortex_toxicity_probability=cortex_toxicity_probability,
+        cortex_expected_pnl_percentage=cortex_expected_pnl_percentage,
+        cortex_predicted_holding_time_minutes=cortex_predicted_holding_time_minutes,
     )
 
 

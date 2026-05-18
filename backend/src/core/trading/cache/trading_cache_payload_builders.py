@@ -20,7 +20,6 @@ from src.configuration.config import MAX_TRADING_ALLOWED_CHAIN_COUNT, settings
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.structures.structures import RealizedProfitAndLoss, HoldingsAndUnrealizedProfitAndLoss
 from src.core.trading.cache.trading_cache import trading_cache
-from src.core.trading.shadowing.cache.trading_shadowing_cache_payload_builders import build_shadow_intelligence_status_payload
 from src.core.trading.shadowing.trading_shadowing_intelligence_service import compute_shadow_intelligence_snapshot
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
 from src.core.trading.trading_service import (
@@ -301,7 +300,6 @@ def build_trading_portfolio_payload(
         portfolio_dao = TradingPortfolioSnapshotDao(database_session)
         portfolio_snapshot_bound_to_session = database_session.merge(trading_portfolio_snapshot)
 
-        shadow_status = build_shadow_intelligence_status_payload()
         realized_profit_and_loss_data: RealizedProfitAndLoss = compute_realized_profit_and_loss(trades, cutoff_hours=24)
         if blockchain_balances_override_payload is None:
             blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
@@ -327,7 +325,6 @@ def build_trading_portfolio_payload(
             realized_total=realized_profit_and_loss_data.total_realized_profit_and_loss,
             realized_24h=realized_profit_and_loss_data.recent_realized_profit_and_loss,
             unrealized=holdings_data.total_unrealized_profit_and_loss,
-            shadow_status=shadow_status,
             blockchain_balances=blockchain_balance_payloads,
         )
 

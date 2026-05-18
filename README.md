@@ -41,45 +41,48 @@
 ## ⚡ Core pillars
 
 ### 1. High-Frequency (optionnally AI-powered) trading bot
+
 ![Screenshot trading](./examples/screenshots/trading.png)
 
 A multi-chain, highly configurable execution engine designed for speed and precision.
 
-* **AI-driven analysis** (optionnal) : Leverages OpenAI (GPT-5.x mini by default) to perform real-time chart analysis via automated screenshots (Playwright).
-* **Multi-chain execution**: Native support for **Ethereum**, **Solana**, and **Avalanche**.
-* **Granular configuration**: Advanced momentum scoring, volume monitoring, and liquidity thresholds.
-* **Sentiment and trend integration**: Real-time data fetching from DexScreener and custom trend detection algorithms.
+- **AI-driven analysis** (optionnal) : Leverages OpenAI (GPT-5.x mini by default) to perform real-time chart analysis via automated screenshots (Playwright).
+- **Multi-chain execution**: Native support for **Ethereum**, **Solana**, and **Avalanche**.
+- **Granular configuration**: Advanced momentum scoring, volume monitoring, and liquidity thresholds.
+- **Sentiment and trend integration**: Real-time data fetching from DexScreener and custom trend detection algorithms.
 
 ### 2. Next-generation DCA (Dollar cost averaging)
+
 ![Screenshot DCA](./examples/screenshots/dca.png)
 
 Next-generation DCA engine deeply integrated with the **Aave ecosystem**.
 
-* **Advanced indicators**: Uses **EMA50** to defer buys during market overheating and optimize entry points.
-* **PRU optimization**: Focuses on **Unit Cost Price** synchronization to ensure long-term profitability.
-* **Seamless relooping**: Dynamic management of supply/borrow positions to maximize capital efficiency.
+- **Advanced indicators**: Uses **EMA50** to defer buys during market overheating and optimize entry points.
+- **PRU optimization**: Focuses on **Unit Cost Price** synchronization to ensure long-term profitability.
+- **Seamless relooping**: Dynamic management of supply/borrow positions to maximize capital efficiency.
 
 ### 3. Aave sentinel (Liquidity watch)
+
 <img src="./examples/screenshots/sentinel.png" width="300"/>
 
 An autonomous monitoring brick dedicated to capital preservation and liquidation prevention.
 
-* **Health factor oversight**: Continuous real-time monitoring of Aave Health Factors.
-* **Automated rescue**: Automatically manages collateral and repays debt to maintain safety thresholds.
-* **Risk mitigation**: Designed to react faster than human intervention during extreme market volatility.
-* **Telegram alerts**: Direct integration for instant notification of critical health status changes.
+- **Health factor oversight**: Continuous real-time monitoring of Aave Health Factors.
+- **Automated rescue**: Automatically manages collateral and repays debt to maintain safety thresholds.
+- **Risk mitigation**: Designed to react faster than human intervention during extreme market volatility.
+- **Telegram alerts**: Direct integration for instant notification of critical health status changes.
 
 ---
 
 ## 🛠️ Technology stack
 
-| Component      | Stack                                             |
-|:---------------|:--------------------------------------------------|
-| **Frontend**   | Angular 20, PrimeNG 20, TailwindCSS 4, ApexCharts |
+| Component      | Stack                                                    |
+| :------------- | :------------------------------------------------------- |
+| **Frontend**   | Angular 20, PrimeNG 20, TailwindCSS 4, ApexCharts        |
 | **Backend**    | FastAPI (Python 3.11+), SQLAlchemy 2.0, Alembic, Uvicorn |
-| **Automation** | Playwright (headless browser), OpenAI SDK         |
-| **Web3**       | Web3.py, Solana-py, Li.Fi integration             |
-| **Monitoring** | Telegram Bot API, structured logging with tags    |
+| **Automation** | Playwright (headless browser), OpenAI SDK                |
+| **Web3**       | Web3.py, Solana-py, Li.Fi integration                    |
+| **Monitoring** | Telegram Bot API, structured logging with tags           |
 
 ---
 
@@ -134,6 +137,7 @@ docker compose up --build
 ```
 
 The local Docker stack now starts:
+
 - a PostgreSQL service
 - a single `poseidon` container built from the root `Dockerfile`
 - automatic Alembic migration during container startup
@@ -152,6 +156,22 @@ deploy/docker-compose.integration.yml
 ```
 
 This file is intentionally generic: the same image can be deployed multiple times with different `.env` files, secrets, flags, and database URLs.
+
+### 4. Temporary memory profiling with Memray
+
+The production image can temporarily run the backend under `memray` by enabling:
+
+```bash
+POSEIDON_MEMRAY_ENABLED=true
+```
+
+Mount `/app/backend/data/memray` as a volume to keep the generated profile outside the container, then generate a flamegraph with:
+
+```bash
+docker exec poseidon memray flamegraph /app/backend/data/memray/memory_profile.bin -o /app/backend/data/memray/memory_profile.html
+```
+
+Disable `POSEIDON_MEMRAY_ENABLED` after the investigation; it is intended for temporary diagnostics only.
 
 ---
 

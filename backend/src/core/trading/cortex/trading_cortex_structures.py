@@ -79,17 +79,12 @@ class TradingCortexScoringBatchRequest(BaseModel):
     requests: list[TradingCortexScoringRequest]
 
 
-class TradingCortexPartialPrediction(BaseModel):
-    success_probability: Optional[float] = None
-    toxicity_probability: Optional[float] = None
-    expected_profit_and_loss_percentage: Optional[float] = None
-    used_model_names: list[str] = Field(default_factory=list)
-
-
 class TradingCortexPrediction(BaseModel):
     success_probability: float
     toxicity_probability: float
     expected_profit_and_loss_percentage: float
+    predicted_holding_time_minutes: float
+    used_model_names: list[str] = Field(default_factory=list)
 
 
 class TradingCortexFeatureVectorSnapshot(BaseModel):
@@ -137,6 +132,7 @@ class TradingCortexScoringResponse(BaseModel):
     success_probability: Optional[float] = None
     toxicity_probability: Optional[float] = None
     expected_profit_and_loss_percentage: Optional[float] = None
+    predicted_holding_time_minutes: Optional[float] = None
     final_trade_score: Optional[float] = None
     score_breakdown: Optional[TradingCortexFinalScoreBreakdown] = None
     feature_count: int

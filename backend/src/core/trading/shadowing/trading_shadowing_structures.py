@@ -9,8 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TradingShadowingPhase(Enum):
     DISABLED = "DISABLED"
-    LEARNING = "LEARNING"
-    ACTIVE = "ACTIVE"
+    SYNCING = "SYNCING"
+    SHADOWING = "SHADOWING"
+    CORTEXING = "CORTEXING"
+    TRADABLE = "TRADABLE"
 
 
 class TradingShadowingIntelligenceMetricSnapshot(BaseModel):
@@ -67,12 +69,6 @@ class TradingShadowingIntelligenceSnapshot(BaseModel):
     metrics: list[TradingShadowingIntelligenceMetric] = Field(default_factory=list)
 
 
-class TradingShadowingStatusSummary(BaseModel):
-    resolved_outcome_count: int
-    resolved_shadowing_and_cortex_inference_aware_outcome_count: int
-    elapsed_hours: float
-
-
 class TradingShadowingVerdictChronicleBucketConfiguration(BaseModel):
     label: str
     lookback: timedelta
@@ -88,6 +84,9 @@ class TradingShadowingVerdictChronicleVerdict(BaseModel):
     exit_reason: str
     order_notional_value_usd: float
     cortex_probability: Optional[float] = None
+    cortex_toxicity_probability: Optional[float] = None
+    cortex_expected_pnl_percentage: Optional[float] = None
+    cortex_predicted_holding_time_minutes: Optional[float] = None
 
 
 class TradingShadowingVerdictChronicleMetricPoint(BaseModel):
@@ -98,6 +97,13 @@ class TradingShadowingVerdictChronicleMetricPoint(BaseModel):
     profit_factor: float
     closed_verdicts_per_hour: float
     average_cortex_prediction_win_rate_percentage: Optional[float] = None
+    average_cortex_predicted_holding_time_minutes: Optional[float] = None
+    cortex_skill_score_percentage: Optional[float] = None
+    cortex_calibration_gap_percentage_points: Optional[float] = None
+    cortex_high_conviction_accuracy_percentage: Optional[float] = None
+    cortex_high_conviction_share_percentage: Optional[float] = None
+    cortex_gate_precision_percentage: Optional[float] = None
+    cortex_gate_pass_rate_percentage: Optional[float] = None
 
 
 class TradingShadowingVerdictChronicleVolumePoint(BaseModel):
@@ -117,6 +123,13 @@ class TradingShadowingVerdictChronicleVerdictPoint(BaseModel):
     cortex_probability: Optional[float] = None
 
 
+class TradingShadowingVerdictChronicleCortexReliabilityBin(BaseModel):
+    predicted_probability_bin_center: float
+    mean_predicted_probability: float
+    empirical_win_rate: float
+    verdict_count: int
+
+
 class TradingShadowingVerdictChronicleRegimeGatePoint(BaseModel):
     timestamp_milliseconds: int
     regime_profit_factor_sma: Optional[float] = None
@@ -134,6 +147,7 @@ class TradingShadowingVerdictChronicleBucket(BaseModel):
     metrics: list[TradingShadowingVerdictChronicleMetricPoint]
     volumes: list[TradingShadowingVerdictChronicleVolumePoint]
     verdict_cloud: list[TradingShadowingVerdictChronicleVerdictPoint]
+    cortex_reliability_diagram: list[TradingShadowingVerdictChronicleCortexReliabilityBin] = Field(default_factory=list)
     regime_gate: list[TradingShadowingVerdictChronicleRegimeGatePoint] = Field(default_factory=list)
 
 

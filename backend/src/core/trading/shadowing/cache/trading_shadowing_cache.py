@@ -5,7 +5,7 @@ from threading import Lock
 from typing import Optional
 
 from src.api.http.api_schemas import (
-    TradingShadowMetaPayload,
+    TradingShadowingRegimeStatusPayload,
     ShadowVerdictChroniclePayload,
     ShadowVerdictChronicleDeltaPayload,
 )
@@ -27,7 +27,7 @@ def _touch_realm(realm: CacheRealm) -> None:
 class TradingShadowingCache:
     def __init__(self) -> None:
         self._lock = Lock()
-        self._cached_shadow_meta: Optional[TradingShadowMetaPayload] = None
+        self._cached_shadow_regime: Optional[TradingShadowingRegimeStatusPayload] = None
         self._cached_shadow_intelligence_snapshot: Optional[TradingShadowingIntelligenceSnapshot] = None
         self._cached_shadow_verdict_chronicle: Optional[ShadowVerdictChroniclePayload] = None
         self._cached_shadow_verdict_chronicle_delta: Optional[ShadowVerdictChronicleDeltaPayload] = None
@@ -38,14 +38,14 @@ class TradingShadowingCache:
             self._cached_shadow_intelligence_snapshot = snapshot
             logger.debug("[TRADING][CACHE] Shadow intelligence snapshot updated")
         _touch_realm(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
-        cache_invalidator.mark_dirty(CacheRealm.SHADOW_META)
+        cache_invalidator.mark_dirty(CacheRealm.SHADOW_REGIME)
 
-    def update_trading_shadow_meta_state(self, shadow_meta_payload: TradingShadowMetaPayload) -> None:
+    def update_trading_shadow_regime_state(self, shadow_regime_payload: TradingShadowingRegimeStatusPayload) -> None:
         with self._lock:
-            self._cached_shadow_meta = shadow_meta_payload
+            self._cached_shadow_regime = shadow_regime_payload
             self._last_successful_update_timestamp = get_current_local_datetime()
-            logger.debug("[TRADING][CACHE] Shadow meta state updated")
-        _touch_realm(CacheRealm.SHADOW_INTELLIGENCE_SNAPSHOT)
+            logger.debug("[TRADING][CACHE] Shadow regime state updated")
+        _touch_realm(CacheRealm.SHADOW_REGIME)
 
     def update_shadow_verdict_chronicle(self, verdict_chronicle: ShadowVerdictChroniclePayload) -> None:
         with self._lock:
@@ -61,9 +61,9 @@ class TradingShadowingCache:
             logger.debug("[TRADING][CACHE] Shadow verdict chronicle delta updated")
         _touch_realm(CacheRealm.SHADOW_VERDICT_CHRONICLE_DELTA)
 
-    def get_trading_shadow_meta_state(self) -> Optional[TradingShadowMetaPayload]:
+    def get_trading_shadow_regime_state(self) -> Optional[TradingShadowingRegimeStatusPayload]:
         with self._lock:
-            return self._cached_shadow_meta
+            return self._cached_shadow_regime
 
     def get_shadow_intelligence_snapshot(self) -> Optional[TradingShadowingIntelligenceSnapshot]:
         with self._lock:
@@ -80,7 +80,7 @@ class TradingShadowingCache:
     def get_shadowing_trading_state(self) -> TradingShadowingState:
         with self._lock:
             return TradingShadowingState(
-                shadow_meta=self._cached_shadow_meta,
+                shadow_regime=self._cached_shadow_regime,
                 shadow_intelligence_snapshot=self._cached_shadow_intelligence_snapshot,
                 shadow_verdict_chronicle=self._cached_shadow_verdict_chronicle,
                 shadow_verdict_chronicle_delta=self._cached_shadow_verdict_chronicle_delta

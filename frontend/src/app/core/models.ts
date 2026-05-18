@@ -1,6 +1,6 @@
 export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSING' | 'CLOSED' | 'STALED';
 export type PositionExitTriggerReason = 'TAKE_PROFIT_1' | 'TAKE_PROFIT_2' | 'STOP_LOSS';
-export type TradingShadowingPhase = 'DISABLED' | 'LEARNING' | 'ACTIVE';
+export type TradingShadowingPhase = 'DISABLED' | 'SYNCING' | 'SHADOWING' | 'CORTEXING' | 'TRADABLE';
 export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';
 export type TradeMode = 'LIVE' | 'PAPER';
@@ -204,16 +204,36 @@ export interface TradingEquityCurvePointPayload {
     total_equity_value: number;
 }
 
-export interface ShadowIntelligenceStatusPayload {
+export interface TradingShadowingRegimeStatusPayload {
     is_enabled: boolean;
+    shadow_regime_gate_enabled: boolean;
     phase: TradingShadowingPhase;
+    total_outcomes_analyzed: number;
     resolved_outcome_count: number;
     resolved_shadowing_and_cortex_inference_aware_outcome_count: number;
-    required_outcome_count: number;
+    required_shadowing_outcome_count: number;
+    required_shadow_gate_outcome_count: number;
+    required_cortex_training_outcome_count: number;
     elapsed_hours: number;
     required_hours: number;
-    outcome_progress_percentage: number;
+    shadowing_progress_percentage: number;
+    shadowing_gate_progress_percentage: number;
+    cortex_training_progress_percentage: number;
     hours_progress_percentage: number;
+    win_rate_percentage?: number | null;
+    expected_value_usd?: number | null;
+    expected_pnl_velocity?: number | null;
+    global_profit_factor?: number | null;
+    chronicle_profit_factor?: number | null;
+    chronicle_profit_factor_threshold?: number | null;
+    chronicle_profit_factor_lookback_days: number;
+    chronicle_profit_factor_bucket_width_seconds: number;
+    chronicle_profit_factor_moving_average_period: number;
+    sparse_expected_value_usd?: number | null;
+    sparse_expected_value_usd_threshold?: number | null;
+    sparse_expected_value_lookback_days: number;
+    sparse_expected_value_bucket_width_seconds: number;
+    sparse_expected_value_moving_average_period: number;
 }
 
 export interface BlockchainCashBalancePayload {
@@ -236,29 +256,6 @@ export interface TradingLiquidityPayload {
     updated_at: string;
 }
 
-export interface TradingShadowMetaPayload {
-    is_enabled: boolean;
-    shadow_regime_gate_enabled: boolean;
-    phase: TradingShadowingPhase;
-    total_outcomes_analyzed: number;
-    resolved_outcome_count: number;
-    elapsed_hours: number;
-    win_rate_percentage?: number | null;
-    expected_value_usd?: number | null;
-    expected_pnl_velocity?: number | null;
-    global_profit_factor?: number | null;
-    chronicle_profit_factor?: number | null;
-    chronicle_profit_factor_threshold?: number | null;
-    chronicle_profit_factor_lookback_days: number;
-    chronicle_profit_factor_bucket_width_seconds: number;
-    chronicle_profit_factor_moving_average_period: number;
-    sparse_expected_value_usd?: number | null;
-    sparse_expected_value_usd_threshold?: number | null;
-    sparse_expected_value_lookback_days: number;
-    sparse_expected_value_bucket_width_seconds: number;
-    sparse_expected_value_moving_average_period: number;
-}
-
 export interface TradingPortfolioPayload {
     total_equity_value: number;
     available_cash_balance: number;
@@ -268,7 +265,6 @@ export interface TradingPortfolioPayload {
     unrealized_profit_and_loss: number;
     realized_profit_and_loss_24h: number;
     realized_profit_and_loss_total: number;
-    shadow_intelligence_status: ShadowIntelligenceStatusPayload;
     blockchain_balances: BlockchainCashBalancePayload[];
 }
 
@@ -290,10 +286,11 @@ export interface TradingEvaluationDecisionPayload {
     free_cash_after_execution_usd: number;
 }
 
-export interface TradingEvaluationShadowIntelligenceSnapshotSummaryPayload {
+export interface TradingShadowingRegimePayload {
     phase: TradingShadowingPhase;
     total_outcomes_analyzed: number;
     resolved_outcome_count: number;
+    resolved_shadowing_and_cortex_inference_aware_outcome_count: number;
     elapsed_hours: number;
     meta_win_rate?: number | null;
     meta_average_pnl?: number | null;
@@ -323,13 +320,13 @@ export interface TradingEvaluationShadowIntelligenceSnapshotMetricPayload {
 }
 
 export interface TradingEvaluationShadowIntelligenceSnapshotPayload {
-    summary: TradingEvaluationShadowIntelligenceSnapshotSummaryPayload;
+    summary: TradingShadowingRegimePayload;
     metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[];
 }
 
 export interface TradingEvaluationShadowDiagnosticsPayload {
     cortex_inference_summary: Record<string, unknown> | null;
-    shadowing_summary: TradingEvaluationShadowIntelligenceSnapshotSummaryPayload | null;
+    shadowing_regime: TradingShadowingRegimePayload | null;
     shadowing_metrics: TradingEvaluationShadowIntelligenceSnapshotMetricPayload[] | null;
 }
 
@@ -405,7 +402,7 @@ export enum WebsocketMessageType {
     INITIALIZATION = 'initialization',
     PORTFOLIO = 'portfolio',
     LIQUIDITY = 'liquidity',
-    SHADOW_META = 'shadow_meta',
+    SHADOW_REGIME = 'shadow_regime',
     SHADOW_VERDICT_CHRONICLE = 'shadow_verdict_chronicle',
     SHADOW_VERDICT_CHRONICLE_DELTA = 'shadow_verdict_chronicle_delta',
     POSITIONS = 'positions',
@@ -435,8 +432,8 @@ export interface WebsocketLiquidityMessage extends BaseWebsocketMessage<TradingL
     type: WebsocketMessageType.LIQUIDITY;
 }
 
-export interface WebsocketShadowMetaMessage extends BaseWebsocketMessage<TradingShadowMetaPayload> {
-    type: WebsocketMessageType.SHADOW_META;
+export interface WebsocketShadowRegimeMessage extends BaseWebsocketMessage<TradingShadowingRegimeStatusPayload> {
+    type: WebsocketMessageType.SHADOW_REGIME;
 }
 
 export interface WebsocketShadowVerdictChronicleMessage extends BaseWebsocketMessage<ShadowVerdictChronicleResponse> {
@@ -483,7 +480,7 @@ export type WebsocketMessageUnion =
     | WebsocketInitializationMessage
     | WebsocketPortfolioMessage
     | WebsocketLiquidityMessage
-    | WebsocketShadowMetaMessage
+    | WebsocketShadowRegimeMessage
     | WebsocketShadowVerdictChronicleMessage
     | WebsocketShadowVerdictChronicleDeltaMessage
     | WebsocketPositionsMessage
@@ -614,6 +611,13 @@ export interface ShadowVerdictChronicleMetricPointPayload {
     closed_verdicts_per_hour: number;
     profit_factor: number;
     average_cortex_prediction_win_rate_percentage?: number | null;
+    average_cortex_predicted_holding_time_minutes?: number | null;
+    cortex_skill_score_percentage?: number | null;
+    cortex_calibration_gap_percentage_points?: number | null;
+    cortex_high_conviction_accuracy_percentage?: number | null;
+    cortex_high_conviction_share_percentage?: number | null;
+    cortex_gate_precision_percentage?: number | null;
+    cortex_gate_pass_rate_percentage?: number | null;
 }
 
 export interface ShadowVerdictChronicleVolumePointPayload {
@@ -631,6 +635,13 @@ export interface ShadowVerdictChronicleVerdictPointPayload {
     point_size: number;
     is_profitable: boolean;
     cortex_probability?: number | null;
+}
+
+export interface ShadowVerdictChronicleCortexReliabilityBinPayload {
+    predicted_probability_bin_center: number;
+    mean_predicted_probability: number;
+    empirical_win_rate: number;
+    verdict_count: number;
 }
 
 export interface ShadowVerdictChronicleRegimeGatePointPayload {
@@ -661,6 +672,7 @@ export interface ShadowVerdictChronicleBucketPayload {
     metrics: ShadowVerdictChronicleMetricPointPayload[];
     volumes: ShadowVerdictChronicleVolumePointPayload[];
     verdict_cloud: ShadowVerdictChronicleVerdictPointPayload[];
+    cortex_reliability_diagram?: ShadowVerdictChronicleCortexReliabilityBinPayload[];
     regime_gate?: ShadowVerdictChronicleRegimeGatePointPayload[];
 }
 
@@ -686,6 +698,7 @@ export interface ShadowVerdictChronicleBucketDeltaPayload {
     volumes_upsert: ShadowVerdictChronicleVolumePointPayload[];
     regime_gate_upsert?: ShadowVerdictChronicleRegimeGatePointPayload[];
     verdict_cloud_replace?: ShadowVerdictChronicleVerdictPointPayload[] | null;
+    cortex_reliability_diagram_replace?: ShadowVerdictChronicleCortexReliabilityBinPayload[] | null;
 }
 
 export interface ShadowVerdictChronicleDeltaPayload {

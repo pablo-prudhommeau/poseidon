@@ -23,8 +23,8 @@
                             </div>
                             <p class="mt-1 text-[9px] leading-relaxed text-slate-500">Activation, coverage and core statistical edge.</p>
                         </div>
-                        <span class="rounded-lg border px-2 py-1 text-[9px] font-black uppercase" [ngClass]="snapshot.summary.phase === 'ACTIVE' ? 'border-emerald-500/20 text-emerald-300' : 'border-white/10 text-slate-400'">
-                            {{ snapshot.summary.phase === 'ACTIVE' ? 'activated' : 'standby' }}
+                        <span class="rounded-lg border px-2 py-1 text-[9px] font-black uppercase" [ngClass]="snapshot.summary.phase === 'TRADABLE' ? 'border-emerald-500/20 text-emerald-300' : 'border-white/10 text-slate-400'">
+                            {{ snapshot.summary.phase === 'TRADABLE' ? 'tradable' : 'standby' }}
                         </span>
                     </div>
 
@@ -55,11 +55,11 @@
                         <i class="fa fa-power-off text-slate-500 text-xs"></i>
                         <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Activation state</span>
                     </div>
-                    <div class="text-2xl font-black tracking-tight" [ngClass]="snapshot.summary.phase === 'ACTIVE' ? 'text-emerald-300' : 'text-slate-300'">
-                        {{ snapshot.summary.phase === 'ACTIVE' ? 'YES' : 'NO' }}
+                    <div class="text-2xl font-black tracking-tight" [ngClass]="snapshot.summary.phase === 'TRADABLE' ? 'text-emerald-300' : 'text-slate-300'">
+                        {{ snapshot.summary.phase === 'TRADABLE' ? 'YES' : 'NO' }}
                     </div>
                     <div class="mt-1 text-[9px] leading-relaxed text-slate-500">
-                        {{ snapshot.summary.phase === 'ACTIVE' ? 'Shadow intelligence is confident enough to operate live.' : 'Shadow intelligence is still accumulating conviction.' }}
+                        {{ snapshot.summary.phase === 'TRADABLE' ? 'Shadow intelligence is confident enough to operate live.' : 'Shadow intelligence is still accumulating conviction.' }}
                     </div>
                 </div>
 

@@ -59,10 +59,10 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
             })
 
         trading_shadowing_state: TradingShadowingState = trading_shadowing_cache.get_shadowing_trading_state()
-        if trading_shadowing_state.shadow_meta is not None:
+        if trading_shadowing_state.shadow_regime is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.SHADOW_META.value,
-                "payload": jsonable_encoder(trading_shadowing_state.shadow_meta),
+                "type": WebsocketMessageType.SHADOW_REGIME.value,
+                "payload": jsonable_encoder(trading_shadowing_state.shadow_regime),
             })
         if trading_shadowing_state.shadow_verdict_chronicle is not None:
             await websocket_connection.send_json({

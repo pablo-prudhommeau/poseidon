@@ -12,13 +12,14 @@ import { CHRONICLE_METRIC_COLORS } from '../data/shadow-verdict-chronicle-metric
 import { CHRONICLE_SERIES } from '../data/shadow-verdict-chronicle-series-names';
 import { buildChronicleCursorTooltipSvg } from '../data/shadow-verdict-chronicle-tooltip.formatter';
 import { buildCortexCalibrationBandSegmentBundles, buildCortexCalibrationBandSegments } from './shadow-verdict-chronicle-cortex-calibration-band.utils';
-import { buildChronicleGoldenZoneExpectedValueBandValues, buildChronicleGoldenZoneProfitFactorBandValues } from './shadow-verdict-chronicle-golden-zone.utils';
 import {
     buildRegimeEvGateSubmergedBandSegmentBundles,
     buildRegimeEvGateSubmergedBandSegmentsFromArrays,
     buildRegimePfGateSubmergedBandSegmentBundles,
     buildRegimePfGateSubmergedBandSegmentsFromArrays
 } from './shadow-verdict-chronicle-gate-submerged-band.utils';
+import { buildChronicleGoldenZoneExpectedValueBandValues, buildChronicleGoldenZoneProfitFactorBandValues } from './shadow-verdict-chronicle-golden-zone.utils';
+import { buildSplineSafeXyValues } from './shadow-verdict-chronicle-spline-data.utils';
 
 export interface ChronicleSeriesBundle {
     volumeColumnDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
@@ -118,12 +119,13 @@ function createSplineMetricLine(
     glow: InstanceType<SciChartModule['GlowEffect']>
 ): InstanceType<SciChartModule['SplineLineRenderableSeries']> {
     const { XyDataSeries, SplineLineRenderableSeries } = sci;
+    const safeValues = buildSplineSafeXyValues(xValues, yValues);
     const dataSeries = new XyDataSeries(wasmContext, {
-        xValues,
-        yValues,
+        xValues: safeValues.xValues,
+        yValues: safeValues.yValues,
         dataSeriesName,
         isSorted: true,
-        containsNaN: true
+        containsNaN: false
     });
     return new SplineLineRenderableSeries(wasmContext, {
         yAxisId,
@@ -147,12 +149,13 @@ function createSplineMovingAverageLine(
     yAxisId: string
 ): InstanceType<SciChartModule['SplineLineRenderableSeries']> {
     const { XyDataSeries, SplineLineRenderableSeries } = sci;
+    const safeValues = buildSplineSafeXyValues(xValues, yValues);
     const dataSeries = new XyDataSeries(wasmContext, {
-        xValues,
-        yValues,
+        xValues: safeValues.xValues,
+        yValues: safeValues.yValues,
         dataSeriesName,
         isSorted: true,
-        containsNaN: true
+        containsNaN: false
     });
     return new SplineLineRenderableSeries(wasmContext, {
         yAxisId,
@@ -295,6 +298,7 @@ export function buildChronicleSeriesBundle(
         opacity: 0.88
     });
     applyUniformColumnWidthForTimeBuckets(volumeColumnRenderableSeries, meta.bucket.granularity_seconds, sci);
+    volumeColumnRenderableSeries.isVisible = false;
 
     const averagePnlLineSeries = createSplineMetricLine(
         sci,
@@ -328,6 +332,74 @@ export function buildChronicleSeriesBundle(
         CHRONICLE_METRIC_COLORS.cortexPrediction,
         'yPct',
         new GlowEffect(wasmContext, { intensity: 0.42, range: 2 })
+    );
+
+    const cortexSkillScoreLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.cortexSkillScorePercentageSeries,
+        CHRONICLE_SERIES.cortexSkillScoreLine,
+        CHRONICLE_METRIC_COLORS.cortexSkillScore,
+        'yPct',
+        new GlowEffect(wasmContext, { intensity: 0.45, range: 2 })
+    );
+    cortexSkillScoreLineSeries.isVisible = false;
+
+    const cortexCalibrationGapLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.cortexCalibrationGapPercentagePointsSeries,
+        CHRONICLE_SERIES.cortexCalibrationGapLine,
+        CHRONICLE_METRIC_COLORS.cortexCalibrationGap,
+        'yPct',
+        new GlowEffect(wasmContext, { intensity: 0.45, range: 2 })
+    );
+
+    const cortexHighConvictionAccuracyLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.cortexHighConvictionAccuracyPercentageSeries,
+        CHRONICLE_SERIES.cortexHighConvictionAccuracyLine,
+        CHRONICLE_METRIC_COLORS.cortexHighConvictionAccuracy,
+        'yPct',
+        new GlowEffect(wasmContext, { intensity: 0.45, range: 2 })
+    );
+
+    const cortexHighConvictionShareLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.cortexHighConvictionSharePercentageSeries,
+        CHRONICLE_SERIES.cortexHighConvictionShareLine,
+        CHRONICLE_METRIC_COLORS.cortexHighConvictionShare,
+        'yPct',
+        new GlowEffect(wasmContext, { intensity: 0.45, range: 2 })
+    );
+    cortexHighConvictionShareLineSeries.isVisible = false;
+
+    const cortexGatePrecisionLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.cortexGatePrecisionPercentageSeries,
+        CHRONICLE_SERIES.cortexGatePrecisionLine,
+        CHRONICLE_METRIC_COLORS.cortexGatePrecision,
+        'yPct',
+        new GlowEffect(wasmContext, { intensity: 0.45, range: 2 })
+    );
+
+    const cortexGatePassRateLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.cortexGatePassRatePercentageSeries,
+        CHRONICLE_SERIES.cortexGatePassRateLine,
+        CHRONICLE_METRIC_COLORS.cortexGatePassRate,
+        'yPct',
+        new GlowEffect(wasmContext, { intensity: 0.45, range: 2 })
     );
 
     const expectedValueLineSeries = createSplineMetricLine(
@@ -375,6 +447,7 @@ export function buildChronicleSeriesBundle(
         CHRONICLE_METRIC_COLORS.pnl,
         'yPct'
     );
+
     movingAveragePnlLineSeries.isVisible = false;
     const movingAverageWinRateLineSeries = createSplineMovingAverageLine(
         sci,
@@ -385,6 +458,7 @@ export function buildChronicleSeriesBundle(
         CHRONICLE_METRIC_COLORS.winRate,
         'yPct'
     );
+
     movingAverageWinRateLineSeries.isVisible = false;
     const movingAverageCortexPredictionWinRateLineSeries = createSplineMovingAverageLine(
         sci,
@@ -395,7 +469,70 @@ export function buildChronicleSeriesBundle(
         CHRONICLE_METRIC_COLORS.cortexPrediction,
         'yPct'
     );
+
     movingAverageCortexPredictionWinRateLineSeries.isVisible = false;
+    const movingAverageCortexSkillScoreLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAverageCortexSkillScorePercentageSeries,
+        CHRONICLE_SERIES.smaCortexSkillScoreLine,
+        CHRONICLE_METRIC_COLORS.cortexSkillScore,
+        'yPct'
+    );
+
+    movingAverageCortexSkillScoreLineSeries.isVisible = false;
+    const movingAverageCortexCalibrationGapLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAverageCortexCalibrationGapPercentagePointsSeries,
+        CHRONICLE_SERIES.smaCortexCalibrationGapLine,
+        CHRONICLE_METRIC_COLORS.cortexCalibrationGap,
+        'yPct'
+    );
+
+    const movingAverageCortexHighConvictionAccuracyLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAverageCortexHighConvictionAccuracyPercentageSeries,
+        CHRONICLE_SERIES.smaCortexHighConvictionAccuracyLine,
+        CHRONICLE_METRIC_COLORS.cortexHighConvictionAccuracy,
+        'yPct'
+    );
+
+    const movingAverageCortexHighConvictionShareLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAverageCortexHighConvictionSharePercentageSeries,
+        CHRONICLE_SERIES.smaCortexHighConvictionShareLine,
+        CHRONICLE_METRIC_COLORS.cortexHighConvictionShare,
+        'yPct'
+    );
+    movingAverageCortexHighConvictionShareLineSeries.isVisible = false;
+
+    const movingAverageCortexGatePrecisionLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAverageCortexGatePrecisionPercentageSeries,
+        CHRONICLE_SERIES.smaCortexGatePrecisionLine,
+        CHRONICLE_METRIC_COLORS.cortexGatePrecision,
+        'yPct'
+    );
+
+    const movingAverageCortexGatePassRateLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAverageCortexGatePassRatePercentageSeries,
+        CHRONICLE_SERIES.smaCortexGatePassRateLine,
+        CHRONICLE_METRIC_COLORS.cortexGatePassRate,
+        'yPct'
+    );
+
     const movingAverageExpectedValueLineSeries = createSplineMovingAverageLine(
         sci,
         wasmContext,
@@ -405,6 +542,7 @@ export function buildChronicleSeriesBundle(
         CHRONICLE_METRIC_COLORS.smaExpectedValue,
         'yUsd'
     );
+
     movingAverageExpectedValueLineSeries.opacity = 1;
     const movingAverageProfitFactorLineSeries = createSplineMovingAverageLine(
         sci,
@@ -415,6 +553,7 @@ export function buildChronicleSeriesBundle(
         CHRONICLE_METRIC_COLORS.smaProfitFactor,
         'yPf'
     );
+
     movingAverageProfitFactorLineSeries.opacity = 1;
     const movingAverageTradesPerHourLineSeries = createSplineMovingAverageLine(
         sci,
@@ -491,12 +630,24 @@ export function buildChronicleSeriesBundle(
         averagePnlLineSeries,
         averageWinRateLineSeries,
         averageCortexPredictionWinRateLineSeries,
+        cortexSkillScoreLineSeries,
+        cortexCalibrationGapLineSeries,
+        cortexHighConvictionAccuracyLineSeries,
+        cortexHighConvictionShareLineSeries,
+        cortexGatePrecisionLineSeries,
+        cortexGatePassRateLineSeries,
         expectedValueLineSeries,
         profitFactorLineSeries,
         tradesPerHourLineSeries,
         movingAveragePnlLineSeries,
         movingAverageWinRateLineSeries,
         movingAverageCortexPredictionWinRateLineSeries,
+        movingAverageCortexSkillScoreLineSeries,
+        movingAverageCortexCalibrationGapLineSeries,
+        movingAverageCortexHighConvictionAccuracyLineSeries,
+        movingAverageCortexHighConvictionShareLineSeries,
+        movingAverageCortexGatePrecisionLineSeries,
+        movingAverageCortexGatePassRateLineSeries,
         movingAverageExpectedValueLineSeries,
         ...regimeEvGateSubmergedBandSegmentBundles.map((bundle) => bundle.series),
         goldenZoneExpectedValueBandSeries,
@@ -516,12 +667,24 @@ export function buildChronicleSeriesBundle(
         averagePnlLineSeries,
         averageWinRateLineSeries,
         averageCortexPredictionWinRateLineSeries,
+        cortexSkillScoreLineSeries,
+        cortexCalibrationGapLineSeries,
+        cortexHighConvictionAccuracyLineSeries,
+        cortexHighConvictionShareLineSeries,
+        cortexGatePrecisionLineSeries,
+        cortexGatePassRateLineSeries,
         expectedValueLineSeries,
         profitFactorLineSeries,
         tradesPerHourLineSeries,
         movingAveragePnlLineSeries,
         movingAverageWinRateLineSeries,
         movingAverageCortexPredictionWinRateLineSeries,
+        movingAverageCortexSkillScoreLineSeries,
+        movingAverageCortexCalibrationGapLineSeries,
+        movingAverageCortexHighConvictionAccuracyLineSeries,
+        movingAverageCortexHighConvictionShareLineSeries,
+        movingAverageCortexGatePrecisionLineSeries,
+        movingAverageCortexGatePassRateLineSeries,
         movingAverageExpectedValueLineSeries,
         movingAverageProfitFactorLineSeries,
         movingAverageTradesPerHourLineSeries
@@ -569,6 +732,12 @@ export function buildChronicleSeriesBundle(
             averagePnlLineSeries,
             averageWinRateLineSeries,
             averageCortexPredictionWinRateLineSeries,
+            cortexSkillScoreLineSeries,
+            cortexCalibrationGapLineSeries,
+            cortexHighConvictionAccuracyLineSeries,
+            cortexHighConvictionShareLineSeries,
+            cortexGatePrecisionLineSeries,
+            cortexGatePassRateLineSeries,
             expectedValueLineSeries,
             profitFactorLineSeries,
             tradesPerHourLineSeries
@@ -577,6 +746,12 @@ export function buildChronicleSeriesBundle(
             movingAveragePnlLineSeries,
             movingAverageWinRateLineSeries,
             movingAverageCortexPredictionWinRateLineSeries,
+            movingAverageCortexSkillScoreLineSeries,
+            movingAverageCortexCalibrationGapLineSeries,
+            movingAverageCortexHighConvictionAccuracyLineSeries,
+            movingAverageCortexHighConvictionShareLineSeries,
+            movingAverageCortexGatePrecisionLineSeries,
+            movingAverageCortexGatePassRateLineSeries,
             movingAverageExpectedValueLineSeries,
             movingAverageProfitFactorLineSeries,
             movingAverageTradesPerHourLineSeries

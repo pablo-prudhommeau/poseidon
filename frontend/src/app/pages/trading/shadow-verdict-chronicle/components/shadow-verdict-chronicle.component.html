@@ -3,6 +3,18 @@
         <div class="chronicle-header flex flex-col gap-3 w-full md:flex-row md:items-start md:justify-between">
             <div class="space-y-1 p-3">
                 <div class="text-4xl font-black tracking-tight text-white chronicle-title-shimmer">Shadowing verdict chronicle</div>
+                <div class="chronicle-metric-toggles">
+                    <label class="chronicle-metric-toggle is-cortex" [class.is-active]="cortexMetricsChecked()" [class.is-mixed]="cortexMetricsMixed()" [class.is-disabled]="!cortexMetricsAvailable()">
+                        <input type="checkbox" [checked]="cortexMetricsChecked()" [disabled]="!cortexMetricsAvailable()" (change)="onCortexMetricsToggle($any($event.target).checked)" />
+                        <span class="chronicle-metric-toggle-dot" aria-hidden="true"><i class="fa fa-brain"></i></span>
+                        <span class="chronicle-metric-toggle-label">Cortex metrics</span>
+                    </label>
+                    <label class="chronicle-metric-toggle is-all" [class.is-active]="allMetricsChecked()" [class.is-mixed]="allMetricsMixed()" [class.is-disabled]="!allMetricsAvailable()">
+                        <input type="checkbox" [checked]="allMetricsChecked()" [disabled]="!allMetricsAvailable()" (change)="onAllMetricsToggle($any($event.target).checked)" />
+                        <span class="chronicle-metric-toggle-dot" aria-hidden="true"><i class="fa fa-chart-line"></i></span>
+                        <span class="chronicle-metric-toggle-label">All metrics</span>
+                    </label>
+                </div>
             </div>
             <div class="flex flex-col items-stretch gap-2 p-3 md:items-end">
                 <p-selectButton [options]="bucketOptions" [ngModel]="selectedBucket()" (ngModelChange)="selectedBucket.set($event); onBucketChange()" optionLabel="label" optionValue="value" styleClass="chronicle-select-btn" />
@@ -11,7 +23,7 @@
         </div>
     </ng-template>
 
-    <div class="chronicle-body relative rounded-xl overflow-hidden min-h-[520px] border border-white/10">
+    <div class="chronicle-body relative rounded-xl overflow-hidden min-h-[650px] border border-white/10">
         @if (error(); as err) {
             <div class="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 p-8 text-center bg-slate-950/90">
                 <i class="fa fa-bolt text-rose-400/70 text-3xl"></i>
@@ -19,7 +31,7 @@
                 <button pButton type="button" label="Request cached state (WebSocket)" class="p-button-sm" (click)="retry()"></button>
             </div>
         }
-        <div class="relative z-[1] w-full min-h-[520px]">
+        <div class="relative z-[1] w-full min-h-[650px]">
             @if (showChronicleLoader()) {
                 <div class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-slate-950/85 backdrop-blur-md">
                     <div class="chronicle-grid pointer-events-none absolute inset-0 opacity-90"></div>
@@ -27,7 +39,7 @@
                     <div class="relative z-[1] text-[12px] uppercase font-black tracking-[0.25em] text-fuchsia-300/80">waiting for shadow verdict chronicle stream…</div>
                 </div>
             }
-            <div #chartHost class="chronicle-chart-host relative z-[1] w-full min-h-[520px] rounded-lg bg-[#050914]"></div>
+            <div #chartHost class="chronicle-chart-host relative z-[1] w-full min-h-[650px] rounded-lg bg-[#050914]"></div>
             @if (legendItems().length > 0) {
                 <button type="button" class="chronicle-legend-toggle" [class.is-open]="showLegendPanel()" (click)="toggleLegendPanel()">
                     {{ showLegendPanel() ? 'Hide legend' : 'Show legend' }}

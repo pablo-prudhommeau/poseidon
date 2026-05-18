@@ -288,11 +288,11 @@ export class TradingTradesTableComponent implements AfterViewInit {
     public buildSnapshotFromDiagnostics(
         diagnostics: TradingEvaluationShadowDiagnosticsPayload | null | undefined
     ): TradingEvaluationShadowIntelligenceSnapshotPayload | null {
-        if (!diagnostics || !diagnostics.shadowing_summary) {
+        if (!diagnostics || !diagnostics.shadowing_regime) {
             return null;
         }
         return {
-            summary: diagnostics.shadowing_summary,
+            summary: diagnostics.shadowing_regime,
             metrics: diagnostics.shadowing_metrics ?? []
         };
     }

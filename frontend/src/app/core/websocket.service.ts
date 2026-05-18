@@ -9,7 +9,7 @@ import {
     TradingPortfolioPayload,
     TradingPositionPayload,
     TradingPositionPricePayload,
-    TradingShadowMetaPayload,
+    TradingShadowingRegimeStatusPayload,
     TradingTradePayload,
     WebsocketMessageType,
     WebsocketMessageUnion
@@ -25,7 +25,7 @@ export class WebSocketService {
     public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
     public readonly positions = signal<TradingPositionPayload[]>([]);
     public readonly shadowHistory = signal<ShadowVerdictChronicleResponse | null>(null);
-    public readonly shadowMeta = signal<TradingShadowMetaPayload | null>(null);
+    public readonly shadowRegime = signal<TradingShadowingRegimeStatusPayload | null>(null);
     public readonly status = signal<WebsocketConnectionStatus>('closed');
     public readonly trades = signal<TradingTradePayload[]>([]);
 
@@ -85,8 +85,8 @@ export class WebSocketService {
                 this.liquidity.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.SHADOW_META: {
-                this.shadowMeta.set(message.payload);
+            case WebsocketMessageType.SHADOW_REGIME: {
+                this.shadowRegime.set(message.payload);
                 break;
             }
             case WebsocketMessageType.SHADOW_VERDICT_CHRONICLE: {

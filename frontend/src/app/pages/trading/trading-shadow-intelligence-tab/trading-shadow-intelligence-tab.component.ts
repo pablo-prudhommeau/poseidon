@@ -4,7 +4,7 @@ import { MetricsFormattingService } from '../../../core/metrics-formatting.servi
 import {
     TradingEvaluationShadowIntelligenceSnapshotMetricPayload,
     TradingEvaluationShadowIntelligenceSnapshotPayload,
-    TradingEvaluationShadowIntelligenceSnapshotSummaryPayload
+    TradingShadowingRegimePayload
 } from '../../../core/models';
 import { NumberFormattingService } from '../../../core/number-formatting.service';
 import { EXPLORATION_CATEGORIES, MetricCategory } from '../trading.constants';
@@ -50,7 +50,7 @@ export class TradingShadowIntelligenceTabComponent {
         }).filter((group) => group.metrics.length > 0);
     }
 
-    public outcomeCoverage(summary: TradingEvaluationShadowIntelligenceSnapshotSummaryPayload | null | undefined): number {
+    public outcomeCoverage(summary: TradingShadowingRegimePayload | null | undefined): number {
         if (!summary || summary.total_outcomes_analyzed <= 0) {
             return 0;
         }

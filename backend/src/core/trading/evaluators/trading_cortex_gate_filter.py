@@ -14,9 +14,14 @@ from src.logging.logger import get_application_logger, console_color_codes
 logger = get_application_logger(__name__)
 
 
+def _cortex_holding_time_max_minutes() -> float:
+    return settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS * 60.0
+
+
 def apply_trading_cortex_gate_filter(
         candidates: list[TradingCandidate],
         shadow_snapshot: TradingShadowingIntelligenceSnapshot,
+        gate_enabled: bool,
 ) -> list[TradingCandidate]:
     request_builder = TradingCortexRequestBuilder()
     scoring_requests = [
@@ -29,37 +34,33 @@ def apply_trading_cortex_gate_filter(
     ]
     scoring_batch_request = TradingCortexScoringBatchRequest(requests=scoring_requests)
 
-    try:
-        inference_service = get_trading_cortex_inference_service()
-        scoring_batch_response = inference_service.score_trade_batch(scoring_batch_request)
-    except Exception as exc:
-        logger.exception(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] TradingCortex inference failed for %d candidates; blocking execution: %s",
-            len(candidates),
-            exc,
-        )
-        return []
+    inference_service = get_trading_cortex_inference_service()
+    scoring_batch_response = inference_service.score_trade_batch(scoring_batch_request)
 
     if not scoring_batch_response.responses:
-        logger.error(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] TradingCortex returned an empty scoring response for %d candidates; blocking execution",
+        log_method = logger.error if gate_enabled else logger.warning
+        log_method(
+            "[TRADING][PIPELINE][TRADING][CORTEX] TradingCortex returned an empty scoring response for %d candidates; %s",
             len(candidates),
+            "blocking execution" if gate_enabled else "continuing without cortex inference",
         )
-        return []
+        return [] if gate_enabled else candidates
 
     first_response = scoring_batch_response.responses[0]
     if not first_response.model_ready:
-        logger.error(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Cortex model is not ready; blocking execution for %d candidates",
+        logger.warning(
+            "[TRADING][PIPELINE][TRADING][CORTEX] Cortex model is not ready; %s %d candidates",
+            "blocking execution for" if gate_enabled else "continuing without cortex inference for",
             len(candidates),
         )
-        return []
+        return [] if gate_enabled else candidates
 
     logger.info(
-        "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Scored %d candidates model_version=%s feature_set=%s",
+        "[TRADING][PIPELINE][TRADING][CORTEX] Scored %d candidates model_version=%s feature_set=%s gate=%s",
         len(scoring_batch_response.responses),
         first_response.model_version,
         first_response.feature_set_version,
+        "enabled" if gate_enabled else "disabled",
     )
 
     response_by_request_identifier = {
@@ -74,11 +75,16 @@ def apply_trading_cortex_gate_filter(
     for scoring_request, candidate in zip(scoring_requests, candidates, strict=True):
         scoring_response = response_by_request_identifier.get(scoring_request.request_identifier)
         if scoring_response is None or not scoring_response.model_ready:
-            logger.error(
-                "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Missing or not-ready cortex response for %s; blocking candidate",
+            log_method = logger.error if gate_enabled else logger.warning
+            log_method(
+                "[TRADING][PIPELINE][TRADING][CORTEX] Missing or not-ready cortex response for %s; %s candidate",
                 scoring_request.request_identifier,
+                "blocking" if gate_enabled else "retaining",
             )
-            rejected.append(candidate)
+            if gate_enabled:
+                rejected.append(candidate)
+            else:
+                retained.append(candidate)
             continue
 
         gate_verdict = _evaluate_gate_verdict(scoring_response)
@@ -87,7 +93,7 @@ def apply_trading_cortex_gate_filter(
             gate_verdict=gate_verdict,
         )
 
-        if gate_verdict.is_accepted:
+        if not gate_enabled or gate_verdict.is_accepted:
             retained.append(candidate)
         else:
             rejected.append(candidate)
@@ -158,16 +164,28 @@ def _format_cortex_metrics_table(snapshot: TradingCortexInferenceSnapshot) -> st
 
     pnl_color: str = red if snapshot.expected_profit_and_loss_percentage < settings.TRADING_CORTEX_PNL_THRESHOLD else grey
     pnl_str: str = f"{snapshot.expected_profit_and_loss_percentage:>7.2f}%"
+    holding_value = snapshot.predicted_holding_time_minutes
+    holding_color: str = red if holding_value > _cortex_holding_time_max_minutes() else grey
+    holding_str: str = f"{holding_value:>6.1f}m"
 
     return (
         f"{grey}Score:{reset} {score_str} {grey}|{reset} "
         f"{grey}Win:{reset} {wr_color}{wr_str}{reset} {grey}|{reset} "
         f"{grey}Tox:{reset} {tox_color}{tox_str}{reset} {grey}|{reset} "
-        f"{grey}PnL:{reset} {pnl_color}{pnl_str}{reset}"
+        f"{grey}PnL:{reset} {pnl_color}{pnl_str}{reset} {grey}|{reset} "
+        f"{grey}Hold:{reset} {holding_color}{holding_str}{reset}"
     )
 
 
 def _evaluate_gate_verdict(scoring_response: TradingCortexScoringResponse) -> TradingFilterVerdict:
+    if (
+            scoring_response.success_probability is None
+            or scoring_response.toxicity_probability is None
+            or scoring_response.expected_profit_and_loss_percentage is None
+            or scoring_response.predicted_holding_time_minutes is None
+    ):
+        raise ValueError("Cannot evaluate cortex gate from incomplete scoring response")
+
     rejection_reasons: list[str] = []
 
     if scoring_response.success_probability < settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD:
@@ -185,6 +203,12 @@ def _evaluate_gate_verdict(scoring_response: TradingCortexScoringResponse) -> Tr
             f"expected_profit_and_loss_percentage {scoring_response.expected_profit_and_loss_percentage:.2f} < {settings.TRADING_CORTEX_PNL_THRESHOLD:.2f}"
         )
 
+    holding_time_max_minutes = _cortex_holding_time_max_minutes()
+    if scoring_response.predicted_holding_time_minutes > holding_time_max_minutes:
+        rejection_reasons.append(
+            f"predicted_holding_time_minutes {scoring_response.predicted_holding_time_minutes:.1f} > {holding_time_max_minutes:.1f} ({settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS:.1f}h)"
+        )
+
     return TradingFilterVerdict(
         is_accepted=not rejection_reasons,
         rejection_reasons=rejection_reasons,
@@ -195,10 +219,20 @@ def _build_inference_snapshot(
         scoring_response: TradingCortexScoringResponse,
         gate_verdict: TradingFilterVerdict,
 ) -> TradingCortexInferenceSnapshot:
+    if (
+            scoring_response.success_probability is None
+            or scoring_response.toxicity_probability is None
+            or scoring_response.expected_profit_and_loss_percentage is None
+            or scoring_response.predicted_holding_time_minutes is None
+            or scoring_response.final_trade_score is None
+            or scoring_response.model_version is None
+    ):
+        raise ValueError("Cannot persist incomplete TradingCortexInferenceSnapshot")
     return TradingCortexInferenceSnapshot(
         success_probability=scoring_response.success_probability,
         toxicity_probability=scoring_response.toxicity_probability,
         expected_profit_and_loss_percentage=scoring_response.expected_profit_and_loss_percentage,
+        predicted_holding_time_minutes=scoring_response.predicted_holding_time_minutes,
         final_trade_score=scoring_response.final_trade_score,
         model_version=scoring_response.model_version,
         model_ready=scoring_response.model_ready,

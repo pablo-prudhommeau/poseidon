@@ -3,6 +3,9 @@
 }
 
 .chronicle-title-shimmer {
+    display: inline-block;
+    line-height: 1.16;
+    padding-bottom: 0.08em;
     background: linear-gradient(105deg, #fdf4ff 0%, #e9d5ff 18%, #a855f7 38%, #22d3ee 55%, #c084fc 72%, #fdf4ff 100%);
     background-size: 220% auto;
     -webkit-background-clip: text;
@@ -26,6 +29,109 @@
         radial-gradient(ellipse 70% 50% at 100% 60%, rgba(6, 182, 212, 0.12), transparent 50%), rgba(3, 7, 18, 0.88);
 }
 
+.chronicle-metric-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
+}
+
+.chronicle-metric-toggle {
+    --toggle-accent: #a855f7;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.32rem 0.68rem 0.32rem 0.38rem;
+    width: fit-content;
+    border: 1px solid color-mix(in srgb, var(--toggle-accent) 26%, transparent 74%);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(15, 23, 42, 0.55);
+    color: #dbeafe;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.16s ease;
+}
+
+.chronicle-metric-toggle.is-cortex {
+    --toggle-accent: #22d3ee;
+}
+
+.chronicle-metric-toggle.is-all {
+    --toggle-accent: #a855f7;
+}
+
+.chronicle-metric-toggle:hover {
+    border-color: color-mix(in srgb, var(--toggle-accent) 56%, transparent 44%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 0 20px color-mix(in srgb, var(--toggle-accent) 26%, transparent 74%);
+    transform: translateY(-1px);
+}
+
+.chronicle-metric-toggle input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: inherit;
+}
+
+.chronicle-metric-toggle-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--toggle-accent) 24%, rgba(148, 163, 184, 0.28) 76%);
+    background: rgba(2, 6, 23, 0.78);
+    color: color-mix(in srgb, var(--toggle-accent) 72%, #e5e7eb 28%);
+    font-size: 0.72rem;
+    padding: 0.45em;
+}
+
+.chronicle-metric-toggle-dot i {
+    display: block;
+    width: 1.05em;
+    height: 1.05em;
+    line-height: 1;
+    text-align: center;
+}
+
+.chronicle-metric-toggle-label {
+    color: color-mix(in srgb, var(--toggle-accent) 42%, #f8fafc 58%);
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.chronicle-metric-toggle.is-active {
+    border-color: color-mix(in srgb, var(--toggle-accent) 62%, transparent 38%);
+    background: color-mix(in srgb, var(--toggle-accent) 18%, rgba(15, 23, 42, 0.84) 82%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 0 22px color-mix(in srgb, var(--toggle-accent) 24%, transparent 76%);
+}
+
+.chronicle-metric-toggle.is-active .chronicle-metric-toggle-dot {
+    border-color: color-mix(in srgb, var(--toggle-accent) 72%, #ffffff 28%);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--toggle-accent) 55%, transparent 45%);
+}
+
+.chronicle-metric-toggle.is-mixed:not(.is-active) .chronicle-metric-toggle-dot {
+    border-color: color-mix(in srgb, var(--toggle-accent) 58%, transparent 42%);
+    box-shadow: none;
+}
+
+.chronicle-metric-toggle.is-disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+    transform: none;
+}
+
 @keyframes chronicle-spin {
     to {
         transform: rotate(360deg);
@@ -45,7 +151,7 @@
 }
 
 .chronicle-chart-host {
-    min-height: 520px;
+    min-height: 650px;
 }
 
 .chronicle-legend-toggle {

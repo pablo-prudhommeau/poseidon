@@ -14,7 +14,6 @@ from src.api.http.api_schemas import (
     TradingEvaluationDecisionPayload,
     DcaOrderPayload,
     DcaStrategyPayload,
-    ShadowIntelligenceStatusPayload,
     TradingEvaluationShadowDiagnosticsPayload,
     BlockchainCashBalancePayload,
 )
@@ -83,7 +82,6 @@ def serialize_trading_portfolio_snapshot(
         realized_total: float,
         realized_24h: float,
         unrealized: float,
-        shadow_status: ShadowIntelligenceStatusPayload,
         blockchain_balances: list[BlockchainCashBalancePayload],
 ) -> TradingPortfolioPayload:
     return TradingPortfolioPayload(
@@ -98,7 +96,6 @@ def serialize_trading_portfolio_snapshot(
         unrealized_profit_and_loss=unrealized,
         realized_profit_and_loss_total=realized_total,
         realized_profit_and_loss_24h=realized_24h,
-        shadow_intelligence_status=shadow_status,
         blockchain_balances=blockchain_balances,
     )
 
@@ -148,7 +145,7 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
         ),
         shadow_diagnostics=TradingEvaluationShadowDiagnosticsPayload(
             cortex_inference_summary=row.cortex_inference_summary,
-            shadowing_summary=row.shadowing_summary,
+            shadowing_regime=row.shadowing_regime,
             shadowing_metrics=row.shadowing_metrics,
         ),
         raw_dexscreener_payload=row.raw_dexscreener_payload,

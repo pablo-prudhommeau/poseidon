@@ -26,7 +26,7 @@ def apply_shadowing_toxic_exposure_filter(
         logger.debug("[TRADING][EVALUATOR][SHADOW_EXPOSURE] Shadow intelligence phase is %s, bypassing filter completely", snapshot.summary.phase.value)
         return candidates
 
-    is_active: bool = snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+    is_active: bool = snapshot.summary.phase == TradingShadowingPhase.TRADABLE
 
     meta_win_rate: float = snapshot.summary.meta_win_rate or 0.0
     meta_average_pnl: float = snapshot.summary.meta_average_pnl or 0.0
@@ -63,7 +63,11 @@ def apply_shadowing_toxic_exposure_filter(
     rejected: list[TradingCandidate] = []
 
     for candidate in candidates:
-        diagnostics = evaluate_candidate_shadow_intelligence(candidate, snapshot)
+        diagnostics = (
+            candidate.shadow_diagnostics
+            if candidate.shadow_diagnostics.intelligence_snapshot is not None
+            else evaluate_candidate_shadow_intelligence(candidate, snapshot)
+        )
         candidate.shadow_diagnostics = diagnostics
 
         if not is_active:

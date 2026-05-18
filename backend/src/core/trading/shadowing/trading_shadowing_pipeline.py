@@ -42,9 +42,9 @@ class TradingShadowingPipeline:
         logger.info("[TRADING][SHADOW][PIPELINE] Shadow tracking cycle complete")
 
     def _execute_shadow_pipeline(self) -> None:
-        if settings.TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION < MINIMUM_POINTS_PER_BUCKET:
+        if settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING < MINIMUM_POINTS_PER_BUCKET:
             raise ValueError(
-                f"Configuration paradox: TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION ({settings.TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION}) "
+                f"Configuration paradox: TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING ({settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING}) "
                 f"cannot be lower than the statistical engine constraint MINIMUM_POINTS_PER_BUCKET ({MINIMUM_POINTS_PER_BUCKET})"
             )
 
@@ -104,8 +104,8 @@ class TradingShadowingPipeline:
         current_phase = cached_snapshot.summary.phase
         shadow_can_simulate = len(cached_snapshot.metric_snapshots) > 0
 
-        if current_phase == TradingShadowingPhase.ACTIVE and not shadow_can_simulate:
-            logger.info("[TRADING][SHADOW][PIPELINE] Shadowing phase is ACTIVE but intelligence metrics are not yet ready, skipping cycle")
+        if current_phase == TradingShadowingPhase.TRADABLE and not shadow_can_simulate:
+            logger.info("[TRADING][SHADOW][PIPELINE] Shadowing phase is TRADABLE but intelligence metrics are not yet ready, skipping cycle")
             return
 
         if current_phase == TradingShadowingPhase.DISABLED:
@@ -134,11 +134,21 @@ class TradingShadowingPipeline:
                 for rank, candidate, _ in admissible_candidates:
                     request_identifier = request_builder.build_request_identifier(candidate, rank)
                     scoring_response = response_by_request_identifier.get(request_identifier)
-                    if scoring_response:
+                    if (
+                            scoring_response
+                            and scoring_response.model_ready
+                            and scoring_response.model_version is not None
+                            and scoring_response.success_probability is not None
+                            and scoring_response.toxicity_probability is not None
+                            and scoring_response.expected_profit_and_loss_percentage is not None
+                            and scoring_response.predicted_holding_time_minutes is not None
+                            and scoring_response.final_trade_score is not None
+                    ):
                         candidate.trading_cortex_inference_snapshot = TradingCortexInferenceSnapshot(
                             success_probability=scoring_response.success_probability,
                             toxicity_probability=scoring_response.toxicity_probability,
                             expected_profit_and_loss_percentage=scoring_response.expected_profit_and_loss_percentage,
+                            predicted_holding_time_minutes=scoring_response.predicted_holding_time_minutes,
                             final_trade_score=scoring_response.final_trade_score,
                             model_version=scoring_response.model_version,
                             model_ready=scoring_response.model_ready,
@@ -229,7 +239,7 @@ class TradingShadowingPipeline:
             fully_diluted_valuation_usd=token_information.fully_diluted_valuation or 0.0,
             dexscreener_boost=token_information.boost or 0.0,
             order_notional_value_usd=notional,
-            shadowing_summary=self._build_cached_shadow_intelligence_summary(),
+            shadowing_regime=self._build_cached_shadow_intelligence_summary(),
             shadowing_metrics=(
                 [
                     metric.model_dump(mode="json")

@@ -11,6 +11,7 @@ import { ShadowVerdictChronicleSurfaceCoordinator } from '../chart/shadow-verdic
 import type { ChronicleBucketMeta } from '../data/shadow-verdict-chronicle.models';
 import { buildChronicleSnapshotFingerprint, type ChronicleBucketLabel } from '../data/shadow-verdict-chronicle-arrays.utils';
 import { chronicleSeriesDisplayLabel } from '../data/shadow-verdict-chronicle-legend.utils';
+import { CHRONICLE_SERIES } from '../data/shadow-verdict-chronicle-series-names';
 import { ShadowVerdictChronicleSciChartLoaderService } from '../services/shadow-verdict-chronicle-scichart-loader.service';
 
 interface ChronicleBucketOption {
@@ -23,6 +24,24 @@ interface ChronicleSmaWindowOption {
     value: number;
 }
 
+const CHRONICLE_CORTEX_METRIC_SERIES_NAMES = new Set<string>([
+    CHRONICLE_SERIES.cortexCalibrationBand,
+    CHRONICLE_SERIES.averageCortexPredictionWinRateLine,
+    CHRONICLE_SERIES.cortexSkillScoreLine,
+    CHRONICLE_SERIES.cortexCalibrationGapLine,
+    CHRONICLE_SERIES.cortexHighConvictionAccuracyLine,
+    CHRONICLE_SERIES.cortexHighConvictionShareLine,
+    CHRONICLE_SERIES.cortexGatePrecisionLine,
+    CHRONICLE_SERIES.cortexGatePassRateLine,
+    CHRONICLE_SERIES.smaCortexPredictionWinRateLine,
+    CHRONICLE_SERIES.smaCortexSkillScoreLine,
+    CHRONICLE_SERIES.smaCortexCalibrationGapLine,
+    CHRONICLE_SERIES.smaCortexHighConvictionAccuracyLine,
+    CHRONICLE_SERIES.smaCortexHighConvictionShareLine,
+    CHRONICLE_SERIES.smaCortexGatePrecisionLine,
+    CHRONICLE_SERIES.smaCortexGatePassRateLine
+]);
+
 @Component({
     standalone: true,
     selector: 'app-shadow-verdict-chronicle',
@@ -31,15 +50,24 @@ interface ChronicleSmaWindowOption {
     styleUrl: './shadow-verdict-chronicle.component.css'
 })
 export class ShadowVerdictChronicleComponent {
+    readonly legendItems = signal<ChronicleLegendSeriesItem[]>([]);
+
+    readonly allMetricsAvailable = computed<boolean>(() => this.legendItems().length > 0);
+
+    readonly allMetricsChecked = computed<boolean>(() => {
+        const items = this.legendItems();
+        return items.length > 0 && items.every((item) => item.visible);
+    });
+    readonly allMetricsMixed = computed<boolean>(() => {
+        const items = this.legendItems();
+        return items.some((item) => item.visible) && !items.every((item) => item.visible);
+    });
     readonly payload = signal<ShadowVerdictChronicleResponse | null>(null);
-
     selectedBucket = signal<ChronicleBucketLabel>('last_7d_15m');
-
     private readonly webSocketService: WebSocketService = inject(WebSocketService);
-
     readonly bucketMeta = computed<ChronicleBucketMeta | null>(() => {
         const response: ShadowVerdictChronicleResponse | null = this.payload();
-        const shadowMeta = this.webSocketService.shadowMeta();
+        const shadowRegime = this.webSocketService.shadowRegime();
         const bucketId: ChronicleBucketLabel = this.selectedBucket();
         if (!response) {
             return null;
@@ -49,12 +77,11 @@ export class ShadowVerdictChronicleComponent {
             ? {
                   bucket,
                   response,
-                  sparseExpectedValueUsdThreshold: shadowMeta?.sparse_expected_value_usd_threshold,
-                  chronicleProfitFactorThreshold: shadowMeta?.chronicle_profit_factor_threshold
+                  sparseExpectedValueUsdThreshold: shadowRegime?.sparse_expected_value_usd_threshold,
+                  chronicleProfitFactorThreshold: shadowRegime?.chronicle_profit_factor_threshold
               }
             : null;
     });
-
     readonly bucketOptions: ChronicleBucketOption[] = [
         { label: '30m · 1m', value: 'last_30m_1m' satisfies ChronicleBucketLabel },
         { label: '24h · 1h', value: 'last_24h_1h' satisfies ChronicleBucketLabel },
@@ -62,10 +89,18 @@ export class ShadowVerdictChronicleComponent {
         { label: '30d · 30m', value: 'last_30d_30m' satisfies ChronicleBucketLabel }
     ];
     readonly chartReady = signal<boolean>(false);
+    readonly cortexMetricsAvailable = computed<boolean>(() => this.legendItems().some((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name)));
+    readonly cortexMetricsChecked = computed<boolean>(() => {
+        const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name));
+        return cortexItems.length > 0 && cortexItems.every((item) => item.visible);
+    });
+    readonly cortexMetricsMixed = computed<boolean>(() => {
+        const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name));
+        return cortexItems.some((item) => item.visible) && !cortexItems.every((item) => item.visible);
+    });
     readonly error = signal<string | null>(null);
-
-    readonly legendItems = signal<ChronicleLegendSeriesItem[]>([]);
     selectedSmaWindow = signal<number>(50);
+
     readonly visible = signal<boolean>(false);
 
     readonly showChronicleLoader = computed<boolean>(() => this.visible() && !this.error() && (!this.payload() || !this.chartReady()));
@@ -102,9 +137,9 @@ export class ShadowVerdictChronicleComponent {
         effect(() => {
             const open = this.visible();
             const payload = this.payload();
-            const shadowMeta = this.webSocketService.shadowMeta();
+            const shadowRegime = this.webSocketService.shadowRegime();
             const chartReady = this.chartReady();
-            if (!open || !payload || !shadowMeta || !chartReady) {
+            if (!open || !payload || !shadowRegime || !chartReady) {
                 return;
             }
             untracked(() => {
@@ -132,10 +167,26 @@ export class ShadowVerdictChronicleComponent {
         return chronicleSeriesDisplayLabel(seriesName);
     }
 
+    onAllMetricsToggle(nextVisible: boolean): void {
+        for (const item of this.legendItems()) {
+            this.surfaceCoordinator.setSeriesVisibility(item.name, nextVisible);
+        }
+        this.syncLegendFromChart();
+    }
+
     onBucketChange(): void {
         if (this.visible() && this.payload()) {
             void this.synchronizeChart(false, true);
         }
+    }
+
+    onCortexMetricsToggle(nextVisible: boolean): void {
+        for (const item of this.legendItems()) {
+            if (CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name)) {
+                this.surfaceCoordinator.setSeriesVisibility(item.name, nextVisible);
+            }
+        }
+        this.syncLegendFromChart();
     }
 
     onLegendItemToggle(seriesName: string, nextVisible: boolean): void {

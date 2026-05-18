@@ -4,7 +4,7 @@ from fastapi.encoders import jsonable_encoder
 
 from src.api.http.api_schemas import (
     ShadowVerdictChroniclePayload,
-    TradingShadowMetaPayload,
+    TradingShadowingRegimeStatusPayload,
 )
 from src.api.websocket.websocket_manager import websocket_manager
 from src.cache.cache_invalidator import cache_invalidator
@@ -16,7 +16,7 @@ from src.core.trading.cache.trading_cache_payload_builders import (
 )
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
 from src.core.trading.shadowing.cache.trading_shadowing_cache_payload_builders import (
-    build_trading_shadow_meta_payload,
+    build_shadowing_regime_status_payload,
     build_shadow_verdict_chronicle_payload,
 )
 from src.core.trading.shadowing.trading_shadowing_service import (
@@ -43,25 +43,25 @@ class _ShadowSnapshotRebuilder:
         return
 
 
-class _ShadowMetaRebuilder:
-    realm = CacheRealm.SHADOW_META
+class _ShadowRegimeRebuilder:
+    realm = CacheRealm.SHADOW_REGIME
     ttl_seconds = 120.0
 
-    def rebuild(self) -> TradingShadowMetaPayload:
+    def rebuild(self) -> TradingShadowingRegimeStatusPayload:
         shadow_snapshot = trading_shadowing_cache.get_shadow_intelligence_snapshot()
         if shadow_snapshot is None:
-            raise CacheRealmRebuildSkipped("Shadow meta cannot be rebuilt without shadow snapshot")
-        return build_trading_shadow_meta_payload(shadow_snapshot)
+            raise CacheRealmRebuildSkipped("Shadow regime cannot be rebuilt without shadow snapshot")
+        return build_shadowing_regime_status_payload(shadow_snapshot)
 
-    def apply_to_cache(self, payload: TradingShadowMetaPayload) -> None:
-        shadow_meta_payload = payload
-        trading_shadowing_cache.update_trading_shadow_meta_state(shadow_meta_payload)
+    def apply_to_cache(self, payload: TradingShadowingRegimeStatusPayload) -> None:
+        shadow_regime_payload = payload
+        trading_shadowing_cache.update_trading_shadow_regime_state(shadow_regime_payload)
 
-    async def notify_websocket(self, payload: TradingShadowMetaPayload) -> None:
-        shadow_meta_payload = payload
+    async def notify_websocket(self, payload: TradingShadowingRegimeStatusPayload) -> None:
+        shadow_regime_payload = payload
         await websocket_manager.broadcast_json_payload({
-            "type": WebsocketMessageType.SHADOW_META.value,
-            "payload": jsonable_encoder(shadow_meta_payload),
+            "type": WebsocketMessageType.SHADOW_REGIME.value,
+            "payload": jsonable_encoder(shadow_regime_payload),
         })
 
 
@@ -123,6 +123,6 @@ class _ShadowVerdictChronicleRebuilder:
 
 def register_trading_shadowing_rebuilders() -> None:
     cache_invalidator.register(_ShadowSnapshotRebuilder())
-    cache_invalidator.register(_ShadowMetaRebuilder())
+    cache_invalidator.register(_ShadowRegimeRebuilder())
     cache_invalidator.register(_ShadowVerdictChronicleRebuilder())
     logger.info("[TRADING][SHADOWING][CACHE][REBUILDERS] %d trading rebuilders registered", len(cache_invalidator._rebuilders))

@@ -45,6 +45,7 @@ class TradingCortexTrainingDatasetService:
         success_labels: list[float] = []
         toxicity_labels: list[float] = []
         expected_profit_and_loss_percentages: list[float] = []
+        holding_duration_minutes: list[float] = []
         exit_reasons: list[str] = []
 
         dataset_window_start_at = shadow_training_records[0].resolved_at
@@ -64,12 +65,14 @@ class TradingCortexTrainingDatasetService:
             success_labels.append(1.0 if shadow_training_record.is_profitable else 0.0)
             toxicity_labels.append(1.0 if shadow_training_record.exit_reason == "STOP_LOSS" else 0.0)
             expected_profit_and_loss_percentages.append(shadow_training_record.realized_profit_and_loss_percentage)
+            holding_duration_minutes.append(shadow_training_record.holding_duration_minutes)
             exit_reasons.append(shadow_training_record.exit_reason)
 
         feature_matrix = numpy.asarray(feature_matrix_rows, dtype=numpy.float32)
         success_label_array = numpy.asarray(success_labels, dtype=numpy.float32)
         toxicity_label_array = numpy.asarray(toxicity_labels, dtype=numpy.float32)
         expected_profit_and_loss_percentage_array = numpy.asarray(expected_profit_and_loss_percentages, dtype=numpy.float32)
+        holding_duration_minutes_array = numpy.asarray(holding_duration_minutes, dtype=numpy.float32)
 
         validation_record_count = max(1, int(labeled_record_count * training_run_request.validation_fraction))
         training_record_count = labeled_record_count - validation_record_count
@@ -93,6 +96,8 @@ class TradingCortexTrainingDatasetService:
             validation_toxicity_labels=toxicity_label_array[training_record_count:],
             training_expected_profit_and_loss_percentages=expected_profit_and_loss_percentage_array[:training_record_count],
             validation_expected_profit_and_loss_percentages=expected_profit_and_loss_percentage_array[training_record_count:],
+            training_holding_duration_minutes=holding_duration_minutes_array[:training_record_count],
+            validation_holding_duration_minutes=holding_duration_minutes_array[training_record_count:],
             training_exit_reasons=exit_reasons[:training_record_count],
             training_record_count=training_record_count,
             validation_record_count=validation_record_count,
@@ -117,7 +122,7 @@ class TradingCortexTrainingDatasetService:
                 if resolved_at is None:
                     continue
 
-                shadow_regime_features = TradingCortexShadowRegimeFeatureSnapshot(**probe.shadowing_summary)
+                shadow_regime_features = TradingCortexShadowRegimeFeatureSnapshot(**probe.shadowing_regime)
                 shadow_metric_features = [
                     TradingCortexShadowMetricFeatureSnapshot(**metric_dict)
                     for metric_dict in probe.shadowing_metrics

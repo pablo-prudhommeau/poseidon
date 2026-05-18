@@ -230,12 +230,24 @@ export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
         profitFactorSeries: [...source.profitFactorSeries],
         closedVerdictsPerHourSeries: [...source.closedVerdictsPerHourSeries],
         averageCortexPredictionWinRatePercentageSeries: [...source.averageCortexPredictionWinRatePercentageSeries],
+        cortexSkillScorePercentageSeries: [...source.cortexSkillScorePercentageSeries],
+        cortexCalibrationGapPercentagePointsSeries: [...source.cortexCalibrationGapPercentagePointsSeries],
+        cortexHighConvictionAccuracyPercentageSeries: [...source.cortexHighConvictionAccuracyPercentageSeries],
+        cortexHighConvictionSharePercentageSeries: [...source.cortexHighConvictionSharePercentageSeries],
+        cortexGatePrecisionPercentageSeries: [...source.cortexGatePrecisionPercentageSeries],
+        cortexGatePassRatePercentageSeries: [...source.cortexGatePassRatePercentageSeries],
         movingAveragePnlSeries: [...source.movingAveragePnlSeries],
         movingAverageWinRateSeries: [...source.movingAverageWinRateSeries],
         movingAverageExpectedValueSeries: [...source.movingAverageExpectedValueSeries],
         movingAverageProfitFactorSeries: [...source.movingAverageProfitFactorSeries],
         movingAverageTradesPerHourSeries: [...source.movingAverageTradesPerHourSeries],
         movingAverageCortexPredictionWinRatePercentageSeries: [...source.movingAverageCortexPredictionWinRatePercentageSeries],
+        movingAverageCortexSkillScorePercentageSeries: [...source.movingAverageCortexSkillScorePercentageSeries],
+        movingAverageCortexCalibrationGapPercentagePointsSeries: [...source.movingAverageCortexCalibrationGapPercentagePointsSeries],
+        movingAverageCortexHighConvictionAccuracyPercentageSeries: [...source.movingAverageCortexHighConvictionAccuracyPercentageSeries],
+        movingAverageCortexHighConvictionSharePercentageSeries: [...source.movingAverageCortexHighConvictionSharePercentageSeries],
+        movingAverageCortexGatePrecisionPercentageSeries: [...source.movingAverageCortexGatePrecisionPercentageSeries],
+        movingAverageCortexGatePassRatePercentageSeries: [...source.movingAverageCortexGatePassRatePercentageSeries],
         regimeProfitFactorSmaSeries: [...source.regimeProfitFactorSmaSeries],
         regimeSparseExpectedValueUsdSmaSeries: [...source.regimeSparseExpectedValueUsdSmaSeries],
         profitFactorGateOpenSeries: [...source.profitFactorGateOpenSeries],
@@ -296,6 +308,48 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
             alpha
         )
     );
+    const cortexSkillScorePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexSkillScorePercentageSeries, x),
+            toArrays.cortexSkillScorePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexCalibrationGapPercentagePointsSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexCalibrationGapPercentagePointsSeries, x),
+            toArrays.cortexCalibrationGapPercentagePointsSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexHighConvictionAccuracyPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexHighConvictionAccuracyPercentageSeries, x),
+            toArrays.cortexHighConvictionAccuracyPercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexHighConvictionSharePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexHighConvictionSharePercentageSeries, x),
+            toArrays.cortexHighConvictionSharePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexGatePrecisionPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexGatePrecisionPercentageSeries, x),
+            toArrays.cortexGatePrecisionPercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexGatePassRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexGatePassRatePercentageSeries, x),
+            toArrays.cortexGatePassRatePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
 
     const volumeBucketTimestampsMilliseconds = toArrays.volumeBucketTimestampsMilliseconds;
     const volumeBucketVerdictCounts = volumeBucketTimestampsMilliseconds.map((x, index) =>
@@ -337,12 +391,24 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
         profitFactorSeries,
         closedVerdictsPerHourSeries,
         averageCortexPredictionWinRatePercentageSeries,
+        cortexSkillScorePercentageSeries,
+        cortexCalibrationGapPercentagePointsSeries,
+        cortexHighConvictionAccuracyPercentageSeries,
+        cortexHighConvictionSharePercentageSeries,
+        cortexGatePrecisionPercentageSeries,
+        cortexGatePassRatePercentageSeries,
         movingAveragePnlSeries: blendMovingAverageSeries('movingAveragePnlSeries'),
         movingAverageWinRateSeries: blendMovingAverageSeries('movingAverageWinRateSeries'),
         movingAverageExpectedValueSeries: blendMovingAverageSeries('movingAverageExpectedValueSeries'),
         movingAverageProfitFactorSeries: blendMovingAverageSeries('movingAverageProfitFactorSeries'),
         movingAverageTradesPerHourSeries: blendMovingAverageSeries('movingAverageTradesPerHourSeries'),
         movingAverageCortexPredictionWinRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexPredictionWinRatePercentageSeries'),
+        movingAverageCortexSkillScorePercentageSeries: blendMovingAverageSeries('movingAverageCortexSkillScorePercentageSeries'),
+        movingAverageCortexCalibrationGapPercentagePointsSeries: blendMovingAverageSeries('movingAverageCortexCalibrationGapPercentagePointsSeries'),
+        movingAverageCortexHighConvictionAccuracyPercentageSeries: blendMovingAverageSeries('movingAverageCortexHighConvictionAccuracyPercentageSeries'),
+        movingAverageCortexHighConvictionSharePercentageSeries: blendMovingAverageSeries('movingAverageCortexHighConvictionSharePercentageSeries'),
+        movingAverageCortexGatePrecisionPercentageSeries: blendMovingAverageSeries('movingAverageCortexGatePrecisionPercentageSeries'),
+        movingAverageCortexGatePassRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexGatePassRatePercentageSeries'),
         regimeProfitFactorSmaSeries: blendRegimeSmaSeries('regimeProfitFactorSmaSeries'),
         regimeSparseExpectedValueUsdSmaSeries: blendRegimeSmaSeries('regimeSparseExpectedValueUsdSmaSeries'),
         profitFactorGateOpenSeries: blendGateOpenSeries('profitFactorGateOpenSeries'),
@@ -403,6 +469,12 @@ export function buildChronicleArraysFromBucket(
     let profitFactorSeries = winsorizeSeries(metrics.map((metric) => metric.profit_factor));
     let closedVerdictsPerHourSeries = winsorizeSeries(metrics.map((metric) => metric.closed_verdicts_per_hour));
     let averageCortexPredictionWinRatePercentageSeries = metrics.map((metric) => metric.average_cortex_prediction_win_rate_percentage ?? NaN);
+    let cortexSkillScorePercentageSeries = metrics.map((metric) => metric.cortex_skill_score_percentage ?? NaN);
+    let cortexCalibrationGapPercentagePointsSeries = metrics.map((metric) => metric.cortex_calibration_gap_percentage_points ?? NaN);
+    let cortexHighConvictionAccuracyPercentageSeries = metrics.map((metric) => metric.cortex_high_conviction_accuracy_percentage ?? NaN);
+    let cortexHighConvictionSharePercentageSeries = metrics.map((metric) => metric.cortex_high_conviction_share_percentage ?? NaN);
+    let cortexGatePrecisionPercentageSeries = metrics.map((metric) => metric.cortex_gate_precision_percentage ?? NaN);
+    let cortexGatePassRatePercentageSeries = metrics.map((metric) => metric.cortex_gate_pass_rate_percentage ?? NaN);
 
     const effectiveSmaWindow = smaWindowBuckets > 0 ? smaWindowBuckets : metrics.length;
     let movingAveragePnlSeries = computeSimpleMovingAverage(averagePnlPercentageSeries, effectiveSmaWindow);
@@ -411,6 +483,15 @@ export function buildChronicleArraysFromBucket(
     let movingAverageProfitFactorSeries = computeSimpleMovingAverage(profitFactorSeries, effectiveSmaWindow);
     let movingAverageTradesPerHourSeries = computeSimpleMovingAverage(closedVerdictsPerHourSeries, effectiveSmaWindow);
     let movingAverageCortexPredictionWinRatePercentageSeries = computeSimpleMovingAverage(averageCortexPredictionWinRatePercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexSkillScorePercentageSeries = computeSimpleMovingAverage(cortexSkillScorePercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexCalibrationGapPercentagePointsSeries = computeSimpleMovingAverage(cortexCalibrationGapPercentagePointsSeries, effectiveSmaWindow);
+    let movingAverageCortexHighConvictionAccuracyPercentageSeries = computeSimpleMovingAverage(
+        cortexHighConvictionAccuracyPercentageSeries,
+        effectiveSmaWindow
+    );
+    let movingAverageCortexHighConvictionSharePercentageSeries = computeSimpleMovingAverage(cortexHighConvictionSharePercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexGatePrecisionPercentageSeries = computeSimpleMovingAverage(cortexGatePrecisionPercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexGatePassRatePercentageSeries = computeSimpleMovingAverage(cortexGatePassRatePercentageSeries, effectiveSmaWindow);
     let {
         regimeProfitFactorSmaSeries,
         regimeSparseExpectedValueUsdSmaSeries,
@@ -429,12 +510,24 @@ export function buildChronicleArraysFromBucket(
     profitFactorSeries = downsampleSeriesByMetricIndices(profitFactorSeries);
     closedVerdictsPerHourSeries = downsampleSeriesByMetricIndices(closedVerdictsPerHourSeries);
     averageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageCortexPredictionWinRatePercentageSeries);
+    cortexSkillScorePercentageSeries = downsampleSeriesByMetricIndices(cortexSkillScorePercentageSeries);
+    cortexCalibrationGapPercentagePointsSeries = downsampleSeriesByMetricIndices(cortexCalibrationGapPercentagePointsSeries);
+    cortexHighConvictionAccuracyPercentageSeries = downsampleSeriesByMetricIndices(cortexHighConvictionAccuracyPercentageSeries);
+    cortexHighConvictionSharePercentageSeries = downsampleSeriesByMetricIndices(cortexHighConvictionSharePercentageSeries);
+    cortexGatePrecisionPercentageSeries = downsampleSeriesByMetricIndices(cortexGatePrecisionPercentageSeries);
+    cortexGatePassRatePercentageSeries = downsampleSeriesByMetricIndices(cortexGatePassRatePercentageSeries);
     movingAveragePnlSeries = downsampleSeriesByMetricIndices(movingAveragePnlSeries);
     movingAverageWinRateSeries = downsampleSeriesByMetricIndices(movingAverageWinRateSeries);
     movingAverageExpectedValueSeries = downsampleSeriesByMetricIndices(movingAverageExpectedValueSeries);
     movingAverageProfitFactorSeries = downsampleSeriesByMetricIndices(movingAverageProfitFactorSeries);
     movingAverageTradesPerHourSeries = downsampleSeriesByMetricIndices(movingAverageTradesPerHourSeries);
     movingAverageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexPredictionWinRatePercentageSeries);
+    movingAverageCortexSkillScorePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexSkillScorePercentageSeries);
+    movingAverageCortexCalibrationGapPercentagePointsSeries = downsampleSeriesByMetricIndices(movingAverageCortexCalibrationGapPercentagePointsSeries);
+    movingAverageCortexHighConvictionAccuracyPercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexHighConvictionAccuracyPercentageSeries);
+    movingAverageCortexHighConvictionSharePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexHighConvictionSharePercentageSeries);
+    movingAverageCortexGatePrecisionPercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexGatePrecisionPercentageSeries);
+    movingAverageCortexGatePassRatePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexGatePassRatePercentageSeries);
     regimeProfitFactorSmaSeries = downsampleSeriesByMetricIndices(regimeProfitFactorSmaSeries);
     regimeSparseExpectedValueUsdSmaSeries = downsampleSeriesByMetricIndices(regimeSparseExpectedValueUsdSmaSeries);
     profitFactorGateOpenSeries = downsampleBooleanSeriesByMetricIndices(profitFactorGateOpenSeries);
@@ -518,12 +611,24 @@ export function buildChronicleArraysFromBucket(
         profitFactorSeries,
         closedVerdictsPerHourSeries,
         averageCortexPredictionWinRatePercentageSeries,
+        cortexSkillScorePercentageSeries,
+        cortexCalibrationGapPercentagePointsSeries,
+        cortexHighConvictionAccuracyPercentageSeries,
+        cortexHighConvictionSharePercentageSeries,
+        cortexGatePrecisionPercentageSeries,
+        cortexGatePassRatePercentageSeries,
         movingAveragePnlSeries,
         movingAverageWinRateSeries,
         movingAverageExpectedValueSeries,
         movingAverageProfitFactorSeries,
         movingAverageTradesPerHourSeries,
         movingAverageCortexPredictionWinRatePercentageSeries,
+        movingAverageCortexSkillScorePercentageSeries,
+        movingAverageCortexCalibrationGapPercentagePointsSeries,
+        movingAverageCortexHighConvictionAccuracyPercentageSeries,
+        movingAverageCortexHighConvictionSharePercentageSeries,
+        movingAverageCortexGatePrecisionPercentageSeries,
+        movingAverageCortexGatePassRatePercentageSeries,
         regimeProfitFactorSmaSeries,
         regimeSparseExpectedValueUsdSmaSeries,
         profitFactorGateOpenSeries,
@@ -575,12 +680,24 @@ export function extendChronicleArraysToTapeRight(source: ChronicleArrays, tapeRi
         profitFactorSeries: appendMetricTail(source.profitFactorSeries),
         closedVerdictsPerHourSeries: appendMetricTail(source.closedVerdictsPerHourSeries),
         averageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.averageCortexPredictionWinRatePercentageSeries),
+        cortexSkillScorePercentageSeries: appendMetricTail(source.cortexSkillScorePercentageSeries),
+        cortexCalibrationGapPercentagePointsSeries: appendMetricTail(source.cortexCalibrationGapPercentagePointsSeries),
+        cortexHighConvictionAccuracyPercentageSeries: appendMetricTail(source.cortexHighConvictionAccuracyPercentageSeries),
+        cortexHighConvictionSharePercentageSeries: appendMetricTail(source.cortexHighConvictionSharePercentageSeries),
+        cortexGatePrecisionPercentageSeries: appendMetricTail(source.cortexGatePrecisionPercentageSeries),
+        cortexGatePassRatePercentageSeries: appendMetricTail(source.cortexGatePassRatePercentageSeries),
         movingAveragePnlSeries: appendMetricTail(source.movingAveragePnlSeries),
         movingAverageWinRateSeries: appendMetricTail(source.movingAverageWinRateSeries),
         movingAverageExpectedValueSeries: appendMetricTail(source.movingAverageExpectedValueSeries),
         movingAverageProfitFactorSeries: appendMetricTail(source.movingAverageProfitFactorSeries),
         movingAverageTradesPerHourSeries: appendMetricTail(source.movingAverageTradesPerHourSeries),
         movingAverageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.movingAverageCortexPredictionWinRatePercentageSeries),
+        movingAverageCortexSkillScorePercentageSeries: appendMetricTail(source.movingAverageCortexSkillScorePercentageSeries),
+        movingAverageCortexCalibrationGapPercentagePointsSeries: appendMetricTail(source.movingAverageCortexCalibrationGapPercentagePointsSeries),
+        movingAverageCortexHighConvictionAccuracyPercentageSeries: appendMetricTail(source.movingAverageCortexHighConvictionAccuracyPercentageSeries),
+        movingAverageCortexHighConvictionSharePercentageSeries: appendMetricTail(source.movingAverageCortexHighConvictionSharePercentageSeries),
+        movingAverageCortexGatePrecisionPercentageSeries: appendMetricTail(source.movingAverageCortexGatePrecisionPercentageSeries),
+        movingAverageCortexGatePassRatePercentageSeries: appendMetricTail(source.movingAverageCortexGatePassRatePercentageSeries),
         regimeProfitFactorSmaSeries: appendMetricTail(source.regimeProfitFactorSmaSeries),
         regimeSparseExpectedValueUsdSmaSeries: appendMetricTail(source.regimeSparseExpectedValueUsdSmaSeries),
         profitFactorGateOpenSeries: appendBooleanMetricTail(source.profitFactorGateOpenSeries),

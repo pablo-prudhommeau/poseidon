@@ -11,6 +11,9 @@ services:
     ports:
       - "8080:80"
     volumes:
+      - ./db:/app/db
+      - ./models:/app/backend/data/models
+      - ./memray:/app/backend/data/memray
       - ./screenshots:/app/data/screenshots
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1/api/health"]

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from src.api.http.api_schemas import (
-    ShadowIntelligenceStatusPayload,
-    TradingShadowMetaPayload,
+    TradingShadowingRegimeStatusPayload,
     ShadowVerdictChroniclePayload,
     ShadowVerdictChronicleBucketPayload,
     ShadowVerdictChronicleDeltaPayload,
@@ -10,6 +9,7 @@ from src.api.http.api_schemas import (
     ShadowVerdictChronicleMetricPointPayload,
     ShadowVerdictChronicleVolumePointPayload,
     ShadowVerdictChronicleVerdictPointPayload,
+    ShadowVerdictChronicleCortexReliabilityBinPayload,
     ShadowVerdictChronicleRegimeGatePointPayload,
     ShadowVerdictChronicleCortexModelRolloutPayload,
     ShadowVerdictChronicleDeltaVerdictPayload,
@@ -25,59 +25,91 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleVerdict,
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso
+from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
 from src.persistence.database_session_manager import get_database_session
 
 
-def build_shadow_intelligence_status_payload() -> ShadowIntelligenceStatusPayload:
+def build_shadowing_regime_status_payload(
+        snapshot: TradingShadowingIntelligenceSnapshot | None = None,
+) -> TradingShadowingRegimeStatusPayload:
     with get_database_session() as database_session:
         verdict_dao = TradingShadowingVerdictDao(database_session)
-        status_summary = verdict_dao.retrieve_shadow_intelligence_status_summary()
+        probe_dao = TradingShadowingProbeDao(database_session)
+        resolved_outcome_count = verdict_dao.count_resolved()
+        resolved_shadowing_and_cortex_inference_aware_outcome_count = (
+            verdict_dao.count_resolved_shadowing_and_cortex_inference_aware_outcomes()
+        )
+        elapsed_hours = probe_dao.retrieve_oldest_probe_timestamp()
 
-    required_outcomes = settings.TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION
+    required_shadowing_outcomes = settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING
+    required_shadow_gate_outcomes = settings.TRADING_GATE_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_ACTIVATION
+    required_cortex_training_outcomes = settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING
     required_hours = settings.TRADING_SHADOWING_MIN_HOURS_FOR_ACTIVATION
 
-    outcome_progress = (status_summary.resolved_shadowing_and_cortex_inference_aware_outcome_count / required_outcomes * 100.0) if required_outcomes > 0 else 100.0
-    hours_progress = (status_summary.elapsed_hours / required_hours * 100.0) if required_hours > 0 else 100.0
+    shadowing_progress = (
+        (resolved_outcome_count / required_shadowing_outcomes) * 100.0
+        if required_shadowing_outcomes > 0
+        else 100.0
+    )
+    shadowing_gate_progress = (
+        (resolved_shadowing_and_cortex_inference_aware_outcome_count / required_shadow_gate_outcomes) * 100.0
+        if required_shadow_gate_outcomes > 0
+        else 100.0
+    )
+    hours_progress = (elapsed_hours / required_hours * 100.0) if required_hours > 0 else 100.0
 
-    is_activated = status_summary.resolved_shadowing_and_cortex_inference_aware_outcome_count >= required_outcomes and status_summary.elapsed_hours >= required_hours
+    shadowing_ready = (
+        resolved_outcome_count >= required_shadowing_outcomes
+        and elapsed_hours >= required_hours
+    )
+    shadow_gate_ready = resolved_shadowing_and_cortex_inference_aware_outcome_count >= required_shadow_gate_outcomes
+    cortex_training_ready = resolved_shadowing_and_cortex_inference_aware_outcome_count >= required_cortex_training_outcomes
+    cortex_training_progress = (
+        (resolved_shadowing_and_cortex_inference_aware_outcome_count / required_cortex_training_outcomes) * 100.0
+        if shadow_gate_ready and required_cortex_training_outcomes > 0
+        else 0.0
+    )
+    is_shadow_gate_enabled = settings.TRADING_GATE_SHADOWING_REGIME_ENABLED
+    is_cortex_requirement_enabled = settings.TRADING_GATE_CORTEX_ENABLED or settings.TRADING_CORTEX_ENABLED
+    shadow_gate_unlocked = shadowing_ready and (shadow_gate_ready or not is_shadow_gate_enabled)
+    is_tradable = shadow_gate_unlocked and (cortex_training_ready or not is_cortex_requirement_enabled)
     if not settings.TRADING_SHADOWING_ENABLED:
         phase = TradingShadowingPhase.DISABLED
+    elif is_tradable:
+        phase = TradingShadowingPhase.TRADABLE
+    elif is_cortex_requirement_enabled and shadow_gate_unlocked:
+        phase = TradingShadowingPhase.CORTEXING
     else:
-        phase = TradingShadowingPhase.ACTIVE if is_activated else TradingShadowingPhase.LEARNING
+        phase = TradingShadowingPhase.SHADOWING
 
-    return ShadowIntelligenceStatusPayload(
-        is_enabled=settings.TRADING_SHADOWING_ENABLED,
-        phase=phase,
-        resolved_outcome_count=status_summary.resolved_outcome_count,
-        resolved_shadowing_and_cortex_inference_aware_outcome_count=status_summary.resolved_shadowing_and_cortex_inference_aware_outcome_count,
-        required_outcome_count=required_outcomes,
-        elapsed_hours=status_summary.elapsed_hours,
-        required_hours=required_hours,
-        outcome_progress_percentage=min(100.0, outcome_progress),
-        hours_progress_percentage=min(100.0, hours_progress),
-    )
-
-
-def build_trading_shadow_meta_payload(snapshot: TradingShadowingIntelligenceSnapshot) -> TradingShadowMetaPayload:
-    return TradingShadowMetaPayload(
+    return TradingShadowingRegimeStatusPayload(
         is_enabled=settings.TRADING_SHADOWING_ENABLED,
         shadow_regime_gate_enabled=settings.TRADING_GATE_SHADOWING_REGIME_ENABLED,
-        phase=snapshot.summary.phase,
-        total_outcomes_analyzed=snapshot.summary.total_outcomes_analyzed,
-        resolved_outcome_count=snapshot.summary.resolved_outcome_count,
-        elapsed_hours=snapshot.summary.elapsed_hours,
-        win_rate_percentage=(snapshot.summary.meta_win_rate * 100.0) if snapshot.summary.meta_win_rate is not None else None,
-        global_profit_factor=snapshot.summary.meta_profit_factor,
-        expected_value_usd=snapshot.summary.meta_expected_value_usd,
-        expected_pnl_velocity=snapshot.summary.meta_expected_pnl_velocity,
-        chronicle_profit_factor=snapshot.summary.chronicle_profit_factor,
-        chronicle_profit_factor_threshold=snapshot.summary.chronicle_profit_factor_threshold,
+        phase=phase,
+        total_outcomes_analyzed=snapshot.summary.total_outcomes_analyzed if snapshot is not None else resolved_outcome_count,
+        resolved_outcome_count=resolved_outcome_count,
+        resolved_shadowing_and_cortex_inference_aware_outcome_count=resolved_shadowing_and_cortex_inference_aware_outcome_count,
+        required_shadowing_outcome_count=required_shadowing_outcomes,
+        required_shadow_gate_outcome_count=required_shadow_gate_outcomes,
+        required_cortex_training_outcome_count=required_cortex_training_outcomes,
+        elapsed_hours=elapsed_hours,
+        required_hours=required_hours,
+        shadowing_progress_percentage=min(100.0, shadowing_progress),
+        shadowing_gate_progress_percentage=min(100.0, shadowing_gate_progress),
+        cortex_training_progress_percentage=min(100.0, cortex_training_progress),
+        hours_progress_percentage=min(100.0, hours_progress),
+        win_rate_percentage=(snapshot.summary.meta_win_rate * 100.0) if snapshot is not None and snapshot.summary.meta_win_rate is not None else None,
+        global_profit_factor=snapshot.summary.meta_profit_factor if snapshot is not None else None,
+        expected_value_usd=snapshot.summary.meta_expected_value_usd if snapshot is not None else None,
+        expected_pnl_velocity=snapshot.summary.meta_expected_pnl_velocity if snapshot is not None else None,
+        chronicle_profit_factor=snapshot.summary.chronicle_profit_factor if snapshot is not None else None,
+        chronicle_profit_factor_threshold=snapshot.summary.chronicle_profit_factor_threshold if snapshot is not None else None,
         chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
         chronicle_profit_factor_bucket_width_seconds=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
         chronicle_profit_factor_moving_average_period=settings.TRADING_SHADOWING_REGIME_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
-        sparse_expected_value_usd=snapshot.summary.sparse_expected_value_usd,
-        sparse_expected_value_usd_threshold=snapshot.summary.sparse_expected_value_usd_threshold,
+        sparse_expected_value_usd=snapshot.summary.sparse_expected_value_usd if snapshot is not None else None,
+        sparse_expected_value_usd_threshold=snapshot.summary.sparse_expected_value_usd_threshold if snapshot is not None else None,
         sparse_expected_value_lookback_days=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
         sparse_expected_value_bucket_width_seconds=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
         sparse_expected_value_moving_average_period=settings.TRADING_SHADOWING_REGIME_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
@@ -101,6 +133,10 @@ def _build_bucket_payload(bucket: TradingShadowingVerdictChronicleBucket) -> Sha
         ShadowVerdictChronicleRegimeGatePointPayload(**gate_point.model_dump())
         for gate_point in bucket.regime_gate
     ]
+    cortex_reliability_diagram = [
+        ShadowVerdictChronicleCortexReliabilityBinPayload(**bin_point.model_dump())
+        for bin_point in bucket.cortex_reliability_diagram
+    ]
     return ShadowVerdictChronicleBucketPayload(
         bucket_label=bucket.bucket_label,
         granularity_seconds=bucket.granularity_seconds,
@@ -109,6 +145,7 @@ def _build_bucket_payload(bucket: TradingShadowingVerdictChronicleBucket) -> Sha
         metrics=metrics,
         volumes=volumes,
         verdict_cloud=verdict_cloud,
+        cortex_reliability_diagram=cortex_reliability_diagram,
         regime_gate=regime_gate,
     )
 
@@ -163,6 +200,13 @@ def build_shadow_verdict_chronicle_incremental_delta_payload(
                     closed_verdicts_per_hour=m.closed_verdicts_per_hour,
                     profit_factor=m.profit_factor,
                     average_cortex_prediction_win_rate_percentage=m.average_cortex_prediction_win_rate_percentage,
+                    average_cortex_predicted_holding_time_minutes=m.average_cortex_predicted_holding_time_minutes,
+                    cortex_skill_score_percentage=m.cortex_skill_score_percentage,
+                    cortex_calibration_gap_percentage_points=m.cortex_calibration_gap_percentage_points,
+                    cortex_high_conviction_accuracy_percentage=m.cortex_high_conviction_accuracy_percentage,
+                    cortex_high_conviction_share_percentage=m.cortex_high_conviction_share_percentage,
+                    cortex_gate_precision_percentage=m.cortex_gate_precision_percentage,
+                    cortex_gate_pass_rate_percentage=m.cortex_gate_pass_rate_percentage,
                 ) for m in new_metrics
             ],
             volumes_upsert=[
@@ -177,6 +221,10 @@ def build_shadow_verdict_chronicle_incremental_delta_payload(
                 if gate_point.timestamp_milliseconds >= previous_as_of_ms
             ],
             verdict_cloud_replace=None,
+            cortex_reliability_diagram_replace=[
+                ShadowVerdictChronicleCortexReliabilityBinPayload(**bin_point.model_dump())
+                for bin_point in new_bucket.cortex_reliability_diagram
+            ],
         )
         buckets_payload.append(bucket_payload)
 

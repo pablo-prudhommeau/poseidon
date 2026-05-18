@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import numpy
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexCandidateFeatureSnapshot,
@@ -39,6 +39,8 @@ class TradingCortexPreparedTrainingDataset(BaseModel):
     validation_toxicity_labels: numpy.ndarray
     training_expected_profit_and_loss_percentages: numpy.ndarray
     validation_expected_profit_and_loss_percentages: numpy.ndarray
+    training_holding_duration_minutes: numpy.ndarray
+    validation_holding_duration_minutes: numpy.ndarray
     training_exit_reasons: list[str]
     training_record_count: int
     validation_record_count: int
@@ -55,6 +57,7 @@ class TradingCortexModelEvaluationMetrics(BaseModel):
     toxicity_probability_log_loss: float
     toxicity_probability_accuracy: float
     expected_profit_and_loss_root_mean_squared_error: float
+    predicted_holding_time_root_mean_squared_error: float
 
 
 class TradingCortexInsufficientTrainingDataError(Exception):
@@ -70,6 +73,7 @@ class TradingCortexTrainedModelArtifacts(BaseModel):
     success_probability_model_path: str
     toxicity_probability_model_path: str
     expected_profit_and_loss_percentage_model_path: str
+    predicted_holding_time_minutes_model_path: str
     model_version: str
     feature_set_version: str
     ordered_feature_names: list[str]
@@ -141,9 +145,12 @@ class TradingCortexTrainingSummary(BaseModel):
     best_iteration_success_probability: Optional[int] = None
     best_iteration_toxicity_probability: Optional[int] = None
     best_iteration_expected_profit_and_loss: Optional[int] = None
+    best_iteration_predicted_holding_time: Optional[int] = None
     success_label_distribution: TradingCortexTrainingLabelDistribution
     toxicity_label_distribution: TradingCortexTrainingLabelDistribution
     expected_profit_and_loss_target_distribution: TradingCortexTrainingTargetDistribution
+    predicted_holding_time_target_distribution: TradingCortexTrainingTargetDistribution
     exit_reason_distribution: TradingCortexTrainingExitReasonDistribution
     feature_importance_by_gain: list[TradingCortexTrainingFeatureImportanceEntry]
     excluded_staled_verdict_count: int
+    training_devices_by_objective: dict[str, str] = Field(default_factory=dict)

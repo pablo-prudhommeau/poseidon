@@ -9,13 +9,20 @@ from src.core.trading.cortex.trading_cortex_numerical_utils import clamp
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexFeatureVectorSnapshot,
     TradingCortexHealthResponse,
-    TradingCortexPartialPrediction,
+    TradingCortexPrediction,
 )
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingCortexModelManifest
 
 logger = get_application_logger(__name__)
+
+_REQUIRED_MODEL_NAMES = [
+    "success_probability",
+    "toxicity_probability",
+    "expected_profit_and_loss_percentage",
+    "predicted_holding_time_minutes",
+]
 
 
 class TradingCortexModelRegistryService:
@@ -26,6 +33,7 @@ class TradingCortexModelRegistryService:
         self._success_probability_booster: Optional[object] = None
         self._toxicity_probability_booster: Optional[object] = None
         self._expected_profit_and_loss_percentage_booster: Optional[object] = None
+        self._predicted_holding_time_minutes_booster: Optional[object] = None
 
     def reload_models(self) -> None:
         try:
@@ -50,6 +58,7 @@ class TradingCortexModelRegistryService:
                 success_probability_model_path = active_manifest.success_probability_model_path
                 toxicity_probability_model_path = active_manifest.toxicity_probability_model_path
                 expected_profit_and_loss_model_path = active_manifest.expected_profit_and_loss_model_path
+                predicted_holding_time_minutes_model_path = active_manifest.predicted_holding_time_minutes_model_path
 
             self._model_version = model_version
             self._feature_set_version = feature_set_version
@@ -58,6 +67,9 @@ class TradingCortexModelRegistryService:
             self._toxicity_probability_booster = self._load_booster(toxicity_probability_model_path)
             self._expected_profit_and_loss_percentage_booster = self._load_booster(
                 expected_profit_and_loss_model_path
+            )
+            self._predicted_holding_time_minutes_booster = self._load_booster(
+                predicted_holding_time_minutes_model_path
             )
             logger.info(
                 "[TRADING][CORTEX][MODEL] Loaded model bundle version=%s feature_set=%s models=%s",
@@ -69,41 +81,50 @@ class TradingCortexModelRegistryService:
             logger.exception("[TRADING][CORTEX][MODEL] Failed to load model manifest from database")
             self._clear_loaded_models()
 
-    def predict(self, feature_vector_snapshot: TradingCortexFeatureVectorSnapshot) -> Optional[TradingCortexPartialPrediction]:
-        if self._model_version is None:
-            return None
+    def predict(self, feature_vector_snapshot: TradingCortexFeatureVectorSnapshot) -> TradingCortexPrediction:
+        if not self.model_ready:
+            raise RuntimeError("[TRADING][CORTEX][MODEL] Complete model bundle is not loaded")
 
         ordered_feature_values = feature_vector_snapshot.extract_ordered_feature_values(
             self._ordered_feature_names
         )
         feature_matrix = numpy.asarray([ordered_feature_values], dtype=numpy.float32)
 
-        partial_prediction = TradingCortexPartialPrediction()
         success_probability_prediction = self._predict_optional_probability(self._success_probability_booster, feature_matrix)
         toxicity_probability_prediction = self._predict_optional_probability(self._toxicity_probability_booster, feature_matrix)
         expected_profit_and_loss_prediction = self._predict_optional_regression(
             self._expected_profit_and_loss_percentage_booster,
             feature_matrix,
         )
+        predicted_holding_time_minutes_prediction = self._predict_optional_regression(
+            self._predicted_holding_time_minutes_booster,
+            feature_matrix,
+        )
 
-        if success_probability_prediction is not None:
-            partial_prediction.success_probability = success_probability_prediction
-            partial_prediction.used_model_names.append("success_probability")
-        if toxicity_probability_prediction is not None:
-            partial_prediction.toxicity_probability = toxicity_probability_prediction
-            partial_prediction.used_model_names.append("toxicity_probability")
-        if expected_profit_and_loss_prediction is not None:
-            partial_prediction.expected_profit_and_loss_percentage = expected_profit_and_loss_prediction
-            partial_prediction.used_model_names.append("expected_profit_and_loss_percentage")
+        predictions = [
+            success_probability_prediction,
+            toxicity_probability_prediction,
+            expected_profit_and_loss_prediction,
+            predicted_holding_time_minutes_prediction,
+        ]
+        if any(prediction is None for prediction in predictions):
+            raise RuntimeError("[TRADING][CORTEX][MODEL] Complete model bundle failed to produce all predictions")
+        assert success_probability_prediction is not None
+        assert toxicity_probability_prediction is not None
+        assert expected_profit_and_loss_prediction is not None
+        assert predicted_holding_time_minutes_prediction is not None
 
-        if not partial_prediction.used_model_names:
-            return None
-
-        return partial_prediction
+        return TradingCortexPrediction(
+            success_probability=success_probability_prediction,
+            toxicity_probability=toxicity_probability_prediction,
+            expected_profit_and_loss_percentage=expected_profit_and_loss_prediction,
+            predicted_holding_time_minutes=predicted_holding_time_minutes_prediction,
+            used_model_names=_REQUIRED_MODEL_NAMES.copy(),
+        )
 
     @property
     def model_ready(self) -> bool:
-        return self._model_version is not None and bool(self.loaded_model_names)
+        return self._model_version is not None and self.loaded_model_names == _REQUIRED_MODEL_NAMES
 
     @property
     def model_version(self) -> Optional[str]:
@@ -122,6 +143,8 @@ class TradingCortexModelRegistryService:
             loaded_model_names.append("toxicity_probability")
         if self._expected_profit_and_loss_percentage_booster is not None:
             loaded_model_names.append("expected_profit_and_loss_percentage")
+        if self._predicted_holding_time_minutes_booster is not None:
+            loaded_model_names.append("predicted_holding_time_minutes")
         return loaded_model_names
 
     def build_health_response(self) -> TradingCortexHealthResponse:
@@ -135,8 +158,10 @@ class TradingCortexModelRegistryService:
 
     def _load_booster(
             self,
-            model_path_string: str,
+            model_path_string: Optional[object],
     ) -> Optional[object]:
+        if not isinstance(model_path_string, str) or not model_path_string.strip():
+            return None
         model_path = Path(model_path_string)
         if not model_path.exists():
             logger.warning("[TRADING][CORTEX][MODEL] Model artifact %s is missing", model_path)
@@ -185,3 +210,4 @@ class TradingCortexModelRegistryService:
         self._success_probability_booster = None
         self._toxicity_probability_booster = None
         self._expected_profit_and_loss_percentage_booster = None
+        self._predicted_holding_time_minutes_booster = None

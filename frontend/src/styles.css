@@ -515,3 +515,7 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     max-width: 280px;
     text-align: center;
 }
+
+.shadow-chronicle-dialog .p-dialog-header-actions {
+    display: none !important;
+}

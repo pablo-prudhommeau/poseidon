@@ -71,7 +71,7 @@ class WebsocketMessageType(str, Enum):
     INITIALIZATION = "initialization"
     PORTFOLIO = "portfolio"
     LIQUIDITY = "liquidity"
-    SHADOW_META = "shadow_meta"
+    SHADOW_REGIME = "shadow_regime"
     SHADOW_VERDICT_CHRONICLE = "shadow_verdict_chronicle"
     SHADOW_VERDICT_CHRONICLE_DELTA = "shadow_verdict_chronicle_delta"
     POSITIONS = "positions"

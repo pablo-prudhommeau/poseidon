@@ -38,7 +38,8 @@ logger = get_application_logger(__name__)
 
 def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapshot:
     lookback_limit = settings.TRADING_SHADOWING_LOOKBACK_EVALUATIONS
-    minimum_outcomes = settings.TRADING_SHADOWING_MIN_OUTCOMES_FOR_ACTIVATION
+    minimum_outcomes_for_shadowing = settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING
+    minimum_outcomes_for_shadow_gate = settings.TRADING_GATE_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_ACTIVATION
     minimum_hours = settings.TRADING_SHADOWING_MIN_HOURS_FOR_ACTIVATION
 
     with get_database_session() as database_session:
@@ -47,21 +48,23 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
 
         resolved_verdicts = verdict_dao.retrieve_recent_resolved(limit_count=lookback_limit)
         total_outcomes = len(resolved_verdicts)
-        resolved_shadowing_and_cortex_inference_aware_count = verdict_dao.count_resolved_with_shadowing_and_cortex_inference()
+        resolved_shadowing_and_cortex_inference_aware_count = (
+            verdict_dao.count_resolved_shadowing_and_cortex_inference_aware_outcomes()
+        )
         resolved_count = verdict_dao.count_resolved()
         elapsed_hours = probe_dao.retrieve_oldest_probe_timestamp()
 
-        outcomes_insufficient = resolved_count < minimum_outcomes
+        outcomes_insufficient = resolved_count < minimum_outcomes_for_shadowing
         hours_insufficient = elapsed_hours < minimum_hours
 
         if outcomes_insufficient or hours_insufficient:
             logger.info(
                 "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence not yet computed — resolved=%d/%d, elapsed_hours=%.1f/%.1f",
-                resolved_count, minimum_outcomes, elapsed_hours, minimum_hours,
+                resolved_count, minimum_outcomes_for_shadowing, elapsed_hours, minimum_hours,
             )
             return TradingShadowingIntelligenceSnapshot(
                 summary=TradingShadowingIntelligenceSummary(
-                    phase=TradingShadowingPhase.DISABLED if not settings.TRADING_SHADOWING_ENABLED else TradingShadowingPhase.LEARNING,
+                    phase=TradingShadowingPhase.DISABLED if not settings.TRADING_SHADOWING_ENABLED else TradingShadowingPhase.SHADOWING,
                     total_outcomes_analyzed=total_outcomes,
                     resolved_outcome_count=resolved_count,
                     resolved_shadowing_and_cortex_inference_aware_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
@@ -137,17 +140,22 @@ def compute_shadow_intelligence_snapshot() -> TradingShadowingIntelligenceSnapsh
             total_outcomes, len(metric_snapshots), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_expected_pnl_velocity, chronicle_profit_factor, sparse_expected_value_usd
         )
 
-        is_aware_outcomes_sufficient = resolved_shadowing_and_cortex_inference_aware_count >= minimum_outcomes
+        is_shadow_gate_eligible_outcomes_sufficient = (
+            resolved_shadowing_and_cortex_inference_aware_count >= minimum_outcomes_for_shadow_gate
+        )
 
         if not settings.TRADING_SHADOWING_ENABLED:
             phase = TradingShadowingPhase.DISABLED
-        elif is_aware_outcomes_sufficient:
-            phase = TradingShadowingPhase.ACTIVE
+        elif is_shadow_gate_eligible_outcomes_sufficient:
+            phase = TradingShadowingPhase.TRADABLE
         else:
-            phase = TradingShadowingPhase.LEARNING
+            phase = TradingShadowingPhase.SHADOWING
             logger.info(
-                "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence computed but not yet activated (learning phase) — aware_outcomes=%d/%d",
-                resolved_shadowing_and_cortex_inference_aware_count, minimum_outcomes
+                "[TRADING][SHADOW][INTELLIGENCE] Shadow intelligence computed but not yet tradable — shadowing_cortex_aware_outcomes=%d/%d cortex_training_outcomes=%d/%d",
+                resolved_shadowing_and_cortex_inference_aware_count,
+                minimum_outcomes_for_shadow_gate,
+                resolved_shadowing_and_cortex_inference_aware_count,
+                settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
             )
 
         return TradingShadowingIntelligenceSnapshot(

@@ -76,17 +76,17 @@ class TradingEvaluationRecorder:
             order_notional_value_usd=order_notional_usd or 0.0,
             free_cash_before_execution_usd=free_cash_before_usd or 0.0,
             free_cash_after_execution_usd=free_cash_after_usd or 0.0,
-            shadowing_summary=(
+            shadowing_regime=(
                 candidate.shadow_diagnostics.intelligence_snapshot.summary.model_dump(mode="json", exclude_none=True)
                 if candidate.shadow_diagnostics.intelligence_snapshot is not None
-                   and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+                   and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.TRADABLE
                    and settings.TRADING_SHADOWING_ENABLED
                 else None
             ),
             shadowing_metrics=(
                 [metric.model_dump(mode="json") for metric in candidate.shadow_diagnostics.intelligence_snapshot.metrics]
                 if candidate.shadow_diagnostics.intelligence_snapshot is not None
-                   and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.ACTIVE
+                   and candidate.shadow_diagnostics.intelligence_snapshot.summary.phase == TradingShadowingPhase.TRADABLE
                    and settings.TRADING_SHADOWING_ENABLED
                 else None
             ),

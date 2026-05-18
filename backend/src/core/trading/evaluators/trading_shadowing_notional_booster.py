@@ -16,7 +16,7 @@ def apply_shadowing_notional_boost(
         candidates: list[TradingCandidate],
         snapshot: TradingShadowingIntelligenceSnapshot,
 ) -> None:
-    if snapshot.summary.phase != TradingShadowingPhase.ACTIVE:
+    if snapshot.summary.phase != TradingShadowingPhase.TRADABLE:
         logger.debug("[TRADING][EVALUATOR][SHADOW_BOOST] Shadow intelligence phase is %s, all multipliers stay at 1.0", snapshot.summary.phase.value)
         return
 

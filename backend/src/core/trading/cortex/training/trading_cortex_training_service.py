@@ -84,6 +84,13 @@ class TradingCortexTrainingService:
             validation_targets=prepared_training_dataset.validation_expected_profit_and_loss_percentages,
             preferred_training_device=training_run_request.preferred_training_device,
         )
+        predicted_holding_time_minutes_booster, holding_time_training_device = self._train_regression_model(
+            training_feature_matrix=prepared_training_dataset.training_feature_matrix,
+            training_targets=prepared_training_dataset.training_holding_duration_minutes,
+            validation_feature_matrix=prepared_training_dataset.validation_feature_matrix,
+            validation_targets=prepared_training_dataset.validation_holding_duration_minutes,
+            preferred_training_device=training_run_request.preferred_training_device,
+        )
 
         success_probability_predictions = success_probability_booster.inplace_predict(
             prepared_training_dataset.validation_feature_matrix
@@ -92,6 +99,9 @@ class TradingCortexTrainingService:
             prepared_training_dataset.validation_feature_matrix
         )
         expected_profit_and_loss_predictions = expected_profit_and_loss_percentage_booster.inplace_predict(
+            prepared_training_dataset.validation_feature_matrix
+        )
+        predicted_holding_time_minutes_predictions = predicted_holding_time_minutes_booster.inplace_predict(
             prepared_training_dataset.validation_feature_matrix
         )
 
@@ -118,6 +128,10 @@ class TradingCortexTrainingService:
                 prepared_training_dataset.validation_expected_profit_and_loss_percentages,
                 expected_profit_and_loss_predictions,
             ),
+            predicted_holding_time_root_mean_squared_error=self._compute_root_mean_squared_error(
+                prepared_training_dataset.validation_holding_duration_minutes,
+                predicted_holding_time_minutes_predictions,
+            ),
         )
 
         model_version = datetime.now().astimezone().strftime("%Y-%m-%dT%H-%M-%S")
@@ -127,21 +141,28 @@ class TradingCortexTrainingService:
         success_model_path = model_output_directory / "success_probability.ubj"
         toxicity_model_path = model_output_directory / "toxicity_probability.ubj"
         expected_profit_and_loss_model_path = model_output_directory / "expected_profit_and_loss_percentage.ubj"
+        predicted_holding_time_minutes_model_path = model_output_directory / "predicted_holding_time_minutes.ubj"
 
         success_probability_booster.save_model(success_model_path)
         toxicity_probability_booster.save_model(toxicity_model_path)
         expected_profit_and_loss_percentage_booster.save_model(expected_profit_and_loss_model_path)
+        predicted_holding_time_minutes_booster.save_model(predicted_holding_time_minutes_model_path)
 
         training_summary = self._build_training_summary(
             success_probability_booster=success_probability_booster,
             toxicity_probability_booster=toxicity_probability_booster,
             expected_profit_and_loss_percentage_booster=expected_profit_and_loss_percentage_booster,
+            predicted_holding_time_minutes_booster=predicted_holding_time_minutes_booster,
             training_success_labels=prepared_training_dataset.training_success_labels,
             training_toxicity_labels=prepared_training_dataset.training_toxicity_labels,
             training_expected_profit_and_loss_percentages=prepared_training_dataset.training_expected_profit_and_loss_percentages,
+            training_holding_duration_minutes=prepared_training_dataset.training_holding_duration_minutes,
             exit_reasons=prepared_training_dataset.training_exit_reasons,
             ordered_feature_names=ordered_feature_names,
-            training_device=success_training_device,
+            success_training_device=success_training_device,
+            toxicity_training_device=toxicity_training_device,
+            expected_profit_and_loss_training_device=regression_training_device,
+            holding_time_training_device=holding_time_training_device,
             excluded_staled_verdict_count=prepared_training_dataset.excluded_staled_verdict_count,
         )
 
@@ -160,6 +181,7 @@ class TradingCortexTrainingService:
                 success_probability_model_path=str(success_model_path),
                 toxicity_probability_model_path=str(toxicity_model_path),
                 expected_profit_and_loss_model_path=str(expected_profit_and_loss_model_path),
+                predicted_holding_time_minutes_model_path=str(predicted_holding_time_minutes_model_path),
                 training_record_count=model_evaluation_metrics.training_record_count,
                 validation_record_count=model_evaluation_metrics.validation_record_count,
                 training_duration_seconds=time.perf_counter() - training_start_time,
@@ -170,6 +192,7 @@ class TradingCortexTrainingService:
                 toxicity_probability_log_loss=model_evaluation_metrics.toxicity_probability_log_loss,
                 toxicity_probability_accuracy=model_evaluation_metrics.toxicity_probability_accuracy,
                 expected_profit_and_loss_root_mean_squared_error=model_evaluation_metrics.expected_profit_and_loss_root_mean_squared_error,
+                predicted_holding_time_root_mean_squared_error=model_evaluation_metrics.predicted_holding_time_root_mean_squared_error,
                 training_summary=training_summary.model_dump(),
                 is_active=True,
                 created_at=get_current_local_datetime(),
@@ -189,6 +212,7 @@ class TradingCortexTrainingService:
             success_probability_model_path=str(success_model_path),
             toxicity_probability_model_path=str(toxicity_model_path),
             expected_profit_and_loss_percentage_model_path=str(expected_profit_and_loss_model_path),
+            predicted_holding_time_minutes_model_path=str(predicted_holding_time_minutes_model_path),
             model_version=model_version,
             feature_set_version=training_run_request.feature_set_version,
             ordered_feature_names=ordered_feature_names,
@@ -367,12 +391,17 @@ class TradingCortexTrainingService:
             success_probability_booster: xgboost.Booster,
             toxicity_probability_booster: xgboost.Booster,
             expected_profit_and_loss_percentage_booster: xgboost.Booster,
+            predicted_holding_time_minutes_booster: xgboost.Booster,
             training_success_labels: numpy.ndarray,
             training_toxicity_labels: numpy.ndarray,
             training_expected_profit_and_loss_percentages: numpy.ndarray,
+            training_holding_duration_minutes: numpy.ndarray,
             exit_reasons: list[str],
             ordered_feature_names: list[str],
-            training_device: str,
+            success_training_device: str,
+            toxicity_training_device: str,
+            expected_profit_and_loss_training_device: str,
+            holding_time_training_device: str,
             excluded_staled_verdict_count: int,
     ) -> TradingCortexTrainingSummary:
         feature_importance_entries = self._extract_feature_importance(
@@ -382,21 +411,30 @@ class TradingCortexTrainingService:
 
         success_label_distribution = self._build_label_distribution(training_success_labels)
         toxicity_label_distribution = self._build_label_distribution(training_toxicity_labels)
-        target_distribution = self._build_target_distribution(training_expected_profit_and_loss_percentages)
+        pnl_target_distribution = self._build_target_distribution(training_expected_profit_and_loss_percentages)
+        holding_duration_target_distribution = self._build_target_distribution(training_holding_duration_minutes)
         exit_reason_distribution = self._build_exit_reason_distribution(exit_reasons)
 
         return TradingCortexTrainingSummary(
-            training_device=training_device,
+            training_device=success_training_device,
             xgboost_parameters=TRADING_CORTEX_XGBOOST_TRAINING_PARAMETERS,
             best_iteration_success_probability=self._extract_best_iteration(success_probability_booster),
             best_iteration_toxicity_probability=self._extract_best_iteration(toxicity_probability_booster),
             best_iteration_expected_profit_and_loss=self._extract_best_iteration(expected_profit_and_loss_percentage_booster),
+            best_iteration_predicted_holding_time=self._extract_best_iteration(predicted_holding_time_minutes_booster),
             success_label_distribution=success_label_distribution,
             toxicity_label_distribution=toxicity_label_distribution,
-            expected_profit_and_loss_target_distribution=target_distribution,
+            expected_profit_and_loss_target_distribution=pnl_target_distribution,
+            predicted_holding_time_target_distribution=holding_duration_target_distribution,
             exit_reason_distribution=exit_reason_distribution,
             feature_importance_by_gain=feature_importance_entries,
             excluded_staled_verdict_count=excluded_staled_verdict_count,
+            training_devices_by_objective={
+                "success_probability": success_training_device,
+                "toxicity_probability": toxicity_training_device,
+                "expected_profit_and_loss_percentage": expected_profit_and_loss_training_device,
+                "predicted_holding_time_minutes": holding_time_training_device,
+            },
         )
 
     def _extract_feature_importance(

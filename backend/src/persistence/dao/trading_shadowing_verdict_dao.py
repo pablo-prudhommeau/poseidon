@@ -3,10 +3,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.configuration.config import settings
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingStatusSummary
 from src.logging.logger import get_application_logger
-from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.models import TradingShadowingVerdict, TradingShadowingProbe
 
 logger = get_application_logger(__name__)
@@ -50,27 +47,13 @@ class TradingShadowingVerdictDao:
     def __init__(self, database_session: Session) -> None:
         self.database_session = database_session
 
-    def _apply_shadow_probe_training_requirements(self, statement):
-        from sqlalchemy import and_, or_
-        conditions = []
-
-        if settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED:
-            conditions.append(
-                and_(
-                    TradingShadowingProbe.shadowing_summary.is_not(None),
-                    TradingShadowingProbe.shadowing_metrics.is_not(None)
-                )
-            )
-
-        if settings.TRADING_GATE_CORTEX_ENABLED:
-            conditions.append(
-                TradingShadowingProbe.cortex_inference_summary.is_not(None)
-            )
-
-        if not conditions:
-            return statement
-
-        return statement.join(TradingShadowingProbe).where(or_(*conditions))
+    def _apply_shadow_gate_eligibility_requirements(self, statement):
+        return (
+            statement
+            .join(TradingShadowingProbe)
+            .where(TradingShadowingProbe.shadowing_regime.is_not(None))
+            .where(TradingShadowingProbe.shadowing_metrics.is_not(None))
+        )
 
     def save(self, verdict: TradingShadowingVerdict) -> TradingShadowingVerdict:
         try:
@@ -160,7 +143,7 @@ class TradingShadowingVerdictDao:
                         TradingShadowingProbe.transaction_count_h24,
                         TradingShadowingProbe.buy_to_sell_ratio,
                         TradingShadowingProbe.order_notional_value_usd,
-                        TradingShadowingProbe.shadowing_summary,
+                        TradingShadowingProbe.shadowing_regime,
                         TradingShadowingProbe.shadowing_metrics,
                     ),
                 )
@@ -171,7 +154,7 @@ class TradingShadowingVerdictDao:
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
                 .where(TradingShadowingVerdict.exit_reason != "STALED")
                 .where(TradingShadowingVerdict.resolved_at.is_not(None))
-                .where(TradingShadowingProbe.shadowing_summary.is_not(None))
+                .where(TradingShadowingProbe.shadowing_regime.is_not(None))
                 .where(TradingShadowingProbe.shadowing_metrics.is_not(None))
                 .order_by(TradingShadowingVerdict.resolved_at.asc())
             ).unique().all())
@@ -332,18 +315,23 @@ class TradingShadowingVerdictDao:
             )
             raise
 
-    def count_resolved_with_shadowing_and_cortex_inference(self) -> int:
+    def count_resolved_shadowing_and_cortex_inference_aware_outcomes(self) -> int:
         from sqlalchemy import func
         try:
             statement = (
                 select(func.count(TradingShadowingVerdict.id))
+                .where(TradingShadowingVerdict.realized_pnl_percentage.is_not(None))
+                .where(TradingShadowingVerdict.realized_pnl_usd.is_not(None))
+                .where(TradingShadowingVerdict.holding_duration_minutes.is_not(None))
+                .where(TradingShadowingVerdict.is_profitable.is_not(None))
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
                 .where(TradingShadowingVerdict.exit_reason != "STALED")
+                .where(TradingShadowingVerdict.resolved_at.is_not(None))
             )
-            statement = self._apply_shadow_probe_training_requirements(statement)
+            statement = self._apply_shadow_gate_eligibility_requirements(statement)
             return self.database_session.execute(statement).scalar_one_or_none() or 0
         except Exception as error:
-            logger.exception("[DAO][SHADOWING_VERDICT] Failed to count resolved verdicts — %s", error)
+            logger.exception("[DAO][SHADOWING_VERDICT] Failed to count shadowing/cortex-aware verdicts — %s", error)
             raise
 
     def count_resolved(self) -> int:
@@ -377,14 +365,3 @@ class TradingShadowingVerdictDao:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts for pair %s — %s", pair_address, error)
             raise
 
-    def retrieve_shadow_intelligence_status_summary(self) -> TradingShadowingStatusSummary:
-        resolved_outcome_count = self.count_resolved()
-        resolved_shadowing_and_cortex_inference_aware_outcome_count = self.count_resolved_with_shadowing_and_cortex_inference()
-        probe_dao = TradingShadowingProbeDao(self.database_session)
-        elapsed_hours = probe_dao.retrieve_oldest_probe_timestamp()
-
-        return TradingShadowingStatusSummary(
-            resolved_outcome_count=resolved_outcome_count,
-            resolved_shadowing_and_cortex_inference_aware_outcome_count=resolved_shadowing_and_cortex_inference_aware_outcome_count,
-            elapsed_hours=elapsed_hours,
-        )

@@ -4,7 +4,7 @@ import enum
 from dataclasses import dataclass
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingIntelligenceSnapshot
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
@@ -33,15 +33,14 @@ class ShadowDiagnostics(BaseModel):
 class TradingCortexInferenceSnapshot(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
-    success_probability: Optional[float] = None
-    toxicity_probability: Optional[float] = None
-    expected_profit_and_loss_percentage: Optional[float] = None
-    final_trade_score: Optional[float] = None
-    model_version: Optional[str] = None
-    model_ready: bool = False
-    gate_verdict: TradingFilterVerdict = Field(
-        default_factory=lambda: TradingFilterVerdict(is_accepted=True, rejection_reasons=[]),
-    )
+    success_probability: float
+    toxicity_probability: float
+    expected_profit_and_loss_percentage: float
+    predicted_holding_time_minutes: float
+    final_trade_score: float
+    model_version: str
+    model_ready: bool
+    gate_verdict: TradingFilterVerdict
 
 
 class TradingCandidate(BaseModel):
