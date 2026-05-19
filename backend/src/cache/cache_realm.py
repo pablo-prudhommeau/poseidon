@@ -15,4 +15,3 @@ class CacheRealm(str, Enum):
     SHADOWING_SNAPSHOT = "shadowing_snapshot"
     SHADOWING_VERDICT_CHRONICLE = "shadowing_verdict_chronicle"
     SHADOWING_VERDICT_CHRONICLE_DELTA = "shadowing_verdict_chronicle_delta"
-

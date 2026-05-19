@@ -206,30 +206,30 @@ export interface TradingEquityCurvePointPayload {
 
 export interface TradingShadowingRegimePayload {
     phase: TradingShadowingPhase;
-    performance_gate_enabled: boolean;
+    edge_gate_enabled: boolean;
     cortex_gate_enabled: boolean;
-    shadowing_resolved_outcome_count?: number | null;
-    shadowing_required_outcome_count?: number | null;
-    shadowing_elapsed_hours?: number | null;
-    shadowing_required_hours?: number | null;
-    shadowing_performance_eligible_outcome_count?: number | null;
-    shadowing_performance_required_outcome_count?: number | null;
-    shadowing_performance_chronicle_profit_factor?: number | null;
-    shadowing_performance_chronicle_profit_factor_threshold?: number | null;
-    shadowing_performance_chronicle_profit_factor_lookback_days?: number | null;
-    shadowing_performance_chronicle_profit_factor_bucket_width_seconds?: number | null;
-    shadowing_performance_chronicle_profit_factor_moving_average_period?: number | null;
-    shadowing_performance_sparse_expected_value_usd?: number | null;
-    shadowing_performance_sparse_expected_value_usd_threshold?: number | null;
-    shadowing_performance_sparse_expected_value_lookback_days?: number | null;
-    shadowing_performance_sparse_expected_value_bucket_width_seconds?: number | null;
-    shadowing_performance_sparse_expected_value_moving_average_period?: number | null;
-    shadowing_metrics_meta_win_rate?: number | null;
-    shadowing_metrics_meta_average_pnl?: number | null;
-    shadowing_metrics_meta_average_holding_time_hours?: number | null;
-    shadowing_metrics_meta_expected_pnl_velocity?: number | null;
-    shadowing_metrics_meta_profit_factor?: number | null;
-    shadowing_metrics_meta_expected_value_usd?: number | null;
+    resolved_outcome_count?: number | null;
+    required_outcome_count?: number | null;
+    elapsed_hours?: number | null;
+    required_hours?: number | null;
+    edge_eligible_outcome_count?: number | null;
+    edge_required_outcome_count?: number | null;
+    edge_chronicle_profit_factor?: number | null;
+    edge_chronicle_profit_factor_threshold?: number | null;
+    edge_chronicle_profit_factor_lookback_days?: number | null;
+    edge_chronicle_profit_factor_bucket_width_seconds?: number | null;
+    edge_chronicle_profit_factor_moving_average_period?: number | null;
+    edge_sparse_expected_value_usd?: number | null;
+    edge_sparse_expected_value_usd_threshold?: number | null;
+    edge_sparse_expected_value_lookback_days?: number | null;
+    edge_sparse_expected_value_bucket_width_seconds?: number | null;
+    edge_sparse_expected_value_moving_average_period?: number | null;
+    metrics_meta_win_rate?: number | null;
+    metrics_meta_average_pnl?: number | null;
+    metrics_meta_average_holding_time_hours?: number | null;
+    metrics_meta_expected_pnl_velocity?: number | null;
+    metrics_meta_profit_factor?: number | null;
+    metrics_meta_expected_value_usd?: number | null;
     cortex_training_eligible_outcome_count?: number | null;
     cortex_training_required_outcome_count?: number | null;
 }
@@ -344,7 +344,12 @@ export interface TradingEvaluationFundamentalsPayload {
     buy_to_sell_ratio: number;
     market_cap_usd: number;
     fully_diluted_valuation_usd: number;
-    dexscreener_boost?: number | null;
+    promotion_score?: number | null;
+}
+
+export interface TradingScreenerEnvelopePayload {
+    provider_id: string;
+    payload: Record<string, object>;
 }
 
 export interface TradingEvaluationPayload {
@@ -360,7 +365,7 @@ export interface TradingEvaluationPayload {
     fundamentals: TradingEvaluationFundamentalsPayload;
     decision: TradingEvaluationDecisionPayload;
     shadowing_diagnostics: TradingEvaluationShadowingDiagnosticsPayload;
-    raw_dexscreener_payload: Record<string, object>;
+    screener_envelope: TradingScreenerEnvelopePayload;
     raw_configuration_settings: Record<string, object>;
     linked_position?: TradingPositionPayload | null;
 }
@@ -380,14 +385,14 @@ export interface WebsocketInitializationPayload {
 
 export enum WebsocketMessageType {
     INITIALIZATION = 'initialization',
-    PORTFOLIO = 'portfolio',
-    LIQUIDITY = 'liquidity',
-    SHADOWING_REGIME = 'shadowing_regime',
-    SHADOWING_VERDICT_CHRONICLE = 'shadowing_verdict_chronicle',
-    SHADOWING_VERDICT_CHRONICLE_DELTA = 'shadowing_verdict_chronicle_delta',
-    POSITIONS = 'positions',
-    POSITION_PRICES = 'position_prices',
-    TRADES = 'trades',
+    TRADING_PORTFOLIO = 'trading_portfolio',
+    TRADING_LIQUIDITY = 'trading_liquidity',
+    TRADING_SHADOWING_REGIME = 'trading_shadowing_regime',
+    TRADING_SHADOWING_VERDICT_CHRONICLE = 'trading_shadowing_verdict_chronicle',
+    TRADING_SHADOWING_VERDICT_CHRONICLE_DELTA = 'trading_shadowing_verdict_chronicle_delta',
+    TRADING_POSITIONS = 'trading_positions',
+    TRADING_POSITION_PRICES = 'trading_position_prices',
+    TRADING_TRADES = 'trading_trades',
     DCA_STRATEGIES = 'dca_strategies',
     PONG = 'pong',
     ERROR = 'error',
@@ -404,36 +409,36 @@ export interface WebsocketInitializationMessage extends BaseWebsocketMessage<Web
     type: WebsocketMessageType.INITIALIZATION;
 }
 
-export interface WebsocketPortfolioMessage extends BaseWebsocketMessage<TradingPortfolioPayload> {
-    type: WebsocketMessageType.PORTFOLIO;
+export interface WebsocketTradingPortfolioMessage extends BaseWebsocketMessage<TradingPortfolioPayload> {
+    type: WebsocketMessageType.TRADING_PORTFOLIO;
 }
 
-export interface WebsocketLiquidityMessage extends BaseWebsocketMessage<TradingLiquidityPayload> {
-    type: WebsocketMessageType.LIQUIDITY;
+export interface WebsocketTradingLiquidityMessage extends BaseWebsocketMessage<TradingLiquidityPayload> {
+    type: WebsocketMessageType.TRADING_LIQUIDITY;
 }
 
-export interface WebsocketShadowingRegimeMessage extends BaseWebsocketMessage<TradingShadowingRegimePayload> {
-    type: WebsocketMessageType.SHADOWING_REGIME;
+export interface WebsocketTradingShadowingRegimeMessage extends BaseWebsocketMessage<TradingShadowingRegimePayload> {
+    type: WebsocketMessageType.TRADING_SHADOWING_REGIME;
 }
 
 export interface WebsocketTradingShadowingVerdictChronicleMessage extends BaseWebsocketMessage<TradingShadowingVerdictChroniclePayload> {
-    type: WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE;
+    type: WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE;
 }
 
 export interface WebsocketTradingShadowingVerdictChronicleDeltaMessage extends BaseWebsocketMessage<TradingShadowingVerdictChronicleDeltaPayload> {
-    type: WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE_DELTA;
+    type: WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE_DELTA;
 }
 
-export interface WebsocketPositionsMessage extends BaseWebsocketMessage<TradingPositionPayload[]> {
-    type: WebsocketMessageType.POSITIONS;
+export interface WebsocketTradingPositionsMessage extends BaseWebsocketMessage<TradingPositionPayload[]> {
+    type: WebsocketMessageType.TRADING_POSITIONS;
 }
 
-export interface WebsocketPositionPricesMessage extends BaseWebsocketMessage<TradingPositionPricePayload[]> {
-    type: WebsocketMessageType.POSITION_PRICES;
+export interface WebsocketTradingPositionPricesMessage extends BaseWebsocketMessage<TradingPositionPricePayload[]> {
+    type: WebsocketMessageType.TRADING_POSITION_PRICES;
 }
 
-export interface WebsocketTradesMessage extends BaseWebsocketMessage<TradingTradePayload[]> {
-    type: WebsocketMessageType.TRADES;
+export interface WebsocketTradingTradesMessage extends BaseWebsocketMessage<TradingTradePayload[]> {
+    type: WebsocketMessageType.TRADING_TRADES;
 }
 
 export interface WebsocketDcaStrategiesMessage extends BaseWebsocketMessage<DcaStrategyPayload[]> {
@@ -458,14 +463,14 @@ export interface WebsocketRefreshMessage {
 
 export type WebsocketMessageUnion =
     | WebsocketInitializationMessage
-    | WebsocketPortfolioMessage
-    | WebsocketLiquidityMessage
-    | WebsocketShadowingRegimeMessage
+    | WebsocketTradingPortfolioMessage
+    | WebsocketTradingLiquidityMessage
+    | WebsocketTradingShadowingRegimeMessage
     | WebsocketTradingShadowingVerdictChronicleMessage
     | WebsocketTradingShadowingVerdictChronicleDeltaMessage
-    | WebsocketPositionsMessage
-    | WebsocketPositionPricesMessage
-    | WebsocketTradesMessage
+    | WebsocketTradingPositionsMessage
+    | WebsocketTradingPositionPricesMessage
+    | WebsocketTradingTradesMessage
     | WebsocketDcaStrategiesMessage
     | WebsocketErrorMessage
     | WebsocketPongMessage
@@ -514,7 +519,7 @@ export interface OrderDueDateMarker {
     status: string;
 }
 
-export interface AnalyticsHeatmapCellPayload {
+export interface TradingAnalyticsHeatmapCellPayload {
     range_label: string;
     range_min: number;
     range_max: number;
@@ -532,13 +537,13 @@ export interface AnalyticsHeatmapCellPayload {
     is_toxic: boolean;
 }
 
-export interface AnalyticsHeatmapSeriesPayload {
+export interface TradingAnalyticsHeatmapSeriesPayload {
     metric_key: string;
     metric_label: string;
-    cells: AnalyticsHeatmapCellPayload[];
+    cells: TradingAnalyticsHeatmapCellPayload[];
 }
 
-export interface AnalyticsTimelinePointPayload {
+export interface TradingAnalyticsTimelinePointPayload {
     date_iso: string;
     cumulative_pnl_usd: number;
     cumulative_pnl_percentage: number;
@@ -546,7 +551,7 @@ export interface AnalyticsTimelinePointPayload {
     trade_count: number;
 }
 
-export interface AnalyticsScatterPointPayload {
+export interface TradingAnalyticsScatterPointPayload {
     metric_value: number;
     pnl_percentage: number;
     pnl_usd: number;
@@ -554,13 +559,13 @@ export interface AnalyticsScatterPointPayload {
     exit_reason: string;
 }
 
-export interface AnalyticsScatterSeriesPayload {
+export interface TradingAnalyticsScatterSeriesPayload {
     metric_key: string;
     metric_label: string;
-    points: AnalyticsScatterPointPayload[];
+    points: TradingAnalyticsScatterPointPayload[];
 }
 
-export interface AnalyticsKpiPayload {
+export interface TradingAnalyticsKpiPayload {
     total_evaluations: number;
     total_outcomes: number;
     win_count: number;
@@ -576,11 +581,11 @@ export interface AnalyticsKpiPayload {
     expected_pnl_velocity: number;
 }
 
-export interface AnalyticsResponse {
-    kpis: AnalyticsKpiPayload;
-    pnl_drivers_series: AnalyticsHeatmapSeriesPayload[];
-    timeline: AnalyticsTimelinePointPayload[];
-    scatter_series: AnalyticsScatterSeriesPayload[];
+export interface TradingAnalyticsResponse {
+    kpis: TradingAnalyticsKpiPayload;
+    pnl_drivers_series: TradingAnalyticsHeatmapSeriesPayload[];
+    timeline: TradingAnalyticsTimelinePointPayload[];
+    scatter_series: TradingAnalyticsScatterSeriesPayload[];
 }
 
 export interface TradingShadowingVerdictChronicleMetricPointPayload {

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from src.api.http.http_api import router as http_router
+from src.api.http.trading_http_api import router as trading_http_router
 from src.api.websocket.websocket_hub import router as ws_router
 from src.api.websocket.websocket_manager import websocket_manager
 from src.cache.cache_invalidator import cache_invalidator
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
 
     application.include_router(ws_router)
     application.include_router(http_router)
+    application.include_router(trading_http_router)
 
     return application
 

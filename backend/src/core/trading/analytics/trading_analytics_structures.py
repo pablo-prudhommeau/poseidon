@@ -1,21 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 
-class MetricDefinition(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    key: str
-    label: str
-    accessor: Callable[[AnalyticsOutcomeRecord], float]
-    unit: str
-
-
-class AnalyticsOutcomeRecord(BaseModel):
+class AnalyticsMarketSnapshot(BaseModel):
     token_symbol: str
     token_address: str
     quality_score: float
@@ -36,14 +27,154 @@ class AnalyticsOutcomeRecord(BaseModel):
     transaction_count_h24: int
     buy_to_sell_ratio: float
     fully_diluted_valuation_usd: float
-    dexscreener_boost: float
-    has_outcome: bool
+    promotion_score: Optional[float] = None
+
+
+class AnalyticsResolvedTradeOutcome(BaseModel):
     realized_profit_and_loss_usd: float
     realized_profit_and_loss_percentage: float
     holding_duration_minutes: float
     is_profitable: bool
     exit_reason: str
-    occurred_at: Optional[datetime] = None
+    occurred_at: datetime
+
+
+class AnalyticsOutcomeRecord(BaseModel):
+    market_snapshot: AnalyticsMarketSnapshot
+    resolved_outcome: Optional[AnalyticsResolvedTradeOutcome] = None
+
+    @property
+    def has_outcome(self) -> bool:
+        return self.resolved_outcome is not None
+
+    @property
+    def token_symbol(self) -> str:
+        return self.market_snapshot.token_symbol
+
+    @property
+    def token_address(self) -> str:
+        return self.market_snapshot.token_address
+
+    @property
+    def quality_score(self) -> float:
+        return self.market_snapshot.quality_score
+
+    @property
+    def liquidity_usd(self) -> float:
+        return self.market_snapshot.liquidity_usd
+
+    @property
+    def market_cap_usd(self) -> float:
+        return self.market_snapshot.market_cap_usd
+
+    @property
+    def volume_m5_usd(self) -> float:
+        return self.market_snapshot.volume_m5_usd
+
+    @property
+    def volume_h1_usd(self) -> float:
+        return self.market_snapshot.volume_h1_usd
+
+    @property
+    def volume_h6_usd(self) -> float:
+        return self.market_snapshot.volume_h6_usd
+
+    @property
+    def volume_h24_usd(self) -> float:
+        return self.market_snapshot.volume_h24_usd
+
+    @property
+    def price_change_percentage_m5(self) -> float:
+        return self.market_snapshot.price_change_percentage_m5
+
+    @property
+    def price_change_percentage_h1(self) -> float:
+        return self.market_snapshot.price_change_percentage_h1
+
+    @property
+    def price_change_percentage_h6(self) -> float:
+        return self.market_snapshot.price_change_percentage_h6
+
+    @property
+    def price_change_percentage_h24(self) -> float:
+        return self.market_snapshot.price_change_percentage_h24
+
+    @property
+    def token_age_hours(self) -> float:
+        return self.market_snapshot.token_age_hours
+
+    @property
+    def transaction_count_m5(self) -> int:
+        return self.market_snapshot.transaction_count_m5
+
+    @property
+    def transaction_count_h1(self) -> int:
+        return self.market_snapshot.transaction_count_h1
+
+    @property
+    def transaction_count_h6(self) -> int:
+        return self.market_snapshot.transaction_count_h6
+
+    @property
+    def transaction_count_h24(self) -> int:
+        return self.market_snapshot.transaction_count_h24
+
+    @property
+    def buy_to_sell_ratio(self) -> float:
+        return self.market_snapshot.buy_to_sell_ratio
+
+    @property
+    def fully_diluted_valuation_usd(self) -> float:
+        return self.market_snapshot.fully_diluted_valuation_usd
+
+    @property
+    def promotion_score(self) -> Optional[float]:
+        return self.market_snapshot.promotion_score
+
+    @property
+    def realized_profit_and_loss_usd(self) -> float:
+        if self.resolved_outcome is None:
+            return 0.0
+        return self.resolved_outcome.realized_profit_and_loss_usd
+
+    @property
+    def realized_profit_and_loss_percentage(self) -> float:
+        if self.resolved_outcome is None:
+            return 0.0
+        return self.resolved_outcome.realized_profit_and_loss_percentage
+
+    @property
+    def holding_duration_minutes(self) -> float:
+        if self.resolved_outcome is None:
+            return 0.0
+        return self.resolved_outcome.holding_duration_minutes
+
+    @property
+    def is_profitable(self) -> bool:
+        if self.resolved_outcome is None:
+            return False
+        return self.resolved_outcome.is_profitable
+
+    @property
+    def exit_reason(self) -> str:
+        if self.resolved_outcome is None:
+            return ""
+        return self.resolved_outcome.exit_reason
+
+    @property
+    def occurred_at(self) -> Optional[datetime]:
+        if self.resolved_outcome is None:
+            return None
+        return self.resolved_outcome.occurred_at
+
+
+class MetricDefinition(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    key: str
+    label: str
+    accessor: Callable[[AnalyticsOutcomeRecord], float]
+    unit: str
 
 
 class MetricBucketStatistics(BaseModel):

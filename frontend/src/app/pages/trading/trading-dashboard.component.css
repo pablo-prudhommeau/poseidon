@@ -2,7 +2,7 @@
     display: block;
 }
 
-.analytics-loading {
+.trading-analytics-loading {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -11,7 +11,7 @@
     font-size: 1rem;
 }
 
-.analytics-loading-spinner {
+.trading-analytics-loading-spinner {
     width: 32px;
     height: 32px;
     border: 3px solid rgba(124, 92, 255, 0.2);
@@ -27,7 +27,7 @@
     }
 }
 
-.analytics-error {
+.trading-analytics-error {
     display: flex;
     align-items: center;
     justify-content: center;

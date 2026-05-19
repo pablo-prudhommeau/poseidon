@@ -37,14 +37,6 @@ def tail(address: str, n: int = 6) -> str:
     return addr[-n:] if len(addr) >= n else addr
 
 
-def num(value: object) -> Optional[float]:
-    try:
-        parsed = float(value)
-        return None if isnan(parsed) else parsed
-    except (ValueError, TypeError):
-        return None
-
-
 def age_hours(ms: int) -> float:
     if not ms or ms <= 0:
         return 0.0

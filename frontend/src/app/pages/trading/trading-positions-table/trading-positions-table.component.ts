@@ -77,7 +77,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     private readonly webSocketService = inject(WebSocketService);
 
     public readonly positionsRowData = computed<TradingPositionPayload[]>(() => {
-        const rows = this.webSocketService.positions() ?? [];
+        const rows = this.webSocketService.tradingPositions() ?? [];
         return Array.isArray(rows) ? (rows as TradingPositionPayload[]) : [];
     });
 
@@ -640,7 +640,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         if (!position) {
             return null;
         }
-        const trades = (this.webSocketService.trades() ?? []) as TradingTradePayload[];
+        const trades = (this.webSocketService.tradingTrades() ?? []) as TradingTradePayload[];
         const candidates = trades.filter((t) => t.trade_side === 'BUY' && t.pair_address === position.pair_address);
         if (candidates.length === 0) {
             return null;

@@ -8,10 +8,11 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
-from src.core.trading.trading_structures import TradingOrderPayload, TradingExecutionRoute
+from src.core.trading.trading_structures import TradingOrderPayload
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
+from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
@@ -36,7 +37,7 @@ class TradingExecutor:
             dex_id: str,
             quantity: float,
             execution_price: float,
-            execution_route: TradingExecutionRoute,
+            execution_route: BlockchainExecutionRoute,
             origin_evaluation_id: int,
     ) -> Optional[BlockchainExecutionResult]:
         coroutine = self._execute_live_sell(
@@ -200,7 +201,7 @@ class TradingExecutor:
         return chain == BlockchainNetwork.SOLANA
 
     @staticmethod
-    def _infer_route_network(route: TradingExecutionRoute, hint_chain: Optional[BlockchainNetwork] = None) -> BlockchainNetwork:
+    def _infer_route_network(route: BlockchainExecutionRoute, hint_chain: Optional[BlockchainNetwork] = None) -> BlockchainNetwork:
         if hint_chain is not None:
             return hint_chain
 
@@ -217,7 +218,7 @@ class TradingExecutor:
             stop_loss_usd: float,
             take_profit_tp1_usd: float,
             take_profit_tp2_usd: float,
-            execution_route: TradingExecutionRoute,
+            execution_route: BlockchainExecutionRoute,
             origin_evaluation_id: int,
     ) -> bool:
         execution_service = LiveExecutionService()
@@ -332,7 +333,7 @@ class TradingExecutor:
             stop_loss_usd: float,
             take_profit_tp1_usd: float,
             take_profit_tp2_usd: float,
-            execution_route: TradingExecutionRoute,
+            execution_route: BlockchainExecutionRoute,
             origin_evaluation_id: int,
     ) -> bool:
         coroutine = self._execute_live_buy(
@@ -372,7 +373,7 @@ class TradingExecutor:
             dex_id: str,
             quantity: float,
             execution_price: float,
-            execution_route: TradingExecutionRoute,
+            execution_route: BlockchainExecutionRoute,
             origin_evaluation_id: int,
     ) -> Optional[BlockchainExecutionResult]:
         execution_service = LiveExecutionService()

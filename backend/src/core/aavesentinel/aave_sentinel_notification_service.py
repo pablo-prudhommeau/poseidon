@@ -15,7 +15,7 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelState,
     AaveSentinelStrategyDirection,
 )
-from src.core.structures.structures import DcaOrderStatus
+from src.core.dca.dca_structures import DcaOrderStatus
 from src.core.utils.date_utils import get_current_local_datetime
 from src.core.utils.format_utils import format_currency, format_percent
 from src.integrations.telegram.telegram_client import (

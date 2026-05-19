@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Iterable, Optional
 
 from src.api.http.api_schemas import (
@@ -12,23 +11,22 @@ from src.api.http.api_schemas import (
     TradingPositionPricePayload,
 )
 from src.api.serializers import (
-    serialize_trading_portfolio_snapshot,
+    serialize_trading_portfolio,
     serialize_trading_trade,
     serialize_trading_position,
 )
 from src.configuration.config import MAX_TRADING_ALLOWED_CHAIN_COUNT, settings
 from src.core.structures.structures import BlockchainNetwork, Token
-from src.core.structures.structures import RealizedProfitAndLoss, HoldingsAndUnrealizedProfitAndLoss
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import compute_shadowing_snapshot
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingSnapshot
+from src.core.trading.trading_portfolio_helpers import build_trading_portfolio
 from src.core.trading.trading_service import (
-    compute_realized_profit_and_loss,
     compute_available_cash_usd,
+    compute_holdings_and_unrealized_totals,
     has_any_closing_positions,
     compute_trade_ledger_available_cash_usd,
 )
-from src.core.trading.trading_utils import convert_trading_position_to_token
 from src.core.utils.date_utils import (
     get_current_local_datetime,
 )
@@ -134,55 +132,20 @@ def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[Trading
                 )
             return previous_portfolio
 
-        holdings_data = holdings_and_unrealized_from_positions(open_positions, prices_lookup)
-        total_equity_usd = float(quantize_2dp(decimal_from_primitive(available_cash_usd) + decimal_from_primitive(holdings_data.total_holdings_value)))
+        total_holdings_value, _ = compute_holdings_and_unrealized_totals(open_positions, prices_lookup)
+        total_equity_usd = float(quantize_2dp(decimal_from_primitive(available_cash_usd) + decimal_from_primitive(total_holdings_value)))
 
         portfolio_dao.create_snapshot(
             equity=total_equity_usd,
             cash=available_cash_usd,
-            holdings=holdings_data.total_holdings_value,
+            holdings=total_holdings_value,
         )
         logger.debug(
             "[TRADING][CACHE][PORTFOLIO] Equity snapshot created — equity=%.2f cash=%.2f holdings=%.2f",
-            total_equity_usd, available_cash_usd, holdings_data.total_holdings_value,
+            total_equity_usd, available_cash_usd, total_holdings_value,
         )
 
     return build_trading_portfolio_payload_reusing_cached_chain_balances(prices_lookup)
-
-
-def holdings_and_unrealized_from_positions(
-        positions: Iterable[TradingPosition],
-        prices_by_pair_address: dict[str, float],
-) -> HoldingsAndUnrealizedProfitAndLoss:
-    position_list = list(positions)
-    holdings_value_dec = Decimal("0")
-    unrealized_dec = Decimal("0")
-
-    for position in position_list:
-        token = convert_trading_position_to_token(position)
-        pair_address_value = position.pair_address
-        price_usd: Optional[float] = None
-        if pair_address_value is not None and pair_address_value != "":
-            if pair_address_value in prices_by_pair_address:
-                price_usd = prices_by_pair_address[pair_address_value]
-        entry_price = position.entry_price or 0.0
-
-        if price_usd is None or price_usd <= 0.0:
-            logger.debug("[PNL][UNREAL][SKIP] token=%s reason=missing_onchain_price", token)
-            continue
-
-        quantity = position.current_quantity or 0.0
-        if quantity <= 0.0:
-            logger.debug("[PNL][UNREAL][SKIP] token=%s reason=non_positive_qty", token)
-            continue
-
-        holdings_value_dec += decimal_from_primitive(quantity * price_usd)
-        unrealized_dec += decimal_from_primitive((price_usd - entry_price) * quantity)
-
-    return HoldingsAndUnrealizedProfitAndLoss(
-        total_holdings_value=float(quantize_2dp(holdings_value_dec)),
-        total_unrealized_profit_and_loss=float(quantize_2dp(unrealized_dec)),
-    )
 
 
 def build_trading_trades_payloads() -> list[TradingTradePayload]:
@@ -291,16 +254,26 @@ def build_trading_position_prices_payloads(
 
 def build_trading_portfolio_payload(
         trades: list[TradingTradePayload],
-        holdings_data: HoldingsAndUnrealizedProfitAndLoss,
         trading_portfolio_snapshot: TradingPortfolioSnapshot,
+        prices_by_pair_address: dict[str, float],
         *,
         blockchain_balances_override_payload: Optional[list[BlockchainCashBalancePayload]] = None,
 ) -> TradingPortfolioPayload:
     with get_database_session() as database_session:
         portfolio_dao = TradingPortfolioSnapshotDao(database_session)
+        position_dao = TradingPositionDao(database_session)
         portfolio_snapshot_bound_to_session = database_session.merge(trading_portfolio_snapshot)
+        open_positions = position_dao.retrieve_open_positions()
+        equity_curve = portfolio_dao.retrieve_equity_curve_points()
 
-        realized_profit_and_loss_data: RealizedProfitAndLoss = compute_realized_profit_and_loss(trades, cutoff_hours=24)
+        portfolio = build_trading_portfolio(
+            portfolio_snapshot=portfolio_snapshot_bound_to_session,
+            trades=trades,
+            open_positions=open_positions,
+            prices_by_pair_address=prices_by_pair_address,
+            equity_curve=equity_curve,
+        )
+
         if blockchain_balances_override_payload is None:
             blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
             blockchain_balance_payloads = [
@@ -319,14 +292,7 @@ def build_trading_portfolio_payload(
         else:
             blockchain_balance_payloads = list(blockchain_balances_override_payload)
 
-        return serialize_trading_portfolio_snapshot(
-            portfolio_snapshot_bound_to_session,
-            equity_curve=portfolio_dao.retrieve_equity_curve(),
-            realized_total=realized_profit_and_loss_data.total_realized_profit_and_loss,
-            realized_24h=realized_profit_and_loss_data.recent_realized_profit_and_loss,
-            unrealized=holdings_data.total_unrealized_profit_and_loss,
-            blockchain_balances=blockchain_balance_payloads,
-        )
+        return serialize_trading_portfolio(portfolio, blockchain_balance_payloads)
 
 
 def build_trading_portfolio_payload_reusing_cached_chain_balances(
@@ -348,7 +314,6 @@ def build_trading_portfolio_payload_reusing_cached_chain_balances(
         snapshot_candidate = portfolio_dao.retrieve_latest_snapshot()
         if snapshot_candidate is None:
             return None
-        holdings_result = holdings_and_unrealized_from_positions(open_positions_list, prices_lookup)
         paired_open_positions_list = [
             position_row for position_row in open_positions_list
             if position_row.pair_address not in (None, "")
@@ -368,8 +333,8 @@ def build_trading_portfolio_payload_reusing_cached_chain_balances(
     try:
         return build_trading_portfolio_payload(
             trades_payload_list,
-            holdings_result,
             snapshot_candidate,
+            prices_lookup,
             blockchain_balances_override_payload=override_balances,
         )
     except ConnectionError:
@@ -442,5 +407,3 @@ def _merge_incremental_onchain_prices_for_open_positions(
     merged_lookup.update(fetched_incremental_partial)
     trading_cache.update_prices_by_pair_address(merged_lookup)
     return merged_lookup
-
-

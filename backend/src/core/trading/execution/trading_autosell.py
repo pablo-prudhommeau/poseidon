@@ -218,8 +218,7 @@ def _execute_sell_operation(
         realized_profit_and_loss_usd=trade_pnl_usd,
         holding_duration_minutes=holding_duration,
         was_profitable=(trade_pnl_usd > 0),
-        exit_reason=reason.value,
-        database_session=database_session,
+        exit_reason=reason.value
     )
 
     return sell_trade

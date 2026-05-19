@@ -26,7 +26,7 @@ class _DcaStrategiesRebuilder:
 
     async def notify_websocket(self, payload: object) -> None:
         from src.api.websocket.websocket_manager import websocket_manager
-        from src.core.structures.structures import WebsocketMessageType
+        from src.api.websocket.websocket_structures import WebsocketMessageType
 
         strategies_payload = cast(list[DcaStrategyPayload], payload)
         await websocket_manager.broadcast_json_payload({

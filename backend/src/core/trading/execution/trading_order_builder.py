@@ -4,8 +4,13 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.trading_structures import TradingCandidate, TradingExecutionRoute, TradingSolanaRoute, TradingEvmRoute
+from src.core.trading.trading_structures import TradingCandidate
 from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
+from src.integrations.blockchain.blockchain_structures import (
+    BlockchainEvmRoute,
+    BlockchainExecutionRoute,
+    BlockchainSolanaRoute,
+)
 from src.integrations.jupiter.jupiter_client import generate_jupiter_swap_transaction
 from src.integrations.lifi.lifi_client import generate_token_to_token_route, resolve_lifi_chain_identifier
 from src.logging.logger import get_application_logger
@@ -18,7 +23,7 @@ def build_route_for_live_sell(
         chain: BlockchainNetwork,
         token_quantity: float,
         token_decimals: int
-) -> Optional[TradingExecutionRoute]:
+) -> Optional[BlockchainExecutionRoute]:
     if settings.PAPER_MODE:
         return None
 
@@ -32,7 +37,7 @@ def build_route_for_live_sell(
     return None
 
 
-def build_route_for_live_execution(candidate: TradingCandidate, order_notional_usd: float) -> Optional[TradingExecutionRoute]:
+def build_route_for_live_execution(candidate: TradingCandidate, order_notional_usd: float) -> Optional[BlockchainExecutionRoute]:
     if settings.PAPER_MODE:
         return None
 
@@ -48,11 +53,10 @@ def build_route_for_live_execution(candidate: TradingCandidate, order_notional_u
     return None
 
 
-def _build_solana_route(candidate: TradingCandidate, order_notional_usd: float) -> Optional[TradingExecutionRoute]:
-    token_information = candidate.dexscreener_token_information
-    token_mint = (token_information.base_token.address or "").strip()
+def _build_solana_route(candidate: TradingCandidate, order_notional_usd: float) -> Optional[BlockchainExecutionRoute]:
+    token_mint = (candidate.token.token_address or "").strip()
     if not token_mint:
-        logger.debug("[TRADING][ORDER][ROUTE] Missing SPL token mint for %s on Solana", token_information.base_token.symbol)
+        logger.debug("[TRADING][ORDER][ROUTE] Missing SPL token mint for %s on Solana", candidate.token.symbol)
         return None
 
     stablecoin_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
@@ -62,7 +66,7 @@ def _build_solana_route(candidate: TradingCandidate, order_notional_usd: float) 
 
     from_amount_raw = _compute_from_amount_stablecoin_raw(order_notional_usd, BlockchainNetwork.SOLANA)
     if from_amount_raw is None:
-        logger.debug("[TRADING][ORDER][ROUTE] Cannot compute stablecoin raw amount for %s on Solana", token_information.base_token.symbol)
+        logger.debug("[TRADING][ORDER][ROUTE] Cannot compute stablecoin raw amount for %s on Solana", candidate.token.symbol)
         return None
 
     try:
@@ -82,23 +86,22 @@ def _build_solana_route(candidate: TradingCandidate, order_notional_usd: float) 
             amount_in_lamports=from_amount_raw,
             slippage_basis_points=slippage_basis_points
         )
-        solana_route = TradingSolanaRoute(serialized_transaction_base64=base64_transaction)
-        return TradingExecutionRoute(solana_route=solana_route)
+        solana_route = BlockchainSolanaRoute(serialized_transaction_base64=base64_transaction)
+        return BlockchainExecutionRoute(solana_route=solana_route)
     except Exception as exception:
-        logger.exception("[TRADING][ORDER][ROUTE] Jupiter route build failed for %s on solana: %s", token_information.base_token.symbol, exception)
+        logger.exception("[TRADING][ORDER][ROUTE] Jupiter route build failed for %s on solana: %s", candidate.token.symbol, exception)
         return None
 
 
-def _build_evm_route(candidate: TradingCandidate, order_notional_usd: float, chain: BlockchainNetwork) -> Optional[TradingExecutionRoute]:
-    token_information = candidate.dexscreener_token_information
+def _build_evm_route(candidate: TradingCandidate, order_notional_usd: float, chain: BlockchainNetwork) -> Optional[BlockchainExecutionRoute]:
     chain_id = resolve_lifi_chain_identifier(chain)
     if chain_id is None:
         logger.debug("[TRADING][ORDER][ROUTE] Unsupported chain '%s'", chain.value)
         return None
 
-    to_token_address = (token_information.base_token.address or "").strip()
+    to_token_address = (candidate.token.token_address or "").strip()
     if not to_token_address:
-        logger.debug("[TRADING][ORDER][ROUTE] Missing ERC-20 token address for %s", token_information.base_token.symbol)
+        logger.debug("[TRADING][ORDER][ROUTE] Missing ERC-20 token address for %s", candidate.token.symbol)
         return None
 
     stablecoin_address = _get_stablecoin_address_for_blockchain(chain)
@@ -108,7 +111,7 @@ def _build_evm_route(candidate: TradingCandidate, order_notional_usd: float, cha
 
     from_amount_raw = _compute_from_amount_stablecoin_raw(order_notional_usd, chain)
     if from_amount_raw is None:
-        logger.debug("[TRADING][ORDER][ROUTE] Cannot compute stablecoin raw amount for %s on %s", token_information.base_token.symbol, chain.value)
+        logger.debug("[TRADING][ORDER][ROUTE] Cannot compute stablecoin raw amount for %s on %s", candidate.token.symbol, chain.value)
         return None
 
     try:
@@ -131,14 +134,14 @@ def _build_evm_route(candidate: TradingCandidate, order_notional_usd: float, cha
         if lifi_route is None or lifi_route.transaction_request is None:
             return None
 
-        evm_route = TradingEvmRoute(transaction_request=lifi_route.transaction_request)
-        return TradingExecutionRoute(evm_route=evm_route)
+        evm_route = BlockchainEvmRoute(transaction_request=lifi_route.transaction_request)
+        return BlockchainExecutionRoute(evm_route=evm_route)
     except Exception as exception:
-        logger.exception("[TRADING][ORDER][ROUTE] LI.FI route build failed for %s on %s: %s", token_information.base_token.symbol, chain.value, exception)
+        logger.exception("[TRADING][ORDER][ROUTE] LI.FI route build failed for %s on %s: %s", candidate.token.symbol, chain.value, exception)
         return None
 
 
-def _build_solana_sell_route(token_mint: str, token_quantity: float, token_decimals: int) -> Optional[TradingExecutionRoute]:
+def _build_solana_sell_route(token_mint: str, token_quantity: float, token_decimals: int) -> Optional[BlockchainExecutionRoute]:
     if not token_mint:
         return None
 
@@ -168,18 +171,18 @@ def _build_solana_sell_route(token_mint: str, token_quantity: float, token_decim
             amount_in_lamports=amount_lamports,
             slippage_basis_points=slippage_basis_points
         )
-        solana_route = TradingSolanaRoute(serialized_transaction_base64=base64_transaction)
-        return TradingExecutionRoute(solana_route=solana_route)
+        solana_route = BlockchainSolanaRoute(serialized_transaction_base64=base64_transaction)
+        return BlockchainExecutionRoute(solana_route=solana_route)
     except Exception as exception:
         logger.exception("[TRADING][ORDER][ROUTE] Jupiter route build failed for %s on solana (sell): %s", token_mint, exception)
         return None
 
 
 def _compute_from_amount_wei(order_notional_usd: float, candidate: TradingCandidate) -> Optional[int]:
-    token_information = candidate.dexscreener_token_information
+    market_snapshot = candidate.market_snapshot
     try:
-        price_usd = token_information.price_usd
-        price_native = token_information.price_native
+        price_usd = market_snapshot.price_usd
+        price_native = market_snapshot.price_native
         if price_usd <= 0.0 or price_native <= 0.0:
             return None
 
@@ -193,9 +196,9 @@ def _compute_from_amount_wei(order_notional_usd: float, candidate: TradingCandid
 
 def _compute_from_amount_lamports(order_notional_usd: float, candidate: TradingCandidate) -> Optional[int]:
     try:
-        token_information = candidate.dexscreener_token_information
-        price_usd = token_information.price_usd
-        price_native = token_information.price_native
+        market_snapshot = candidate.market_snapshot
+        price_usd = market_snapshot.price_usd
+        price_native = market_snapshot.price_native
         if price_usd <= 0.0 or price_native <= 0.0:
             return None
 

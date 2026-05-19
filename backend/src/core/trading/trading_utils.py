@@ -6,9 +6,8 @@ from enum import Enum
 from typing import Awaitable, Optional, TypeVar, Dict, Set, Any
 
 from src.core.structures.structures import Token, BlockchainNetwork
-from src.core.trading.trading_structures import PositionExitTriggerReason
-from src.core.trading.trading_structures import TradingCandidate
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
+from src.core.trading.screener.trading_screener_provider import get_trading_screener_provider
+from src.core.trading.trading_structures import PositionExitTriggerReason, TradingCandidate
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingPosition, PositionPhase
 
@@ -24,73 +23,8 @@ _NATIVE_SYMBOL_SYNONYMS: Dict[BlockchainNetwork, Set[str]] = {
 }
 
 
-def candidate_from_dexscreener_token_information(token_information: DexscreenerTokenInformation) -> TradingCandidate:
-    return TradingCandidate(
-        quality_score=0.0,
-        ai_adjusted_quality_score=0.0,
-        ai_quality_delta=0.0,
-        ai_buy_probability=0.0,
-        dexscreener_token_information=token_information,
-        token=Token(
-            symbol=token_information.base_token.symbol,
-            chain=token_information.chain_id,
-            token_address=token_information.base_token.address,
-            pair_address=token_information.pair_address,
-            dex_id=token_information.dex_id,
-        ),
-    )
-
-
-def get_price_from_token_information_list(
-        token_information_list: list[DexscreenerTokenInformation],
-        candidate: TradingCandidate,
-) -> Optional[float]:
-    for token_information in token_information_list:
-        if (
-                token_information.base_token.symbol == candidate.dexscreener_token_information.base_token.symbol
-                and token_information.chain_id == candidate.dexscreener_token_information.chain_id
-                and token_information.base_token.address == candidate.dexscreener_token_information.base_token.address
-                and token_information.pair_address == candidate.dexscreener_token_information.pair_address
-        ):
-            return token_information.price_usd
-    return None
-
-
-def preload_best_prices(candidates: list[TradingCandidate]) -> list[DexscreenerTokenInformation]:
-    from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
-
-    if not candidates:
-        return []
-
-    unique_tokens: list[Token] = []
-    processed_token_identifiers: set[tuple[str, str, str, str]] = set()
-
-    for candidate in candidates:
-        token_identifier = (
-            candidate.dexscreener_token_information.base_token.symbol or "",
-            candidate.dexscreener_token_information.chain_id or "",
-            candidate.dexscreener_token_information.base_token.address or "",
-            candidate.dexscreener_token_information.pair_address or "",
-        )
-
-        if token_identifier in processed_token_identifiers:
-            continue
-
-        processed_token_identifiers.add(token_identifier)
-        unique_tokens.append(
-            Token(
-                symbol=candidate.dexscreener_token_information.base_token.symbol,
-                chain=candidate.dexscreener_token_information.chain_id,
-                token_address=candidate.dexscreener_token_information.base_token.address,
-                pair_address=candidate.dexscreener_token_information.pair_address,
-                dex_id=candidate.dexscreener_token_information.dex_id,
-            )
-        )
-
-    if not unique_tokens:
-        return []
-
-    return fetch_dexscreener_token_information_list_sync(unique_tokens)
+def refresh_candidates_from_screener(candidates: list[TradingCandidate]) -> None:
+    get_trading_screener_provider().refresh_candidates(candidates)
 
 
 def is_address_in_open_positions(candidate_address: str, open_position_addresses: set[str]) -> bool:

@@ -26,10 +26,8 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingPhase,
 )
 from src.core.trading.trading_service import fetch_trading_candidates_sync, record_skipped_trading_evaluation, record_trading_evaluation
-from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload, TradingPipelineContext
-from src.core.trading.trading_utils import (
-    preload_best_prices,
-)
+from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload
+from src.core.trading.trading_utils import refresh_candidates_from_screener
 from src.core.utils.format_utils import tail
 from src.logging.logger import get_application_logger
 
@@ -54,8 +52,6 @@ class TradingPipeline:
         logger.info("[TRADING][PIPELINE] Trading cycle complete")
 
     def _execute_pipeline(self) -> None:
-        pipeline_context = TradingPipelineContext()
-
         candidates = self._step_fetch_candidates()
         if not candidates:
             return
@@ -75,7 +71,7 @@ class TradingPipeline:
         shadow_snapshot: TradingShadowingSnapshot | None = None
         shadow_gate_enabled = (
                 settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED
-                or settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED
+                or settings.TRADING_GATE_SHADOWING_EDGE_ENABLED
         )
         cortex_gate_required = self._is_cortex_gate_required()
         shadow_snapshot_required = (
@@ -86,8 +82,8 @@ class TradingPipeline:
         )
         if not settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED:
             logger.debug("[TRADING][PIPELINE][GATE][SHADOWING_TOXIC] Shadowing toxic metrics gate is disabled")
-        if not settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED:
-            logger.debug("[TRADING][PIPELINE][GATE][SHADOWING_PERFORMANCE] Shadowing performance gate is disabled")
+        if not settings.TRADING_GATE_SHADOWING_EDGE_ENABLED:
+            logger.debug("[TRADING][PIPELINE][GATE][SHADOWING_EDGE] Shadowing edge gate is disabled")
         if not settings.TRADING_GATE_CORTEX_ENABLED:
             logger.debug("[TRADING][PIPELINE][GATE][CORTEX] Cortex gate is disabled")
         if not settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
@@ -106,9 +102,6 @@ class TradingPipeline:
                     "[TRADING][PIPELINE][SHADOWING] Shadowing snapshot not yet in cache — "
                     "continuing without shadow/cortex evaluation snapshots"
                 )
-            else:
-                pipeline_context.shadowing_snapshot = shadow_snapshot
-
         if shadow_gate_enabled:
             if shadow_snapshot is None:
                 logger.warning("[TRADING][PIPELINE][GATE] Shadow gate enabled but snapshot is missing; aborting trading cycle")
@@ -116,7 +109,7 @@ class TradingPipeline:
             if shadow_snapshot.regime.phase != TradingShadowingPhase.TRADABLE:
                 logger.info("[TRADING][PIPELINE][GATE] Shadowing snapshot in %s phase — live trading is paused until sufficient data is collected.", shadow_snapshot.regime.phase.value)
                 return
-            if settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED and not self._is_shadow_performance_gate_satisfied(shadow_snapshot):
+            if settings.TRADING_GATE_SHADOWING_EDGE_ENABLED and not self._is_shadow_edge_gate_satisfied(shadow_snapshot):
                 return
 
         shadow_snapshot_active = (
@@ -152,18 +145,26 @@ class TradingPipeline:
             if not candidates:
                 return
 
-        shadow_evaluation_active = (
-                settings.TRADING_SHADOWING_ENABLED
+        needs_shadowing_metrics_for_cortex = (
+                settings.TRADING_GATE_CORTEX_ENABLED
                 and shadow_snapshot_active
+        )
+        shadow_evaluation_active = (
+                shadow_snapshot_active
+                and (
+                        settings.TRADING_SHADOWING_ENABLED
+                        or needs_shadowing_metrics_for_cortex
+                )
         )
 
         if shadow_evaluation_active:
             self._step_evaluate_shadowing(candidates, shadow_snapshot)
 
-        token_price_information_list = preload_best_prices(candidates)
-        pipeline_context.token_price_information_list = token_price_information_list
+        for candidate in candidates:
+            candidate.screened_price_usd = candidate.market_snapshot.price_usd
+        refresh_candidates_from_screener(candidates)
 
-        candidates = self._step_contradictions(candidates, token_price_information_list)
+        candidates = self._step_contradictions(candidates)
         if not candidates:
             return
 
@@ -176,11 +177,11 @@ class TradingPipeline:
             if not candidates:
                 return
 
-            candidates = self._step_price_deviation(candidates, token_price_information_list)
+            candidates = self._step_price_deviation(candidates)
             if not candidates:
                 return
 
-            candidates = self._step_ai_scorer(candidates, pipeline_context)
+            candidates = self._step_ai_scorer(candidates)
             if not candidates:
                 return
 
@@ -215,14 +216,14 @@ class TradingPipeline:
                     len(candidates),
                 )
                 return
-            if all(candidate.trading_cortex_inference_snapshot is not None for candidate in candidates):
+            if all(candidate.cortex_diagnostics.inference_snapshot is not None for candidate in candidates):
                 candidates = self._step_apply_existing_cortex_gate_snapshots(candidates)
             else:
                 candidates = self._step_apply_trading_cortex_gate(candidates, shadow_snapshot, True)
             if not candidates:
                 return
 
-        self._step_execute(candidates, pipeline_context)
+        self._step_execute(candidates)
 
     def _step_fetch_candidates(self) -> list[TradingCandidate]:
         candidates = fetch_trading_candidates_sync()
@@ -272,7 +273,7 @@ class TradingPipeline:
         rejected_examples: dict[str, list[str]] = {}
         for candidate in candidates:
             chain_identifier = candidate.token.chain.value if candidate.token.chain else ""
-            dex_identifier = (candidate.dexscreener_token_information.dex_id or "").strip().lower()
+            dex_identifier = (candidate.token.dex_id or "").strip().lower()
 
             if chain_identifier == BlockchainNetwork.SOLANA.value:
                 if dex_identifier in allowed_solana_dexes:
@@ -321,8 +322,8 @@ class TradingPipeline:
     def _step_deduplication(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_deduplication_filter(candidates)
 
-    def _step_contradictions(self, candidates: list[TradingCandidate], token_price_information_list: list) -> list[TradingCandidate]:
-        return apply_contradictions_filter(candidates, token_price_information_list)
+    def _step_contradictions(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        return apply_contradictions_filter(candidates)
 
     def _step_risk_filter(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_risk_filter(candidates)
@@ -330,11 +331,11 @@ class TradingPipeline:
     def _step_cooldown(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_cooldown_filter(candidates)
 
-    def _step_price_deviation(self, candidates: list[TradingCandidate], token_price_information_list: list) -> list[TradingCandidate]:
-        return apply_price_deviation_filter(candidates, token_price_information_list)
+    def _step_price_deviation(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        return apply_price_deviation_filter(candidates)
 
-    def _step_ai_scorer(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> list[TradingCandidate]:
-        return apply_ai_scorer(candidates, pipeline_context)
+    def _step_ai_scorer(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        return apply_ai_scorer(candidates)
 
     def _step_load_shadowing_snapshot(self):
         snapshot = trading_shadowing_cache.get_shadowing_snapshot()
@@ -342,13 +343,18 @@ class TradingPipeline:
             return None
         logger.info(
             "[TRADING][PIPELINE][SHADOWING] Shadowing snapshot loaded — phase=%s, outcomes=%d",
-            snapshot.regime.phase.value, snapshot.regime.shadowing_resolved_outcome_count,
+            snapshot.regime.phase.value, snapshot.regime.resolved_outcome_count,
         )
         return snapshot
 
-    def _is_shadow_performance_gate_satisfied(self, shadow_snapshot: TradingShadowingSnapshot) -> bool:
-        chronicle_profit_factor = shadow_snapshot.regime.shadowing_performance_chronicle_profit_factor
-        chronicle_threshold = shadow_snapshot.regime.shadowing_performance_chronicle_profit_factor_threshold
+    def _is_shadow_edge_gate_satisfied(self, shadow_snapshot: TradingShadowingSnapshot) -> bool:
+        chronicle_profit_factor = shadow_snapshot.regime.edge_chronicle_profit_factor
+        chronicle_threshold = shadow_snapshot.regime.edge_chronicle_profit_factor_threshold
+        if chronicle_profit_factor is None or chronicle_threshold is None:
+            logger.warning(
+                "[TRADING][PIPELINE][GATE][SHADOWING_SMA_PF] Missing chronicle performance metrics in regime payload; trading cycle blocked"
+            )
+            return False
         if chronicle_profit_factor < chronicle_threshold:
             logger.warning(
                 "[TRADING][PIPELINE][GATE][SHADOWING_SMA_PF] Chronicle profit factor %.2f is below %.2f; trading cycle blocked",
@@ -357,8 +363,13 @@ class TradingPipeline:
             )
             return False
 
-        sparse_expected_value_usd = shadow_snapshot.regime.shadowing_performance_sparse_expected_value_usd
-        sparse_expected_value_threshold = shadow_snapshot.regime.shadowing_performance_sparse_expected_value_usd_threshold
+        sparse_expected_value_usd = shadow_snapshot.regime.edge_sparse_expected_value_usd
+        sparse_expected_value_threshold = shadow_snapshot.regime.edge_sparse_expected_value_usd_threshold
+        if sparse_expected_value_usd is None or sparse_expected_value_threshold is None:
+            logger.warning(
+                "[TRADING][PIPELINE][GATE][SHADOWING_SPARSE_EV] Missing sparse expected value metrics in regime payload; trading cycle blocked"
+            )
+            return False
         if sparse_expected_value_usd < sparse_expected_value_threshold:
             logger.warning(
                 "[TRADING][PIPELINE][GATE][SHADOWING_SPARSE_EV] Sparse expected value USD %.2f is below %.2f; trading cycle blocked",
@@ -407,7 +418,7 @@ class TradingPipeline:
         retained: list[TradingCandidate] = []
         rejected: list[TradingCandidate] = []
         for candidate in candidates:
-            cortex_inference_snapshot = candidate.trading_cortex_inference_snapshot
+            cortex_inference_snapshot = candidate.cortex_diagnostics.inference_snapshot
             if (
                     cortex_inference_snapshot is not None
                     and cortex_inference_snapshot.model_ready
@@ -430,7 +441,7 @@ class TradingPipeline:
             )
         return retained
 
-    def _step_execute(self, candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> None:
+    def _step_execute(self, candidates: list[TradingCandidate]) -> None:
         from sqlalchemy import select, func
         from src.persistence.database_session_manager import get_database_session
         from src.persistence.models import TradingPosition, PositionPhase
@@ -487,7 +498,7 @@ class TradingPipeline:
                 continue
 
             available_to_spend = max(0.0, available_cash_usd - min_free_cash)
-            order_notional = total_equity_usd * per_buy_fraction * candidate.shadow_notional_multiplier
+            order_notional = total_equity_usd * per_buy_fraction * candidate.shadowing_diagnostics.notional_boost_factor
 
             if order_notional > available_to_spend:
                 logger.warning(
@@ -499,7 +510,7 @@ class TradingPipeline:
             if order_notional <= 0:
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
                 continue
-            dex_price = candidate.dex_price or candidate.dexscreener_token_information.price_usd or 0.0
+            dex_price = candidate.market_snapshot.price_usd
 
             execution_route = build_route_for_live_execution(candidate, order_notional)
 
@@ -511,7 +522,7 @@ class TradingPipeline:
                 rank=rank,
                 decision="BUY",
                 reason="EXECUTION",
-                sizing_multiplier=candidate.shadow_notional_multiplier,
+                sizing_multiplier=candidate.shadowing_diagnostics.notional_boost_factor,
                 order_notional_usd=order_notional,
                 free_cash_before_usd=free_cash_before,
                 free_cash_after_usd=free_cash_after,
@@ -528,7 +539,7 @@ class TradingPipeline:
 
             logger.info(
                 "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f quality=%.2f shadow_mult=%.2f route=%s",
-                rank, candidate.token.symbol, tail(candidate.token.token_address), order_notional, candidate.ai_adjusted_quality_score, candidate.shadow_notional_multiplier,
+                rank, candidate.token.symbol, tail(candidate.token.token_address), order_notional, candidate.ai_analysis.adjusted_quality_score, candidate.shadowing_diagnostics.notional_boost_factor,
                 "available" if execution_route is not None else "paper",
             )
 
@@ -542,8 +553,3 @@ class TradingPipeline:
                 logger.warning("[TRADING][PIPELINE][EXECUTE] BUY #%d %s failed — free cash unchanged", rank, candidate.token.symbol)
 
         logger.info("[TRADING][PIPELINE][EXECUTE] Executed %d buys this cycle", executed_count)
-
-
-
-
-

@@ -9,7 +9,7 @@ import numpy
 import xgboost
 
 from src.configuration.config import settings
-from src.core.trading.cortex.trading_cortex_feature_catalog import trading_cortex_poseidon_shadow_ordered_feature_names
+from src.core.trading.cortex.trading_cortex_feature_catalog import trading_cortex_xgboost_ordered_feature_names
 from src.core.trading.cortex.training.trading_cortex_training_dataset_service import TradingCortexTrainingDatasetService
 from src.core.trading.cortex.training.trading_cortex_training_structures import (
     TradingCortexModelEvaluationMetrics,
@@ -221,7 +221,7 @@ class TradingCortexTrainingService:
 
     def _resolve_ordered_feature_names(self, feature_set_version: str) -> list[str]:
         if feature_set_version == settings.TRADING_CORTEX_FEATURE_SET_VERSION:
-            return trading_cortex_poseidon_shadow_ordered_feature_names
+            return trading_cortex_xgboost_ordered_feature_names
         raise ValueError(f"Unsupported feature set version: {feature_set_version}")
 
     def _train_binary_probability_model(
@@ -259,7 +259,7 @@ class TradingCortexTrainingService:
             validation_feature_matrix=validation_feature_matrix,
             validation_targets=validation_targets,
             preferred_training_device=preferred_training_device,
-            objective_name="reg:pseudohubererror",
+            objective_name="reg:squarederror",
             evaluation_metric_name="rmse",
         )
 

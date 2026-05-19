@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from src.core.trading.analytics.trading_analytics_structures import AnalyticsOutcomeRecord
-from src.persistence.models import TradingShadowingVerdict, TradingEvaluation, TradingOutcome
+from src.core.trading.analytics.trading_analytics_structures import (
+    AnalyticsMarketSnapshot,
+    AnalyticsOutcomeRecord,
+    AnalyticsResolvedTradeOutcome,
+)
+from src.persistence.models import TradingEvaluation, TradingOutcome, TradingShadowingProbe, TradingShadowingVerdict
 
 FRACTIONS = [0.0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95, 0.97, 0.98, 0.99, 0.995, 0.999, 1.0]
 MINIMUM_POINTS_PER_BUCKET = 30
@@ -21,14 +25,13 @@ def quantile(sorted_values: list[float], quantile_fraction: float) -> float:
 
 
 def compute_bucket_edges(values: list[float | None]) -> list[float]:
-    valid_values = [v for v in values if v is not None]
+    valid_values = [metric_value for metric_value in values if metric_value is not None]
     if not valid_values:
         return [0.0] * len(FRACTIONS)
 
     sorted_values = sorted(valid_values)
-    fractions = FRACTIONS
     edges: list[float] = []
-    for fraction in fractions:
+    for fraction in FRACTIONS:
         edges.append(quantile(sorted_values, fraction))
     return edges
 
@@ -62,39 +65,8 @@ def format_metric_value(value: float, unit: str) -> str:
     return f"{value:,.1f}"
 
 
-def aggregate_evaluation_outcomes(evaluation: TradingEvaluation) -> TradingOutcome | None:
-    if not evaluation.outcomes:
-        return None
-
-    if len(evaluation.outcomes) == 1:
-        return evaluation.outcomes[0]
-
-    total_profit_and_loss_usd = sum(outcome.realized_profit_and_loss_usd for outcome in evaluation.outcomes)
-    average_holding_duration_minutes = sum(outcome.holding_duration_minutes for outcome in evaluation.outcomes) / len(evaluation.outcomes)
-    is_profitable = total_profit_and_loss_usd > 0
-
-    cost_basis = evaluation.order_notional_value_usd
-    if cost_basis and cost_basis > 0:
-        total_profit_and_loss_percentage = (total_profit_and_loss_usd / cost_basis) * 100.0
-    else:
-        total_profit_and_loss_percentage = sum(outcome.realized_profit_and_loss_percentage for outcome in evaluation.outcomes) / len(evaluation.outcomes)
-
-    last_outcome = evaluation.outcomes[-1]
-
-    return TradingOutcome(
-        realized_profit_and_loss_usd=total_profit_and_loss_usd,
-        realized_profit_and_loss_percentage=total_profit_and_loss_percentage,
-        holding_duration_minutes=average_holding_duration_minutes,
-        is_profitable=is_profitable,
-        exit_reason=last_outcome.exit_reason,
-        occurred_at=last_outcome.occurred_at
-    )
-
-
-def map_trading_evaluation(evaluation: TradingEvaluation) -> AnalyticsOutcomeRecord:
-    outcome = aggregate_evaluation_outcomes(evaluation)
-    has_outcome = outcome is not None
-    return AnalyticsOutcomeRecord(
+def build_market_snapshot_from_evaluation(evaluation: TradingEvaluation) -> AnalyticsMarketSnapshot:
+    return AnalyticsMarketSnapshot(
         token_symbol=evaluation.token_symbol,
         token_address=evaluation.token_address,
         quality_score=evaluation.quality_score,
@@ -115,20 +87,12 @@ def map_trading_evaluation(evaluation: TradingEvaluation) -> AnalyticsOutcomeRec
         transaction_count_h24=evaluation.transaction_count_h24,
         buy_to_sell_ratio=evaluation.buy_to_sell_ratio,
         fully_diluted_valuation_usd=evaluation.fully_diluted_valuation_usd,
-        dexscreener_boost=evaluation.dexscreener_boost,
-        has_outcome=has_outcome,
-        realized_profit_and_loss_usd=outcome.realized_profit_and_loss_usd if has_outcome else 0.0,
-        realized_profit_and_loss_percentage=outcome.realized_profit_and_loss_percentage if has_outcome else 0.0,
-        holding_duration_minutes=outcome.holding_duration_minutes if has_outcome else 0.0,
-        is_profitable=outcome.is_profitable if has_outcome else False,
-        exit_reason=outcome.exit_reason if has_outcome else "",
-        occurred_at=outcome.occurred_at if has_outcome else None,
+        promotion_score=evaluation.promotion_score,
     )
 
 
-def map_trading_shadowing_verdict(verdict: TradingShadowingVerdict) -> AnalyticsOutcomeRecord:
-    probe = verdict.probe
-    return AnalyticsOutcomeRecord(
+def build_market_snapshot_from_shadowing_probe(probe: TradingShadowingProbe) -> AnalyticsMarketSnapshot:
+    return AnalyticsMarketSnapshot(
         token_symbol=probe.token_symbol,
         token_address=probe.token_address,
         quality_score=probe.quality_score,
@@ -149,12 +113,95 @@ def map_trading_shadowing_verdict(verdict: TradingShadowingVerdict) -> Analytics
         transaction_count_h24=probe.transaction_count_h24,
         buy_to_sell_ratio=probe.buy_to_sell_ratio,
         fully_diluted_valuation_usd=probe.fully_diluted_valuation_usd,
-        dexscreener_boost=probe.dexscreener_boost,
-        has_outcome=True,
-        realized_profit_and_loss_usd=verdict.realized_pnl_usd,
-        realized_profit_and_loss_percentage=verdict.realized_pnl_percentage,
-        holding_duration_minutes=verdict.holding_duration_minutes,
-        is_profitable=verdict.is_profitable,
-        exit_reason=verdict.exit_reason,
-        occurred_at=verdict.resolved_at,
+        promotion_score=probe.promotion_score,
+    )
+
+
+def aggregate_evaluation_outcomes(evaluation: TradingEvaluation) -> TradingOutcome | None:
+    if not evaluation.outcomes:
+        return None
+
+    if len(evaluation.outcomes) == 1:
+        return evaluation.outcomes[0]
+
+    total_profit_and_loss_usd = sum(outcome.realized_profit_and_loss_usd for outcome in evaluation.outcomes)
+    average_holding_duration_minutes = sum(outcome.holding_duration_minutes for outcome in evaluation.outcomes) / len(evaluation.outcomes)
+    is_profitable = total_profit_and_loss_usd > 0
+
+    cost_basis = evaluation.order_notional_value_usd
+    if cost_basis > 0.0:
+        total_profit_and_loss_percentage = (total_profit_and_loss_usd / cost_basis) * 100.0
+    else:
+        total_profit_and_loss_percentage = sum(outcome.realized_profit_and_loss_percentage for outcome in evaluation.outcomes) / len(evaluation.outcomes)
+
+    last_outcome = evaluation.outcomes[-1]
+
+    return TradingOutcome(
+        realized_profit_and_loss_usd=total_profit_and_loss_usd,
+        realized_profit_and_loss_percentage=total_profit_and_loss_percentage,
+        holding_duration_minutes=average_holding_duration_minutes,
+        is_profitable=is_profitable,
+        exit_reason=last_outcome.exit_reason,
+        occurred_at=last_outcome.occurred_at,
+    )
+
+
+def build_resolved_outcome_from_trading_outcome(outcome: TradingOutcome) -> AnalyticsResolvedTradeOutcome:
+    return AnalyticsResolvedTradeOutcome(
+        realized_profit_and_loss_usd=outcome.realized_profit_and_loss_usd,
+        realized_profit_and_loss_percentage=outcome.realized_profit_and_loss_percentage,
+        holding_duration_minutes=outcome.holding_duration_minutes,
+        is_profitable=outcome.is_profitable,
+        exit_reason=outcome.exit_reason,
+        occurred_at=outcome.occurred_at,
+    )
+
+
+def build_resolved_outcome_from_shadowing_verdict(verdict: TradingShadowingVerdict) -> AnalyticsResolvedTradeOutcome:
+    realized_profit_and_loss_usd = verdict.realized_pnl_usd
+    realized_profit_and_loss_percentage = verdict.realized_pnl_percentage
+    holding_duration_minutes = verdict.holding_duration_minutes
+    is_profitable = verdict.is_profitable
+    exit_reason = verdict.exit_reason
+    resolved_at = verdict.resolved_at
+
+    if (
+            realized_profit_and_loss_usd is None
+            or realized_profit_and_loss_percentage is None
+            or holding_duration_minutes is None
+            or is_profitable is None
+            or exit_reason is None
+            or resolved_at is None
+    ):
+        raise ValueError("Shadowing verdict is missing resolved outcome fields")
+
+    return AnalyticsResolvedTradeOutcome(
+        realized_profit_and_loss_usd=realized_profit_and_loss_usd,
+        realized_profit_and_loss_percentage=realized_profit_and_loss_percentage,
+        holding_duration_minutes=holding_duration_minutes,
+        is_profitable=is_profitable,
+        exit_reason=exit_reason,
+        occurred_at=resolved_at,
+    )
+
+
+def map_trading_evaluation(evaluation: TradingEvaluation) -> AnalyticsOutcomeRecord:
+    market_snapshot = build_market_snapshot_from_evaluation(evaluation)
+    aggregated_outcome = aggregate_evaluation_outcomes(evaluation)
+    resolved_outcome = (
+        build_resolved_outcome_from_trading_outcome(aggregated_outcome)
+        if aggregated_outcome is not None
+        else None
+    )
+    return AnalyticsOutcomeRecord(
+        market_snapshot=market_snapshot,
+        resolved_outcome=resolved_outcome,
+    )
+
+
+def map_trading_shadowing_verdict(verdict: TradingShadowingVerdict) -> AnalyticsOutcomeRecord:
+    probe = verdict.probe
+    return AnalyticsOutcomeRecord(
+        market_snapshot=build_market_snapshot_from_shadowing_probe(probe),
+        resolved_outcome=build_resolved_outcome_from_shadowing_verdict(verdict),
     )

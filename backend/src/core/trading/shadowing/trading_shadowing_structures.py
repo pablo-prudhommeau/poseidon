@@ -45,39 +45,39 @@ class TradingCandidateShadowingMetricEvaluation(BaseModel):
     normalized_influence: Optional[float] = None
 
 
-class TradingShadowingRegimePayload(BaseModel):
+class TradingShadowingSnapshot(BaseModel):
+    regime: TradingShadowingRegime
+    metric_profiles: list[TradingShadowingMetricProfile] = Field(default_factory=list)
+
+
+class TradingShadowingRegime(BaseModel):
     phase: TradingShadowingPhase
-    performance_gate_enabled: bool
+    edge_gate_enabled: bool
     cortex_gate_enabled: bool
-    shadowing_resolved_outcome_count: Optional[int] = None
-    shadowing_required_outcome_count: Optional[int] = None
-    shadowing_elapsed_hours: Optional[float] = None
-    shadowing_required_hours: Optional[float] = None
-    shadowing_performance_eligible_outcome_count: Optional[int] = None
-    shadowing_performance_required_outcome_count: Optional[int] = None
-    shadowing_performance_chronicle_profit_factor: Optional[float] = None
-    shadowing_performance_chronicle_profit_factor_threshold: Optional[float] = None
-    shadowing_performance_chronicle_profit_factor_lookback_days: Optional[float] = None
-    shadowing_performance_chronicle_profit_factor_bucket_width_seconds: Optional[int] = None
-    shadowing_performance_chronicle_profit_factor_moving_average_period: Optional[int] = None
-    shadowing_performance_sparse_expected_value_usd: Optional[float] = None
-    shadowing_performance_sparse_expected_value_usd_threshold: Optional[float] = None
-    shadowing_performance_sparse_expected_value_lookback_days: Optional[float] = None
-    shadowing_performance_sparse_expected_value_bucket_width_seconds: Optional[int] = None
-    shadowing_performance_sparse_expected_value_moving_average_period: Optional[int] = None
-    shadowing_metrics_meta_win_rate: Optional[float] = None
-    shadowing_metrics_meta_average_pnl: Optional[float] = None
-    shadowing_metrics_meta_average_holding_time_hours: Optional[float] = None
-    shadowing_metrics_meta_expected_pnl_velocity: Optional[float] = None
-    shadowing_metrics_meta_profit_factor: Optional[float] = None
-    shadowing_metrics_meta_expected_value_usd: Optional[float] = None
+    resolved_outcome_count: Optional[int] = None
+    required_outcome_count: Optional[int] = None
+    elapsed_hours: Optional[float] = None
+    required_hours: Optional[float] = None
+    edge_eligible_outcome_count: Optional[int] = None
+    edge_required_outcome_count: Optional[int] = None
+    edge_chronicle_profit_factor: Optional[float] = None
+    edge_chronicle_profit_factor_threshold: Optional[float] = None
+    edge_chronicle_profit_factor_lookback_days: Optional[float] = None
+    edge_chronicle_profit_factor_bucket_width_seconds: Optional[int] = None
+    edge_chronicle_profit_factor_moving_average_period: Optional[int] = None
+    edge_sparse_expected_value_usd: Optional[float] = None
+    edge_sparse_expected_value_usd_threshold: Optional[float] = None
+    edge_sparse_expected_value_lookback_days: Optional[float] = None
+    edge_sparse_expected_value_bucket_width_seconds: Optional[int] = None
+    edge_sparse_expected_value_moving_average_period: Optional[int] = None
+    metrics_meta_win_rate: Optional[float] = None
+    metrics_meta_average_pnl: Optional[float] = None
+    metrics_meta_average_holding_time_hours: Optional[float] = None
+    metrics_meta_expected_pnl_velocity: Optional[float] = None
+    metrics_meta_profit_factor: Optional[float] = None
+    metrics_meta_expected_value_usd: Optional[float] = None
     cortex_training_eligible_outcome_count: Optional[int] = None
     cortex_training_required_outcome_count: Optional[int] = None
-
-
-class TradingShadowingSnapshot(BaseModel):
-    regime: TradingShadowingRegimePayload
-    metric_profiles: list[TradingShadowingMetricProfile] = Field(default_factory=list)
 
 
 class TradingCandidateShadowingDiagnostics(BaseModel):
@@ -198,4 +198,3 @@ class TradingShadowingVerdictChronicle(BaseModel):
 class TradingShadowingVerdictChronicleComputationResult(BaseModel):
     chronicle: TradingShadowingVerdictChronicle
     verdicts: list[TradingShadowingVerdictChronicleVerdict]
-

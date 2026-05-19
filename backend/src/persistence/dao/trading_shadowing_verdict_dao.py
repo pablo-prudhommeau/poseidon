@@ -128,7 +128,7 @@ class TradingShadowingVerdictDao:
                         TradingShadowingProbe.liquidity_usd,
                         TradingShadowingProbe.market_cap_usd,
                         TradingShadowingProbe.fully_diluted_valuation_usd,
-                        TradingShadowingProbe.dexscreener_boost,
+                        TradingShadowingProbe.promotion_score,
                         TradingShadowingProbe.volume_m5_usd,
                         TradingShadowingProbe.volume_h1_usd,
                         TradingShadowingProbe.volume_h6_usd,
@@ -212,7 +212,7 @@ class TradingShadowingVerdictDao:
                         TradingShadowingProbe.transaction_count_h24,
                         TradingShadowingProbe.buy_to_sell_ratio,
                         TradingShadowingProbe.fully_diluted_valuation_usd,
-                        TradingShadowingProbe.dexscreener_boost,
+                        TradingShadowingProbe.promotion_score,
                     ),
                 )
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
@@ -364,4 +364,3 @@ class TradingShadowingVerdictDao:
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts for pair %s — %s", pair_address, error)
             raise
-

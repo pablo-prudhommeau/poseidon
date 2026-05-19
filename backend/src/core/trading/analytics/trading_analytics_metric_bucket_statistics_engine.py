@@ -9,28 +9,121 @@ from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
+
+def read_quality_score(record: AnalyticsOutcomeRecord) -> float:
+    return record.quality_score
+
+
+def read_liquidity_usd(record: AnalyticsOutcomeRecord) -> float:
+    return record.liquidity_usd
+
+
+def read_market_cap_usd(record: AnalyticsOutcomeRecord) -> float:
+    return record.market_cap_usd
+
+
+def read_volume_m5_usd(record: AnalyticsOutcomeRecord) -> float:
+    return record.volume_m5_usd
+
+
+def read_volume_h1_usd(record: AnalyticsOutcomeRecord) -> float:
+    return record.volume_h1_usd
+
+
+def read_volume_h6_usd(record: AnalyticsOutcomeRecord) -> float:
+    return record.volume_h6_usd
+
+
+def read_volume_h24_usd(record: AnalyticsOutcomeRecord) -> float:
+    return record.volume_h24_usd
+
+
+def read_price_change_percentage_m5(record: AnalyticsOutcomeRecord) -> float:
+    return record.price_change_percentage_m5
+
+
+def read_price_change_percentage_h1(record: AnalyticsOutcomeRecord) -> float:
+    return record.price_change_percentage_h1
+
+
+def read_price_change_percentage_h6(record: AnalyticsOutcomeRecord) -> float:
+    return record.price_change_percentage_h6
+
+
+def read_price_change_percentage_h24(record: AnalyticsOutcomeRecord) -> float:
+    return record.price_change_percentage_h24
+
+
+def read_token_age_hours(record: AnalyticsOutcomeRecord) -> float:
+    return record.token_age_hours
+
+
+def read_transaction_count_m5(record: AnalyticsOutcomeRecord) -> float:
+    return float(record.transaction_count_m5)
+
+
+def read_transaction_count_h1(record: AnalyticsOutcomeRecord) -> float:
+    return float(record.transaction_count_h1)
+
+
+def read_transaction_count_h6(record: AnalyticsOutcomeRecord) -> float:
+    return float(record.transaction_count_h6)
+
+
+def read_transaction_count_h24(record: AnalyticsOutcomeRecord) -> float:
+    return float(record.transaction_count_h24)
+
+
+def read_buy_to_sell_ratio(record: AnalyticsOutcomeRecord) -> float:
+    return record.buy_to_sell_ratio
+
+
+def read_fully_diluted_valuation_usd(record: AnalyticsOutcomeRecord) -> float:
+    return record.fully_diluted_valuation_usd
+
+
+def read_promotion_score(record: AnalyticsOutcomeRecord) -> float:
+    if record.promotion_score is None:
+        return 0.0
+    return record.promotion_score
+
+
+def read_liquidity_churn_h24(record: AnalyticsOutcomeRecord) -> float:
+    liquidity_usd = record.liquidity_usd
+    if liquidity_usd <= 0.0:
+        return 0.0
+    return record.volume_h24_usd / liquidity_usd
+
+
+def read_momentum_acceleration_5m_1h(record: AnalyticsOutcomeRecord) -> float:
+    price_change_h1 = record.price_change_percentage_h1
+    if price_change_h1 == 0.0:
+        return 0.0
+    return record.price_change_percentage_m5 / price_change_h1
+
+
 METRIC_DEFINITIONS: list[MetricDefinition] = [
-    MetricDefinition(key="quality_score", label="Quality score", accessor=lambda record: record.quality_score, unit="score"),
-    MetricDefinition(key="liquidity_usd", label="Liquidity ($)", accessor=lambda record: record.liquidity_usd, unit="usd"),
-    MetricDefinition(key="market_cap_usd", label="Market cap ($)", accessor=lambda record: record.market_cap_usd, unit="usd"),
-    MetricDefinition(key="volume_m5_usd", label="Volume 5m ($)", accessor=lambda record: record.volume_m5_usd, unit="usd"),
-    MetricDefinition(key="volume_h1_usd", label="Volume 1h ($)", accessor=lambda record: record.volume_h1_usd, unit="usd"),
-    MetricDefinition(key="volume_h6_usd", label="Volume 6h ($)", accessor=lambda record: record.volume_h6_usd, unit="usd"),
-    MetricDefinition(key="volume_h24_usd", label="Volume 24h ($)", accessor=lambda record: record.volume_h24_usd, unit="usd"),
-    MetricDefinition(key="price_change_m5", label="Δ5m (%)", accessor=lambda record: record.price_change_percentage_m5, unit="percent"),
-    MetricDefinition(key="price_change_h1", label="Δ1h (%)", accessor=lambda record: record.price_change_percentage_h1, unit="percent"),
-    MetricDefinition(key="price_change_h6", label="Δ6h (%)", accessor=lambda record: record.price_change_percentage_h6, unit="percent"),
-    MetricDefinition(key="price_change_h24", label="Δ24h (%)", accessor=lambda record: record.price_change_percentage_h24, unit="percent"),
-    MetricDefinition(key="token_age_hours", label="Token age (h)", accessor=lambda record: record.token_age_hours, unit="hours"),
-    MetricDefinition(key="transaction_count_m5", label="Transactions 5m", accessor=lambda record: record.transaction_count_m5, unit="count"),
-    MetricDefinition(key="transaction_count_h1", label="Transactions 1h", accessor=lambda record: record.transaction_count_h1, unit="count"),
-    MetricDefinition(key="transaction_count_h6", label="Transactions 6h", accessor=lambda record: record.transaction_count_h6, unit="count"),
-    MetricDefinition(key="transaction_count_h24", label="Transactions 24h", accessor=lambda record: record.transaction_count_h24, unit="count"),
-    MetricDefinition(key="buy_to_sell_ratio", label="Buy/Sell ratio", accessor=lambda record: record.buy_to_sell_ratio, unit="ratio"),
-    MetricDefinition(key="fully_diluted_valuation_usd", label="FDV ($)", accessor=lambda record: record.fully_diluted_valuation_usd, unit="usd"),
-    MetricDefinition(key="dexscreener_boost", label="Dexscreener Boost", accessor=lambda record: record.dexscreener_boost, unit="count"),
-    MetricDefinition(key="liquidity_churn_h24", label="Liquidity Churn 24h", accessor=lambda record: (record.volume_h24_usd / record.liquidity_usd) if record.liquidity_usd and record.liquidity_usd > 0 else 0.0, unit="ratio"),
-    MetricDefinition(key="momentum_acceleration_5m_1h", label="Momentum Accel. 5m/1h", accessor=lambda record: (record.price_change_percentage_m5 / record.price_change_percentage_h1) if record.price_change_percentage_h1 and record.price_change_percentage_h1 != 0 else 0.0, unit="ratio"),
+    MetricDefinition(key="quality_score", label="Quality score", accessor=read_quality_score, unit="score"),
+    MetricDefinition(key="liquidity_usd", label="Liquidity ($)", accessor=read_liquidity_usd, unit="usd"),
+    MetricDefinition(key="market_cap_usd", label="Market cap ($)", accessor=read_market_cap_usd, unit="usd"),
+    MetricDefinition(key="volume_m5_usd", label="Volume 5m ($)", accessor=read_volume_m5_usd, unit="usd"),
+    MetricDefinition(key="volume_h1_usd", label="Volume 1h ($)", accessor=read_volume_h1_usd, unit="usd"),
+    MetricDefinition(key="volume_h6_usd", label="Volume 6h ($)", accessor=read_volume_h6_usd, unit="usd"),
+    MetricDefinition(key="volume_h24_usd", label="Volume 24h ($)", accessor=read_volume_h24_usd, unit="usd"),
+    MetricDefinition(key="price_change_m5", label="Δ5m (%)", accessor=read_price_change_percentage_m5, unit="percent"),
+    MetricDefinition(key="price_change_h1", label="Δ1h (%)", accessor=read_price_change_percentage_h1, unit="percent"),
+    MetricDefinition(key="price_change_h6", label="Δ6h (%)", accessor=read_price_change_percentage_h6, unit="percent"),
+    MetricDefinition(key="price_change_h24", label="Δ24h (%)", accessor=read_price_change_percentage_h24, unit="percent"),
+    MetricDefinition(key="token_age_hours", label="Token age (h)", accessor=read_token_age_hours, unit="hours"),
+    MetricDefinition(key="transaction_count_m5", label="Transactions 5m", accessor=read_transaction_count_m5, unit="count"),
+    MetricDefinition(key="transaction_count_h1", label="Transactions 1h", accessor=read_transaction_count_h1, unit="count"),
+    MetricDefinition(key="transaction_count_h6", label="Transactions 6h", accessor=read_transaction_count_h6, unit="count"),
+    MetricDefinition(key="transaction_count_h24", label="Transactions 24h", accessor=read_transaction_count_h24, unit="count"),
+    MetricDefinition(key="buy_to_sell_ratio", label="Buy/Sell ratio", accessor=read_buy_to_sell_ratio, unit="ratio"),
+    MetricDefinition(key="fully_diluted_valuation_usd", label="FDV ($)", accessor=read_fully_diluted_valuation_usd, unit="usd"),
+    MetricDefinition(key="promotion_score", label="Promotion score", accessor=read_promotion_score, unit="count"),
+    MetricDefinition(key="liquidity_churn_h24", label="Liquidity Churn 24h", accessor=read_liquidity_churn_h24, unit="ratio"),
+    MetricDefinition(key="momentum_acceleration_5m_1h", label="Momentum Accel. 5m/1h", accessor=read_momentum_acceleration_5m_1h, unit="ratio"),
 ]
 
 

@@ -2,7 +2,6 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import {
-    AnalyticsResponse,
     DcaOrderPayload,
     DcaOrdersResponse,
     DcaStrategiesResponse,
@@ -10,6 +9,7 @@ import {
     DcaStrategyCreateResponse,
     DcaStrategyPayload,
     TradeMode,
+    TradingAnalyticsResponse,
     TradingEvaluationPayload,
     TradingPaperResetPayload,
     TradingPositionPayload,
@@ -39,13 +39,6 @@ export class ApiService {
         return this.http.post<DcaStrategyCreateResponse>('/api/dca/strategies', payload);
     }
 
-    getAnalytics(realm: 'qualified' | 'shadow' = 'qualified'): Observable<AnalyticsResponse> {
-        if (realm === 'shadow') {
-            return this.http.get<AnalyticsResponse>('/api/analytics/shadow');
-        }
-        return this.http.get<AnalyticsResponse>('/api/analytics');
-    }
-
     getDcaOrders(strategyId: number): Observable<DcaOrderPayload[]> {
         return this.http.get<DcaOrdersResponse>(`/api/dca/strategies/${strategyId}/orders`).pipe(map((response) => response.orders));
     }
@@ -55,26 +48,33 @@ export class ApiService {
     }
 
     getEvaluationById(evaluationId: number): Observable<TradingEvaluationPayload | null> {
-        return this.http.get<TradingEvaluationPayload | null>(`/api/analytics/evaluation/${evaluationId}`);
+        return this.http.get<TradingEvaluationPayload | null>(`/api/trading/evaluations/${evaluationId}`);
     }
 
     getOpenPositions(): Observable<TradingPositionPayload[]> {
-        return this.http.get<TradingPositionsResponse>('/api/positions').pipe(map((response) => response.positions));
+        return this.http.get<TradingPositionsResponse>('/api/trading/positions').pipe(map((response) => response.positions));
     }
 
     getPositionByEvaluationId(evaluationId: number): Observable<TradingPositionPayload> {
-        return this.http.get<TradingPositionPayload>(`/api/positions/by-evaluation/${evaluationId}`);
+        return this.http.get<TradingPositionPayload>(`/api/trading/positions/by-evaluation/${evaluationId}`);
     }
 
     getShadowTradesForPair(pairAddress: string): Observable<TradingEvaluationPayload[]> {
-        return this.http.get<TradingEvaluationPayload[]>(`/api/analytics/shadow/${pairAddress}`);
+        return this.http.get<TradingEvaluationPayload[]>(`/api/trading/shadowing/evaluations/${pairAddress}`);
     }
 
     getStatus(): Observable<AppStatusResponse> {
         return this.http.get<AppStatusResponse>('/api/status');
     }
 
+    getTradingAnalytics(realm: 'qualified' | 'shadow' = 'qualified'): Observable<TradingAnalyticsResponse> {
+        if (realm === 'shadow') {
+            return this.http.get<TradingAnalyticsResponse>('/api/trading/analytics/shadow');
+        }
+        return this.http.get<TradingAnalyticsResponse>('/api/trading/analytics');
+    }
+
     resetPaper(): Observable<TradingPaperResetPayload> {
-        return this.http.post<TradingPaperResetPayload>('/api/paper/reset', {});
+        return this.http.post<TradingPaperResetPayload>('/api/trading/paper/reset', {});
     }
 }

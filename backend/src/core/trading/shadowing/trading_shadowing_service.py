@@ -41,7 +41,6 @@ from src.persistence.models import TradingShadowingVerdict
 
 logger = get_application_logger(__name__)
 
-
 _CORTEX_RELIABILITY_BIN_COUNT = 10
 _CORTEX_HIGH_CONVICTION_DISTANCE_FROM_HALF = 0.15
 
@@ -344,7 +343,7 @@ def _build_bucket(
         average_cortex_predicted_holding_time_minutes = None
         if cortex_predicted_holding_times_minutes:
             average_cortex_predicted_holding_time_minutes = (
-                sum(cortex_predicted_holding_times_minutes) / len(cortex_predicted_holding_times_minutes)
+                    sum(cortex_predicted_holding_times_minutes) / len(cortex_predicted_holding_times_minutes)
             )
         cortex_skill_score_percentage = _compute_cortex_skill_score_percentage(items)
         (
@@ -429,8 +428,6 @@ def _convert_trading_shadowing_verdict_to_chronicle_verdict(
     if verdict.realized_pnl_percentage is None or verdict.realized_pnl_usd is None:
         return None
     if verdict.is_profitable is None:
-        return None
-    if verdict.probe is None:
         return None
 
     cortex_probability: Optional[float] = None

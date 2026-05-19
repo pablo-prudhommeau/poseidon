@@ -28,10 +28,10 @@ def apply_shadowing_toxic_exposure_filter(
 
     is_active: bool = snapshot.regime.phase == TradingShadowingPhase.TRADABLE
 
-    meta_win_rate: float = snapshot.regime.shadowing_metrics_meta_win_rate or 0.0
-    meta_average_pnl: float = snapshot.regime.shadowing_metrics_meta_average_pnl or 0.0
-    meta_expected_pnl_velocity: float = snapshot.regime.shadowing_metrics_meta_expected_pnl_velocity or 0.0
-    meta_average_holding_time_hours: float = snapshot.regime.shadowing_metrics_meta_average_holding_time_hours or 0.0
+    meta_win_rate: float = snapshot.regime.metrics_meta_win_rate or 0.0
+    meta_average_pnl: float = snapshot.regime.metrics_meta_average_pnl or 0.0
+    meta_expected_pnl_velocity: float = snapshot.regime.metrics_meta_expected_pnl_velocity or 0.0
+    meta_average_holding_time_hours: float = snapshot.regime.metrics_meta_average_holding_time_hours or 0.0
 
     offset_win_rate: float = meta_win_rate + settings.TRADING_SHADOWING_TOXIC_WIN_RATE_OFFSET
     floor_win_rate: float = settings.TRADING_SHADOWING_TOXIC_ABSOLUTE_FLOOR_WIN_RATE
@@ -245,8 +245,3 @@ def _format_candidate_shadowing_metrics_table(
             formatted_reasons.append(f"{grey}{key}{grey} (V:{v_placeholder}, WR:{wr_placeholder}, PnL:{pnl_placeholder}, OHR:{ohr_placeholder}, H:{hold_placeholder}, Vel:{vel_placeholder}, T:{trades_placeholder}){reset}")
 
     return " |   ".join(formatted_reasons)
-
-
-
-
-

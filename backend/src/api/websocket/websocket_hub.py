@@ -12,13 +12,10 @@ from src.api.http.api_schemas import (
     WebsocketStatusPayload,
 )
 from src.api.websocket.websocket_manager import websocket_manager
+from src.api.websocket.websocket_structures import WebsocketInboundMessage, WebsocketMessageType
 from src.configuration.config import settings
 from src.core.dca.cache.dca_cache import dca_state_cache
 from src.core.dca.cache.dca_cache_structures import DcaState
-from src.core.structures.structures import (
-    WebsocketInboundMessage,
-    WebsocketMessageType,
-)
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.cache.trading_cache_structures import TradingState
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
@@ -34,39 +31,39 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
         trading_state: TradingState = trading_cache.get_trading_state()
         if trading_state.positions is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.POSITIONS.value,
+                "type": WebsocketMessageType.TRADING_POSITIONS.value,
                 "payload": jsonable_encoder(trading_state.positions),
             })
         if trading_state.position_prices is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.POSITION_PRICES.value,
+                "type": WebsocketMessageType.TRADING_POSITION_PRICES.value,
                 "payload": jsonable_encoder(trading_state.position_prices),
             })
         if trading_state.trades is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.TRADES.value,
+                "type": WebsocketMessageType.TRADING_TRADES.value,
                 "payload": jsonable_encoder(trading_state.trades),
             })
         if trading_state.portfolio is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.PORTFOLIO.value,
+                "type": WebsocketMessageType.TRADING_PORTFOLIO.value,
                 "payload": jsonable_encoder(trading_state.portfolio),
             })
         if trading_state.liquidity is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.LIQUIDITY.value,
+                "type": WebsocketMessageType.TRADING_LIQUIDITY.value,
                 "payload": jsonable_encoder(trading_state.liquidity),
             })
 
         trading_shadowing_state: TradingShadowingState = trading_shadowing_cache.get_shadowing_trading_state()
         if trading_shadowing_state.shadowing_regime is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.SHADOWING_REGIME.value,
+                "type": WebsocketMessageType.TRADING_SHADOWING_REGIME.value,
                 "payload": jsonable_encoder(trading_shadowing_state.shadowing_regime),
             })
         if trading_shadowing_state.shadowing_verdict_chronicle is not None:
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE.value,
+                "type": WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE.value,
                 "payload": jsonable_encoder(trading_shadowing_state.shadowing_verdict_chronicle),
             })
 

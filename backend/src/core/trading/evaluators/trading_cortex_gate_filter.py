@@ -24,14 +24,35 @@ def apply_trading_cortex_gate_filter(
         gate_enabled: bool,
 ) -> list[TradingCandidate]:
     request_builder = TradingCortexRequestBuilder()
-    scoring_requests = [
-        request_builder.build_trade_scoring_request(
-            candidate=candidate,
-            candidate_rank=candidate_rank,
-            shadow_snapshot=shadow_snapshot,
-        )
-        for candidate_rank, candidate in enumerate(candidates, start=1)
-    ]
+    scoring_requests = []
+    scoring_candidates: list[TradingCandidate] = []
+    skipped_without_cortex: list[TradingCandidate] = []
+    for candidate in candidates:
+        try:
+            scoring_requests.append(
+                request_builder.build_trade_scoring_request(
+                    candidate=candidate,
+                    shadow_snapshot=shadow_snapshot,
+                )
+            )
+            scoring_candidates.append(candidate)
+        except ValueError as exc:
+            log_method = logger.error if gate_enabled else logger.warning
+            log_method(
+                "[TRADING][PIPELINE][TRADING][CORTEX] Candidate %s is not cortex-ready: %s; %s",
+                candidate.token.symbol,
+                exc,
+                "blocking execution" if gate_enabled else "retaining without cortex inference",
+            )
+            if gate_enabled:
+                return []
+            skipped_without_cortex.append(candidate)
+
+    if not scoring_requests:
+        if gate_enabled:
+            return []
+        return candidates
+
     scoring_batch_request = TradingCortexScoringBatchRequest(requests=scoring_requests)
 
     inference_service = get_trading_cortex_inference_service()
@@ -72,7 +93,7 @@ def apply_trading_cortex_gate_filter(
     retained: list[TradingCandidate] = []
     rejected: list[TradingCandidate] = []
 
-    for scoring_request, candidate in zip(scoring_requests, candidates, strict=True):
+    for scoring_request, candidate in zip(scoring_requests, scoring_candidates, strict=True):
         scoring_response = response_by_request_identifier.get(scoring_request.request_identifier)
         if scoring_response is None or not scoring_response.model_ready:
             log_method = logger.error if gate_enabled else logger.warning
@@ -88,7 +109,7 @@ def apply_trading_cortex_gate_filter(
             continue
 
         gate_verdict = _evaluate_gate_verdict(scoring_response)
-        candidate.trading_cortex_inference_snapshot = _build_inference_snapshot(
+        candidate.cortex_diagnostics.inference_snapshot = _build_inference_snapshot(
             scoring_response=scoring_response,
             gate_verdict=gate_verdict,
         )
@@ -112,7 +133,7 @@ def apply_trading_cortex_gate_filter(
             len(candidates),
         )
 
-    return retained
+    return retained + skipped_without_cortex
 
 
 def _log_cortex_evaluation_details(
@@ -125,7 +146,7 @@ def _log_cortex_evaluation_details(
     reset: str = console_color_codes["RESET"]
 
     for candidate in rejected:
-        snapshot = candidate.trading_cortex_inference_snapshot
+        snapshot = candidate.cortex_diagnostics.inference_snapshot
         if not snapshot:
             continue
 
@@ -137,7 +158,7 @@ def _log_cortex_evaluation_details(
         logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Reasons: %s", prefix, padding, metrics_table)
 
     for candidate in retained:
-        snapshot = candidate.trading_cortex_inference_snapshot
+        snapshot = candidate.cortex_diagnostics.inference_snapshot
         if not snapshot:
             continue
 
@@ -238,4 +259,3 @@ def _build_inference_snapshot(
         model_ready=scoring_response.model_ready,
         gate_verdict=gate_verdict,
     )
-

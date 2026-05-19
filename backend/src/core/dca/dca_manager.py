@@ -8,7 +8,8 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.dca.dca_allocation_engine import DcaAllocationEngine
-from src.core.structures.structures import DcaOrderStatus, DcaStrategyStatus, BlockchainNetwork
+from src.core.dca.dca_structures import DcaOrderStatus, DcaStrategyStatus
+from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.binance.binance_client import fetch_exponential_moving_average_and_price

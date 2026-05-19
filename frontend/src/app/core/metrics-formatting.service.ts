@@ -34,7 +34,7 @@ export class MetricsFormattingService {
         if (key.includes('ratio')) {
             return this.numberFormattingService.formatNumber(value, 2, 2);
         }
-        if (key.includes('transaction_count') || key.includes('boost')) {
+        if (key.includes('transaction_count') || key.includes('promotion_score')) {
             return this.numberFormattingService.formatNumber(value, 0, 0);
         }
         return this.numberFormattingService.formatNumber(value, 0, 2);

@@ -15,9 +15,9 @@ from src.api.http.api_schemas import (
     TradingShadowingVerdictChronicleDeltaVerdictPayload,
 )
 from src.configuration.config import settings
+from src.core.trading.shadowing.trading_shadowing_regime_helpers import derive_trading_shadowing_phase
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingSnapshot,
-    TradingShadowingPhase,
 )
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicle,
@@ -48,58 +48,54 @@ def build_shadowing_regime_payload(
     required_hours = settings.TRADING_SHADOWING_MIN_HOURS_FOR_ACTIVATION
 
     shadowing_ready = (
-        resolved_outcome_count >= required_shadowing_outcomes
-        and elapsed_hours >= required_hours
+            resolved_outcome_count >= required_shadowing_outcomes
+            and elapsed_hours >= required_hours
     )
     shadow_gate_ready = resolved_shadowing_and_cortex_inference_aware_outcome_count >= required_shadow_gate_outcomes
     cortex_training_ready = resolved_shadowing_and_cortex_inference_aware_outcome_count >= required_cortex_training_outcomes
-    is_shadow_performance_gate_enabled = settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED
+    is_shadow_edge_gate_enabled = settings.TRADING_GATE_SHADOWING_EDGE_ENABLED
     is_cortex_gate_enabled = settings.TRADING_GATE_CORTEX_ENABLED
     shadowing_snapshot_ready = snapshot is not None and len(snapshot.metric_profiles) > 0
-    shadow_gate_requirement_satisfied = shadow_gate_ready or not is_shadow_performance_gate_enabled
-    cortexing_unlocked = shadowing_ready and shadow_gate_ready
-    trading_unblocked = (
-        shadowing_ready
-        and shadow_gate_requirement_satisfied
-        and (cortex_training_ready or not is_cortex_gate_enabled)
-    )
-    if not settings.TRADING_SHADOWING_ENABLED:
-        phase = TradingShadowingPhase.DISABLED
-    elif trading_unblocked and shadowing_snapshot_ready:
-        phase = TradingShadowingPhase.TRADABLE
-    elif trading_unblocked:
-        phase = TradingShadowingPhase.SYNCING
-    elif is_cortex_gate_enabled and cortexing_unlocked:
-        phase = TradingShadowingPhase.CORTEXING
+    if snapshot is not None:
+        phase = snapshot.regime.phase
     else:
-        phase = TradingShadowingPhase.SHADOWING
+        phase = derive_trading_shadowing_phase(
+            is_shadowing_enabled=settings.TRADING_SHADOWING_ENABLED,
+            shadowing_ready=shadowing_ready,
+            shadow_gate_ready=shadow_gate_ready,
+            cortex_training_ready=cortex_training_ready,
+            edge_gate_enabled=is_shadow_edge_gate_enabled,
+            toxic_metrics_gate_enabled=settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED,
+            cortex_gate_enabled=is_cortex_gate_enabled,
+            shadowing_snapshot_ready=shadowing_snapshot_ready,
+        )
 
     return TradingShadowingRegimePayload(
         phase=phase,
-        performance_gate_enabled=settings.TRADING_GATE_SHADOWING_PERFORMANCE_ENABLED,
+        edge_gate_enabled=settings.TRADING_GATE_SHADOWING_EDGE_ENABLED,
         cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
-        shadowing_resolved_outcome_count=resolved_outcome_count,
-        shadowing_required_outcome_count=required_shadowing_outcomes,
-        shadowing_elapsed_hours=elapsed_hours,
-        shadowing_required_hours=required_hours,
-        shadowing_performance_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_outcome_count,
-        shadowing_performance_required_outcome_count=required_shadow_gate_outcomes,
-        shadowing_performance_chronicle_profit_factor=snapshot.regime.shadowing_performance_chronicle_profit_factor if snapshot is not None else None,
-        shadowing_performance_chronicle_profit_factor_threshold=snapshot.regime.shadowing_performance_chronicle_profit_factor_threshold if snapshot is not None else None,
-        shadowing_performance_chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
-        shadowing_performance_chronicle_profit_factor_bucket_width_seconds=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
-        shadowing_performance_chronicle_profit_factor_moving_average_period=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
-        shadowing_performance_sparse_expected_value_usd=snapshot.regime.shadowing_performance_sparse_expected_value_usd if snapshot is not None else None,
-        shadowing_performance_sparse_expected_value_usd_threshold=snapshot.regime.shadowing_performance_sparse_expected_value_usd_threshold if snapshot is not None else None,
-        shadowing_performance_sparse_expected_value_lookback_days=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
-        shadowing_performance_sparse_expected_value_bucket_width_seconds=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
-        shadowing_performance_sparse_expected_value_moving_average_period=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
-        shadowing_metrics_meta_win_rate=snapshot.regime.shadowing_metrics_meta_win_rate if snapshot is not None else None,
-        shadowing_metrics_meta_average_pnl=snapshot.regime.shadowing_metrics_meta_average_pnl if snapshot is not None else None,
-        shadowing_metrics_meta_average_holding_time_hours=snapshot.regime.shadowing_metrics_meta_average_holding_time_hours if snapshot is not None else None,
-        shadowing_metrics_meta_expected_pnl_velocity=snapshot.regime.shadowing_metrics_meta_expected_pnl_velocity if snapshot is not None else None,
-        shadowing_metrics_meta_profit_factor=snapshot.regime.shadowing_metrics_meta_profit_factor if snapshot is not None else None,
-        shadowing_metrics_meta_expected_value_usd=snapshot.regime.shadowing_metrics_meta_expected_value_usd if snapshot is not None else None,
+        resolved_outcome_count=resolved_outcome_count,
+        required_outcome_count=required_shadowing_outcomes,
+        elapsed_hours=elapsed_hours,
+        required_hours=required_hours,
+        edge_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_outcome_count,
+        edge_required_outcome_count=required_shadow_gate_outcomes,
+        edge_chronicle_profit_factor=snapshot.regime.edge_chronicle_profit_factor if snapshot is not None else None,
+        edge_chronicle_profit_factor_threshold=snapshot.regime.edge_chronicle_profit_factor_threshold if snapshot is not None else None,
+        edge_chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
+        edge_chronicle_profit_factor_bucket_width_seconds=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
+        edge_chronicle_profit_factor_moving_average_period=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
+        edge_sparse_expected_value_usd=snapshot.regime.edge_sparse_expected_value_usd if snapshot is not None else None,
+        edge_sparse_expected_value_usd_threshold=snapshot.regime.edge_sparse_expected_value_usd_threshold if snapshot is not None else None,
+        edge_sparse_expected_value_lookback_days=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
+        edge_sparse_expected_value_bucket_width_seconds=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
+        edge_sparse_expected_value_moving_average_period=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
+        metrics_meta_win_rate=snapshot.regime.metrics_meta_win_rate if snapshot is not None else None,
+        metrics_meta_average_pnl=snapshot.regime.metrics_meta_average_pnl if snapshot is not None else None,
+        metrics_meta_average_holding_time_hours=snapshot.regime.metrics_meta_average_holding_time_hours if snapshot is not None else None,
+        metrics_meta_expected_pnl_velocity=snapshot.regime.metrics_meta_expected_pnl_velocity if snapshot is not None else None,
+        metrics_meta_profit_factor=snapshot.regime.metrics_meta_profit_factor if snapshot is not None else None,
+        metrics_meta_expected_value_usd=snapshot.regime.metrics_meta_expected_value_usd if snapshot is not None else None,
         cortex_training_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_outcome_count,
         cortex_training_required_outcome_count=required_cortex_training_outcomes,
     )
@@ -241,7 +237,3 @@ def build_trading_shadowing_verdict_chronicle_incremental_delta_payload(
         buckets=buckets_payload,
         verdicts=verdicts_payload,
     )
-
-
-
-

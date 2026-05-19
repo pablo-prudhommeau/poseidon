@@ -92,4 +92,3 @@ class TradingShadowingCache:
 
 
 trading_shadowing_cache = TradingShadowingCache()
-

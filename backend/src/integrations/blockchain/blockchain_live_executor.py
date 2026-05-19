@@ -7,7 +7,7 @@ from typing import Optional
 import base58
 
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.trading_structures import TradingEvmRoute, TradingSolanaRoute
+from src.integrations.blockchain.blockchain_structures import BlockchainEvmRoute, BlockchainSolanaRoute
 from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer, EvmSigner
 from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer, SolanaSigner
 from src.logging.logger import get_application_logger
@@ -30,7 +30,7 @@ class LiveExecutionService:
     async def close(self) -> None:
         return
 
-    async def solana_execute_route(self, route: TradingSolanaRoute) -> BlockchainExecutionResult:
+    async def solana_execute_route(self, route: BlockchainSolanaRoute) -> BlockchainExecutionResult:
         serialized_base64 = route.serialized_transaction_base64
         serialized = self._decode_blob(serialized_base64)
         if not isinstance(serialized, bytes) or len(serialized) == 0:
@@ -90,7 +90,7 @@ class LiveExecutionService:
 
         return b""
 
-    async def evm_execute_route(self, route: TradingEvmRoute, chain: BlockchainNetwork) -> BlockchainExecutionResult:
+    async def evm_execute_route(self, route: BlockchainEvmRoute, chain: BlockchainNetwork) -> BlockchainExecutionResult:
         transaction_request = route.transaction_request
         if transaction_request is None:
             raise ValueError("Missing transaction_request for EVM route")

@@ -20,6 +20,8 @@ def test_create_app_registers_api_routes() -> None:
 
     assert "/api/health" in route_paths
     assert "/api/status" in route_paths
+    assert "/api/trading/analytics" in route_paths
+    assert "/api/trading/positions" in route_paths
     assert "/ws" in route_paths
 
 

@@ -11,25 +11,25 @@ import { WebSocketService } from '../../core/websocket.service';
 })
 export class ConnectionOverlayPillComponent implements OnInit {
     public readonly label = computed(() => {
-        const raw = this.webSocketService.status();
+        const raw = this.webSocketService.connectionStatus();
         return raw.toUpperCase();
     });
 
     constructor(private readonly webSocketService: WebSocketService) {}
 
     ngOnInit(): void {
-        console.info('poseidon.ui.connection-overlay-pill — mounted; initial status:', this.webSocketService.status());
+        console.info('poseidon.ui.connection-overlay-pill — mounted; initial status:', this.webSocketService.connectionStatus());
     }
 
     public isClosed(): boolean {
-        return this.webSocketService.status() === 'closed';
+        return this.webSocketService.connectionStatus() === 'closed';
     }
 
     public isConnecting(): boolean {
-        return this.webSocketService.status() === 'connecting';
+        return this.webSocketService.connectionStatus() === 'connecting';
     }
 
     public isOpen(): boolean {
-        return this.webSocketService.status() === 'open';
+        return this.webSocketService.connectionStatus() === 'open';
     }
 }

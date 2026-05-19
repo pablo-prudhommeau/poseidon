@@ -15,15 +15,26 @@ from src.api.http.api_schemas import (
     DcaOrderPayload,
     DcaStrategyPayload,
     TradingEvaluationShadowingDiagnosticsPayload,
+    TradingScreenerEnvelopePayload,
     BlockchainCashBalancePayload,
 )
-from src.core.structures.structures import EquityCurve, BlockchainNetwork
+from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.screener.trading_screener_structures import TRADING_SCREENER_PROVIDER_DEXSCREENER
+from src.core.trading.screener.trading_screener_structures import TradingScreenerEnvelope
+from src.core.trading.trading_structures import TradingPortfolio
 from src.core.trading.trading_utils import get_currency_symbol
 from src.core.trading.trading_utils import infer_closing_exit_trigger_reason
 from src.core.utils.date_utils import format_datetime_to_local_iso
 from src.integrations.aave.aave_structures import AaveLiveMetrics
 from src.logging.logger import get_application_logger
-from src.persistence.models import TradingEvaluation, DcaOrder, DcaStrategy, TradingTrade, TradingPosition, TradingPortfolioSnapshot
+from src.persistence.models import (
+    TradingEvaluation,
+    DcaOrder,
+    DcaStrategy,
+    TradingTrade,
+    TradingPosition,
+    TradingShadowingVerdict,
+)
 
 logger = get_application_logger(__name__)
 
@@ -76,27 +87,33 @@ def serialize_trading_position(trading_position: TradingPosition, last_price: Op
     )
 
 
-def serialize_trading_portfolio_snapshot(
-        snapshot: TradingPortfolioSnapshot,
-        equity_curve: EquityCurve,
-        realized_total: float,
-        realized_24h: float,
-        unrealized: float,
+def serialize_trading_portfolio(
+        portfolio: TradingPortfolio,
         blockchain_balances: list[BlockchainCashBalancePayload],
 ) -> TradingPortfolioPayload:
     return TradingPortfolioPayload(
-        total_equity_value=snapshot.total_equity_value,
-        available_cash_balance=snapshot.available_cash_balance,
-        active_holdings_value=snapshot.active_holdings_value,
-        created_at=format_datetime_to_local_iso(snapshot.created_at),
+        total_equity_value=portfolio.total_equity_value,
+        available_cash_balance=portfolio.available_cash_balance,
+        active_holdings_value=portfolio.active_holdings_value,
+        created_at=format_datetime_to_local_iso(portfolio.created_at),
         equity_curve=[
-            TradingEquityCurvePointPayload(timestamp_milliseconds=curve_point.timestamp_milliseconds, total_equity_value=curve_point.equity)
-            for curve_point in equity_curve.curve_points
+            TradingEquityCurvePointPayload(
+                timestamp_milliseconds=curve_point.timestamp_milliseconds,
+                total_equity_value=curve_point.total_equity_value,
+            )
+            for curve_point in portfolio.equity_curve
         ],
-        unrealized_profit_and_loss=unrealized,
-        realized_profit_and_loss_total=realized_total,
-        realized_profit_and_loss_24h=realized_24h,
+        unrealized_profit_and_loss=portfolio.unrealized_profit_and_loss,
+        realized_profit_and_loss_total=portfolio.realized_profit_and_loss_total,
+        realized_profit_and_loss_24h=portfolio.realized_profit_and_loss_24h,
         blockchain_balances=blockchain_balances,
+    )
+
+
+def serialize_trading_screener_envelope(envelope: TradingScreenerEnvelope) -> TradingScreenerEnvelopePayload:
+    return TradingScreenerEnvelopePayload(
+        provider_id=envelope.provider_id,
+        payload=envelope.payload,
     )
 
 
@@ -135,6 +152,7 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
             buy_to_sell_ratio=row.buy_to_sell_ratio,
             market_cap_usd=row.market_cap_usd,
             fully_diluted_valuation_usd=row.fully_diluted_valuation_usd,
+            promotion_score=row.promotion_score,
         ),
         decision=TradingEvaluationDecisionPayload(
             execution_decision=row.execution_decision,
@@ -144,12 +162,96 @@ def serialize_trading_evaluation(row: TradingEvaluation) -> TradingEvaluationPay
             free_cash_after_execution_usd=row.free_cash_after_execution_usd,
         ),
         shadowing_diagnostics=TradingEvaluationShadowingDiagnosticsPayload(
-            cortex_inference_summary=row.cortex_inference_summary,
-            shadowing_regime=row.shadowing_regime,
-            shadowing_metrics=row.shadowing_metrics,
+            cortex_inference_summary=(
+                row.cortex_inference_summary.model_dump(mode="json")
+                if row.cortex_inference_summary is not None
+                else None
+            ),
+            shadowing_regime=(
+                row.shadowing_regime.model_dump(mode="json")
+                if row.shadowing_regime is not None
+                else None
+            ),
+            shadowing_metrics=(
+                [metric.model_dump(mode="json") for metric in row.shadowing_metrics]
+                if row.shadowing_metrics is not None
+                else None
+            ),
         ),
-        raw_dexscreener_payload=row.raw_dexscreener_payload,
+        screener_envelope=serialize_trading_screener_envelope(row.screener_envelope),
         raw_configuration_settings=row.raw_configuration_settings,
+    )
+
+
+def serialize_shadowing_verdict_as_trading_evaluation_payload(
+        verdict: TradingShadowingVerdict,
+) -> TradingEvaluationPayload:
+    probe = verdict.probe
+    return TradingEvaluationPayload(
+        id=verdict.id,
+        token_symbol=probe.token_symbol,
+        blockchain_network=BlockchainNetwork(probe.blockchain_network.lower()),
+        token_address=probe.token_address,
+        pair_address=probe.pair_address,
+        evaluated_at=format_datetime_to_local_iso(probe.probed_at),
+        candidate_rank=probe.candidate_rank,
+        scores=TradingEvaluationScoresPayload(
+            quality_score=probe.quality_score,
+            ai_adjusted_quality_score=probe.quality_score,
+        ),
+        ai=TradingEvaluationAiPayload(
+            ai_probability_take_profit_before_stop_loss=0.0,
+            ai_quality_score_delta=0.0,
+        ),
+        fundamentals=TradingEvaluationFundamentalsPayload(
+            token_age_hours=probe.token_age_hours,
+            volume_m5_usd=probe.volume_m5_usd,
+            volume_h1_usd=probe.volume_h1_usd,
+            volume_h6_usd=probe.volume_h6_usd,
+            volume_h24_usd=probe.volume_h24_usd,
+            liquidity_usd=probe.liquidity_usd,
+            price_change_percentage_m5=probe.price_change_percentage_m5,
+            price_change_percentage_h1=probe.price_change_percentage_h1,
+            price_change_percentage_h6=probe.price_change_percentage_h6,
+            price_change_percentage_h24=probe.price_change_percentage_h24,
+            transaction_count_m5=probe.transaction_count_m5,
+            transaction_count_h1=probe.transaction_count_h1,
+            transaction_count_h6=probe.transaction_count_h6,
+            transaction_count_h24=probe.transaction_count_h24,
+            buy_to_sell_ratio=probe.buy_to_sell_ratio,
+            market_cap_usd=probe.market_cap_usd,
+            fully_diluted_valuation_usd=probe.fully_diluted_valuation_usd,
+            promotion_score=probe.promotion_score,
+        ),
+        decision=TradingEvaluationDecisionPayload(
+            execution_decision="SHADOW_BUY",
+            sizing_multiplier=1.0,
+            order_notional_value_usd=probe.order_notional_value_usd,
+            free_cash_before_execution_usd=0.0,
+            free_cash_after_execution_usd=0.0,
+        ),
+        shadowing_diagnostics=TradingEvaluationShadowingDiagnosticsPayload(
+            cortex_inference_summary=(
+                probe.cortex_inference_summary.model_dump(mode="json")
+                if probe.cortex_inference_summary is not None
+                else None
+            ),
+            shadowing_regime=(
+                probe.shadowing_regime.model_dump(mode="json")
+                if probe.shadowing_regime is not None
+                else None
+            ),
+            shadowing_metrics=(
+                [metric.model_dump(mode="json") for metric in probe.shadowing_metrics]
+                if probe.shadowing_metrics is not None
+                else None
+            ),
+        ),
+        screener_envelope=TradingScreenerEnvelopePayload(
+            provider_id=TRADING_SCREENER_PROVIDER_DEXSCREENER,
+            payload={},
+        ),
+        raw_configuration_settings={},
     )
 
 
@@ -209,5 +311,3 @@ def serialize_dca_strategy(strategy: DcaStrategy, live_metrics: AaveLiveMetrics)
         live_aave_apy=live_metrics.supply_apy,
         live_market_price=live_metrics.asset_out_price_usd
     )
-
-

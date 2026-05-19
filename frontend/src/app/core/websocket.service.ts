@@ -1,8 +1,7 @@
 import { Injectable, signal } from '@angular/core';
-import { TradingShadowingVerdictChronicleMergeService } from '../pages/trading/shadow-verdict-chronicle/services/shadow-verdict-chronicle-merge.service';
+import { TradingShadowingVerdictChronicleMergeService } from '../pages/trading/trading-shadowing-verdict-chronicle/services/trading-shadowing-verdict-chronicle-merge.service';
 import {
     DcaStrategyPayload,
-    TradingEvaluationPayload,
     TradingLiquidityPayload,
     TradingPortfolioPayload,
     TradingPositionPayload,
@@ -19,17 +18,16 @@ export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 
 @Injectable({ providedIn: 'root' })
 export class WebSocketService {
-    public readonly analytics = signal<TradingEvaluationPayload[]>([]);
+    public readonly connectionStatus = signal<WebsocketConnectionStatus>('closed');
     public readonly dcaStrategies = signal<DcaStrategyPayload[]>([]);
-    public readonly liquidity = signal<TradingLiquidityPayload | null>(null);
-    public readonly portfolio = signal<TradingPortfolioPayload | null>(null);
-    public readonly positions = signal<TradingPositionPayload[]>([]);
-    public readonly shadowingRegime = signal<TradingShadowingRegimePayload | null>(null);
-    public readonly shadowingVerdictChronicle = signal<TradingShadowingVerdictChroniclePayload | null>(null);
-    public readonly status = signal<WebsocketConnectionStatus>('closed');
-    public readonly trades = signal<TradingTradePayload[]>([]);
+    public readonly tradingLiquidity = signal<TradingLiquidityPayload | null>(null);
+    public readonly tradingPortfolio = signal<TradingPortfolioPayload | null>(null);
+    public readonly tradingPositions = signal<TradingPositionPayload[]>([]);
+    public readonly tradingShadowingRegime = signal<TradingShadowingRegimePayload | null>(null);
+    public readonly tradingShadowingVerdictChronicle = signal<TradingShadowingVerdictChroniclePayload | null>(null);
+    public readonly tradingTrades = signal<TradingTradePayload[]>([]);
 
-    private pendingPositionPriceUpdates: TradingPositionPricePayload[] = [];
+    private pendingTradingPositionPriceUpdates: TradingPositionPricePayload[] = [];
     private socket?: WebSocket;
 
     constructor(private readonly shadowingVerdictChronicleMerge: TradingShadowingVerdictChronicleMergeService) {}
@@ -39,12 +37,12 @@ export class WebSocketService {
             return;
         }
 
-        this.status.set('connecting');
+        this.connectionStatus.set('connecting');
         const socket = new WebSocket(url);
         this.socket = socket;
 
         socket.onopen = () => {
-            this.status.set('open');
+            this.connectionStatus.set('open');
         };
 
         socket.onmessage = (event) => {
@@ -55,11 +53,11 @@ export class WebSocketService {
         };
 
         socket.onerror = () => {
-            this.status.set('closed');
+            this.connectionStatus.set('closed');
         };
 
         socket.onclose = () => {
-            this.status.set('closed');
+            this.connectionStatus.set('closed');
             this.socket = undefined;
             setTimeout(() => this.connect(url), 3000);
         };
@@ -77,41 +75,41 @@ export class WebSocketService {
             case WebsocketMessageType.INITIALIZATION: {
                 break;
             }
-            case WebsocketMessageType.PORTFOLIO: {
-                this.portfolio.set(message.payload);
+            case WebsocketMessageType.TRADING_PORTFOLIO: {
+                this.tradingPortfolio.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.LIQUIDITY: {
-                this.liquidity.set(message.payload);
+            case WebsocketMessageType.TRADING_LIQUIDITY: {
+                this.tradingLiquidity.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.SHADOWING_REGIME: {
-                this.shadowingRegime.set(message.payload);
+            case WebsocketMessageType.TRADING_SHADOWING_REGIME: {
+                this.tradingShadowingRegime.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE: {
-                this.shadowingVerdictChronicle.set(message.payload);
+            case WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE: {
+                this.tradingShadowingVerdictChronicle.set(message.payload);
                 break;
             }
-            case WebsocketMessageType.SHADOWING_VERDICT_CHRONICLE_DELTA: {
-                const baseline = this.shadowingVerdictChronicle();
+            case WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE_DELTA: {
+                const baseline = this.tradingShadowingVerdictChronicle();
                 const patch = message.payload as TradingShadowingVerdictChronicleDeltaPayload;
                 if (!baseline) {
                     this.requestCachedStateRefresh();
                     break;
                 }
-                this.shadowingVerdictChronicle.set(this.shadowingVerdictChronicleMerge.mergeTradingShadowingVerdictChronicleDelta(baseline, patch));
+                this.tradingShadowingVerdictChronicle.set(this.shadowingVerdictChronicleMerge.mergeTradingShadowingVerdictChronicleDelta(baseline, patch));
                 break;
             }
-            case WebsocketMessageType.POSITIONS: {
+            case WebsocketMessageType.TRADING_POSITIONS: {
                 this.reconcilePositions(message.payload as TradingPositionPayload[]);
                 break;
             }
-            case WebsocketMessageType.POSITION_PRICES: {
+            case WebsocketMessageType.TRADING_POSITION_PRICES: {
                 this.mergeIncomingPositionPrices(message.payload as TradingPositionPricePayload[]);
                 break;
             }
-            case WebsocketMessageType.TRADES: {
+            case WebsocketMessageType.TRADING_TRADES: {
                 this.reconcileTrades(message.payload as TradingTradePayload[]);
                 break;
             }
@@ -187,7 +185,7 @@ export class WebSocketService {
         });
 
         if (hasAnyChange) {
-            this.positions.set(nextPositions);
+            this.tradingPositions.set(nextPositions);
         }
     }
 
@@ -219,14 +217,14 @@ export class WebSocketService {
     }
 
     private flushPendingPositionPriceUpdates(): void {
-        if (this.pendingPositionPriceUpdates.length === 0) {
+        if (this.pendingTradingPositionPriceUpdates.length === 0) {
             return;
         }
-        const pending = this.pendingPositionPriceUpdates;
-        this.pendingPositionPriceUpdates = [];
-        const currentPositions = this.positions();
+        const pending = this.pendingTradingPositionPriceUpdates;
+        this.pendingTradingPositionPriceUpdates = [];
+        const currentPositions = this.tradingPositions();
         if (!Array.isArray(currentPositions) || currentPositions.length === 0) {
-            this.pendingPositionPriceUpdates.push(...pending);
+            this.pendingTradingPositionPriceUpdates.push(...pending);
             return;
         }
         this.applyPositionPriceUpdatesToRows(currentPositions, pending);
@@ -236,9 +234,9 @@ export class WebSocketService {
         if (!Array.isArray(priceUpdates) || priceUpdates.length === 0) {
             return;
         }
-        const currentPositions = this.positions();
+        const currentPositions = this.tradingPositions();
         if (!Array.isArray(currentPositions) || currentPositions.length === 0) {
-            this.pendingPositionPriceUpdates.push(...priceUpdates);
+            this.pendingTradingPositionPriceUpdates.push(...priceUpdates);
             return;
         }
         this.applyPositionPriceUpdatesToRows(currentPositions, priceUpdates);
@@ -253,9 +251,9 @@ export class WebSocketService {
             return;
         }
 
-        const currentPositions = this.positions();
+        const currentPositions = this.tradingPositions();
         if (!Array.isArray(currentPositions) || currentPositions.length === 0) {
-            this.positions.set(nextPayload);
+            this.tradingPositions.set(nextPayload);
             this.flushPendingPositionPriceUpdates();
             return;
         }
@@ -289,7 +287,7 @@ export class WebSocketService {
         });
 
         if (hasAnyChange) {
-            this.positions.set(reconciled);
+            this.tradingPositions.set(reconciled);
         }
         this.flushPendingPositionPriceUpdates();
     }
@@ -299,9 +297,9 @@ export class WebSocketService {
             return;
         }
 
-        const currentTrades = this.trades();
+        const currentTrades = this.tradingTrades();
         if (!Array.isArray(currentTrades) || currentTrades.length === 0) {
-            this.trades.set(nextPayload);
+            this.tradingTrades.set(nextPayload);
             return;
         }
 
@@ -324,7 +322,7 @@ export class WebSocketService {
         });
 
         if (hasAnyChange) {
-            this.trades.set(reconciled);
+            this.tradingTrades.set(reconciled);
         }
     }
 

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.structures.structures import Token
+from src.core.trading.screener.trading_screener_structures import TradingScreenerEnvelope
 from src.core.trading.shadowing.trading_shadowing_structures import TradingCandidateShadowingDiagnostics
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
+from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 
 
 class PositionExitTriggerReason(str, enum.Enum):
@@ -34,71 +36,55 @@ class TradingCortexInferenceSnapshot(BaseModel):
     gate_verdict: TradingFilterVerdict
 
 
+class TradingDexMarketSnapshot(BaseModel):
+    price_usd: float
+    price_native: float
+    token_age_hours: float
+    volume_m5_usd: float
+    volume_h1_usd: float
+    volume_h6_usd: float
+    volume_h24_usd: float
+    liquidity_usd: float
+    price_change_percentage_m5: float
+    price_change_percentage_h1: float
+    price_change_percentage_h6: float
+    price_change_percentage_h24: float
+    transaction_count_m5: int
+    transaction_count_h1: int
+    transaction_count_h6: int
+    transaction_count_h24: int
+    buy_to_sell_ratio: float
+    market_cap_usd: float
+    fully_diluted_valuation_usd: float
+    promotion_score: Optional[float] = None
+
+
+class TradingCandidateAiAnalysis(BaseModel):
+    adjusted_quality_score: float = 0.0
+    quality_delta: float = 0.0
+    buy_probability: float = 0.0
+
+
+class TradingCandidateCortexDiagnostics(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    inference_snapshot: Optional[TradingCortexInferenceSnapshot] = None
+
+
 class TradingCandidate(BaseModel):
     token: Token
-    quality_score: float
-    ai_adjusted_quality_score: float
-    ai_quality_delta: float
-    ai_buy_probability: float
-    shadow_notional_multiplier: float = 1.0
-    shadowing_diagnostics: TradingCandidateShadowingDiagnostics = TradingCandidateShadowingDiagnostics()
-    trading_cortex_inference_snapshot: Optional[TradingCortexInferenceSnapshot] = None
-    dexscreener_token_information: DexscreenerTokenInformation
-    pair_address: Optional[str] = None
-    dex_price: Optional[float] = None
-
-
-class TradingRiskDiagnostics(BaseModel):
-    liquidity_usd: float
-    percent_change_5m: float
-    percent_change_1h: float
-    percent_change_6h: float
-    percent_change_24h: float
-    buy_to_sell_ratio: float
-
-    def as_plain_dict(self) -> dict[str, float]:
-        return {
-            "liquidity_usd": self.liquidity_usd,
-            "percent_change_5m": self.percent_change_5m,
-            "percent_change_1h": self.percent_change_1h,
-            "percent_change_6h": self.percent_change_6h,
-            "percent_change_24h": self.percent_change_24h,
-            "buy_to_sell_ratio": self.buy_to_sell_ratio,
-        }
+    market_snapshot: TradingDexMarketSnapshot
+    screener_envelope: TradingScreenerEnvelope
+    screened_price_usd: Optional[float] = None
+    quality_score: float = 0.0
+    ai_analysis: TradingCandidateAiAnalysis = Field(default_factory=TradingCandidateAiAnalysis)
+    shadowing_diagnostics: TradingCandidateShadowingDiagnostics = Field(default_factory=TradingCandidateShadowingDiagnostics)
+    cortex_diagnostics: TradingCandidateCortexDiagnostics = Field(default_factory=TradingCandidateCortexDiagnostics)
 
 
 class TradingPreEntryDecision(BaseModel):
     is_valid_for_entry: bool
     decision_reason: str
-    risk_diagnostics_map: dict[str, float]
-
-
-class TradingThresholds(BaseModel):
-    take_profit_tier_1_price: float
-    take_profit_tier_2_price: float
-    stop_loss_price: float
-
-
-class TradingLifiEvmTransactionRequest(BaseModel):
-    to: str
-    data: str
-    value: str
-    gas: Optional[str] = None
-    from_address: Optional[str] = None
-    raw_transaction: Optional[str] = None
-
-
-class TradingSolanaRoute(BaseModel):
-    serialized_transaction_base64: str
-
-
-class TradingEvmRoute(BaseModel):
-    transaction_request: TradingLifiEvmTransactionRequest
-
-
-class TradingExecutionRoute(BaseModel):
-    evm_route: Optional[TradingEvmRoute] = None
-    solana_route: Optional[TradingSolanaRoute] = None
 
 
 class TradingOrderPayload(BaseModel):
@@ -107,69 +93,20 @@ class TradingOrderPayload(BaseModel):
     order_notional: float
     original_candidate: TradingCandidate
     origin_evaluation_id: int
-    execution_route: Optional[TradingExecutionRoute] = None
+    execution_route: Optional[BlockchainExecutionRoute] = None
 
 
-class TradingEvmTransactionRequest(BaseModel):
-    recipient_address: str
-    transaction_data: str
-    value_in_wei: int
-    forced_gas_limit: Optional[int] = None
+class TradingPortfolioEquityCurvePoint(BaseModel):
+    timestamp_milliseconds: int
+    total_equity_value: float
 
 
-class TradingSolanaSerializedTransaction(BaseModel):
-    serialized_payload_bytes: bytes
-
-
-class TradingQualityContext(BaseModel):
-    liquidity_usd: float
-    volume_m5_usd: float
-    volume_h1_usd: float
-    volume_h6_usd: float
-    volume_h24_usd: float
-    age_hours: float
-    percent_m5: float
-    percent_h1: float
-    percent_h6: float
-    percent_h24: float
-    momentum_score: float
-    liquidity_score: float
-    volume_score: float
-    order_flow_score: float
-
-
-class TradingQualityResult(BaseModel):
-    is_admissible: bool
-    score: float
-    rejection_reason: str
-    context: TradingQualityContext
-
-
-@dataclass(frozen=True)
-class TradingExecutionResult:
-    network: str
-    transaction_hash_or_signature: str
-
-
-class TradingPipelineContext(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    token_price_information_list: list[DexscreenerTokenInformation] = []
-    shadowing_snapshot: Optional[object] = None
-    free_cash_usd: float = 0.0
-    per_order_budget_usd: float = 0.0
-    executed_buy_count: int = 0
-
-
-@dataclass
-class InventoryLot:
-    quantity: float
-    unit_price_usd: float
-    buy_fee_per_unit_usd: float
-
-
-from src.core.structures.structures import Token
-
-TradingCandidate.model_rebuild()
-TradingOrderPayload.model_rebuild()
-
+class TradingPortfolio(BaseModel):
+    total_equity_value: float
+    available_cash_balance: float
+    active_holdings_value: float
+    created_at: datetime
+    equity_curve: list[TradingPortfolioEquityCurvePoint] = Field(default_factory=list)
+    unrealized_profit_and_loss: float = 0.0
+    realized_profit_and_loss_24h: float = 0.0
+    realized_profit_and_loss_total: float = 0.0

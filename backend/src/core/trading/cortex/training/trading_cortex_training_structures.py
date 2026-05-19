@@ -17,8 +17,8 @@ class TradingCortexShadowTrainingRecord(BaseModel):
     probe_identifier: int
     resolved_at: datetime
     candidate_features: TradingCortexCandidateFeatureSnapshot
-    shadowing_regime_features: TradingCortexShadowingRegimeFeatureSnapshot
-    shadowing_metric_features: list[TradingCortexShadowingMetricFeatureSnapshot]
+    regime_features: TradingCortexShadowingRegimeFeatureSnapshot
+    metric_features: list[TradingCortexShadowingMetricFeatureSnapshot]
     realized_profit_and_loss_percentage: float
     realized_profit_and_loss_usd: float
     holding_duration_minutes: float

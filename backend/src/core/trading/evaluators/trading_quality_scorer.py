@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional, Final
+from typing import Final
 
 from src.configuration.config import settings
-from src.core.trading.trading_structures import TradingCandidate, TradingQualityContext, TradingQualityResult
+from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.format_utils import tail
 from src.core.utils.math_utils import squash_positive_percentage, is_finite_number
-from src.integrations.dexscreener.dexscreener_structures import DexscreenerTransactionActivity
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -16,23 +15,6 @@ _MOMENTUM_WEIGHT_1H: Final[float] = 0.4
 _MOMENTUM_WEIGHT_6H: Final[float] = 0.25
 _MOMENTUM_WEIGHT_24H: Final[float] = 0.1
 _MOMENTUM_TOTAL_WEIGHT: Final[float] = _MOMENTUM_WEIGHT_5M + _MOMENTUM_WEIGHT_1H + _MOMENTUM_WEIGHT_6H + _MOMENTUM_WEIGHT_24H
-
-
-def compute_buy_sell_score(transaction_activity: Optional[DexscreenerTransactionActivity]) -> float:
-    if not transaction_activity:
-        return 0.5
-
-    activity_bucket = transaction_activity.h1 if transaction_activity.h1 else transaction_activity.h24
-    if not activity_bucket:
-        return 0.5
-
-    buys = activity_bucket.buys
-    sells = activity_bucket.sells
-    total_transactions = buys + sells
-
-    if total_transactions <= 0:
-        return 0.5
-    return buys / total_transactions
 
 
 def blend_momentum_percentages(percent_m5: float, percent_h1: float, percent_h6: float, percent_h24: float) -> float:
@@ -50,23 +32,8 @@ def blend_momentum_percentages(percent_m5: float, percent_h1: float, percent_h6:
     return weighted_sum / _MOMENTUM_TOTAL_WEIGHT
 
 
-def _evaluate_quality(candidate: TradingCandidate) -> TradingQualityResult:
-    token_information = candidate.dexscreener_token_information
-    base_token = token_information.base_token
-
-    liquidity_usd = token_information.liquidity.usd if token_information.liquidity and token_information.liquidity.usd is not None else 0.0
-
-    volume_m5_usd = token_information.volume.m5 if token_information.volume and token_information.volume.m5 is not None else 0.0
-    volume_h1_usd = token_information.volume.h1 if token_information.volume and token_information.volume.h1 is not None else 0.0
-    volume_h6_usd = token_information.volume.h6 if token_information.volume and token_information.volume.h6 is not None else 0.0
-    volume_h24_usd = token_information.volume.h24 if token_information.volume and token_information.volume.h24 is not None else 0.0
-
-    percent_m5 = token_information.price_change.m5 if token_information.price_change and token_information.price_change.m5 is not None else 0.0
-    percent_h1 = token_information.price_change.h1 if token_information.price_change and token_information.price_change.h1 is not None else 0.0
-    percent_h6 = token_information.price_change.h6 if token_information.price_change and token_information.price_change.h6 is not None else 0.0
-    percent_h24 = token_information.price_change.h24 if token_information.price_change and token_information.price_change.h24 is not None else 0.0
-
-    order_flow_score = compute_buy_sell_score(token_information.transactions)
+def compute_quality_score(candidate: TradingCandidate) -> float:
+    market_snapshot = candidate.market_snapshot
 
     minimum_liquidity_usd = settings.TRADING_MIN_LIQUIDITY_USD
     minimum_volume_m5_usd = settings.TRADING_MIN_VOLUME_5M_USD
@@ -74,30 +41,18 @@ def _evaluate_quality(candidate: TradingCandidate) -> TradingQualityResult:
     minimum_volume_h6_usd = settings.TRADING_MIN_VOLUME_6H_USD
     minimum_volume_h24_usd = settings.TRADING_MIN_VOLUME_24H_USD
 
-    quality_context = TradingQualityContext(
-        liquidity_usd=liquidity_usd,
-        volume_m5_usd=volume_m5_usd,
-        volume_h1_usd=volume_h1_usd,
-        volume_h6_usd=volume_h6_usd,
-        volume_h24_usd=volume_h24_usd,
-        age_hours=token_information.age_hours,
-        percent_m5=percent_m5,
-        percent_h1=percent_h1,
-        percent_h6=percent_h6,
-        percent_h24=percent_h24,
-        momentum_score=0.0,
-        liquidity_score=0.0,
-        volume_score=0.0,
-        order_flow_score=order_flow_score,
+    momentum_score = blend_momentum_percentages(
+        market_snapshot.price_change_percentage_m5,
+        market_snapshot.price_change_percentage_h1,
+        market_snapshot.price_change_percentage_h6,
+        market_snapshot.price_change_percentage_h24,
     )
+    liquidity_component_score = min(1.0, market_snapshot.liquidity_usd / (minimum_liquidity_usd * 4.0))
 
-    momentum_score = blend_momentum_percentages(percent_m5, percent_h1, percent_h6, percent_h24)
-    liquidity_component_score = min(1.0, liquidity_usd / (minimum_liquidity_usd * 4.0))
-
-    volume_m5_component = min(1.0, volume_m5_usd / (minimum_volume_m5_usd * 4.0))
-    volume_h1_component = min(1.0, volume_h1_usd / (minimum_volume_h1_usd * 4.0))
-    volume_h6_component = min(1.0, volume_h6_usd / (minimum_volume_h6_usd * 4.0))
-    volume_h24_component = min(1.0, volume_h24_usd / (minimum_volume_h24_usd * 4.0))
+    volume_m5_component = min(1.0, market_snapshot.volume_m5_usd / (minimum_volume_m5_usd * 4.0))
+    volume_h1_component = min(1.0, market_snapshot.volume_h1_usd / (minimum_volume_h1_usd * 4.0))
+    volume_h6_component = min(1.0, market_snapshot.volume_h6_usd / (minimum_volume_h6_usd * 4.0))
+    volume_h24_component = min(1.0, market_snapshot.volume_h24_usd / (minimum_volume_h24_usd * 4.0))
 
     volume_component_score = (
             0.4 * volume_m5_component
@@ -106,39 +61,26 @@ def _evaluate_quality(candidate: TradingCandidate) -> TradingQualityResult:
             + 0.1 * volume_h24_component
     )
 
-    quality_score = 100.0 * (
+    return 100.0 * (
             0.45 * momentum_score
             + 0.25 * liquidity_component_score
             + 0.30 * volume_component_score
     )
 
-    quality_context.momentum_score = momentum_score
-    quality_context.liquidity_score = liquidity_component_score
-    quality_context.volume_score = volume_component_score
-
-    return TradingQualityResult(is_admissible=True, score=quality_score, rejection_reason="none", context=quality_context)
-
 
 def _has_valid_intraday_bars(candidate: TradingCandidate) -> bool:
-    price_change = candidate.dexscreener_token_information.price_change
-    if not price_change:
-        return False
-
+    market_snapshot = candidate.market_snapshot
     return (
-            is_finite_number(price_change.m5)
-            and is_finite_number(price_change.h1)
-            and is_finite_number(price_change.h6)
-            and is_finite_number(price_change.h24)
+            is_finite_number(market_snapshot.price_change_percentage_m5)
+            and is_finite_number(market_snapshot.price_change_percentage_h1)
+            and is_finite_number(market_snapshot.price_change_percentage_h6)
+            and is_finite_number(market_snapshot.price_change_percentage_h24)
     )
 
 
 def compute_quality_scores(candidates: list[TradingCandidate]) -> None:
     for candidate in candidates:
-        quality_result = _evaluate_quality(candidate=candidate)
-        candidate.quality_score = quality_result.score
-
-        base_token = candidate.dexscreener_token_information.base_token
-        short_address = tail(base_token.address)
+        candidate.quality_score = compute_quality_score(candidate)
 
     logger.info("[TRADING][EVALUATOR][QUALITY] Computed quality scores for %d candidates", len(candidates))
 
@@ -148,20 +90,20 @@ def apply_quality_gate(candidates: list[TradingCandidate]) -> list[TradingCandid
     retained: list[TradingCandidate] = []
 
     for candidate in candidates:
-        base_token = candidate.dexscreener_token_information.base_token
-        short_address = tail(base_token.address)
+        symbol = candidate.token.symbol
+        short_address = tail(candidate.token.token_address)
 
         if candidate.quality_score >= minimum_quality_score:
             if not _has_valid_intraday_bars(candidate):
-                logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — missing intraday bars", base_token.symbol)
+                logger.debug("[TRADING][EVALUATOR][QUALITY] %s rejected — missing intraday bars", symbol)
                 continue
 
             retained.append(candidate)
-            logger.debug("[TRADING][EVALUATOR][QUALITY] %s (%s) passed quality gate with score %.1f", base_token.symbol, short_address, candidate.quality_score)
+            logger.debug("[TRADING][EVALUATOR][QUALITY] %s (%s) passed quality gate with score %.1f", symbol, short_address, candidate.quality_score)
         else:
             logger.debug(
                 "[TRADING][EVALUATOR][QUALITY] %s (%s) rejected — score %.1f < %.1f",
-                base_token.symbol, short_address, candidate.quality_score, minimum_quality_score,
+                symbol, short_address, candidate.quality_score, minimum_quality_score,
             )
 
     if not retained:

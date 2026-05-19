@@ -51,10 +51,10 @@ export class TradingShadowingSnapshotTabComponent {
     }
 
     public outcomeCoverage(regime: TradingShadowingRegimePayload | null | undefined): number {
-        if (!regime || !regime.shadowing_required_outcome_count || regime.shadowing_required_outcome_count <= 0) {
+        if (!regime || !regime.required_outcome_count || regime.required_outcome_count <= 0) {
             return 0;
         }
-        return this.clampPercentage(((regime.shadowing_resolved_outcome_count ?? 0) / regime.shadowing_required_outcome_count) * 100);
+        return this.clampPercentage(((regime.resolved_outcome_count ?? 0) / regime.required_outcome_count) * 100);
     }
 
     public thresholdCoverage(value: number | null | undefined, threshold: number | null | undefined): number {

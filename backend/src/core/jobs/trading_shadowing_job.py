@@ -44,4 +44,3 @@ class TradingShadowingJob:
                 time.sleep(0.5)
 
         logger.info("[TRADING][SHADOWING][JOB] Shadowing loop successfully terminated")
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
@@ -9,18 +10,18 @@ from src.core.trading.analytics.trading_analytics_helpers import MINIMUM_POINTS_
 from src.core.trading.cortex.trading_cortex_inference_provider import get_trading_cortex_inference_service
 from src.core.trading.cortex.trading_cortex_request_builder import TradingCortexRequestBuilder
 from src.core.trading.cortex.trading_cortex_structures import TradingCortexScoringBatchRequest
-from src.core.trading.evaluators.trading_quality_scorer import _evaluate_quality
+from src.core.trading.evaluators.trading_quality_scorer import compute_quality_score
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
+from src.core.trading.shadowing.trading_shadowing_probe_helpers import build_trading_shadowing_probe_with_verdict
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import (
     evaluate_candidate_shadowing,
 )
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase, TradingShadowingRegime
 from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot, TradingFilterVerdict
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_database_session
-from src.persistence.models import TradingShadowingProbe, TradingShadowingVerdict
 
 logger = get_application_logger(__name__)
 
@@ -68,7 +69,7 @@ class TradingShadowingPipeline:
         from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 
         cooldown_threshold = current_time - timedelta(minutes=cooldown_minutes)
-        token_addresses = [c.dexscreener_token_information.base_token.address for c in candidates]
+        token_addresses = [candidate.token.token_address for candidate in candidates]
 
         with get_database_session() as database_session:
             probe_dao = TradingShadowingProbeDao(database_session)
@@ -77,22 +78,16 @@ class TradingShadowingPipeline:
 
         admissible_candidates = []
         for rank, candidate in enumerate(candidates, start=1):
-            token_address = candidate.dexscreener_token_information.base_token.address
+            token_address = candidate.token.token_address
             if token_address in cooldown_addresses:
                 cooldown_skip_count += 1
                 continue
 
-            quality_result = _evaluate_quality(candidate)
-            candidate.quality_score = quality_result.score
-            candidate.ai_adjusted_quality_score = quality_result.score
+            quality_score = compute_quality_score(candidate)
+            candidate.quality_score = quality_score
+            candidate.ai_analysis.adjusted_quality_score = quality_score
 
-            if not quality_result.is_admissible:
-                continue
-
-            entry_price = candidate.dexscreener_token_information.price_usd
-            if not entry_price or entry_price <= 0.0:
-                continue
-
+            entry_price = candidate.market_snapshot.price_usd
             admissible_candidates.append((rank, candidate, entry_price))
 
         cached_snapshot = trading_shadowing_cache.get_shadowing_snapshot()
@@ -112,71 +107,82 @@ class TradingShadowingPipeline:
             logger.debug("[TRADING][SHADOWING][PIPELINE] Shadowing phase is DISABLED, skipping")
             return
 
-        if settings.TRADING_CORTEX_ENABLED and admissible_candidates and shadow_can_simulate:
-            request_builder = TradingCortexRequestBuilder()
-            trade_scoring_requests = [
-                request_builder.build_trade_scoring_request(
-                    candidate=candidate,
-                    candidate_rank=rank,
-                    shadow_snapshot=cached_snapshot,
-                )
-                for rank, candidate, _ in admissible_candidates
-            ]
-            scoring_batch_request = TradingCortexScoringBatchRequest(requests=trade_scoring_requests)
-            try:
-                inference_service = get_trading_cortex_inference_service()
-                scoring_batch_response = inference_service.score_trade_batch(scoring_batch_request)
-                response_by_request_identifier = {
-                    scoring_response.request_identifier: scoring_response
-                    for scoring_response in scoring_batch_response.responses
-                    if scoring_response.request_identifier
-                }
-                for rank, candidate, _ in admissible_candidates:
-                    request_identifier = request_builder.build_request_identifier(candidate, rank)
-                    scoring_response = response_by_request_identifier.get(request_identifier)
-                    if (
-                            scoring_response
-                            and scoring_response.model_ready
-                            and scoring_response.model_version is not None
-                            and scoring_response.success_probability is not None
-                            and scoring_response.toxicity_probability is not None
-                            and scoring_response.expected_profit_and_loss_percentage is not None
-                            and scoring_response.predicted_holding_time_minutes is not None
-                            and scoring_response.final_trade_score is not None
-                    ):
-                        candidate.trading_cortex_inference_snapshot = TradingCortexInferenceSnapshot(
-                            success_probability=scoring_response.success_probability,
-                            toxicity_probability=scoring_response.toxicity_probability,
-                            expected_profit_and_loss_percentage=scoring_response.expected_profit_and_loss_percentage,
-                            predicted_holding_time_minutes=scoring_response.predicted_holding_time_minutes,
-                            final_trade_score=scoring_response.final_trade_score,
-                            model_version=scoring_response.model_version,
-                            model_ready=scoring_response.model_ready,
-                            gate_verdict=TradingFilterVerdict(is_accepted=True, rejection_reasons=[]),
-                        )
-            except Exception as exc:
-                logger.exception("[TRADING][SHADOWING][PIPELINE] TradingCortex inference failed for probes: %s", exc)
-
-        for rank, candidate, entry_price in admissible_candidates:
-            if shadow_can_simulate and cached_snapshot is not None:
+        if shadow_can_simulate:
+            for rank, candidate, _ in admissible_candidates:
                 candidate.shadowing_diagnostics = evaluate_candidate_shadowing(candidate, cached_snapshot)
 
+        if settings.TRADING_CORTEX_ENABLED and admissible_candidates and shadow_can_simulate:
+            request_builder = TradingCortexRequestBuilder()
+            trade_scoring_requests = []
+            cortex_scoring_candidates: list[tuple[int, TradingCandidate]] = []
+            for rank, candidate, _ in admissible_candidates:
+                try:
+                    trade_scoring_requests.append(
+                        request_builder.build_trade_scoring_request(
+                            candidate=candidate,
+                            shadow_snapshot=cached_snapshot,
+                        )
+                    )
+                    cortex_scoring_candidates.append((rank, candidate))
+                except ValueError as exc:
+                    logger.debug(
+                        "[TRADING][SHADOWING][PIPELINE][CORTEX] Skipping cortex for %s: %s",
+                        candidate.token.symbol,
+                        exc,
+                    )
+            if trade_scoring_requests:
+                scoring_batch_request = TradingCortexScoringBatchRequest(requests=trade_scoring_requests)
+                try:
+                    inference_service = get_trading_cortex_inference_service()
+                    scoring_batch_response = inference_service.score_trade_batch(scoring_batch_request)
+                    response_by_request_identifier = {
+                        scoring_response.request_identifier: scoring_response
+                        for scoring_response in scoring_batch_response.responses
+                        if scoring_response.request_identifier
+                    }
+                    for rank, candidate in cortex_scoring_candidates:
+                        request_identifier = request_builder.build_request_identifier(candidate)
+                        scoring_response = response_by_request_identifier.get(request_identifier)
+                        if (
+                                scoring_response
+                                and scoring_response.model_ready
+                                and scoring_response.model_version is not None
+                                and scoring_response.success_probability is not None
+                                and scoring_response.toxicity_probability is not None
+                                and scoring_response.expected_profit_and_loss_percentage is not None
+                                and scoring_response.predicted_holding_time_minutes is not None
+                                and scoring_response.final_trade_score is not None
+                        ):
+                            candidate.cortex_diagnostics.inference_snapshot = TradingCortexInferenceSnapshot(
+                                success_probability=scoring_response.success_probability,
+                                toxicity_probability=scoring_response.toxicity_probability,
+                                expected_profit_and_loss_percentage=scoring_response.expected_profit_and_loss_percentage,
+                                predicted_holding_time_minutes=scoring_response.predicted_holding_time_minutes,
+                                final_trade_score=scoring_response.final_trade_score,
+                                model_version=scoring_response.model_version,
+                                model_ready=scoring_response.model_ready,
+                                gate_verdict=TradingFilterVerdict(is_accepted=True, rejection_reasons=[]),
+                            )
+                except Exception as exc:
+                    logger.exception("[TRADING][SHADOWING][PIPELINE] TradingCortex inference failed for probes: %s", exc)
+
+        for rank, candidate, entry_price in admissible_candidates:
             tp1_price = entry_price * (1.0 + settings.TRADING_TP1_EXIT_FRACTION)
             tp2_price = entry_price * (1.0 + settings.TRADING_TP2_EXIT_FRACTION)
             stop_loss_price = entry_price * (1.0 - settings.TRADING_STOP_LOSS_FRACTION)
 
-            self._persist_shadow_probe(
-                candidate=candidate,
-                rank=rank,
-                notional=fixed_notional,
-                tp1_price=tp1_price,
-                tp2_price=tp2_price,
-                stop_loss_price=stop_loss_price,
-                current_time=current_time,
-                shadow_can_simulate=shadow_can_simulate,
-            )
-            cooldown_addresses.add(candidate.dexscreener_token_information.base_token.address)
-            shadow_probe_count += 1
+            if self._persist_shadow_probe(
+                    candidate=candidate,
+                    rank=rank,
+                    notional=fixed_notional,
+                    tp1_price=tp1_price,
+                    tp2_price=tp2_price,
+                    stop_loss_price=stop_loss_price,
+                    current_time=current_time,
+                    shadow_can_simulate=shadow_can_simulate,
+            ):
+                cooldown_addresses.add(candidate.token.token_address)
+                shadow_probe_count += 1
 
         logger.info(
             "[TRADING][SHADOWING][PIPELINE] Recorded %d shadowing probes from %d candidates (%d skipped by cooldown)",
@@ -187,7 +193,7 @@ class TradingShadowingPipeline:
         allowed_chains = set(settings.TRADING_ALLOWED_CHAINS)
         retained = [
             candidate for candidate in candidates
-            if candidate.dexscreener_token_information.chain_id.value in allowed_chains
+            if candidate.token.chain.value in allowed_chains
         ]
         if len(retained) < len(candidates):
             logger.debug("[TRADING][SHADOWING][PIPELINE] Chain filter retained %d / %d", len(retained), len(candidates))
@@ -203,88 +209,36 @@ class TradingShadowingPipeline:
             stop_loss_price: float,
             current_time: datetime,
             shadow_can_simulate: bool,
-    ) -> None:
-        token_information = candidate.dexscreener_token_information
-        base_token = token_information.base_token
-        volume = token_information.volume
-        liquidity = token_information.liquidity
-        price_change = token_information.price_change
-        transactions = token_information.transactions
-
-        probe = TradingShadowingProbe(
-            token_symbol=base_token.symbol.upper(),
-            blockchain_network=token_information.chain_id.value,
-            token_address=str(base_token.address),
-            pair_address=str(token_information.pair_address),
-            dex_id=str(token_information.dex_id),
-            entry_price_usd=token_information.price_usd or 0.0,
-            candidate_rank=rank,
-            quality_score=candidate.quality_score,
-            token_age_hours=token_information.age_hours,
-            volume_m5_usd=volume.m5 if volume and volume.m5 is not None else 0.0,
-            volume_h1_usd=volume.h1 if volume and volume.h1 is not None else 0.0,
-            volume_h6_usd=volume.h6 if volume and volume.h6 is not None else 0.0,
-            volume_h24_usd=volume.h24 if volume and volume.h24 is not None else 0.0,
-            liquidity_usd=liquidity.usd if liquidity and liquidity.usd is not None else 0.0,
-            price_change_percentage_m5=price_change.m5 if price_change and price_change.m5 is not None else 0.0,
-            price_change_percentage_h1=price_change.h1 if price_change and price_change.h1 is not None else 0.0,
-            price_change_percentage_h6=price_change.h6 if price_change and price_change.h6 is not None else 0.0,
-            price_change_percentage_h24=price_change.h24 if price_change and price_change.h24 is not None else 0.0,
-            transaction_count_m5=transactions.m5.total_transactions if transactions and transactions.m5 else 0,
-            transaction_count_h1=transactions.h1.total_transactions if transactions and transactions.h1 else 0,
-            transaction_count_h6=transactions.h6.total_transactions if transactions and transactions.h6 else 0,
-            transaction_count_h24=transactions.h24.total_transactions if transactions and transactions.h24 else 0,
-            buy_to_sell_ratio=self._compute_buy_to_sell_ratio(transactions),
-            market_cap_usd=token_information.market_cap or 0.0,
-            fully_diluted_valuation_usd=token_information.fully_diluted_valuation or 0.0,
-            dexscreener_boost=token_information.boost or 0.0,
-            order_notional_value_usd=notional,
-            shadowing_regime=self._build_cached_shadowing_regime_payload(),
-            shadowing_metrics=(
-                [
-                    metric.model_dump(mode="json")
-                    for metric in candidate.shadowing_diagnostics.evaluated_metrics
-                ]
-                if shadow_can_simulate and candidate.shadowing_diagnostics.evaluated_metrics
-                else None
-            ),
-            cortex_inference_summary=(
-                candidate.trading_cortex_inference_snapshot.model_dump(mode="json")
-                if candidate.trading_cortex_inference_snapshot is not None
-                   and candidate.trading_cortex_inference_snapshot.model_ready
-                else None
-            ),
-            probed_at=current_time,
-            created_at=current_time
-        )
-
-        probe.verdict = TradingShadowingVerdict(
+    ) -> bool:
+        from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
+        probe = build_trading_shadowing_probe_with_verdict(
+            candidate=candidate,
+            rank=rank,
+            notional=notional,
+            current_time=current_time,
+            shadow_can_simulate=shadow_can_simulate,
+            shadowing_regime=self._build_cached_shadowing_regime_payload() if shadow_can_simulate else None,
             take_profit_tier_1_price=tp1_price,
             take_profit_tier_2_price=tp2_price,
             stop_loss_price=stop_loss_price,
-            created_at=current_time
         )
 
+        entry_price_usd = candidate.market_snapshot.price_usd
+        token_symbol = candidate.token.symbol
+
         with get_database_session() as database_session:
-            database_session.add(probe)
+            probe_dao = TradingShadowingProbeDao(database_session)
+            probe_dao.save(probe)
 
-        logger.debug("[TRADING][SHADOWING][PERSIST] Recorded shadowing probe for %s at price %.10f", base_token.symbol, token_information.price_usd or 0.0)
+        logger.debug(
+            "[TRADING][SHADOWING][PERSIST] Recorded shadowing probe for %s at price %.10f",
+            token_symbol,
+            entry_price_usd,
+        )
+        return True
 
-    def _build_cached_shadowing_regime_payload(self) -> dict | None:
+    def _build_cached_shadowing_regime_payload(self) -> Optional[TradingShadowingRegime]:
         cached_shadowing_regime = trading_shadowing_cache.get_trading_shadowing_regime_state()
         if cached_shadowing_regime is not None:
-            return cached_shadowing_regime.model_dump(mode="json", exclude_none=True)
+            return TradingShadowingRegime.model_validate(cached_shadowing_regime.model_dump(mode="json"))
         return None
-
-    def _compute_buy_to_sell_ratio(self, transactions) -> float:
-        if not transactions or not (transactions.h1 or transactions.h24):
-            return 0.5
-        reference_bucket = transactions.h1 if transactions.h1 else transactions.h24
-        total_transaction_count = reference_bucket.buys + reference_bucket.sells
-        if total_transaction_count <= 0:
-            return 0.5
-        return reference_bucket.buys / total_transaction_count
-
-
-
-

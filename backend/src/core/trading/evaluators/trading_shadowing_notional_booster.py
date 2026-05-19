@@ -75,7 +75,6 @@ def apply_shadowing_notional_boost(
         notional_multiplier = 1.0 + golden_notional_accumulator * (maximum_notional_multiplier - 1.0)
         notional_multiplier = max(1.0, min(maximum_notional_multiplier, notional_multiplier))
 
-        candidate.shadow_notional_multiplier = notional_multiplier
         candidate.shadowing_diagnostics.notional_boost_factor = notional_multiplier
 
         if notional_multiplier > 1.05:
@@ -84,9 +83,5 @@ def apply_shadowing_notional_boost(
                 candidate.token.symbol, notional_multiplier, golden_notional_accumulator,
             )
 
-    boosted_count = sum(1 for candidate in candidates if candidate.shadow_notional_multiplier > 1.05)
+    boosted_count = sum(1 for candidate in candidates if candidate.shadowing_diagnostics.notional_boost_factor > 1.05)
     logger.info("[TRADING][EVALUATOR][SHADOWING_BOOST] %d / %d candidates received golden niche boost", boosted_count, len(candidates))
-
-
-
-

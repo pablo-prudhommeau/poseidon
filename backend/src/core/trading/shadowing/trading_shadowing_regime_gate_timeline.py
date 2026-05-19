@@ -36,24 +36,24 @@ def build_regime_gate_timeline_for_metric_timestamps(
     pf_timeline = _build_regime_sma_timeline(
         verdicts=verdicts,
         current_time=current_time,
-        lookback=timedelta(days=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS),
-        granularity_seconds=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
-        sma_period=settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
+        lookback=timedelta(days=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS),
+        granularity_seconds=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
+        sma_period=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
         value_selector="profit_factor",
         empty_fallback=1.0,
     )
     ev_timeline = _build_regime_sma_timeline(
         verdicts=verdicts,
         current_time=current_time,
-        lookback=timedelta(days=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS),
-        granularity_seconds=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
-        sma_period=settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
+        lookback=timedelta(days=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS),
+        granularity_seconds=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
+        sma_period=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
         value_selector="mean_pnl_usd",
         empty_fallback=0.0,
     )
 
-    pf_threshold = settings.TRADING_SHADOWING_PERFORMANCE_CHRONICLE_PROFIT_FACTOR_THRESHOLD
-    ev_threshold = settings.TRADING_SHADOWING_PERFORMANCE_SPARSE_EXPECTED_VALUE_USD_THRESHOLD
+    pf_threshold = settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_THRESHOLD
+    ev_threshold = settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_USD_THRESHOLD
     series_end_milliseconds = to_epoch_milliseconds(current_time)
 
     regime_gate_points: list[TradingShadowingVerdictChronicleRegimeGatePoint] = []

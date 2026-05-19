@@ -3,11 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from src.core.dca.dca_allocation_engine import DcaAllocationEngine
-from src.core.structures.structures import (
-    DcaBacktestSeriesPoint,
-    DcaBacktestMetadata,
-    DcaBacktestPayload
-)
+from src.core.dca.dca_structures import DcaBacktestMetadata, DcaBacktestPayload, DcaBacktestSeriesPoint
 from src.core.utils.date_utils import convert_epoch_to_local_datetime
 from src.integrations.binance.binance_client import fetch_bulk_historical_candlesticks
 from src.integrations.binance.binance_structures import CandlestickData

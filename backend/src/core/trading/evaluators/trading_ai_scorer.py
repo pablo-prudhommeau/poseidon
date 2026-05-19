@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from src.configuration.config import settings
-from src.core.trading.trading_structures import TradingCandidate, TradingPipelineContext
+from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.math_utils import clamp
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
 
-def apply_ai_scorer(candidates: list[TradingCandidate], pipeline_context: TradingPipelineContext) -> list[TradingCandidate]:
+def apply_ai_scorer(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
     if not settings.TRADING_AI_ENABLED:
         logger.debug("[TRADING][EVALUATOR][AI] AI scoring is disabled, passing all candidates through")
         for candidate in candidates:
-            candidate.ai_adjusted_quality_score = candidate.quality_score
+            candidate.ai_analysis.adjusted_quality_score = candidate.quality_score
         return candidates
 
     from src.core.trading.ai.trading_chart_signal_provider import TradingChartAiSignalProvider
@@ -34,7 +34,7 @@ def apply_ai_scorer(candidates: list[TradingCandidate], pipeline_context: Tradin
                     pair_address=candidate.token.pair_address or None,
                     timeframe_minutes=settings.TRADING_AI_TIMEFRAME_MINUTES,
                     lookback_minutes=settings.TRADING_AI_LOOKBACK_MINUTES,
-                    token_age_hours=candidate.dexscreener_token_information.age_hours,
+                    token_age_hours=candidate.market_snapshot.token_age_hours,
                 )
             except Exception:
                 logger.exception("[TRADING][EVALUATOR][AI] Chart AI failed for %s", candidate.token.symbol)
@@ -49,9 +49,9 @@ def apply_ai_scorer(candidates: list[TradingCandidate], pipeline_context: Tradin
         bounded_delta = clamp(scaled_delta, -maximum_absolute_delta_points, +maximum_absolute_delta_points)
         adjusted_quality_score = clamp(candidate.quality_score + bounded_delta, 0.0, 100.0)
 
-        candidate.ai_quality_delta = ai_delta
-        candidate.ai_buy_probability = ai_probability
-        candidate.ai_adjusted_quality_score = adjusted_quality_score
+        candidate.ai_analysis.quality_delta = ai_delta
+        candidate.ai_analysis.buy_probability = ai_probability
+        candidate.ai_analysis.adjusted_quality_score = adjusted_quality_score
 
         logger.debug(
             "[TRADING][EVALUATOR][AI] %s — quality=%.2f aiΔ=%.2f adjusted=%.2f prob=%.3f",

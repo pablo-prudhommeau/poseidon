@@ -28,7 +28,7 @@ export const EXPLORATION_CATEGORIES: MetricCategory[] = [
         id: 'quality',
         label: 'Quality & Value',
         icon: 'fa-diamond',
-        metricKeys: ['quality_score', 'market_cap_usd', 'fully_diluted_valuation_usd', 'dexscreener_boost']
+        metricKeys: ['quality_score', 'market_cap_usd', 'fully_diluted_valuation_usd', 'promotion_score']
     }
 ];
 export const tradingGridsLeadingColumnLayout = {

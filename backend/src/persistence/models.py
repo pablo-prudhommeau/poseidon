@@ -2,14 +2,21 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Any
+from typing import Any, Optional
 
 from sqlalchemy import Enum as SQLAlchemyEnum, Float, Integer, String, JSON, Boolean, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.structures.structures import DcaStrategyStatus, DcaOrderStatus
+from src.core.dca.dca_structures import DcaOrderStatus, DcaStrategyStatus
+from src.core.trading.screener.trading_screener_structures import TradingScreenerEnvelope
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingCandidateShadowingMetricEvaluation,
+    TradingShadowingRegime,
+)
+from src.core.trading.trading_structures import TradingCortexInferenceSnapshot
 from src.core.utils.date_utils import get_current_local_datetime
 from src.persistence.database_session_manager import DatabaseBaseModel
+from src.persistence.database_utils import PydanticModelJsonType, PydanticModelListJsonType, ScreenerEnvelopeJsonType
 
 
 class PositionPhase(Enum):
@@ -124,16 +131,25 @@ class TradingEvaluation(DatabaseBaseModel):
     buy_to_sell_ratio: Mapped[float] = mapped_column(Float, nullable=False)
     market_cap_usd: Mapped[float] = mapped_column(Float, nullable=False)
     fully_diluted_valuation_usd: Mapped[float] = mapped_column(Float, nullable=False)
-    dexscreener_boost: Mapped[float] = mapped_column(Float, nullable=False)
+    promotion_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     execution_decision: Mapped[str] = mapped_column(String(16), nullable=False)
     sizing_multiplier: Mapped[float] = mapped_column(Float, nullable=False)
     order_notional_value_usd: Mapped[float] = mapped_column(Float, nullable=False)
     free_cash_before_execution_usd: Mapped[float] = mapped_column(Float, nullable=False)
     free_cash_after_execution_usd: Mapped[float] = mapped_column(Float, nullable=False)
-    cortex_inference_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(none_as_null=True), nullable=True)
-    shadowing_regime: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(none_as_null=True), nullable=True)
-    shadowing_metrics: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON(none_as_null=True), nullable=True)
-    raw_dexscreener_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    cortex_inference_summary: Mapped[Optional[TradingCortexInferenceSnapshot]] = mapped_column(
+        PydanticModelJsonType(TradingCortexInferenceSnapshot),
+        nullable=True,
+    )
+    shadowing_regime: Mapped[Optional[TradingShadowingRegime]] = mapped_column(
+        PydanticModelJsonType(TradingShadowingRegime),
+        nullable=True,
+    )
+    shadowing_metrics: Mapped[Optional[list[TradingCandidateShadowingMetricEvaluation]]] = mapped_column(
+        PydanticModelListJsonType(TradingCandidateShadowingMetricEvaluation),
+        nullable=True,
+    )
+    screener_envelope: Mapped[TradingScreenerEnvelope] = mapped_column(ScreenerEnvelopeJsonType(), nullable=False)
     raw_configuration_settings: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     outcomes: Mapped[list[TradingOutcome]] = relationship("TradingOutcome", back_populates="evaluation", cascade="all, delete-orphan")
 
@@ -170,14 +186,28 @@ class TradingShadowingProbe(DatabaseBaseModel):
     buy_to_sell_ratio: Mapped[float] = mapped_column(Float, nullable=False)
     market_cap_usd: Mapped[float] = mapped_column(Float, nullable=False)
     fully_diluted_valuation_usd: Mapped[float] = mapped_column(Float, nullable=False)
-    dexscreener_boost: Mapped[float] = mapped_column(Float, nullable=False)
+    promotion_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     order_notional_value_usd: Mapped[float] = mapped_column(Float, nullable=False)
-    cortex_inference_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(none_as_null=True), nullable=True)
-    shadowing_regime: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(none_as_null=True), nullable=True)
-    shadowing_metrics: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON(none_as_null=True), nullable=True)
+    cortex_inference_summary: Mapped[Optional[TradingCortexInferenceSnapshot]] = mapped_column(
+        PydanticModelJsonType(TradingCortexInferenceSnapshot),
+        nullable=True,
+    )
+    shadowing_regime: Mapped[Optional[TradingShadowingRegime]] = mapped_column(
+        PydanticModelJsonType(TradingShadowingRegime),
+        nullable=True,
+    )
+    shadowing_metrics: Mapped[Optional[list[TradingCandidateShadowingMetricEvaluation]]] = mapped_column(
+        PydanticModelListJsonType(TradingCandidateShadowingMetricEvaluation),
+        nullable=True,
+    )
     probed_at: Mapped[datetime] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
-    verdict: Mapped[Optional[TradingShadowingVerdict]] = relationship("TradingShadowingVerdict", back_populates="probe", uselist=False, cascade="all, delete-orphan")
+    verdict: Mapped[TradingShadowingVerdict] = relationship(
+        "TradingShadowingVerdict",
+        back_populates="probe",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<TradingShadowingProbe token_symbol={self.token_symbol} token_address={self.token_address[-6:]} entry_price_usd={self.entry_price_usd}>"

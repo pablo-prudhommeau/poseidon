@@ -14,12 +14,12 @@ def apply_age_filter(candidates: list[TradingCandidate]) -> list[TradingCandidat
     rejected_count = 0
 
     for candidate in candidates:
-        age_hours = candidate.dexscreener_token_information.age_hours
+        age_hours = candidate.market_snapshot.token_age_hours
 
         if minimum_age_hours <= age_hours <= maximum_age_hours:
             retained.append(candidate)
         else:
-            symbol = candidate.dexscreener_token_information.base_token.symbol
+            symbol = candidate.token.symbol
             logger.debug("[TRADING][FILTER][AGE] %s rejected — age %.1fh outside bounds [%.1f, %.1f]", symbol, age_hours, minimum_age_hours, maximum_age_hours)
             rejected_count += 1
 

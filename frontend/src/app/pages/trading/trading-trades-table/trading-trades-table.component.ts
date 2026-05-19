@@ -74,7 +74,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
     private readonly webSocketService = inject(WebSocketService);
 
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
-        const rows = this.webSocketService.trades() ?? [];
+        const rows = this.webSocketService.tradingTrades() ?? [];
         return Array.isArray(rows) ? (rows as TradingTradePayload[]) : [];
     });
 
@@ -542,7 +542,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
         if (!trade) {
             return null;
         }
-        const openPositions = this.webSocketService.positions() ?? [];
+        const openPositions = this.webSocketService.tradingPositions() ?? [];
         const openPositionMatch = openPositions.find((position) => position.evaluation_id === trade.evaluation_id || position.id === trade.linked_position_id);
         if (openPositionMatch) {
             return openPositionMatch;

@@ -15,4 +15,3 @@ class TradingShadowingState(BaseModel):
     shadowing_snapshot: Optional[TradingShadowingSnapshot] = None
     shadowing_verdict_chronicle: Optional[TradingShadowingVerdictChroniclePayload] = None
     shadowing_verdict_chronicle_delta: Optional[TradingShadowingVerdictChronicleDeltaPayload] = None
-

@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import select, desc, asc
 from sqlalchemy.orm import Session
 
-from src.core.structures.structures import EquityCurve, EquityCurvePoint
+from src.core.trading.trading_structures import TradingPortfolioEquityCurvePoint
 from src.core.utils.date_utils import get_current_local_datetime
 from src.persistence.models import TradingPortfolioSnapshot
 
@@ -26,7 +26,7 @@ class TradingPortfolioSnapshotDao:
         database_query = select(TradingPortfolioSnapshot).order_by(desc(TradingPortfolioSnapshot.created_at)).limit(limit)
         return list(self.database_session.execute(database_query).scalars().all())
 
-    def retrieve_equity_curve(self, limit_count: int = 100) -> EquityCurve:
+    def retrieve_equity_curve_points(self, limit_count: int = 100) -> list[TradingPortfolioEquityCurvePoint]:
         database_query = (
             select(TradingPortfolioSnapshot)
             .order_by(desc(TradingPortfolioSnapshot.created_at))
@@ -34,15 +34,13 @@ class TradingPortfolioSnapshotDao:
         )
         equity_snapshots = list(self.database_session.execute(database_query).scalars().all())
 
-        curve_points = [
-            EquityCurvePoint(
+        return [
+            TradingPortfolioEquityCurvePoint(
                 timestamp_milliseconds=int(snapshot.created_at.timestamp() * 1000),
-                equity=snapshot.total_equity_value
+                total_equity_value=snapshot.total_equity_value,
             )
             for snapshot in reversed(equity_snapshots)
         ]
-
-        return EquityCurve(curve_points=curve_points)
 
     def create_snapshot(self, equity: float, cash: float, holdings: float) -> TradingPortfolioSnapshot:
         new_snapshot = TradingPortfolioSnapshot(

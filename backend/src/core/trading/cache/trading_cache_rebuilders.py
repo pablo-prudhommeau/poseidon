@@ -12,9 +12,9 @@ from src.api.http.api_schemas import (
     TradingTradePayload,
 )
 from src.api.websocket.websocket_manager import websocket_manager
+from src.api.websocket.websocket_structures import WebsocketMessageType
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
-from src.core.structures.structures import WebsocketMessageType
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.cache.trading_cache_payload_builders import (
     build_trading_positions_payloads,
@@ -58,7 +58,7 @@ class _PositionsRebuilder:
     async def notify_websocket(self, payload: object) -> None:
         positions_payload = cast(list[TradingPositionPayload], payload)
         await websocket_manager.broadcast_json_payload({
-            "type": WebsocketMessageType.POSITIONS.value,
+            "type": WebsocketMessageType.TRADING_POSITIONS.value,
             "payload": jsonable_encoder(positions_payload),
         })
 
@@ -78,7 +78,7 @@ class _PositionPricesRebuilder:
     async def notify_websocket(self, payload: object) -> None:
         position_prices_payload = cast(list[TradingPositionPricePayload], payload)
         await websocket_manager.broadcast_json_payload({
-            "type": WebsocketMessageType.POSITION_PRICES.value,
+            "type": WebsocketMessageType.TRADING_POSITION_PRICES.value,
             "payload": jsonable_encoder(position_prices_payload),
         })
 
@@ -95,7 +95,7 @@ class _TradesRebuilder:
 
     async def notify_websocket(self, payload: list[TradingTradePayload]) -> None:
         await websocket_manager.broadcast_json_payload({
-            "type": WebsocketMessageType.TRADES.value,
+            "type": WebsocketMessageType.TRADING_TRADES.value,
             "payload": jsonable_encoder(payload),
         })
 
@@ -121,7 +121,7 @@ class _AvailableCashRebuilder:
 
     async def notify_websocket(self, payload: TradingLiquidityPayload) -> None:
         await websocket_manager.broadcast_json_payload({
-            "type": WebsocketMessageType.LIQUIDITY.value,
+            "type": WebsocketMessageType.TRADING_LIQUIDITY.value,
             "payload": jsonable_encoder(payload),
         })
 
@@ -141,7 +141,7 @@ class _PortfolioRebuilder:
             return
 
         await websocket_manager.broadcast_json_payload({
-            "type": WebsocketMessageType.PORTFOLIO.value,
+            "type": WebsocketMessageType.TRADING_PORTFOLIO.value,
             "payload": jsonable_encoder(payload),
         })
 

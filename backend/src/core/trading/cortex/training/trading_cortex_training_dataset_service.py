@@ -57,8 +57,8 @@ class TradingCortexTrainingDatasetService:
                 request_identifier=str(shadow_training_record.probe_identifier),
                 feature_set_version=training_run_request.feature_set_version,
                 candidate_features=shadow_training_record.candidate_features,
-                shadowing_regime_features=shadow_training_record.shadowing_regime_features,
-                shadowing_metric_features=shadow_training_record.shadowing_metric_features,
+                regime_features=shadow_training_record.regime_features,
+                metric_features=shadow_training_record.metric_features,
             )
             feature_vector_snapshot = self._feature_vector_builder.build_feature_vector(scoring_request)
             feature_matrix_rows.append(feature_vector_snapshot.extract_ordered_feature_values(ordered_feature_names))
@@ -121,12 +121,44 @@ class TradingCortexTrainingDatasetService:
                 resolved_at = verdict.resolved_at
                 if resolved_at is None:
                     continue
+                if probe.shadowing_regime is None:
+                    continue
+                if probe.shadowing_metrics is None:
+                    continue
 
-                shadowing_regime_features = TradingCortexShadowingRegimeFeatureSnapshot(**probe.shadowing_regime)
-                shadowing_metric_features = [
-                    TradingCortexShadowingMetricFeatureSnapshot(**metric_dict)
-                    for metric_dict in probe.shadowing_metrics
-                ]
+                shadowing_regime = probe.shadowing_regime
+                regime_features = TradingCortexShadowingRegimeFeatureSnapshot(
+                    metrics_meta_win_rate=shadowing_regime.metrics_meta_win_rate,
+                    metrics_meta_average_pnl=shadowing_regime.metrics_meta_average_pnl,
+                    metrics_meta_average_holding_time_hours=shadowing_regime.metrics_meta_average_holding_time_hours,
+                    metrics_meta_expected_pnl_velocity=shadowing_regime.metrics_meta_expected_pnl_velocity,
+                    metrics_meta_profit_factor=shadowing_regime.metrics_meta_profit_factor,
+                    metrics_meta_expected_value_usd=shadowing_regime.metrics_meta_expected_value_usd,
+                    edge_chronicle_profit_factor=shadowing_regime.edge_chronicle_profit_factor,
+                    edge_sparse_expected_value_usd=shadowing_regime.edge_sparse_expected_value_usd,
+                )
+                metric_features = []
+                for metric_evaluation in probe.shadowing_metrics:
+                    if metric_evaluation.candidate_value is None:
+                        continue
+                    metric_features.append(
+                        TradingCortexShadowingMetricFeatureSnapshot(
+                            metric_key=metric_evaluation.metric_key,
+                            candidate_value=metric_evaluation.candidate_value,
+                            bucket_index=metric_evaluation.bucket_index,
+                            bucket_win_rate=metric_evaluation.bucket_win_rate,
+                            bucket_average_profit_and_loss_percentage=metric_evaluation.bucket_average_pnl,
+                            bucket_average_holding_time_hours=metric_evaluation.bucket_average_holding_time,
+                            bucket_expected_pnl_velocity=metric_evaluation.bucket_expected_pnl_velocity,
+                            bucket_outlier_hit_rate=metric_evaluation.bucket_outlier_hit_rate,
+                            bucket_sample_count=metric_evaluation.bucket_sample_count,
+                            is_toxic=metric_evaluation.is_toxic,
+                            is_golden=metric_evaluation.is_golden,
+                            normalized_influence=metric_evaluation.normalized_influence,
+                        )
+                    )
+                if not metric_features:
+                    continue
 
                 shadow_training_records.append(
                     TradingCortexShadowTrainingRecord(
@@ -137,13 +169,12 @@ class TradingCortexTrainingDatasetService:
                             blockchain_network=probe.blockchain_network,
                             dex_identifier=probe.dex_id,
                             pair_address=probe.pair_address,
-                            candidate_rank=probe.candidate_rank,
                             quality_score=probe.quality_score,
                             token_age_hours=probe.token_age_hours,
                             liquidity_usd=probe.liquidity_usd,
                             market_cap_usd=probe.market_cap_usd,
                             fully_diluted_valuation_usd=probe.fully_diluted_valuation_usd,
-                            dexscreener_boost=probe.dexscreener_boost,
+                            promotion_score=probe.promotion_score,
                             volume_5m_usd=probe.volume_m5_usd,
                             volume_1h_usd=probe.volume_h1_usd,
                             volume_6h_usd=probe.volume_h6_usd,
@@ -159,8 +190,8 @@ class TradingCortexTrainingDatasetService:
                             buy_to_sell_ratio=probe.buy_to_sell_ratio,
                             order_notional_value_usd=probe.order_notional_value_usd,
                         ),
-                        shadowing_regime_features=shadowing_regime_features,
-                        shadowing_metric_features=shadowing_metric_features,
+                        regime_features=regime_features,
+                        metric_features=metric_features,
                         realized_profit_and_loss_percentage=float(verdict.realized_pnl_percentage),
                         realized_profit_and_loss_usd=float(verdict.realized_pnl_usd),
                         holding_duration_minutes=float(verdict.holding_duration_minutes),

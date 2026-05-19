@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src.core.structures.structures import DcaOrderStatus
+from src.core.dca.dca_structures import DcaOrderStatus
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.models import DcaStrategy, DcaOrder

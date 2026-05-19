@@ -1,0 +1,733 @@
+import { easeOutCubic, linearInterpolate } from '../../../../core/math.utils';
+import type {
+    TradingShadowingVerdictChronicleBucketPayload,
+    TradingShadowingVerdictChroniclePayload,
+    TradingShadowingVerdictChronicleRegimeGatePointPayload,
+    TradingShadowingVerdictChronicleVerdictPointPayload
+} from '../../../../core/models';
+import type { ChronicleArrays, ChronicleBucketMeta, ChronicleCartesianPoint, SciChartModule } from './trading-shadowing-verdict-chronicle.models';
+
+export type { SciChartModule };
+
+export const CHRONICLE_STREAM_LAG_MS_FALLBACK = 240_000;
+export const CHRONICLE_SNAPSHOT_BLEND_MS = 1400;
+
+const CHRONICLE_MAX_METRIC_POINTS = 500;
+const CHRONICLE_MAX_VOLUME_POINTS = 900;
+
+export type ChronicleBucketLabel = TradingShadowingVerdictChronicleBucketPayload['bucket_label'];
+export type TradingShadowingVerdictChronicleBucketLabel = ChronicleBucketLabel;
+
+function buildDownsampledIndices(length: number, maxPoints: number): number[] {
+    if (length <= maxPoints) {
+        return Array.from({ length }, (_unused, index) => index);
+    }
+    const stride = Math.max(1, Math.ceil(length / maxPoints));
+    const indices: number[] = [];
+    for (let index = 0; index < length; index += stride) {
+        indices.push(index);
+    }
+    const lastIndex = length - 1;
+    if (indices[indices.length - 1] !== lastIndex) {
+        indices.push(lastIndex);
+    }
+    return indices;
+}
+
+export function resolveChronicleStreamLagMilliseconds(seriesEndLagSeconds: number | undefined): number {
+    if (seriesEndLagSeconds != null && seriesEndLagSeconds > 0) {
+        return seriesEndLagSeconds * 1000;
+    }
+    return CHRONICLE_STREAM_LAG_MS_FALLBACK;
+}
+
+export function computeSimpleMovingAverage(values: number[], windowSize: number): number[] {
+    if (values.length === 0 || windowSize <= 1) {
+        return [...values];
+    }
+    const result: number[] = new Array(values.length);
+    for (let index = 0; index < values.length; index++) {
+        let sum = 0;
+        let count = 0;
+        const start = Math.max(0, index - windowSize + 1);
+        for (let windowIndex = start; windowIndex <= index; windowIndex++) {
+            const value = values[windowIndex];
+            if (value != null && !Number.isNaN(value)) {
+                sum += value;
+                count++;
+            }
+        }
+        result[index] = count > 0 ? sum / count : NaN;
+    }
+    return result;
+}
+
+export function shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel: ChronicleBucketLabel): number {
+    switch (bucketLabel) {
+        case 'last_30m_1m':
+            return 30 * 60 * 1000;
+        case 'last_24h_1h':
+            return 24 * 60 * 60 * 1000;
+        case 'last_7d_15m':
+            return 7 * 24 * 60 * 60 * 1000;
+        case 'last_30d_30m':
+            return 30 * 24 * 60 * 60 * 1000;
+        default:
+            return 24 * 60 * 60 * 1000;
+    }
+}
+
+export function computeChronicleRetentionFloorServerEpochMilliseconds(
+    bucketLabel: ChronicleBucketLabel,
+    granularitySeconds: number,
+    referenceWallClockMilliseconds: number = Date.now()
+): number {
+    const lookbackMilliseconds = shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel);
+    const viewportSpanMilliseconds = lookbackMilliseconds * 1.18;
+    const trailingSafetyMilliseconds = 10 * Math.max(1, granularitySeconds) * 1000;
+    return referenceWallClockMilliseconds - viewportSpanMilliseconds - trailingSafetyMilliseconds;
+}
+
+export function parseIsoTimestampToEpochMilliseconds(rawIso: string | undefined): number | undefined {
+    if (!rawIso?.trim()) {
+        return undefined;
+    }
+    const trimmed = rawIso.trim();
+    const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T');
+    let timestampMilliseconds = Date.parse(normalized);
+    if (Number.isNaN(timestampMilliseconds) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized)) {
+        timestampMilliseconds = Date.parse(`${normalized}Z`);
+    }
+    return Number.isNaN(timestampMilliseconds) ? undefined : timestampMilliseconds;
+}
+
+export function formatChronicleAxisLocalDateTimeMilliseconds(epochMilliseconds: number): string {
+    return new Date(epochMilliseconds).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'medium'
+    });
+}
+
+export function formatChronicleAxisTickLabelMilliseconds(epochMilliseconds: number): string {
+    return new Date(epochMilliseconds).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+export function floorEpochMillisecondsToBucketStart(epochMilliseconds: number, granularitySeconds: number): number {
+    const granularityMilliseconds = Math.max(1000, granularitySeconds * 1000);
+    return Math.floor(epochMilliseconds / granularityMilliseconds) * granularityMilliseconds;
+}
+
+export function chronicleMinimumDisplayXMilliseconds(arrays: ChronicleArrays): number {
+    const candidates: number[] = [...arrays.metricTimestampsMilliseconds, ...arrays.volumeBucketTimestampsMilliseconds];
+    for (const point of arrays.verdictCloudProfitablePoints) {
+        candidates.push(point.x);
+    }
+    for (const point of arrays.verdictCloudLossPoints) {
+        candidates.push(point.x);
+    }
+    if (candidates.length === 0) {
+        return Number.MAX_SAFE_INTEGER;
+    }
+    return Math.min(...candidates);
+}
+
+export function winsorizeSeries(values: number[], lowerQuantile = 0.02, upperQuantile = 0.98): number[] {
+    const finiteValues = values.filter((value) => Number.isFinite(value));
+    if (finiteValues.length < 4) {
+        return [...values];
+    }
+    const sorted = [...finiteValues].sort((left, right) => left - right);
+    const lowerIndex = Math.max(0, Math.floor((sorted.length - 1) * lowerQuantile));
+    const upperIndex = Math.min(sorted.length - 1, Math.ceil((sorted.length - 1) * upperQuantile));
+    const lowerBound = sorted[lowerIndex];
+    const upperBound = sorted[upperIndex];
+    return values.map((value: number) => {
+        if (!Number.isFinite(value)) {
+            return NaN;
+        }
+        return Math.min(upperBound, Math.max(lowerBound, value));
+    });
+}
+
+export function chronicleShouldShowTargetVerdictCloud(rawAlpha: number): boolean {
+    return easeOutCubic(rawAlpha) >= 0.88;
+}
+
+function sampleSortedXySeriesAtX(sortedXValues: number[], yValues: number[], xQuery: number): number {
+    if (sortedXValues.length === 0 || yValues.length === 0) {
+        return 0;
+    }
+    if (xQuery <= sortedXValues[0]) {
+        return yValues[0];
+    }
+    const lastIndex = sortedXValues.length - 1;
+    if (xQuery >= sortedXValues[lastIndex]) {
+        return yValues[lastIndex];
+    }
+    let lower = 0;
+    let upper = lastIndex;
+    while (lower < upper - 1) {
+        const middle = (lower + upper) >> 1;
+        if (sortedXValues[middle] <= xQuery) {
+            lower = middle;
+        } else {
+            upper = middle;
+        }
+    }
+    const span = sortedXValues[upper] - sortedXValues[lower];
+    if (span <= 0) {
+        return yValues[lower];
+    }
+    const interpolationWeight = (xQuery - sortedXValues[lower]) / span;
+    return linearInterpolate(yValues[lower], yValues[upper], interpolationWeight);
+}
+
+function alignRegimeGateSeriesToMetrics(
+    metrics: TradingShadowingVerdictChronicleBucketPayload['metrics'],
+    regimeGate: TradingShadowingVerdictChronicleRegimeGatePointPayload[] | undefined
+): Pick<
+    ChronicleArrays,
+    | 'regimeProfitFactorSmaSeries'
+    | 'regimeSparseExpectedValueUsdSmaSeries'
+    | 'profitFactorGateOpenSeries'
+    | 'sparseExpectedValueGateOpenSeries'
+    | 'hardGateOpenSeries'
+> {
+    const regimeGateByTimestamp = new Map((regimeGate ?? []).map((gatePoint) => [gatePoint.timestamp_milliseconds, gatePoint]));
+    const regimeProfitFactorSmaSeries: number[] = [];
+    const regimeSparseExpectedValueUsdSmaSeries: number[] = [];
+    const profitFactorGateOpenSeries: boolean[] = [];
+    const sparseExpectedValueGateOpenSeries: boolean[] = [];
+    const hardGateOpenSeries: boolean[] = [];
+    for (const metric of metrics) {
+        const gatePoint = regimeGateByTimestamp.get(metric.timestamp_milliseconds);
+        regimeProfitFactorSmaSeries.push(gatePoint?.regime_profit_factor_sma ?? NaN);
+        regimeSparseExpectedValueUsdSmaSeries.push(gatePoint?.regime_sparse_expected_value_usd_sma ?? NaN);
+        profitFactorGateOpenSeries.push(gatePoint?.profit_factor_gate_open ?? false);
+        sparseExpectedValueGateOpenSeries.push(gatePoint?.sparse_expected_value_gate_open ?? false);
+        hardGateOpenSeries.push(gatePoint?.hard_gate_open ?? false);
+    }
+    return {
+        regimeProfitFactorSmaSeries,
+        regimeSparseExpectedValueUsdSmaSeries,
+        profitFactorGateOpenSeries,
+        sparseExpectedValueGateOpenSeries,
+        hardGateOpenSeries
+    };
+}
+
+export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
+    return {
+        metricTimestampsMilliseconds: [...source.metricTimestampsMilliseconds],
+        averagePnlPercentageSeries: [...source.averagePnlPercentageSeries],
+        averageWinRatePercentageSeries: [...source.averageWinRatePercentageSeries],
+        expectedValuePerTradeUsdSeries: [...source.expectedValuePerTradeUsdSeries],
+        profitFactorSeries: [...source.profitFactorSeries],
+        closedVerdictsPerHourSeries: [...source.closedVerdictsPerHourSeries],
+        averageCortexPredictionWinRatePercentageSeries: [...source.averageCortexPredictionWinRatePercentageSeries],
+        cortexSkillScorePercentageSeries: [...source.cortexSkillScorePercentageSeries],
+        cortexCalibrationGapPercentagePointsSeries: [...source.cortexCalibrationGapPercentagePointsSeries],
+        cortexHighConvictionAccuracyPercentageSeries: [...source.cortexHighConvictionAccuracyPercentageSeries],
+        cortexHighConvictionSharePercentageSeries: [...source.cortexHighConvictionSharePercentageSeries],
+        cortexGatePrecisionPercentageSeries: [...source.cortexGatePrecisionPercentageSeries],
+        cortexGatePassRatePercentageSeries: [...source.cortexGatePassRatePercentageSeries],
+        movingAveragePnlSeries: [...source.movingAveragePnlSeries],
+        movingAverageWinRateSeries: [...source.movingAverageWinRateSeries],
+        movingAverageExpectedValueSeries: [...source.movingAverageExpectedValueSeries],
+        movingAverageProfitFactorSeries: [...source.movingAverageProfitFactorSeries],
+        movingAverageTradesPerHourSeries: [...source.movingAverageTradesPerHourSeries],
+        movingAverageCortexPredictionWinRatePercentageSeries: [...source.movingAverageCortexPredictionWinRatePercentageSeries],
+        movingAverageCortexSkillScorePercentageSeries: [...source.movingAverageCortexSkillScorePercentageSeries],
+        movingAverageCortexCalibrationGapPercentagePointsSeries: [...source.movingAverageCortexCalibrationGapPercentagePointsSeries],
+        movingAverageCortexHighConvictionAccuracyPercentageSeries: [...source.movingAverageCortexHighConvictionAccuracyPercentageSeries],
+        movingAverageCortexHighConvictionSharePercentageSeries: [...source.movingAverageCortexHighConvictionSharePercentageSeries],
+        movingAverageCortexGatePrecisionPercentageSeries: [...source.movingAverageCortexGatePrecisionPercentageSeries],
+        movingAverageCortexGatePassRatePercentageSeries: [...source.movingAverageCortexGatePassRatePercentageSeries],
+        regimeProfitFactorSmaSeries: [...source.regimeProfitFactorSmaSeries],
+        regimeSparseExpectedValueUsdSmaSeries: [...source.regimeSparseExpectedValueUsdSmaSeries],
+        profitFactorGateOpenSeries: [...source.profitFactorGateOpenSeries],
+        sparseExpectedValueGateOpenSeries: [...source.sparseExpectedValueGateOpenSeries],
+        hardGateOpenSeries: [...source.hardGateOpenSeries],
+        volumeBucketTimestampsMilliseconds: [...source.volumeBucketTimestampsMilliseconds],
+        volumeBucketVerdictCounts: [...source.volumeBucketVerdictCounts],
+        verdictCloudProfitablePoints: source.verdictCloudProfitablePoints.map((point) => ({ ...point })),
+        verdictCloudLossPoints: source.verdictCloudLossPoints.map((point) => ({ ...point }))
+    };
+}
+
+export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: ChronicleArrays, rawAlpha: number): ChronicleArrays {
+    const alpha = easeOutCubic(rawAlpha);
+    const cloudBlendCutoff = 0.88;
+    const takeCloudFromSource = alpha < cloudBlendCutoff;
+
+    const metricTimestampsMilliseconds = toArrays.metricTimestampsMilliseconds;
+    const averagePnlPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.averagePnlPercentageSeries, x),
+            toArrays.averagePnlPercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const averageWinRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.averageWinRatePercentageSeries, x),
+            toArrays.averageWinRatePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const expectedValuePerTradeUsdSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.expectedValuePerTradeUsdSeries, x),
+            toArrays.expectedValuePerTradeUsdSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const profitFactorSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.profitFactorSeries, x),
+            toArrays.profitFactorSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const closedVerdictsPerHourSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.closedVerdictsPerHourSeries, x),
+            toArrays.closedVerdictsPerHourSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const averageCortexPredictionWinRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.averageCortexPredictionWinRatePercentageSeries, x),
+            toArrays.averageCortexPredictionWinRatePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexSkillScorePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexSkillScorePercentageSeries, x),
+            toArrays.cortexSkillScorePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexCalibrationGapPercentagePointsSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexCalibrationGapPercentagePointsSeries, x),
+            toArrays.cortexCalibrationGapPercentagePointsSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexHighConvictionAccuracyPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexHighConvictionAccuracyPercentageSeries, x),
+            toArrays.cortexHighConvictionAccuracyPercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexHighConvictionSharePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexHighConvictionSharePercentageSeries, x),
+            toArrays.cortexHighConvictionSharePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexGatePrecisionPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexGatePrecisionPercentageSeries, x),
+            toArrays.cortexGatePrecisionPercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const cortexGatePassRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexGatePassRatePercentageSeries, x),
+            toArrays.cortexGatePassRatePercentageSeries[index] ?? 0,
+            alpha
+        )
+    );
+
+    const volumeBucketTimestampsMilliseconds = toArrays.volumeBucketTimestampsMilliseconds;
+    const volumeBucketVerdictCounts = volumeBucketTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.volumeBucketTimestampsMilliseconds, fromArrays.volumeBucketVerdictCounts, x),
+            toArrays.volumeBucketVerdictCounts[index] ?? 0,
+            alpha
+        )
+    );
+
+    const blendMovingAverageSeries = (fieldName: keyof ChronicleArrays): number[] =>
+        metricTimestampsMilliseconds.map((x, index) =>
+            linearInterpolate(
+                sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays[fieldName] as number[], x),
+                (toArrays[fieldName] as number[])[index] ?? 0,
+                alpha
+            )
+        );
+    const blendRegimeSmaSeries = (fieldName: 'regimeProfitFactorSmaSeries' | 'regimeSparseExpectedValueUsdSmaSeries'): number[] =>
+        metricTimestampsMilliseconds.map((x, index) => {
+            const fromValue = sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays[fieldName], x);
+            const toValue = toArrays[fieldName][index] ?? NaN;
+            if (!Number.isFinite(fromValue)) {
+                return toValue;
+            }
+            if (!Number.isFinite(toValue)) {
+                return fromValue;
+            }
+            return linearInterpolate(fromValue, toValue, alpha);
+        });
+    const blendGateOpenSeries = (fieldName: 'profitFactorGateOpenSeries' | 'sparseExpectedValueGateOpenSeries' | 'hardGateOpenSeries'): boolean[] =>
+        metricTimestampsMilliseconds.map((x, index) => (alpha >= 0.5 ? toArrays[fieldName][index] : fromArrays[fieldName][index]) ?? false);
+
+    return {
+        metricTimestampsMilliseconds,
+        averagePnlPercentageSeries,
+        averageWinRatePercentageSeries,
+        expectedValuePerTradeUsdSeries,
+        profitFactorSeries,
+        closedVerdictsPerHourSeries,
+        averageCortexPredictionWinRatePercentageSeries,
+        cortexSkillScorePercentageSeries,
+        cortexCalibrationGapPercentagePointsSeries,
+        cortexHighConvictionAccuracyPercentageSeries,
+        cortexHighConvictionSharePercentageSeries,
+        cortexGatePrecisionPercentageSeries,
+        cortexGatePassRatePercentageSeries,
+        movingAveragePnlSeries: blendMovingAverageSeries('movingAveragePnlSeries'),
+        movingAverageWinRateSeries: blendMovingAverageSeries('movingAverageWinRateSeries'),
+        movingAverageExpectedValueSeries: blendMovingAverageSeries('movingAverageExpectedValueSeries'),
+        movingAverageProfitFactorSeries: blendMovingAverageSeries('movingAverageProfitFactorSeries'),
+        movingAverageTradesPerHourSeries: blendMovingAverageSeries('movingAverageTradesPerHourSeries'),
+        movingAverageCortexPredictionWinRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexPredictionWinRatePercentageSeries'),
+        movingAverageCortexSkillScorePercentageSeries: blendMovingAverageSeries('movingAverageCortexSkillScorePercentageSeries'),
+        movingAverageCortexCalibrationGapPercentagePointsSeries: blendMovingAverageSeries('movingAverageCortexCalibrationGapPercentagePointsSeries'),
+        movingAverageCortexHighConvictionAccuracyPercentageSeries: blendMovingAverageSeries('movingAverageCortexHighConvictionAccuracyPercentageSeries'),
+        movingAverageCortexHighConvictionSharePercentageSeries: blendMovingAverageSeries('movingAverageCortexHighConvictionSharePercentageSeries'),
+        movingAverageCortexGatePrecisionPercentageSeries: blendMovingAverageSeries('movingAverageCortexGatePrecisionPercentageSeries'),
+        movingAverageCortexGatePassRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexGatePassRatePercentageSeries'),
+        regimeProfitFactorSmaSeries: blendRegimeSmaSeries('regimeProfitFactorSmaSeries'),
+        regimeSparseExpectedValueUsdSmaSeries: blendRegimeSmaSeries('regimeSparseExpectedValueUsdSmaSeries'),
+        profitFactorGateOpenSeries: blendGateOpenSeries('profitFactorGateOpenSeries'),
+        sparseExpectedValueGateOpenSeries: blendGateOpenSeries('sparseExpectedValueGateOpenSeries'),
+        hardGateOpenSeries: blendGateOpenSeries('hardGateOpenSeries'),
+        volumeBucketTimestampsMilliseconds,
+        volumeBucketVerdictCounts,
+        verdictCloudProfitablePoints: takeCloudFromSource
+            ? fromArrays.verdictCloudProfitablePoints.map((point) => ({ ...point }))
+            : toArrays.verdictCloudProfitablePoints.map((point) => ({ ...point })),
+        verdictCloudLossPoints: takeCloudFromSource
+            ? fromArrays.verdictCloudLossPoints.map((point) => ({ ...point }))
+            : toArrays.verdictCloudLossPoints.map((point) => ({ ...point }))
+    };
+}
+
+export function buildChronicleSnapshotFingerprint(historySnapshot: TradingShadowingVerdictChroniclePayload): string {
+    const bucketParts = historySnapshot.buckets.map((bucket) => {
+        const lastMetricTimestamp = bucket.metrics[bucket.metrics.length - 1]?.timestamp_milliseconds ?? 0;
+        const lastVolumeTimestamp = bucket.volumes[bucket.volumes.length - 1]?.timestamp_milliseconds ?? 0;
+        const lastCloudTimestamp = bucket.verdict_cloud[bucket.verdict_cloud.length - 1]?.timestamp_milliseconds ?? 0;
+        return `${bucket.bucket_label}:${bucket.metrics.length}:${bucket.volumes.length}:${bucket.verdict_cloud.length}:${lastMetricTimestamp}:${lastVolumeTimestamp}:${lastCloudTimestamp}`;
+    });
+    return [
+        historySnapshot.generated_at_iso,
+        historySnapshot.as_of_iso,
+        String(historySnapshot.total_verdicts_considered),
+        historySnapshot.source,
+        ...bucketParts
+    ].join('|');
+}
+
+export function buildChronicleArraysFromBucket(
+    meta: ChronicleBucketMeta,
+    streamLagMilliseconds: number = CHRONICLE_STREAM_LAG_MS_FALLBACK,
+    smaWindowBuckets: number = 0
+): ChronicleArrays {
+    const displayTimeMilliseconds = (timestampMilliseconds: number): number => timestampMilliseconds - streamLagMilliseconds;
+
+    const metrics = (() => {
+        const metricByTimestamp = new Map<number, TradingShadowingVerdictChronicleBucketPayload['metrics'][number]>();
+        for (const metric of meta.bucket.metrics) {
+            metricByTimestamp.set(metric.timestamp_milliseconds, metric);
+        }
+        return [...metricByTimestamp.values()].sort((left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds);
+    })();
+    const volumes = (() => {
+        const volumeByTimestamp = new Map<number, TradingShadowingVerdictChronicleBucketPayload['volumes'][number]>();
+        for (const volume of meta.bucket.volumes) {
+            volumeByTimestamp.set(volume.timestamp_milliseconds, volume);
+        }
+        return [...volumeByTimestamp.values()].sort((left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds);
+    })();
+    const metricTimestampsMilliseconds = metrics.map((metric) => displayTimeMilliseconds(metric.timestamp_milliseconds));
+    let averagePnlPercentageSeries = winsorizeSeries(metrics.map((metric) => metric.average_pnl_percentage));
+    let averageWinRatePercentageSeries = winsorizeSeries(metrics.map((metric) => metric.average_win_rate_percentage));
+    let expectedValuePerTradeUsdSeries = winsorizeSeries(metrics.map((metric) => metric.expected_value_per_trade_usd));
+    let profitFactorSeries = winsorizeSeries(metrics.map((metric) => metric.profit_factor));
+    let closedVerdictsPerHourSeries = winsorizeSeries(metrics.map((metric) => metric.closed_verdicts_per_hour));
+    let averageCortexPredictionWinRatePercentageSeries = metrics.map((metric) => metric.average_cortex_prediction_win_rate_percentage ?? NaN);
+    let cortexSkillScorePercentageSeries = metrics.map((metric) => metric.cortex_skill_score_percentage ?? NaN);
+    let cortexCalibrationGapPercentagePointsSeries = metrics.map((metric) => metric.cortex_calibration_gap_percentage_points ?? NaN);
+    let cortexHighConvictionAccuracyPercentageSeries = metrics.map((metric) => metric.cortex_high_conviction_accuracy_percentage ?? NaN);
+    let cortexHighConvictionSharePercentageSeries = metrics.map((metric) => metric.cortex_high_conviction_share_percentage ?? NaN);
+    let cortexGatePrecisionPercentageSeries = metrics.map((metric) => metric.cortex_gate_precision_percentage ?? NaN);
+    let cortexGatePassRatePercentageSeries = metrics.map((metric) => metric.cortex_gate_pass_rate_percentage ?? NaN);
+
+    const effectiveSmaWindow = smaWindowBuckets > 0 ? smaWindowBuckets : metrics.length;
+    let movingAveragePnlSeries = computeSimpleMovingAverage(averagePnlPercentageSeries, effectiveSmaWindow);
+    let movingAverageWinRateSeries = computeSimpleMovingAverage(averageWinRatePercentageSeries, effectiveSmaWindow);
+    let movingAverageExpectedValueSeries = computeSimpleMovingAverage(expectedValuePerTradeUsdSeries, effectiveSmaWindow);
+    let movingAverageProfitFactorSeries = computeSimpleMovingAverage(profitFactorSeries, effectiveSmaWindow);
+    let movingAverageTradesPerHourSeries = computeSimpleMovingAverage(closedVerdictsPerHourSeries, effectiveSmaWindow);
+    let movingAverageCortexPredictionWinRatePercentageSeries = computeSimpleMovingAverage(averageCortexPredictionWinRatePercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexSkillScorePercentageSeries = computeSimpleMovingAverage(cortexSkillScorePercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexCalibrationGapPercentagePointsSeries = computeSimpleMovingAverage(cortexCalibrationGapPercentagePointsSeries, effectiveSmaWindow);
+    let movingAverageCortexHighConvictionAccuracyPercentageSeries = computeSimpleMovingAverage(
+        cortexHighConvictionAccuracyPercentageSeries,
+        effectiveSmaWindow
+    );
+    let movingAverageCortexHighConvictionSharePercentageSeries = computeSimpleMovingAverage(cortexHighConvictionSharePercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexGatePrecisionPercentageSeries = computeSimpleMovingAverage(cortexGatePrecisionPercentageSeries, effectiveSmaWindow);
+    let movingAverageCortexGatePassRatePercentageSeries = computeSimpleMovingAverage(cortexGatePassRatePercentageSeries, effectiveSmaWindow);
+    let {
+        regimeProfitFactorSmaSeries,
+        regimeSparseExpectedValueUsdSmaSeries,
+        profitFactorGateOpenSeries,
+        sparseExpectedValueGateOpenSeries,
+        hardGateOpenSeries
+    } = alignRegimeGateSeriesToMetrics(metrics, meta.bucket.regime_gate);
+
+    const metricDownsampledIndices = buildDownsampledIndices(metricTimestampsMilliseconds.length, CHRONICLE_MAX_METRIC_POINTS);
+    const downsampleSeriesByMetricIndices = (values: number[]): number[] => metricDownsampledIndices.map((index) => values[index] ?? 0);
+    const downsampleBooleanSeriesByMetricIndices = (values: boolean[]): boolean[] => metricDownsampledIndices.map((index) => values[index] ?? false);
+    const downsampledMetricTimestampsMilliseconds = metricDownsampledIndices.map((index) => metricTimestampsMilliseconds[index] ?? 0);
+    averagePnlPercentageSeries = downsampleSeriesByMetricIndices(averagePnlPercentageSeries);
+    averageWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageWinRatePercentageSeries);
+    expectedValuePerTradeUsdSeries = downsampleSeriesByMetricIndices(expectedValuePerTradeUsdSeries);
+    profitFactorSeries = downsampleSeriesByMetricIndices(profitFactorSeries);
+    closedVerdictsPerHourSeries = downsampleSeriesByMetricIndices(closedVerdictsPerHourSeries);
+    averageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageCortexPredictionWinRatePercentageSeries);
+    cortexSkillScorePercentageSeries = downsampleSeriesByMetricIndices(cortexSkillScorePercentageSeries);
+    cortexCalibrationGapPercentagePointsSeries = downsampleSeriesByMetricIndices(cortexCalibrationGapPercentagePointsSeries);
+    cortexHighConvictionAccuracyPercentageSeries = downsampleSeriesByMetricIndices(cortexHighConvictionAccuracyPercentageSeries);
+    cortexHighConvictionSharePercentageSeries = downsampleSeriesByMetricIndices(cortexHighConvictionSharePercentageSeries);
+    cortexGatePrecisionPercentageSeries = downsampleSeriesByMetricIndices(cortexGatePrecisionPercentageSeries);
+    cortexGatePassRatePercentageSeries = downsampleSeriesByMetricIndices(cortexGatePassRatePercentageSeries);
+    movingAveragePnlSeries = downsampleSeriesByMetricIndices(movingAveragePnlSeries);
+    movingAverageWinRateSeries = downsampleSeriesByMetricIndices(movingAverageWinRateSeries);
+    movingAverageExpectedValueSeries = downsampleSeriesByMetricIndices(movingAverageExpectedValueSeries);
+    movingAverageProfitFactorSeries = downsampleSeriesByMetricIndices(movingAverageProfitFactorSeries);
+    movingAverageTradesPerHourSeries = downsampleSeriesByMetricIndices(movingAverageTradesPerHourSeries);
+    movingAverageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexPredictionWinRatePercentageSeries);
+    movingAverageCortexSkillScorePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexSkillScorePercentageSeries);
+    movingAverageCortexCalibrationGapPercentagePointsSeries = downsampleSeriesByMetricIndices(movingAverageCortexCalibrationGapPercentagePointsSeries);
+    movingAverageCortexHighConvictionAccuracyPercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexHighConvictionAccuracyPercentageSeries);
+    movingAverageCortexHighConvictionSharePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexHighConvictionSharePercentageSeries);
+    movingAverageCortexGatePrecisionPercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexGatePrecisionPercentageSeries);
+    movingAverageCortexGatePassRatePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexGatePassRatePercentageSeries);
+    regimeProfitFactorSmaSeries = downsampleSeriesByMetricIndices(regimeProfitFactorSmaSeries);
+    regimeSparseExpectedValueUsdSmaSeries = downsampleSeriesByMetricIndices(regimeSparseExpectedValueUsdSmaSeries);
+    profitFactorGateOpenSeries = downsampleBooleanSeriesByMetricIndices(profitFactorGateOpenSeries);
+    sparseExpectedValueGateOpenSeries = downsampleBooleanSeriesByMetricIndices(sparseExpectedValueGateOpenSeries);
+    hardGateOpenSeries = downsampleBooleanSeriesByMetricIndices(hardGateOpenSeries);
+
+    const volumeBucketTimestampsMilliseconds = volumes.map((volume) => displayTimeMilliseconds(volume.timestamp_milliseconds));
+    const volumeBucketVerdictCounts = winsorizeSeries(
+        volumes.map((volume) => volume.verdict_count),
+        0,
+        0.99
+    );
+    const volumeDownsampledIndices = buildDownsampledIndices(volumeBucketTimestampsMilliseconds.length, CHRONICLE_MAX_VOLUME_POINTS);
+    const downsampledVolumeBucketTimestampsMilliseconds = volumeDownsampledIndices.map((index) => volumeBucketTimestampsMilliseconds[index] ?? 0);
+    const downsampledVolumeBucketVerdictCounts = volumeDownsampledIndices.map((index) => volumeBucketVerdictCounts[index] ?? 0);
+
+    const granularitySeconds = meta.bucket.granularity_seconds;
+    const bucketSpanMilliseconds = Math.max(1000, granularitySeconds * 1000);
+    const organicVerdictCloud = meta.bucket.verdict_cloud.filter((point) => point.exit_reason !== 'LETHARGIC');
+
+    const cohortByBucketStartServerMilliseconds = new Map<number, TradingShadowingVerdictChronicleVerdictPointPayload[]>();
+    for (const point of organicVerdictCloud) {
+        const bucketStartServerMilliseconds = floorEpochMillisecondsToBucketStart(point.timestamp_milliseconds, granularitySeconds);
+        const cohort = cohortByBucketStartServerMilliseconds.get(bucketStartServerMilliseconds);
+        if (cohort) {
+            cohort.push(point);
+        } else {
+            cohortByBucketStartServerMilliseconds.set(bucketStartServerMilliseconds, [point]);
+        }
+    }
+    for (const cohort of cohortByBucketStartServerMilliseconds.values()) {
+        cohort.sort((left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds || left.verdict_id - right.verdict_id);
+    }
+    const verdictIndexWithinBucket = new Map<number, number>();
+    for (const cohort of cohortByBucketStartServerMilliseconds.values()) {
+        cohort.forEach((payload, indexWithinCohort) => {
+            verdictIndexWithinBucket.set(payload.verdict_id, indexWithinCohort);
+        });
+    }
+
+    const cloudPnls = organicVerdictCloud.map((point) => point.pnl_percentage).sort((left, right) => left - right);
+    const cloudLowerBound = cloudPnls[Math.floor(cloudPnls.length * 0.005)] ?? -100;
+    const cloudUpperBound = cloudPnls[Math.floor(cloudPnls.length * 0.995)] ?? 100;
+
+    const verdictCloudProfitablePoints: ChronicleCartesianPoint[] = [];
+    const verdictCloudLossPoints: ChronicleCartesianPoint[] = [];
+    for (const point of organicVerdictCloud) {
+        if (point.pnl_percentage < cloudLowerBound || point.pnl_percentage > cloudUpperBound) {
+            continue;
+        }
+
+        const bucketStartServerMilliseconds = floorEpochMillisecondsToBucketStart(point.timestamp_milliseconds, granularitySeconds);
+        const cohort = cohortByBucketStartServerMilliseconds.get(bucketStartServerMilliseconds) ?? [point];
+        const indexWithinBucket = verdictIndexWithinBucket.get(point.verdict_id) ?? 0;
+        const cohortSize = cohort.length;
+        const columnHalfWidthMilliseconds = (bucketSpanMilliseconds * 0.88) / 2;
+        let xServerMilliseconds = bucketStartServerMilliseconds;
+        if (cohortSize > 1) {
+            const usableHalfMilliseconds = columnHalfWidthMilliseconds * 0.9;
+            const stepMilliseconds = (2 * usableHalfMilliseconds) / (cohortSize - 1);
+            xServerMilliseconds = bucketStartServerMilliseconds - usableHalfMilliseconds + indexWithinBucket * stepMilliseconds;
+        }
+        const row: ChronicleCartesianPoint = {
+            x: displayTimeMilliseconds(xServerMilliseconds),
+            y: point.pnl_percentage,
+            cortexProbability: point.cortex_probability,
+            orderNotionalUsd: point.order_notional_usd
+        };
+        if (point.is_profitable) {
+            verdictCloudProfitablePoints.push(row);
+        } else {
+            verdictCloudLossPoints.push(row);
+        }
+    }
+
+    return {
+        metricTimestampsMilliseconds: downsampledMetricTimestampsMilliseconds,
+        averagePnlPercentageSeries,
+        averageWinRatePercentageSeries,
+        expectedValuePerTradeUsdSeries,
+        profitFactorSeries,
+        closedVerdictsPerHourSeries,
+        averageCortexPredictionWinRatePercentageSeries,
+        cortexSkillScorePercentageSeries,
+        cortexCalibrationGapPercentagePointsSeries,
+        cortexHighConvictionAccuracyPercentageSeries,
+        cortexHighConvictionSharePercentageSeries,
+        cortexGatePrecisionPercentageSeries,
+        cortexGatePassRatePercentageSeries,
+        movingAveragePnlSeries,
+        movingAverageWinRateSeries,
+        movingAverageExpectedValueSeries,
+        movingAverageProfitFactorSeries,
+        movingAverageTradesPerHourSeries,
+        movingAverageCortexPredictionWinRatePercentageSeries,
+        movingAverageCortexSkillScorePercentageSeries,
+        movingAverageCortexCalibrationGapPercentagePointsSeries,
+        movingAverageCortexHighConvictionAccuracyPercentageSeries,
+        movingAverageCortexHighConvictionSharePercentageSeries,
+        movingAverageCortexGatePrecisionPercentageSeries,
+        movingAverageCortexGatePassRatePercentageSeries,
+        regimeProfitFactorSmaSeries,
+        regimeSparseExpectedValueUsdSmaSeries,
+        profitFactorGateOpenSeries,
+        sparseExpectedValueGateOpenSeries,
+        hardGateOpenSeries,
+        volumeBucketTimestampsMilliseconds: downsampledVolumeBucketTimestampsMilliseconds,
+        volumeBucketVerdictCounts: downsampledVolumeBucketVerdictCounts,
+        verdictCloudProfitablePoints,
+        verdictCloudLossPoints
+    };
+}
+
+export function extendChronicleArraysToTapeRight(source: ChronicleArrays, tapeRightEdgeMilliseconds: number): ChronicleArrays {
+    const epsilonMilliseconds = 1;
+    const baseMetricX = source.metricTimestampsMilliseconds;
+    const extendMetric = baseMetricX.length > 0 && tapeRightEdgeMilliseconds > baseMetricX[baseMetricX.length - 1] + epsilonMilliseconds;
+    const metricTimestampsMilliseconds = extendMetric ? [...baseMetricX, tapeRightEdgeMilliseconds] : baseMetricX.slice();
+    const appendMetricTail = (values: number[]): number[] => {
+        const copy = values.slice();
+        if (extendMetric) {
+            copy.push(values[values.length - 1] ?? 0);
+        }
+        return copy;
+    };
+    const appendBooleanMetricTail = (values: boolean[]): boolean[] => {
+        const copy = values.slice();
+        if (extendMetric) {
+            copy.push(values[values.length - 1] ?? false);
+        }
+        return copy;
+    };
+
+    const baseVolumeX = source.volumeBucketTimestampsMilliseconds;
+    const extendVolume = baseVolumeX.length > 0 && tapeRightEdgeMilliseconds > baseVolumeX[baseVolumeX.length - 1] + epsilonMilliseconds;
+    const volumeBucketTimestampsMilliseconds = extendVolume ? [...baseVolumeX, tapeRightEdgeMilliseconds] : baseVolumeX.slice();
+    const volumeBucketVerdictCounts = (() => {
+        const copy = source.volumeBucketVerdictCounts.slice();
+        if (extendVolume) {
+            copy.push(source.volumeBucketVerdictCounts[source.volumeBucketVerdictCounts.length - 1] ?? 0);
+        }
+        return copy;
+    })();
+
+    return {
+        metricTimestampsMilliseconds,
+        averagePnlPercentageSeries: appendMetricTail(source.averagePnlPercentageSeries),
+        averageWinRatePercentageSeries: appendMetricTail(source.averageWinRatePercentageSeries),
+        expectedValuePerTradeUsdSeries: appendMetricTail(source.expectedValuePerTradeUsdSeries),
+        profitFactorSeries: appendMetricTail(source.profitFactorSeries),
+        closedVerdictsPerHourSeries: appendMetricTail(source.closedVerdictsPerHourSeries),
+        averageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.averageCortexPredictionWinRatePercentageSeries),
+        cortexSkillScorePercentageSeries: appendMetricTail(source.cortexSkillScorePercentageSeries),
+        cortexCalibrationGapPercentagePointsSeries: appendMetricTail(source.cortexCalibrationGapPercentagePointsSeries),
+        cortexHighConvictionAccuracyPercentageSeries: appendMetricTail(source.cortexHighConvictionAccuracyPercentageSeries),
+        cortexHighConvictionSharePercentageSeries: appendMetricTail(source.cortexHighConvictionSharePercentageSeries),
+        cortexGatePrecisionPercentageSeries: appendMetricTail(source.cortexGatePrecisionPercentageSeries),
+        cortexGatePassRatePercentageSeries: appendMetricTail(source.cortexGatePassRatePercentageSeries),
+        movingAveragePnlSeries: appendMetricTail(source.movingAveragePnlSeries),
+        movingAverageWinRateSeries: appendMetricTail(source.movingAverageWinRateSeries),
+        movingAverageExpectedValueSeries: appendMetricTail(source.movingAverageExpectedValueSeries),
+        movingAverageProfitFactorSeries: appendMetricTail(source.movingAverageProfitFactorSeries),
+        movingAverageTradesPerHourSeries: appendMetricTail(source.movingAverageTradesPerHourSeries),
+        movingAverageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.movingAverageCortexPredictionWinRatePercentageSeries),
+        movingAverageCortexSkillScorePercentageSeries: appendMetricTail(source.movingAverageCortexSkillScorePercentageSeries),
+        movingAverageCortexCalibrationGapPercentagePointsSeries: appendMetricTail(source.movingAverageCortexCalibrationGapPercentagePointsSeries),
+        movingAverageCortexHighConvictionAccuracyPercentageSeries: appendMetricTail(source.movingAverageCortexHighConvictionAccuracyPercentageSeries),
+        movingAverageCortexHighConvictionSharePercentageSeries: appendMetricTail(source.movingAverageCortexHighConvictionSharePercentageSeries),
+        movingAverageCortexGatePrecisionPercentageSeries: appendMetricTail(source.movingAverageCortexGatePrecisionPercentageSeries),
+        movingAverageCortexGatePassRatePercentageSeries: appendMetricTail(source.movingAverageCortexGatePassRatePercentageSeries),
+        regimeProfitFactorSmaSeries: appendMetricTail(source.regimeProfitFactorSmaSeries),
+        regimeSparseExpectedValueUsdSmaSeries: appendMetricTail(source.regimeSparseExpectedValueUsdSmaSeries),
+        profitFactorGateOpenSeries: appendBooleanMetricTail(source.profitFactorGateOpenSeries),
+        sparseExpectedValueGateOpenSeries: appendBooleanMetricTail(source.sparseExpectedValueGateOpenSeries),
+        hardGateOpenSeries: appendBooleanMetricTail(source.hardGateOpenSeries),
+        volumeBucketTimestampsMilliseconds,
+        volumeBucketVerdictCounts,
+        verdictCloudProfitablePoints: source.verdictCloudProfitablePoints,
+        verdictCloudLossPoints: source.verdictCloudLossPoints
+    };
+}
+
+export function computeChronicleViewportWidthMilliseconds(arrays: ChronicleArrays): number {
+    const allXValues: number[] = [...arrays.volumeBucketTimestampsMilliseconds, ...arrays.metricTimestampsMilliseconds];
+    for (const point of arrays.verdictCloudProfitablePoints) {
+        allXValues.push(point.x);
+    }
+    for (const point of arrays.verdictCloudLossPoints) {
+        allXValues.push(point.x);
+    }
+    if (allXValues.length === 0) {
+        return 86_400_000;
+    }
+    const minimumX = Math.min(...allXValues);
+    const maximumX = Math.max(...allXValues);
+    const spanMilliseconds = Math.max(maximumX - minimumX, 60_000);
+    return spanMilliseconds * 1.08;
+}
+
+export {
+    buildChronicleSnapshotFingerprint as buildTradingShadowingVerdictChronicleFingerprint,
+    computeChronicleRetentionFloorServerEpochMilliseconds as computeTradingShadowingVerdictChronicleVisibilityRetentionFloorServerEpochMilliseconds
+};

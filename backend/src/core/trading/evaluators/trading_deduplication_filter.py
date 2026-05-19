@@ -23,13 +23,13 @@ def apply_deduplication_filter(candidates: list[TradingCandidate]) -> list[Tradi
     retained: list[TradingCandidate] = []
 
     for candidate in candidates:
-        symbol_upper = candidate.dexscreener_token_information.base_token.symbol.upper()
-        token_address = candidate.dexscreener_token_information.base_token.address
+        symbol_upper = candidate.token.symbol.upper()
+        token_address = candidate.token.token_address
 
         if symbol_upper in open_symbols or is_address_in_open_positions(token_address, open_addresses):
             logger.debug(
                 "[TRADING][FILTER][DEDUP] Skip already open %s (%s)",
-                candidate.dexscreener_token_information.base_token.symbol, token_address,
+                candidate.token.symbol, token_address,
             )
             continue
 

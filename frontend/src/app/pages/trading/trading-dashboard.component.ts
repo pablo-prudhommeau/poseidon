@@ -3,11 +3,11 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { TabsModule } from 'primeng/tabs';
 import { ApiService } from '../../api.service';
-import { AnalyticsResponse } from '../../core/models';
-import { AnalyticsExplorationComponent } from '../analytics/analytics-exploration/analytics-exploration.component';
-import { AnalyticsKpiBarComponent } from '../analytics/analytics-kpi-bar/analytics-kpi-bar.component';
-import { AnalyticsSynthesisComponent } from '../analytics/analytics-synthesis/analytics-synthesis.component';
-import { TradingShadowingVerdictChronicleComponent } from './shadow-verdict-chronicle/components/shadow-verdict-chronicle.component';
+import { TradingAnalyticsResponse } from '../../core/models';
+import { TradingAnalyticsExplorationComponent } from './trading-analytics-exploration/trading-analytics-exploration.component';
+import { TradingAnalyticsKpiBarComponent } from './trading-analytics-kpi-bar/trading-analytics-kpi-bar.component';
+import { TradingAnalyticsSynthesisComponent } from './trading-analytics-synthesis/trading-analytics-synthesis.component';
+import { TradingShadowingVerdictChronicleComponent } from './trading-shadowing-verdict-chronicle/components/trading-shadowing-verdict-chronicle.component';
 import { TradingOverviewComponent } from './trading-overview/trading-overview.component';
 
 @Component({
@@ -18,9 +18,9 @@ import { TradingOverviewComponent } from './trading-overview/trading-overview.co
         TabsModule,
         ButtonModule,
         TradingOverviewComponent,
-        AnalyticsKpiBarComponent,
-        AnalyticsSynthesisComponent,
-        AnalyticsExplorationComponent,
+        TradingAnalyticsKpiBarComponent,
+        TradingAnalyticsSynthesisComponent,
+        TradingAnalyticsExplorationComponent,
         TradingShadowingVerdictChronicleComponent
     ],
     templateUrl: './trading-dashboard.component.html',
@@ -28,69 +28,69 @@ import { TradingOverviewComponent } from './trading-overview/trading-overview.co
 })
 export class TradingDashboardComponent implements OnInit {
     readonly activeTabValue = signal<string>('overview');
-    readonly qualifiedAnalytics = signal<AnalyticsResponse | null>(null);
-    readonly qualifiedAnalyticsSubTab = signal<string>('synthesis');
-    readonly qualifiedError = signal<string | null>(null);
-    readonly qualifiedLoading = signal<boolean>(false);
-    readonly shadowAnalytics = signal<AnalyticsResponse | null>(null);
-    readonly shadowAnalyticsSubTab = signal<string>('synthesis');
-    readonly shadowError = signal<string | null>(null);
-    readonly shadowLoading = signal<boolean>(false);
+    readonly tradingAnalytics = signal<TradingAnalyticsResponse | null>(null);
+    readonly tradingAnalyticsError = signal<string | null>(null);
+    readonly tradingAnalyticsLoading = signal<boolean>(false);
+    readonly tradingAnalyticsSubTab = signal<string>('synthesis');
+    readonly tradingShadowingAnalytics = signal<TradingAnalyticsResponse | null>(null);
+    readonly tradingShadowingAnalyticsError = signal<string | null>(null);
+    readonly tradingShadowingAnalyticsLoading = signal<boolean>(false);
+    readonly tradingShadowingAnalyticsSubTab = signal<string>('synthesis');
 
     private readonly apiService = inject(ApiService);
 
     ngOnInit(): void {}
 
-    onQualifiedSubTabChange(tabValue: string | number | undefined): void {
-        this.qualifiedAnalyticsSubTab.set(String(tabValue ?? 'synthesis'));
-    }
-
-    onShadowSubTabChange(tabValue: string | number | undefined): void {
-        this.shadowAnalyticsSubTab.set(String(tabValue ?? 'synthesis'));
-    }
-
     onTabChange(tabValue: string | number | undefined): void {
         const newTab = String(tabValue ?? 'overview');
         this.activeTabValue.set(newTab);
 
-        if (newTab === 'analytics-qualified' && !this.qualifiedLoading()) {
-            this.refreshQualifiedAnalytics();
+        if (newTab === 'trading-analytics' && !this.tradingAnalyticsLoading()) {
+            this.refreshTradingAnalytics();
         }
 
-        if (newTab === 'analytics-shadow' && !this.shadowLoading()) {
-            this.refreshShadowAnalytics();
+        if (newTab === 'trading-shadowing-analytics' && !this.tradingShadowingAnalyticsLoading()) {
+            this.refreshTradingShadowingAnalytics();
         }
     }
 
-    public refreshQualifiedAnalytics(): void {
-        this.qualifiedLoading.set(true);
-        this.qualifiedError.set(null);
+    onTradingAnalyticsSubTabChange(tabValue: string | number | undefined): void {
+        this.tradingAnalyticsSubTab.set(String(tabValue ?? 'synthesis'));
+    }
 
-        this.apiService.getAnalytics('qualified').subscribe({
-            next: (response: AnalyticsResponse) => {
-                this.qualifiedAnalytics.set(response);
-                this.qualifiedLoading.set(false);
+    onTradingShadowingAnalyticsSubTabChange(tabValue: string | number | undefined): void {
+        this.tradingShadowingAnalyticsSubTab.set(String(tabValue ?? 'synthesis'));
+    }
+
+    public refreshTradingAnalytics(): void {
+        this.tradingAnalyticsLoading.set(true);
+        this.tradingAnalyticsError.set(null);
+
+        this.apiService.getTradingAnalytics('qualified').subscribe({
+            next: (response: TradingAnalyticsResponse) => {
+                this.tradingAnalytics.set(response);
+                this.tradingAnalyticsLoading.set(false);
             },
             error: (error: unknown) => {
-                this.qualifiedLoading.set(false);
-                this.qualifiedError.set('Failed to load qualified analytics');
+                this.tradingAnalyticsLoading.set(false);
+                this.tradingAnalyticsError.set('Failed to load trading analytics');
                 console.error('[TRADING][ANALYTICS][QUALIFIED] Load error', error);
             }
         });
     }
 
-    public refreshShadowAnalytics(): void {
-        this.shadowLoading.set(true);
-        this.shadowError.set(null);
+    public refreshTradingShadowingAnalytics(): void {
+        this.tradingShadowingAnalyticsLoading.set(true);
+        this.tradingShadowingAnalyticsError.set(null);
 
-        this.apiService.getAnalytics('shadow').subscribe({
-            next: (response: AnalyticsResponse) => {
-                this.shadowAnalytics.set(response);
-                this.shadowLoading.set(false);
+        this.apiService.getTradingAnalytics('shadow').subscribe({
+            next: (response: TradingAnalyticsResponse) => {
+                this.tradingShadowingAnalytics.set(response);
+                this.tradingShadowingAnalyticsLoading.set(false);
             },
             error: (error: unknown) => {
-                this.shadowLoading.set(false);
-                this.shadowError.set('Failed to load shadow analytics');
+                this.tradingShadowingAnalyticsLoading.set(false);
+                this.tradingShadowingAnalyticsError.set('Failed to load trading shadowing analytics');
                 console.error('[TRADING][ANALYTICS][SHADOWING] Load error', error);
             }
         });

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.core.structures.structures import AllocationResult
+from src.core.dca.dca_structures import AllocationResult
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

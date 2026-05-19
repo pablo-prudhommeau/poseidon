@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic import Field
 
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase, TradingShadowingRegimePayload
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 
 
 class SystemHealthComponentPayload(BaseModel):
@@ -322,7 +322,12 @@ class TradingEvaluationFundamentalsPayload(BaseModel):
     buy_to_sell_ratio: Optional[float] = None
     market_cap_usd: Optional[float] = None
     fully_diluted_valuation_usd: Optional[float] = None
-    dexscreener_boost: Optional[float] = None
+    promotion_score: Optional[float] = None
+
+
+class TradingScreenerEnvelopePayload(BaseModel):
+    provider_id: str
+    payload: dict[str, object] = Field(default_factory=dict)
 
 
 class TradingEvaluationPayload(BaseModel):
@@ -338,7 +343,7 @@ class TradingEvaluationPayload(BaseModel):
     fundamentals: TradingEvaluationFundamentalsPayload
     decision: TradingEvaluationDecisionPayload
     shadowing_diagnostics: TradingEvaluationShadowingDiagnosticsPayload
-    raw_dexscreener_payload: dict[str, object]
+    screener_envelope: TradingScreenerEnvelopePayload
     raw_configuration_settings: dict[str, object]
     linked_position: Optional[TradingPositionPayload] = None
 
@@ -539,3 +544,31 @@ class TradingShadowingVerdictChronicleDeltaPayload(BaseModel):
     verdicts: List[TradingShadowingVerdictChronicleDeltaVerdictPayload]
 
 
+class TradingShadowingRegimePayload(BaseModel):
+    phase: TradingShadowingPhase
+    edge_gate_enabled: bool
+    cortex_gate_enabled: bool
+    resolved_outcome_count: Optional[int] = None
+    required_outcome_count: Optional[int] = None
+    elapsed_hours: Optional[float] = None
+    required_hours: Optional[float] = None
+    edge_eligible_outcome_count: Optional[int] = None
+    edge_required_outcome_count: Optional[int] = None
+    edge_chronicle_profit_factor: Optional[float] = None
+    edge_chronicle_profit_factor_threshold: Optional[float] = None
+    edge_chronicle_profit_factor_lookback_days: Optional[float] = None
+    edge_chronicle_profit_factor_bucket_width_seconds: Optional[int] = None
+    edge_chronicle_profit_factor_moving_average_period: Optional[int] = None
+    edge_sparse_expected_value_usd: Optional[float] = None
+    edge_sparse_expected_value_usd_threshold: Optional[float] = None
+    edge_sparse_expected_value_lookback_days: Optional[float] = None
+    edge_sparse_expected_value_bucket_width_seconds: Optional[int] = None
+    edge_sparse_expected_value_moving_average_period: Optional[int] = None
+    metrics_meta_win_rate: Optional[float] = None
+    metrics_meta_average_pnl: Optional[float] = None
+    metrics_meta_average_holding_time_hours: Optional[float] = None
+    metrics_meta_expected_pnl_velocity: Optional[float] = None
+    metrics_meta_profit_factor: Optional[float] = None
+    metrics_meta_expected_value_usd: Optional[float] = None
+    cortex_training_eligible_outcome_count: Optional[int] = None
+    cortex_training_required_outcome_count: Optional[int] = None

@@ -40,9 +40,9 @@ def apply_cooldown_filter(candidates: list[TradingCandidate]) -> list[TradingCan
     retained: list[TradingCandidate] = []
 
     for candidate in candidates:
-        token_address = candidate.dexscreener_token_information.base_token.address
+        token_address = candidate.token.token_address
         if token_address and _recently_traded(token_address, time_window_minutes=cooldown_minutes):
-            logger.debug("[TRADING][FILTER][COOLDOWN] %s — recently traded within %d minutes", candidate.dexscreener_token_information.base_token.symbol, cooldown_minutes)
+            logger.debug("[TRADING][FILTER][COOLDOWN] %s — recently traded within %d minutes", candidate.token.symbol, cooldown_minutes)
             record_skipped_trading_evaluation(candidate, len(retained) + 1, "COOLDOWN")
             continue
 

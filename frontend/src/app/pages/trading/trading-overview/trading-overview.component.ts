@@ -19,9 +19,9 @@ type LiquidityBalanceCard = BlockchainCashBalancePayload & { isPlaceholder: bool
 })
 export class TradingOverviewComponent implements OnDestroy {
     private readonly webSocketService = inject(WebSocketService);
-    readonly liquidity = computed(() => this.webSocketService.liquidity());
+    readonly liquidity = computed(() => this.webSocketService.tradingLiquidity());
     readonly blockchainBalances = computed<BlockchainCashBalancePayload[]>(
-        () => this.liquidity()?.blockchain_balances ?? this.webSocketService.portfolio()?.blockchain_balances ?? []
+        () => this.liquidity()?.blockchain_balances ?? this.webSocketService.tradingPortfolio()?.blockchain_balances ?? []
     );
 
     readonly liquiditySymbol = computed(() => this.liquidity()?.stablecoin_currency_symbol ?? '$');
@@ -55,7 +55,7 @@ export class TradingOverviewComponent implements OnDestroy {
         return cards;
     });
 
-    readonly portfolio = computed(() => this.webSocketService.portfolio());
+    readonly portfolio = computed(() => this.webSocketService.tradingPortfolio());
 
     readonly cash = computed<number | null>(() =>
         this.firstNonNull(
@@ -71,18 +71,18 @@ export class TradingOverviewComponent implements OnDestroy {
         avalanche: 'fa-snowflake'
     };
 
-    readonly shadowingRegime = computed(() => this.webSocketService.shadowingRegime());
+    readonly shadowingRegime = computed(() => this.webSocketService.tradingShadowingRegime());
     readonly shadowStatus = computed(() => this.shadowingRegime());
     readonly cortexGateEnabled = computed(() => this.shadowStatus()?.cortex_gate_enabled ?? true);
     readonly cortexTrainingRequiredCount = computed(() => this.shadowStatus()?.cortex_training_required_outcome_count ?? 0);
-    readonly shadowGateRequiredCount = computed(() => this.shadowStatus()?.shadowing_performance_required_outcome_count ?? 0);
+    readonly shadowGateRequiredCount = computed(() => this.shadowStatus()?.edge_required_outcome_count ?? 0);
 
     readonly shadowGateReadyForCortex = computed(() => {
         const required = this.shadowGateRequiredCount();
         if (required <= 0) {
             return true;
         }
-        return (this.shadowStatus()?.shadowing_performance_eligible_outcome_count ?? 0) >= required;
+        return (this.shadowStatus()?.edge_eligible_outcome_count ?? 0) >= required;
     });
 
     readonly cortexGateEligibleProgress = computed(() => {
@@ -216,7 +216,7 @@ export class TradingOverviewComponent implements OnDestroy {
         this.liquidity()?.mode === 'LIVE' ? (this.liquidity()?.maximum_chain_count ?? 4) : this.blockchainBalances().length
     );
 
-    readonly positions = computed<TradingPositionPayload[]>(() => this.webSocketService.positions());
+    readonly positions = computed<TradingPositionPayload[]>(() => this.webSocketService.tradingPositions());
 
     readonly openPositionCount = computed(
         () => this.positions().filter((position) => position.position_phase === 'OPEN' || position.position_phase === 'PARTIAL').length
@@ -247,9 +247,9 @@ export class TradingOverviewComponent implements OnDestroy {
         if (!regime) {
             return '—';
         }
-        const lookbackDays = regime.shadowing_performance_chronicle_profit_factor_lookback_days;
-        const bucketWidthSeconds = regime.shadowing_performance_chronicle_profit_factor_bucket_width_seconds;
-        const movingAveragePeriod = regime.shadowing_performance_chronicle_profit_factor_moving_average_period;
+        const lookbackDays = regime.edge_chronicle_profit_factor_lookback_days;
+        const bucketWidthSeconds = regime.edge_chronicle_profit_factor_bucket_width_seconds;
+        const movingAveragePeriod = regime.edge_chronicle_profit_factor_moving_average_period;
         if (
             lookbackDays === null ||
             lookbackDays === undefined ||
@@ -268,9 +268,9 @@ export class TradingOverviewComponent implements OnDestroy {
         if (!regime) {
             return '';
         }
-        const lookbackDays = regime.shadowing_performance_chronicle_profit_factor_lookback_days;
-        const bucket = regime.shadowing_performance_chronicle_profit_factor_bucket_width_seconds;
-        const period = regime.shadowing_performance_chronicle_profit_factor_moving_average_period;
+        const lookbackDays = regime.edge_chronicle_profit_factor_lookback_days;
+        const bucket = regime.edge_chronicle_profit_factor_bucket_width_seconds;
+        const period = regime.edge_chronicle_profit_factor_moving_average_period;
         if (lookbackDays === null || lookbackDays === undefined || bucket === null || bucket === undefined || period === null || period === undefined) {
             return '';
         }
@@ -287,20 +287,20 @@ export class TradingOverviewComponent implements OnDestroy {
         if (!this.shadowMetricsReady()) {
             return null;
         }
-        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.shadowing_performance_chronicle_profit_factor);
+        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.edge_chronicle_profit_factor);
     });
 
     readonly shadowChronicleProfitFactorThreshold = computed<number | null>(() =>
-        this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.shadowing_performance_chronicle_profit_factor_threshold)
+        this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.edge_chronicle_profit_factor_threshold)
     );
 
-    readonly shadowPerformanceGateEnabled = computed(() => this.shadowingRegime()?.performance_gate_enabled ?? true);
+    readonly shadowEdgeGateEnabled = computed(() => this.shadowingRegime()?.edge_gate_enabled ?? true);
 
     readonly shadowChronicleProfitFactorProgress = computed(() => {
         if (!this.shadowMetricsReady()) {
             return null;
         }
-        if (!this.shadowPerformanceGateEnabled()) {
+        if (!this.shadowEdgeGateEnabled()) {
             return 100;
         }
         const threshold = this.shadowChronicleProfitFactorThreshold();
@@ -327,7 +327,7 @@ export class TradingOverviewComponent implements OnDestroy {
     });
 
     readonly shadowChronicleProfitFactorFloorLabel = computed(() => {
-        if (!this.shadowPerformanceGateEnabled()) {
+        if (!this.shadowEdgeGateEnabled()) {
             return '-∞';
         }
         const threshold = this.shadowChronicleProfitFactorThreshold();
@@ -345,10 +345,10 @@ export class TradingOverviewComponent implements OnDestroy {
         return progress >= 100 ? 'text-purple-400' : 'text-red-400';
     });
 
-    readonly shadowRequiredHours = computed(() => this.shadowStatus()?.shadowing_required_hours ?? 0);
+    readonly shadowRequiredHours = computed(() => this.shadowStatus()?.required_hours ?? 0);
 
     readonly shadowElapsedHours = computed(() => {
-        const elapsed = this.shadowStatus()?.shadowing_elapsed_hours ?? 0;
+        const elapsed = this.shadowStatus()?.elapsed_hours ?? 0;
         return Math.min(elapsed, this.shadowRequiredHours());
     });
 
@@ -356,14 +356,14 @@ export class TradingOverviewComponent implements OnDestroy {
         if (!this.shadowMetricsReady()) {
             return null;
         }
-        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.shadowing_metrics_meta_expected_pnl_velocity);
+        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.metrics_meta_expected_pnl_velocity);
     });
 
     readonly shadowExpectedValue = computed<number | null>(() => {
         if (!this.shadowMetricsReady()) {
             return null;
         }
-        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.shadowing_metrics_meta_expected_value_usd);
+        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.metrics_meta_expected_value_usd);
     });
 
     readonly shadowExpectedValueClass = computed(() => {
@@ -378,11 +378,11 @@ export class TradingOverviewComponent implements OnDestroy {
     });
 
     readonly shadowGateEligibleProgress = computed(() => {
-        return this.computeProgressPercentage(this.shadowStatus()?.shadowing_performance_eligible_outcome_count, this.shadowGateRequiredCount());
+        return this.computeProgressPercentage(this.shadowStatus()?.edge_eligible_outcome_count, this.shadowGateRequiredCount());
     });
 
     readonly shadowGateEligibleResolvedCount = computed(() => {
-        const count = this.shadowStatus()?.shadowing_performance_eligible_outcome_count ?? 0;
+        const count = this.shadowStatus()?.edge_eligible_outcome_count ?? 0;
         return Math.min(count, this.shadowGateRequiredCount());
     });
 
@@ -404,14 +404,14 @@ export class TradingOverviewComponent implements OnDestroy {
         return this.shadowingRegimeLabel() === 'shadowing' ? 'bg-amber-400/90' : 'bg-slate-600/70';
     });
 
-    readonly shadowingRequiredCount = computed(() => this.shadowStatus()?.shadowing_required_outcome_count ?? 0);
+    readonly shadowingRequiredCount = computed(() => this.shadowStatus()?.required_outcome_count ?? 0);
 
     readonly shadowingReadyForShadowGate = computed(() => {
         const required = this.shadowingRequiredCount();
         if (required <= 0) {
             return true;
         }
-        return (this.shadowStatus()?.shadowing_resolved_outcome_count ?? 0) >= required;
+        return (this.shadowStatus()?.resolved_outcome_count ?? 0) >= required;
     });
 
     readonly shadowGateReadyOverlayProgress = computed(() => {
@@ -426,7 +426,7 @@ export class TradingOverviewComponent implements OnDestroy {
         if (required <= 0) {
             return true;
         }
-        return (this.shadowStatus()?.shadowing_elapsed_hours ?? 0) >= required;
+        return (this.shadowStatus()?.elapsed_hours ?? 0) >= required;
     });
 
     readonly shadowHoursBarClass = computed(() => {
@@ -437,7 +437,7 @@ export class TradingOverviewComponent implements OnDestroy {
     });
 
     readonly shadowHoursProgress = computed(() => {
-        return this.computeProgressPercentage(this.shadowStatus()?.shadowing_elapsed_hours, this.shadowRequiredHours());
+        return this.computeProgressPercentage(this.shadowStatus()?.elapsed_hours, this.shadowRequiredHours());
     });
 
     readonly shadowHoursProgressValueClass = computed(() => {
@@ -468,7 +468,7 @@ export class TradingOverviewComponent implements OnDestroy {
     });
 
     readonly shadowRawProgress = computed(() => {
-        return this.computeProgressPercentage(this.shadowStatus()?.shadowing_resolved_outcome_count, this.shadowingRequiredCount());
+        return this.computeProgressPercentage(this.shadowStatus()?.resolved_outcome_count, this.shadowingRequiredCount());
     });
 
     readonly shadowRawProgressBarClass = computed(() => {
@@ -489,18 +489,18 @@ export class TradingOverviewComponent implements OnDestroy {
         if (!this.shadowMetricsReady()) {
             return null;
         }
-        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.shadowing_performance_sparse_expected_value_usd);
+        return this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.edge_sparse_expected_value_usd);
     });
 
     readonly shadowSparseExpectedValueUsdThreshold = computed<number | null>(() =>
-        this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.shadowing_performance_sparse_expected_value_usd_threshold)
+        this.mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.edge_sparse_expected_value_usd_threshold)
     );
 
     readonly shadowSparseExpectedValueProgress = computed(() => {
         if (!this.shadowMetricsReady()) {
             return null;
         }
-        if (!this.shadowPerformanceGateEnabled()) {
+        if (!this.shadowEdgeGateEnabled()) {
             return 100;
         }
         const threshold = this.shadowSparseExpectedValueUsdThreshold();
@@ -539,7 +539,7 @@ export class TradingOverviewComponent implements OnDestroy {
     });
 
     readonly shadowSparseExpectedValueFloorLabel = computed(() => {
-        if (!this.shadowPerformanceGateEnabled()) {
+        if (!this.shadowEdgeGateEnabled()) {
             return '-∞';
         }
         return this.formatUsdValue(this.shadowSparseExpectedValueUsdThreshold());
@@ -550,9 +550,9 @@ export class TradingOverviewComponent implements OnDestroy {
         if (!regime) {
             return '—';
         }
-        const lookbackDays = regime.shadowing_performance_sparse_expected_value_lookback_days;
-        const bucketWidthSeconds = regime.shadowing_performance_sparse_expected_value_bucket_width_seconds;
-        const movingAveragePeriod = regime.shadowing_performance_sparse_expected_value_moving_average_period;
+        const lookbackDays = regime.edge_sparse_expected_value_lookback_days;
+        const bucketWidthSeconds = regime.edge_sparse_expected_value_bucket_width_seconds;
+        const movingAveragePeriod = regime.edge_sparse_expected_value_moving_average_period;
         if (
             lookbackDays === null ||
             lookbackDays === undefined ||
@@ -571,9 +571,9 @@ export class TradingOverviewComponent implements OnDestroy {
         if (!regime) {
             return '';
         }
-        const lookbackDays = regime.shadowing_performance_sparse_expected_value_lookback_days;
-        const bucket = regime.shadowing_performance_sparse_expected_value_bucket_width_seconds;
-        const period = regime.shadowing_performance_sparse_expected_value_moving_average_period;
+        const lookbackDays = regime.edge_sparse_expected_value_lookback_days;
+        const bucket = regime.edge_sparse_expected_value_bucket_width_seconds;
+        const period = regime.edge_sparse_expected_value_moving_average_period;
         if (lookbackDays === null || lookbackDays === undefined || bucket === null || bucket === undefined || period === null || period === undefined) {
             return '';
         }
@@ -599,7 +599,7 @@ export class TradingOverviewComponent implements OnDestroy {
     });
 
     readonly shadowTotalResolvedCount = computed(() => {
-        const count = this.shadowStatus()?.shadowing_resolved_outcome_count ?? 0;
+        const count = this.shadowStatus()?.resolved_outcome_count ?? 0;
         return Math.min(count, this.shadowingRequiredCount());
     });
 
@@ -616,9 +616,9 @@ export class TradingOverviewComponent implements OnDestroy {
             return null;
         }
         return this.mapNullable(this.shadowingRegime(), (shadowingRegime) =>
-            shadowingRegime.shadowing_metrics_meta_win_rate === null || shadowingRegime.shadowing_metrics_meta_win_rate === undefined
+            shadowingRegime.metrics_meta_win_rate === null || shadowingRegime.metrics_meta_win_rate === undefined
                 ? null
-                : shadowingRegime.shadowing_metrics_meta_win_rate * 100
+                : shadowingRegime.metrics_meta_win_rate * 100
         );
     });
 
