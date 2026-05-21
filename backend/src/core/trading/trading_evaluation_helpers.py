@@ -12,10 +12,17 @@ from src.persistence.models import TradingEvaluation
 
 
 def resolve_shadowing_regime_from_cache() -> Optional[TradingShadowingRegime]:
+    if not settings.TRADING_SHADOWING_ENABLED:
+        return None
+
+    cached_snapshot = trading_shadowing_cache.get_shadowing_snapshot()
+    if cached_snapshot is not None:
+        return cached_snapshot.regime
+
     cached_shadowing_regime: Optional[TradingShadowingRegimePayload] = (
         trading_shadowing_cache.get_trading_shadowing_regime_state()
     )
-    if cached_shadowing_regime is None or not settings.TRADING_SHADOWING_ENABLED:
+    if cached_shadowing_regime is None:
         return None
     return TradingShadowingRegime.model_validate(cached_shadowing_regime.model_dump(mode="json"))
 

@@ -72,14 +72,17 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
                     ))
             solana_prices = read_solana_pool_prices_usd_batch(pool_descriptors)
 
+            logged_pair_addresses: set[str] = set()
             for token in solana_tokens:
                 if token.token_address in solana_prices:
                     price_usd = solana_prices[token.token_address]
                     prices_by_pair_address[token.pair_address] = price_usd
-                    logger.debug(
-                        "[BLOCKCHAIN][PRICE][SERVICE] %s (%s) = %.12f USD",
-                        token.symbol, token.pair_address[:10], price_usd,
-                    )
+                    if token.pair_address not in logged_pair_addresses:
+                        logged_pair_addresses.add(token.pair_address)
+                        logger.debug(
+                            "[BLOCKCHAIN][PRICE][SERVICE] %s (%s) = %.12f USD",
+                            token.symbol, token.pair_address[:10], price_usd,
+                        )
                 else:
                     logger.debug(
                         "[BLOCKCHAIN][PRICE][SERVICE] No valid price for %s (%s) on solana",
@@ -89,6 +92,7 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
             logger.exception("[BLOCKCHAIN][PRICE][SERVICE] Unhandled error fetching batched solana prices")
 
     failed_pair_addresses: set[str] = set()
+    logged_pair_addresses: set[str] = set()
 
     for token in other_tokens:
         pair_address = token.pair_address
@@ -99,10 +103,12 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
             price_usd = fetch_onchain_price_for_token(token)
             if price_usd is not None and price_usd > 0.0:
                 prices_by_pair_address[pair_address] = price_usd
-                logger.debug(
-                    "[BLOCKCHAIN][PRICE][SERVICE] %s (%s) = %.12f USD",
-                    token.symbol, pair_address[:10], price_usd,
-                )
+                if pair_address not in logged_pair_addresses:
+                    logged_pair_addresses.add(pair_address)
+                    logger.debug(
+                        "[BLOCKCHAIN][PRICE][SERVICE] %s (%s) = %.12f USD",
+                        token.symbol, pair_address[:10], price_usd,
+                    )
             else:
                 failed_pair_addresses.add(pair_address)
                 logger.debug(

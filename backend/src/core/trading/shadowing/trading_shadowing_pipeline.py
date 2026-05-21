@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
-
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
@@ -16,7 +14,10 @@ from src.core.trading.shadowing.trading_shadowing_probe_helpers import build_tra
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import (
     evaluate_candidate_shadowing,
 )
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase, TradingShadowingRegime
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingShadowingPhase,
+    TradingShadowingSnapshot,
+)
 from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot, TradingFilterVerdict
 from src.core.utils.date_utils import get_current_local_datetime
@@ -37,12 +38,12 @@ class TradingShadowingPipeline:
 
         logger.info("[TRADING][SHADOWING][PIPELINE] Starting shadowing tracking cycle")
         try:
-            self._execute_shadow_pipeline()
+            self._execute_shadowing_pipeline()
         except Exception as exception:
             logger.exception("[TRADING][SHADOWING][PIPELINE] Shadowing tracking cycle failed — %s", exception)
         logger.info("[TRADING][SHADOWING][PIPELINE] Shadowing tracking cycle complete")
 
-    def _execute_shadow_pipeline(self) -> None:
+    def _execute_shadowing_pipeline(self) -> None:
         if settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING < MINIMUM_POINTS_PER_BUCKET:
             raise ValueError(
                 f"Configuration paradox: TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING ({settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING}) "
@@ -180,6 +181,7 @@ class TradingShadowingPipeline:
                     stop_loss_price=stop_loss_price,
                     current_time=current_time,
                     shadow_can_simulate=shadow_can_simulate,
+                    cached_snapshot=cached_snapshot,
             ):
                 cooldown_addresses.add(candidate.token.token_address)
                 shadow_probe_count += 1
@@ -209,6 +211,7 @@ class TradingShadowingPipeline:
             stop_loss_price: float,
             current_time: datetime,
             shadow_can_simulate: bool,
+            cached_snapshot: TradingShadowingSnapshot,
     ) -> bool:
         from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
         probe = build_trading_shadowing_probe_with_verdict(
@@ -217,7 +220,7 @@ class TradingShadowingPipeline:
             notional=notional,
             current_time=current_time,
             shadow_can_simulate=shadow_can_simulate,
-            shadowing_regime=self._build_cached_shadowing_regime_payload() if shadow_can_simulate else None,
+            shadowing_regime=cached_snapshot.regime if shadow_can_simulate else None,
             take_profit_tier_1_price=tp1_price,
             take_profit_tier_2_price=tp2_price,
             stop_loss_price=stop_loss_price,
@@ -236,9 +239,3 @@ class TradingShadowingPipeline:
             entry_price_usd,
         )
         return True
-
-    def _build_cached_shadowing_regime_payload(self) -> Optional[TradingShadowingRegime]:
-        cached_shadowing_regime = trading_shadowing_cache.get_trading_shadowing_regime_state()
-        if cached_shadowing_regime is not None:
-            return TradingShadowingRegime.model_validate(cached_shadowing_regime.model_dump(mode="json"))
-        return None

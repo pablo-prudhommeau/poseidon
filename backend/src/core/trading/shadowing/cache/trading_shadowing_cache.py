@@ -9,7 +9,6 @@ from src.api.http.api_schemas import (
     TradingShadowingVerdictChroniclePayload,
     TradingShadowingVerdictChronicleDeltaPayload,
 )
-from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.shadowing.cache.trading_shadowing_cache_structures import TradingShadowingState
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingSnapshot
@@ -33,12 +32,18 @@ class TradingShadowingCache:
         self._cached_shadowing_verdict_chronicle_delta: Optional[TradingShadowingVerdictChronicleDeltaPayload] = None
         self._last_successful_update_timestamp: datetime = get_current_local_datetime()
 
-    def update_shadowing_snapshot(self, snapshot: TradingShadowingSnapshot) -> None:
+    def update_shadowing_snapshot(
+            self,
+            snapshot: TradingShadowingSnapshot,
+            shadowing_regime_payload: TradingShadowingRegimePayload,
+    ) -> None:
         with self._lock:
             self._cached_shadowing_snapshot = snapshot
-            logger.debug("[TRADING][CACHE] Shadowing snapshot updated")
+            self._cached_shadowing_regime = shadowing_regime_payload
+            self._last_successful_update_timestamp = get_current_local_datetime()
+            logger.debug("[TRADING][CACHE] Shadowing snapshot and regime updated atomically")
         _touch_realm(CacheRealm.SHADOWING_SNAPSHOT)
-        cache_invalidator.mark_dirty(CacheRealm.SHADOWING_REGIME)
+        _touch_realm(CacheRealm.SHADOWING_REGIME)
 
     def update_trading_shadowing_regime_state(self, shadowing_regime_payload: TradingShadowingRegimePayload) -> None:
         with self._lock:

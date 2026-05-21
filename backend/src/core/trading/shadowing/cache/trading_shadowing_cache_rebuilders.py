@@ -36,8 +36,8 @@ class _ShadowSnapshotRebuilder:
         return build_shadowing_snapshot()
 
     def apply_to_cache(self, payload: TradingShadowingSnapshot) -> None:
-        shadow_snapshot = payload
-        trading_shadowing_cache.update_shadowing_snapshot(shadow_snapshot)
+        shadowing_regime_payload = build_shadowing_regime_payload(payload)
+        trading_shadowing_cache.update_shadowing_snapshot(payload, shadowing_regime_payload)
 
     async def notify_websocket(self, payload: TradingShadowingSnapshot) -> None:
         return

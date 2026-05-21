@@ -61,44 +61,8 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
 
         if outcomes_insufficient or hours_insufficient:
             logger.info(
-                "[TRADING][SHADOWING][SNAPSHOT] Shadowing snapshot not yet computed — resolved=%d/%d, elapsed_hours=%.1f/%.1f",
+                "[TRADING][SHADOWING][SNAPSHOT] Learning warmup in progress — resolved=%d/%d, elapsed_hours=%.1f/%.1f",
                 resolved_count, minimum_outcomes_for_shadowing, elapsed_hours, minimum_hours,
-            )
-            phase = derive_trading_shadowing_phase(
-                is_shadowing_enabled=settings.TRADING_SHADOWING_ENABLED,
-                shadowing_ready=not (outcomes_insufficient or hours_insufficient),
-                shadow_gate_ready=(
-                        resolved_shadowing_and_cortex_inference_aware_count >= minimum_outcomes_for_shadow_gate
-                ),
-                cortex_training_ready=(
-                        resolved_shadowing_and_cortex_inference_aware_count
-                        >= settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING
-                ),
-                edge_gate_enabled=settings.TRADING_GATE_SHADOWING_EDGE_ENABLED,
-                toxic_metrics_gate_enabled=settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED,
-                cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
-                shadowing_snapshot_ready=False,
-            )
-            return TradingShadowingSnapshot(
-                regime=TradingShadowingRegime(
-                    phase=phase,
-                    edge_gate_enabled=settings.TRADING_GATE_SHADOWING_EDGE_ENABLED,
-                    cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
-                    resolved_outcome_count=resolved_count,
-                    required_outcome_count=minimum_outcomes_for_shadowing,
-                    elapsed_hours=elapsed_hours,
-                    required_hours=minimum_hours,
-                    edge_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
-                    edge_required_outcome_count=minimum_outcomes_for_shadow_gate,
-                    edge_chronicle_profit_factor_lookback_days=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS,
-                    edge_chronicle_profit_factor_bucket_width_seconds=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS,
-                    edge_chronicle_profit_factor_moving_average_period=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_PERIOD,
-                    edge_sparse_expected_value_lookback_days=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
-                    edge_sparse_expected_value_bucket_width_seconds=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
-                    edge_sparse_expected_value_moving_average_period=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_PERIOD,
-                    cortex_training_eligible_outcome_count=resolved_shadowing_and_cortex_inference_aware_count,
-                    cortex_training_required_outcome_count=settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
-                ),
             )
 
         analytics_records = [map_trading_shadowing_verdict(verdict) for verdict in resolved_verdicts]
@@ -178,7 +142,7 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
         shadowing_snapshot_ready = len(metric_profiles) > 0
         phase = derive_trading_shadowing_phase(
             is_shadowing_enabled=settings.TRADING_SHADOWING_ENABLED,
-            shadowing_ready=True,
+            shadowing_ready=not (outcomes_insufficient or hours_insufficient),
             shadow_gate_ready=is_shadow_gate_eligible_outcomes_sufficient,
             cortex_training_ready=is_cortex_training_sufficient,
             edge_gate_enabled=settings.TRADING_GATE_SHADOWING_EDGE_ENABLED,

@@ -31,7 +31,7 @@ def derive_trading_shadowing_phase(
     if trading_unblocked:
         return TradingShadowingPhase.SYNCING
 
-    cortexing_unlocked = shadowing_ready and shadow_gate_ready
+    cortexing_unlocked = shadow_gate_requirement_satisfied
     if cortex_gate_enabled and cortexing_unlocked:
         return TradingShadowingPhase.CORTEXING
 

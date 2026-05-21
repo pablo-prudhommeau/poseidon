@@ -482,7 +482,7 @@ export class TradingOverviewComponent implements OnDestroy {
         if (this.shadowingReadyForShadowGate()) {
             return 'text-white';
         }
-        return this.shadowingRegimeLabel() === 'shadowing' ? 'text-amber-300' : 'text-slate-500';
+        return this.shadowingRegimeLabel() === 'shadowing' ? 'text-amber-200/40' : 'text-slate-500';
     });
 
     readonly shadowSparseExpectedValueUsd = computed<number | null>(() => {
