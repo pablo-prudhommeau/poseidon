@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import select, desc, asc
@@ -24,6 +25,19 @@ class TradingPortfolioSnapshotDao:
 
     def retrieve_snapshot_history(self, limit: int = 100) -> List[TradingPortfolioSnapshot]:
         database_query = select(TradingPortfolioSnapshot).order_by(desc(TradingPortfolioSnapshot.created_at)).limit(limit)
+        return list(self.database_session.execute(database_query).scalars().all())
+
+    def retrieve_snapshots_in_window(
+            self,
+            start_datetime: datetime,
+            end_datetime: datetime,
+    ) -> List[TradingPortfolioSnapshot]:
+        database_query = (
+            select(TradingPortfolioSnapshot)
+            .where(TradingPortfolioSnapshot.created_at >= start_datetime)
+            .where(TradingPortfolioSnapshot.created_at <= end_datetime)
+            .order_by(asc(TradingPortfolioSnapshot.created_at))
+        )
         return list(self.database_session.execute(database_query).scalars().all())
 
     def retrieve_equity_curve_points(self, limit_count: int = 100) -> list[TradingPortfolioEquityCurvePoint]:

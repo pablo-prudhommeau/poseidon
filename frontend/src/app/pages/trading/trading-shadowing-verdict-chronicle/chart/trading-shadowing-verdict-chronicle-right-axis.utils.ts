@@ -23,6 +23,8 @@ const CHRONICLE_AXIS_PADDING_RATIO = 0.01;
 const CHRONICLE_VOLUME_AXIS_TOP_PADDING_RATIO = 0.08;
 const CHRONICLE_REGIME_GATE_AXIS_PADDING_RATIO = 0.26;
 const CHRONICLE_REGIME_GATE_SPLINE_HEADROOM_MULTIPLIER = 1.35;
+const CHRONICLE_DEFAULT_SPLINE_HEADROOM_MULTIPLIER = 1.8;
+const CHRONICLE_SPLINE_HARD_GUARD_RATIO = 0.06;
 
 function computeFiniteBounds(values: number[]): ChronicleNumericBounds | null {
     let minimum = Number.POSITIVE_INFINITY;
@@ -224,12 +226,12 @@ function applyHarmonizedAxisRange(model: ChronicleChartModel, descriptor: Chroni
 
     const usesSplineLineHeadroom = descriptor.usesSplineLineHeadroom ?? false;
     const isRegimeGateAxis = descriptor.normalization === 'regime-gate';
+    const splineHeadroomMultiplier = isRegimeGateAxis ? CHRONICLE_REGIME_GATE_SPLINE_HEADROOM_MULTIPLIER : CHRONICLE_DEFAULT_SPLINE_HEADROOM_MULTIPLIER;
+    const splinePadding = computeAdaptiveSplineOvershootPadding(descriptor.values, bounds) * splineHeadroomMultiplier;
     const normalizedBounds = usesSplineLineHeadroom
         ? {
-              min: bounds.min,
-              max:
-                  bounds.max +
-                  computeAdaptiveSplineOvershootPadding(descriptor.values, bounds) * (isRegimeGateAxis ? CHRONICLE_REGIME_GATE_SPLINE_HEADROOM_MULTIPLIER : 1)
+              min: bounds.min - splinePadding,
+              max: bounds.max + splinePadding
           }
         : bounds;
 
@@ -242,12 +244,27 @@ function applyHarmonizedAxisRange(model: ChronicleChartModel, descriptor: Chroni
                 ? normalizeRegimeGateAxisBounds(normalizedBounds.min, normalizedBounds.max, targetTicks)
                 : normalizeBoundsToTickCount(normalizedBounds.min, normalizedBounds.max, targetTicks);
 
+    const safeguardedBounds = (() => {
+        if (!usesSplineLineHeadroom) {
+            return normalized;
+        }
+        const sourceSpan = Math.max(1e-9, bounds.max - bounds.min);
+        const hardGuardPadding = sourceSpan * CHRONICLE_SPLINE_HARD_GUARD_RATIO;
+        return {
+            min: Math.min(normalized.min, bounds.min - hardGuardPadding),
+            max: Math.max(normalized.max, bounds.max + hardGuardPadding),
+            majorDelta: normalized.majorDelta
+        };
+    })();
+
     descriptor.axis.autoRange = EAutoRange.Never;
-    descriptor.axis.visibleRange = new NumberRange(normalized.min, normalized.max);
+    descriptor.axis.visibleRange = new NumberRange(safeguardedBounds.min, safeguardedBounds.max);
     axisOptions.autoTicks = false;
-    axisOptions.majorDelta = normalized.majorDelta;
+    axisOptions.majorDelta = safeguardedBounds.majorDelta;
     axisOptions.minorDelta =
-        descriptor.normalization === 'volume' || descriptor.normalization === 'step-one' ? Math.max(1, normalized.majorDelta / 5) : normalized.majorDelta / 4;
+        descriptor.normalization === 'volume' || descriptor.normalization === 'step-one'
+            ? Math.max(1, safeguardedBounds.majorDelta / 5)
+            : safeguardedBounds.majorDelta / 4;
 }
 
 export function harmonizeChronicleRightAxes(
@@ -268,6 +285,15 @@ export function harmonizeChronicleRightAxes(
             values: [
                 ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.expectedValueLine, arrays.expectedValuePerTradeUsdSeries),
                 ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.smaExpectedValueLine, arrays.movingAverageExpectedValueSeries)
+            ],
+            normalization: 'step-one',
+            usesSplineLineHeadroom: true
+        },
+        {
+            axis: model.yPortfolioEquityAxis,
+            values: [
+                ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.portfolioEquityLine, arrays.portfolioEquityUsdSeries),
+                ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.smaPortfolioEquityLine, arrays.movingAveragePortfolioEquityUsdSeries)
             ],
             normalization: 'step-one',
             usesSplineLineHeadroom: true

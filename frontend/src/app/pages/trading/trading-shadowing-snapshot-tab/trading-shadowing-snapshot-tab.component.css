@@ -2,31 +2,31 @@
     display: block;
 }
 
-.shadow-section-header {
+.shadowing-section-header {
     display: flex;
     align-items: center;
     gap: 0.75rem;
 }
 
-.shadow-section-header::before,
-.shadow-section-header::after {
+.shadowing-section-header::before,
+.shadowing-section-header::after {
     content: '';
     flex: 1 1 auto;
     height: 1px;
     background: rgba(148, 163, 184, 0.16);
 }
 
-.shadow-hero-card,
-.shadow-mini-card,
-.shadow-category-card,
-.shadow-metric-card {
+.shadowing-hero-card,
+.shadowing-mini-card,
+.shadowing-category-card,
+.shadowing-metric-card {
     position: relative;
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
 }
 
-.shadow-metric-card:hover {
+.shadowing-metric-card:hover {
     border-color: rgba(148, 163, 184, 0.14);
     background: rgba(255, 255, 255, 0.025);
 }

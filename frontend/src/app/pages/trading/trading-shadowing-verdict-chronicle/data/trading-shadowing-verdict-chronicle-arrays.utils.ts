@@ -227,6 +227,7 @@ export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
         averagePnlPercentageSeries: [...source.averagePnlPercentageSeries],
         averageWinRatePercentageSeries: [...source.averageWinRatePercentageSeries],
         expectedValuePerTradeUsdSeries: [...source.expectedValuePerTradeUsdSeries],
+        portfolioEquityUsdSeries: [...source.portfolioEquityUsdSeries],
         profitFactorSeries: [...source.profitFactorSeries],
         closedVerdictsPerHourSeries: [...source.closedVerdictsPerHourSeries],
         averageCortexPredictionWinRatePercentageSeries: [...source.averageCortexPredictionWinRatePercentageSeries],
@@ -239,6 +240,7 @@ export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
         movingAveragePnlSeries: [...source.movingAveragePnlSeries],
         movingAverageWinRateSeries: [...source.movingAverageWinRateSeries],
         movingAverageExpectedValueSeries: [...source.movingAverageExpectedValueSeries],
+        movingAveragePortfolioEquityUsdSeries: [...source.movingAveragePortfolioEquityUsdSeries],
         movingAverageProfitFactorSeries: [...source.movingAverageProfitFactorSeries],
         movingAverageTradesPerHourSeries: [...source.movingAverageTradesPerHourSeries],
         movingAverageCortexPredictionWinRatePercentageSeries: [...source.movingAverageCortexPredictionWinRatePercentageSeries],
@@ -284,6 +286,13 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
         linearInterpolate(
             sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.expectedValuePerTradeUsdSeries, x),
             toArrays.expectedValuePerTradeUsdSeries[index] ?? 0,
+            alpha
+        )
+    );
+    const portfolioEquityUsdSeries = metricTimestampsMilliseconds.map((x, index) =>
+        linearInterpolate(
+            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.portfolioEquityUsdSeries, x),
+            toArrays.portfolioEquityUsdSeries[index] ?? 0,
             alpha
         )
     );
@@ -388,6 +397,7 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
         averagePnlPercentageSeries,
         averageWinRatePercentageSeries,
         expectedValuePerTradeUsdSeries,
+        portfolioEquityUsdSeries,
         profitFactorSeries,
         closedVerdictsPerHourSeries,
         averageCortexPredictionWinRatePercentageSeries,
@@ -400,6 +410,7 @@ export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: Chro
         movingAveragePnlSeries: blendMovingAverageSeries('movingAveragePnlSeries'),
         movingAverageWinRateSeries: blendMovingAverageSeries('movingAverageWinRateSeries'),
         movingAverageExpectedValueSeries: blendMovingAverageSeries('movingAverageExpectedValueSeries'),
+        movingAveragePortfolioEquityUsdSeries: blendMovingAverageSeries('movingAveragePortfolioEquityUsdSeries'),
         movingAverageProfitFactorSeries: blendMovingAverageSeries('movingAverageProfitFactorSeries'),
         movingAverageTradesPerHourSeries: blendMovingAverageSeries('movingAverageTradesPerHourSeries'),
         movingAverageCortexPredictionWinRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexPredictionWinRatePercentageSeries'),
@@ -466,6 +477,7 @@ export function buildChronicleArraysFromBucket(
     let averagePnlPercentageSeries = winsorizeSeries(metrics.map((metric) => metric.average_pnl_percentage));
     let averageWinRatePercentageSeries = winsorizeSeries(metrics.map((metric) => metric.average_win_rate_percentage));
     let expectedValuePerTradeUsdSeries = winsorizeSeries(metrics.map((metric) => metric.expected_value_per_trade_usd));
+    let portfolioEquityUsdSeries = metrics.map((metric) => metric.portfolio_equity_usd);
     let profitFactorSeries = winsorizeSeries(metrics.map((metric) => metric.profit_factor));
     let closedVerdictsPerHourSeries = winsorizeSeries(metrics.map((metric) => metric.closed_verdicts_per_hour));
     let averageCortexPredictionWinRatePercentageSeries = metrics.map((metric) => metric.average_cortex_prediction_win_rate_percentage ?? NaN);
@@ -480,6 +492,7 @@ export function buildChronicleArraysFromBucket(
     let movingAveragePnlSeries = computeSimpleMovingAverage(averagePnlPercentageSeries, effectiveSmaWindow);
     let movingAverageWinRateSeries = computeSimpleMovingAverage(averageWinRatePercentageSeries, effectiveSmaWindow);
     let movingAverageExpectedValueSeries = computeSimpleMovingAverage(expectedValuePerTradeUsdSeries, effectiveSmaWindow);
+    let movingAveragePortfolioEquityUsdSeries = computeSimpleMovingAverage(portfolioEquityUsdSeries, effectiveSmaWindow);
     let movingAverageProfitFactorSeries = computeSimpleMovingAverage(profitFactorSeries, effectiveSmaWindow);
     let movingAverageTradesPerHourSeries = computeSimpleMovingAverage(closedVerdictsPerHourSeries, effectiveSmaWindow);
     let movingAverageCortexPredictionWinRatePercentageSeries = computeSimpleMovingAverage(averageCortexPredictionWinRatePercentageSeries, effectiveSmaWindow);
@@ -507,6 +520,7 @@ export function buildChronicleArraysFromBucket(
     averagePnlPercentageSeries = downsampleSeriesByMetricIndices(averagePnlPercentageSeries);
     averageWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageWinRatePercentageSeries);
     expectedValuePerTradeUsdSeries = downsampleSeriesByMetricIndices(expectedValuePerTradeUsdSeries);
+    portfolioEquityUsdSeries = downsampleSeriesByMetricIndices(portfolioEquityUsdSeries);
     profitFactorSeries = downsampleSeriesByMetricIndices(profitFactorSeries);
     closedVerdictsPerHourSeries = downsampleSeriesByMetricIndices(closedVerdictsPerHourSeries);
     averageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(averageCortexPredictionWinRatePercentageSeries);
@@ -519,6 +533,7 @@ export function buildChronicleArraysFromBucket(
     movingAveragePnlSeries = downsampleSeriesByMetricIndices(movingAveragePnlSeries);
     movingAverageWinRateSeries = downsampleSeriesByMetricIndices(movingAverageWinRateSeries);
     movingAverageExpectedValueSeries = downsampleSeriesByMetricIndices(movingAverageExpectedValueSeries);
+    movingAveragePortfolioEquityUsdSeries = downsampleSeriesByMetricIndices(movingAveragePortfolioEquityUsdSeries);
     movingAverageProfitFactorSeries = downsampleSeriesByMetricIndices(movingAverageProfitFactorSeries);
     movingAverageTradesPerHourSeries = downsampleSeriesByMetricIndices(movingAverageTradesPerHourSeries);
     movingAverageCortexPredictionWinRatePercentageSeries = downsampleSeriesByMetricIndices(movingAverageCortexPredictionWinRatePercentageSeries);
@@ -608,6 +623,7 @@ export function buildChronicleArraysFromBucket(
         averagePnlPercentageSeries,
         averageWinRatePercentageSeries,
         expectedValuePerTradeUsdSeries,
+        portfolioEquityUsdSeries,
         profitFactorSeries,
         closedVerdictsPerHourSeries,
         averageCortexPredictionWinRatePercentageSeries,
@@ -620,6 +636,7 @@ export function buildChronicleArraysFromBucket(
         movingAveragePnlSeries,
         movingAverageWinRateSeries,
         movingAverageExpectedValueSeries,
+        movingAveragePortfolioEquityUsdSeries,
         movingAverageProfitFactorSeries,
         movingAverageTradesPerHourSeries,
         movingAverageCortexPredictionWinRatePercentageSeries,
@@ -677,6 +694,7 @@ export function extendChronicleArraysToTapeRight(source: ChronicleArrays, tapeRi
         averagePnlPercentageSeries: appendMetricTail(source.averagePnlPercentageSeries),
         averageWinRatePercentageSeries: appendMetricTail(source.averageWinRatePercentageSeries),
         expectedValuePerTradeUsdSeries: appendMetricTail(source.expectedValuePerTradeUsdSeries),
+        portfolioEquityUsdSeries: appendMetricTail(source.portfolioEquityUsdSeries),
         profitFactorSeries: appendMetricTail(source.profitFactorSeries),
         closedVerdictsPerHourSeries: appendMetricTail(source.closedVerdictsPerHourSeries),
         averageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.averageCortexPredictionWinRatePercentageSeries),
@@ -689,6 +707,7 @@ export function extendChronicleArraysToTapeRight(source: ChronicleArrays, tapeRi
         movingAveragePnlSeries: appendMetricTail(source.movingAveragePnlSeries),
         movingAverageWinRateSeries: appendMetricTail(source.movingAverageWinRateSeries),
         movingAverageExpectedValueSeries: appendMetricTail(source.movingAverageExpectedValueSeries),
+        movingAveragePortfolioEquityUsdSeries: appendMetricTail(source.movingAveragePortfolioEquityUsdSeries),
         movingAverageProfitFactorSeries: appendMetricTail(source.movingAverageProfitFactorSeries),
         movingAverageTradesPerHourSeries: appendMetricTail(source.movingAverageTradesPerHourSeries),
         movingAverageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.movingAverageCortexPredictionWinRatePercentageSeries),

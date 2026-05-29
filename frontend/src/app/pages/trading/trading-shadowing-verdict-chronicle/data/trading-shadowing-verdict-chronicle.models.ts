@@ -111,6 +111,7 @@ export interface ChronicleChartModel {
     volumeColumnRenderableSeries: InstanceType<SciChartModule['FastColumnRenderableSeries']>;
     yVolumeAxis: InstanceType<SciChartModule['NumericAxis']>;
     yExpectedValueAxis: InstanceType<SciChartModule['NumericAxis']>;
+    yPortfolioEquityAxis: InstanceType<SciChartModule['NumericAxis']>;
     yProfitFactorAxis: InstanceType<SciChartModule['NumericAxis']>;
     yTradesPerHourAxis: InstanceType<SciChartModule['NumericAxis']>;
     yRegimeEvAxis: InstanceType<SciChartModule['NumericAxis']>;
@@ -147,6 +148,7 @@ export interface ChronicleArrays {
     averagePnlPercentageSeries: number[];
     averageWinRatePercentageSeries: number[];
     expectedValuePerTradeUsdSeries: number[];
+    portfolioEquityUsdSeries: number[];
     profitFactorSeries: number[];
     closedVerdictsPerHourSeries: number[];
     averageCortexPredictionWinRatePercentageSeries: number[];
@@ -159,6 +161,7 @@ export interface ChronicleArrays {
     movingAveragePnlSeries: number[];
     movingAverageWinRateSeries: number[];
     movingAverageExpectedValueSeries: number[];
+    movingAveragePortfolioEquityUsdSeries: number[];
     movingAverageProfitFactorSeries: number[];
     movingAverageTradesPerHourSeries: number[];
     movingAverageCortexPredictionWinRatePercentageSeries: number[];

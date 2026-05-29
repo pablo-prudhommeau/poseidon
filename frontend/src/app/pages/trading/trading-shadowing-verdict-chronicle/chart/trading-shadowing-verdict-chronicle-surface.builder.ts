@@ -8,7 +8,8 @@ import {
     formatChronicleAxisTickLabelMilliseconds,
     resolveChronicleStreamLagMilliseconds
 } from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
-import { CHRONICLE_AXIS_TITLES, CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
+import { CHRONICLE_AXIS_TITLES, CHRONICLE_DEFAULT_VISIBLE_SERIES, CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
+import { CHRONICLE_SERIES } from '../data/trading-shadowing-verdict-chronicle-series-names';
 import type { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/trading-shadowing-verdict-chronicle-scichart-loader.service';
 import { buildChronicleSeriesBundle } from './trading-shadowing-verdict-chronicle-series.builder';
 
@@ -109,6 +110,21 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
+        const yPortfolioEquityAxis = new NumericAxis(wasmContext, {
+            id: 'yEquity',
+            axisAlignment: EAxisAlignment.Right,
+            autoRange: EAutoRange.Always,
+            growBy: new NumberRange(0, 0),
+            drawMajorBands: false,
+            drawMajorGridLines: false,
+            drawMinorGridLines: false,
+            maxAutoTicks: 10,
+            minorsPerMajor: 4,
+            axisTitle: CHRONICLE_AXIS_TITLES.portfolioEquity,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.portfolioEquity },
+            labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
+        });
+
         const yProfitFactorAxis = new NumericAxis(wasmContext, {
             id: 'yPf',
             axisAlignment: EAxisAlignment.Right,
@@ -170,7 +186,16 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
         });
 
         sciChartSurface.xAxes.add(xAxis);
-        sciChartSurface.yAxes.add(yPercentage, yVolume, yExpectedValueAxis, yProfitFactorAxis, yTradesPerHourAxis, yRegimeEvAxis, yRegimePfAxis);
+        sciChartSurface.yAxes.add(
+            yPercentage,
+            yVolume,
+            yExpectedValueAxis,
+            yPortfolioEquityAxis,
+            yProfitFactorAxis,
+            yTradesPerHourAxis,
+            yRegimeEvAxis,
+            yRegimePfAxis
+        );
 
         const seriesBundle = buildChronicleSeriesBundle(sci, wasmContext, sciChartSurface, chronicleArrays, meta);
 
@@ -184,6 +209,7 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             volumeColumnRenderableSeries: seriesBundle.volumeColumnRenderableSeries,
             yVolumeAxis: yVolume,
             yExpectedValueAxis,
+            yPortfolioEquityAxis,
             yProfitFactorAxis,
             yTradesPerHourAxis,
             yRegimeEvAxis,
@@ -199,10 +225,10 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             profitableVerdictXyDataSeries: seriesBundle.profitableVerdictXyDataSeries,
             lossVerdictXyDataSeries: seriesBundle.lossVerdictXyDataSeries,
             cortexCalibrationBandSegmentBundles: seriesBundle.cortexCalibrationBandSegmentBundles,
-            cortexCalibrationBandUserVisible: true,
-            cortexModelRolloutUserVisible: true,
-            evGateThresholdUserVisible: true,
-            pfGateThresholdUserVisible: true,
+            cortexCalibrationBandUserVisible: CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(CHRONICLE_SERIES.cortexCalibrationBand),
+            cortexModelRolloutUserVisible: CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(CHRONICLE_SERIES.cortexModelRolloutMarker),
+            evGateThresholdUserVisible: CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(CHRONICLE_SERIES.evGateThreshold),
+            pfGateThresholdUserVisible: CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(CHRONICLE_SERIES.pfGateThreshold),
             goldenZoneExpectedValueAnnotation: seriesBundle.goldenZoneExpectedValueAnnotation,
             goldenZoneProfitFactorAnnotation: seriesBundle.goldenZoneProfitFactorAnnotation,
             cortexModelRolloutAnnotationBundles: []

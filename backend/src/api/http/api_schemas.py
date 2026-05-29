@@ -426,6 +426,7 @@ class TradingShadowingVerdictChronicleMetricPointPayload(BaseModel):
     average_pnl_percentage: float
     average_win_rate_percentage: float
     expected_value_per_trade_usd: float
+    portfolio_equity_usd: float
     closed_verdicts_per_hour: float
     profit_factor: float
     average_cortex_prediction_win_rate_percentage: Optional[float] = None
@@ -548,6 +549,8 @@ class TradingShadowingRegimePayload(BaseModel):
     phase: TradingShadowingPhase
     edge_gate_enabled: bool
     cortex_gate_enabled: bool
+    fundamentals_gate_enabled: bool
+    toxic_metrics_gate_enabled: bool
     resolved_outcome_count: Optional[int] = None
     required_outcome_count: Optional[int] = None
     elapsed_hours: Optional[float] = None

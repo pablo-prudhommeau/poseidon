@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings

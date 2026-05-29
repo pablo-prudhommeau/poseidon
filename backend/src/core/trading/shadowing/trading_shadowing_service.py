@@ -21,6 +21,7 @@ from src.core.trading.shadowing.trading_shadowing_regime_gate_timeline import (
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleBucketConfiguration,
     TradingShadowingVerdictChronicleCortexReliabilityBin,
+    TradingShadowingVerdictChroniclePortfolioEquityPoint,
     TradingShadowingVerdictChronicleVerdict,
     TradingShadowingVerdictChronicleMetricPoint,
     TradingShadowingVerdictChronicleVolumePoint,
@@ -35,6 +36,7 @@ from src.core.utils.date_utils import (
     get_current_local_datetime,
 )
 from src.logging.logger import get_application_logger
+from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
 from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingShadowingVerdict
@@ -176,12 +178,18 @@ def compute_trading_shadowing_verdict_chronicle() -> TradingShadowingVerdictChro
 
     with get_database_session() as database_session:
         verdict_dao = TradingShadowingVerdictDao(database_session)
+        portfolio_snapshot_dao = TradingPortfolioSnapshotDao(database_session)
         resolved_verdicts = verdict_dao.retrieve_resolved_in_window(
             start_datetime=global_from_datetime,
             end_datetime=fetch_end_datetime,
             limit_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
         )
         verdicts = _convert_verdicts(resolved_verdicts)
+        portfolio_snapshots = _load_portfolio_snapshots_for_chronicle(
+            portfolio_snapshot_dao=portfolio_snapshot_dao,
+            global_from_datetime=global_from_datetime,
+            fetch_end_datetime=fetch_end_datetime,
+        )
 
     logger.info(
         "[TRADING][SHADOWING][HISTORY] Full chronicle built — verdict_count=%d bucket_layer_count=%d",
@@ -189,7 +197,15 @@ def compute_trading_shadowing_verdict_chronicle() -> TradingShadowingVerdictChro
         len(bucket_configurations),
     )
     return TradingShadowingVerdictChronicleComputationResult(
-        chronicle=_build_trading_shadowing_verdict_chronicle(verdicts, now_local, bucket_configurations, series_end_datetime, fetch_end_datetime, global_from_datetime),
+        chronicle=_build_trading_shadowing_verdict_chronicle(
+            verdicts,
+            portfolio_snapshots,
+            now_local,
+            bucket_configurations,
+            series_end_datetime,
+            fetch_end_datetime,
+            global_from_datetime,
+        ),
         verdicts=verdicts,
     )
 
@@ -214,8 +230,10 @@ def compute_trading_shadowing_verdict_chronicle_incremental(
 
     max_id = max(chronicle_verdict.id for chronicle_verdict in working_verdicts)
     new_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
+    portfolio_snapshots: list[TradingShadowingVerdictChroniclePortfolioEquityPoint] = []
     with get_database_session() as database_session:
         verdict_dao = TradingShadowingVerdictDao(database_session)
+        portfolio_snapshot_dao = TradingPortfolioSnapshotDao(database_session)
         new_orms = verdict_dao.retrieve_resolved_in_window_after_id(
             after_id_exclusive=max_id,
             start_datetime=global_from_datetime,
@@ -223,6 +241,11 @@ def compute_trading_shadowing_verdict_chronicle_incremental(
             limit_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
         )
         new_verdicts = _convert_verdicts(new_orms)
+        portfolio_snapshots = _load_portfolio_snapshots_for_chronicle(
+            portfolio_snapshot_dao=portfolio_snapshot_dao,
+            global_from_datetime=global_from_datetime,
+            fetch_end_datetime=fetch_end_datetime,
+        )
 
     if new_verdicts:
         merged_by_id = {chronicle_verdict.id: chronicle_verdict for chronicle_verdict in working_verdicts}
@@ -236,7 +259,15 @@ def compute_trading_shadowing_verdict_chronicle_incremental(
             max_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
         )
 
-    new_chronicle = _build_trading_shadowing_verdict_chronicle(working_verdicts, now_local, bucket_configurations, series_end_datetime, fetch_end_datetime, global_from_datetime)
+    new_chronicle = _build_trading_shadowing_verdict_chronicle(
+        working_verdicts,
+        portfolio_snapshots,
+        now_local,
+        bucket_configurations,
+        series_end_datetime,
+        fetch_end_datetime,
+        global_from_datetime,
+    )
     logger.debug(
         "[TRADING][SHADOWING][HISTORY] Incremental chronicle — verdict_count=%d new_verdict_count_from_database=%d",
         len(working_verdicts),
@@ -250,6 +281,7 @@ def compute_trading_shadowing_verdict_chronicle_incremental(
 
 def _build_trading_shadowing_verdict_chronicle(
         verdicts: list[TradingShadowingVerdictChronicleVerdict],
+        portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint],
         now_local: datetime,
         bucket_configurations: list[TradingShadowingVerdictChronicleBucketConfiguration],
         series_end_datetime: datetime,
@@ -269,6 +301,7 @@ def _build_trading_shadowing_verdict_chronicle(
         )
         buckets.append(_build_bucket(
             verdicts=verdicts,
+            portfolio_equity_points=portfolio_equity_points,
             bucket_configuration=bucket_configuration,
             from_datetime=bucket_from_datetime,
             to_datetime=bucket_to_datetime,
@@ -289,6 +322,7 @@ def _build_trading_shadowing_verdict_chronicle(
 
 def _build_bucket(
         verdicts: Iterable[TradingShadowingVerdictChronicleVerdict],
+        portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint],
         bucket_configuration: TradingShadowingVerdictChronicleBucketConfiguration,
         from_datetime: datetime,
         to_datetime: datetime,
@@ -313,8 +347,25 @@ def _build_bucket(
 
     metric_points: list[TradingShadowingVerdictChronicleMetricPoint] = []
     volume_points: list[TradingShadowingVerdictChronicleVolumePoint] = []
+    sorted_portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint] = sorted(
+        portfolio_equity_points,
+        key=lambda portfolio_equity_point: portfolio_equity_point.timestamp_milliseconds,
+    )
+    portfolio_equity_point_index = 0
+    latest_known_portfolio_equity: float = (
+        sorted_portfolio_equity_points[0].total_equity_value
+        if sorted_portfolio_equity_points
+        else 0.0
+    )
 
     for bucket_timestamp in sorted(grouped_verdicts.keys()):
+        while portfolio_equity_point_index < len(sorted_portfolio_equity_points):
+            portfolio_equity_point = sorted_portfolio_equity_points[portfolio_equity_point_index]
+            if portfolio_equity_point.timestamp_milliseconds > bucket_timestamp:
+                break
+            latest_known_portfolio_equity = portfolio_equity_point.total_equity_value
+            portfolio_equity_point_index += 1
+
         items = grouped_verdicts[bucket_timestamp]
         verdict_count = len(items)
         if verdict_count == 0:
@@ -361,6 +412,7 @@ def _build_bucket(
             average_pnl_percentage=sum(pnl_percentage_values) / verdict_count,
             average_win_rate_percentage=(win_count / verdict_count) * 100.0,
             expected_value_per_trade_usd=sum(pnl_usd_values) / verdict_count,
+            portfolio_equity_usd=latest_known_portfolio_equity,
             closed_verdicts_per_hour=_compute_closed_verdicts_per_hour(verdict_count, bucket_configuration.granularity_seconds),
             profit_factor=_compute_profit_factor(gross_profit_usd, gross_loss_usd),
             average_cortex_prediction_win_rate_percentage=average_cortex_prediction_win_rate_percentage,
@@ -519,6 +571,27 @@ def _compute_closed_verdicts_per_hour(verdict_count: int, granularity_seconds: i
     if granularity_seconds <= 0:
         return 0.0
     return verdict_count * 3600.0 / float(granularity_seconds)
+
+
+def _load_portfolio_snapshots_for_chronicle(
+        portfolio_snapshot_dao: TradingPortfolioSnapshotDao,
+        global_from_datetime: datetime,
+        fetch_end_datetime: datetime,
+) -> list[TradingShadowingVerdictChroniclePortfolioEquityPoint]:
+    chronicle_portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint] = []
+    snapshots_in_window = portfolio_snapshot_dao.retrieve_snapshots_in_window(
+        start_datetime=global_from_datetime,
+        end_datetime=fetch_end_datetime,
+    )
+    for snapshot in snapshots_in_window:
+        chronicle_portfolio_equity_points.append(TradingShadowingVerdictChroniclePortfolioEquityPoint(
+            timestamp_milliseconds=int(snapshot.created_at.timestamp() * 1000),
+            total_equity_value=snapshot.total_equity_value,
+        ))
+    return sorted(
+        chronicle_portfolio_equity_points,
+        key=lambda chronicle_portfolio_equity_point: chronicle_portfolio_equity_point.timestamp_milliseconds,
+    )
 
 
 def _sample_cloud_points(

@@ -30,7 +30,6 @@ class TradingShadowingJob:
                     cache_invalidator.mark_dirty(
                         CacheRealm.SHADOWING_SNAPSHOT,
                         CacheRealm.SHADOWING_VERDICT_CHRONICLE,
-                        CacheRealm.SHADOWING_REGIME
                     )
                     logger.info("[TRADING][SHADOWING][JOB] Shadowing snapshot synchronization cycle complete")
                 else:

@@ -13,11 +13,13 @@ export const CHRONICLE_METRIC_COLORS = {
     cortexGatePrecision: '#4ade80',
     cortexGatePassRate: '#fb923c',
     expectedValue: '#34d399',
+    portfolioEquity: '#60a5fa',
     profitFactor: '#fbbf24',
     tradesPerHour: '#38d5f8',
     regimeExpectedValue: '#6ee7b7',
     regimeProfitFactor: '#fcd34d',
     smaExpectedValue: '#6df4b5',
+    smaPortfolioEquity: '#93c5fd',
     smaProfitFactor: '#f4d454',
     expectedValueThreshold: 'rgba(52, 211, 153, 0.95)',
     profitFactorThreshold: 'rgba(251, 191, 36, 0.95)',
@@ -77,6 +79,7 @@ export const CHRONICLE_AXIS_TITLES = {
     percentage: 'PnL % · win rate %',
     volume: 'Verdict count / bucket',
     expectedValue: 'EV per trade ($)',
+    portfolioEquity: 'Portfolio equity ($)',
     profitFactor: 'Profit factor (gross win / gross loss)',
     tradesPerHour: 'Trades / h',
     regimeExpectedValue: 'Regime EV gate ($)',
@@ -94,6 +97,7 @@ export const CHRONICLE_TOOLTIP_COMPACT_LABEL: Partial<Record<string, string>> = 
     [CHRONICLE_SERIES.cortexGatePrecisionLine]: 'Cortex gate precision %',
     [CHRONICLE_SERIES.cortexGatePassRateLine]: 'Cortex gate pass rate %',
     [CHRONICLE_SERIES.expectedValueLine]: 'EV per trade ($)',
+    [CHRONICLE_SERIES.portfolioEquityLine]: 'Portfolio equity ($)',
     [CHRONICLE_SERIES.profitFactorLine]: 'Profit factor',
     [CHRONICLE_SERIES.tradesPerHourLine]: 'Trades / h',
     [CHRONICLE_SERIES.smaPnlLine]: 'SMA average PnL %',
@@ -106,6 +110,7 @@ export const CHRONICLE_TOOLTIP_COMPACT_LABEL: Partial<Record<string, string>> = 
     [CHRONICLE_SERIES.smaCortexGatePrecisionLine]: 'SMA cortex gate precision %',
     [CHRONICLE_SERIES.smaCortexGatePassRateLine]: 'SMA cortex gate pass rate %',
     [CHRONICLE_SERIES.smaExpectedValueLine]: 'SMA EV per trade',
+    [CHRONICLE_SERIES.smaPortfolioEquityLine]: 'SMA portfolio equity',
     [CHRONICLE_SERIES.smaProfitFactorLine]: 'SMA profit factor',
     [CHRONICLE_SERIES.smaTradesPerHourLine]: 'SMA Trades / h',
     [CHRONICLE_SERIES.volumeColumns]: 'Volume'
@@ -123,6 +128,8 @@ export const CHRONICLE_TOOLTIP_PREFERRED_ORDER = [
     CHRONICLE_SERIES.averageWinRateLine,
     CHRONICLE_SERIES.expectedValueLine,
     CHRONICLE_SERIES.smaExpectedValueLine,
+    CHRONICLE_SERIES.portfolioEquityLine,
+    CHRONICLE_SERIES.smaPortfolioEquityLine,
     CHRONICLE_SERIES.profitFactorLine,
     CHRONICLE_SERIES.smaProfitFactorLine,
     CHRONICLE_SERIES.smaCortexPredictionWinRateLine,
@@ -153,6 +160,7 @@ export const CHRONICLE_LEGEND_PREFERRED_ORDER = [
     CHRONICLE_SERIES.cortexGatePassRateLine,
     CHRONICLE_SERIES.averageWinRateLine,
     CHRONICLE_SERIES.expectedValueLine,
+    CHRONICLE_SERIES.portfolioEquityLine,
     CHRONICLE_SERIES.profitFactorLine,
     CHRONICLE_SERIES.tradesPerHourLine,
     CHRONICLE_SERIES.smaPnlLine,
@@ -165,9 +173,17 @@ export const CHRONICLE_LEGEND_PREFERRED_ORDER = [
     CHRONICLE_SERIES.smaCortexGatePassRateLine,
     CHRONICLE_SERIES.smaWinRateLine,
     CHRONICLE_SERIES.smaExpectedValueLine,
+    CHRONICLE_SERIES.smaPortfolioEquityLine,
     CHRONICLE_SERIES.smaProfitFactorLine,
     CHRONICLE_SERIES.smaTradesPerHourLine,
     CHRONICLE_SERIES.volumeColumns,
     CHRONICLE_SERIES.winnerVerdictBubble,
     CHRONICLE_SERIES.loserVerdictBubble
+] as const;
+
+export const CHRONICLE_DEFAULT_VISIBLE_SERIES: string[] = [
+    CHRONICLE_SERIES.cortexModelRolloutMarker,
+    CHRONICLE_SERIES.evGateThreshold,
+    CHRONICLE_SERIES.pfGateThreshold,
+    CHRONICLE_SERIES.portfolioEquityLine
 ] as const;

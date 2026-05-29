@@ -1,0 +1,41 @@
+:host {
+    display: flex;
+    min-width: 0;
+    height: 100%;
+}
+
+.chronicle-ghost-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+    box-shadow: 0 0 8px color-mix(in srgb, currentColor 20%, transparent);
+    transition: transform 0.2s ease;
+}
+
+.chronicle-ghost-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: 0 0 12px color-mix(in srgb, currentColor 26%, transparent);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+}
+
+.chronicle-ghost-btn i {
+    font-size: 8px;
+    line-height: 1;
+}
+
+.chronicle-ghost-btn:hover {
+    transform: translateY(-1px);
+}
+
+.chronicle-ghost-btn:hover::after {
+    opacity: 1;
+}

@@ -397,7 +397,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
         return {
             regime: diagnostics.shadowing_regime as TradingEvaluationShadowingSnapshotPayload['regime'],
-            metrics: (diagnostics.shadowing_metrics ?? []) as TradingEvaluationShadowingSnapshotPayload['metrics']
+            metrics: (diagnostics.shadowing_metrics ?? []) as TradingEvaluationShadowingSnapshotPayload['metrics'],
+            cortex_inference: (diagnostics.cortex_inference_summary ?? null) as TradingEvaluationShadowingSnapshotPayload['cortex_inference']
         };
     }
 

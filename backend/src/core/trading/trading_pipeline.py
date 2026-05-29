@@ -68,18 +68,6 @@ class TradingPipeline:
         if not candidates:
             return
 
-        shadow_snapshot: TradingShadowingSnapshot | None = None
-        shadow_gate_enabled = (
-                settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED
-                or settings.TRADING_GATE_SHADOWING_EDGE_ENABLED
-        )
-        cortex_gate_required = self._is_cortex_gate_required()
-        shadow_snapshot_required = (
-                settings.TRADING_SHADOWING_ENABLED
-                or settings.TRADING_CORTEX_ENABLED
-                or shadow_gate_enabled
-                or cortex_gate_required
-        )
         if not settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED:
             logger.debug("[TRADING][PIPELINE][GATE][SHADOWING_TOXIC] Shadowing toxic metrics gate is disabled")
         if not settings.TRADING_GATE_SHADOWING_EDGE_ENABLED:
@@ -89,33 +77,23 @@ class TradingPipeline:
         if not settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             logger.debug("[TRADING][PIPELINE][GATE][FUNDAMENTALS] Fundamentals gate is disabled")
 
-        if shadow_snapshot_required:
-            shadow_snapshot = self._step_load_shadowing_snapshot()
-            if shadow_snapshot is None:
-                if shadow_gate_enabled or cortex_gate_required:
-                    logger.warning(
-                        "[TRADING][PIPELINE][SHADOWING] Shadowing snapshot not yet in cache — "
-                        "at least one enabled gate requires it; aborting trading cycle"
-                    )
-                    return
-                logger.warning(
-                    "[TRADING][PIPELINE][SHADOWING] Shadowing snapshot not yet in cache — "
-                    "continuing without shadow/cortex evaluation snapshots"
-                )
-        if shadow_gate_enabled:
-            if shadow_snapshot is None:
-                logger.warning("[TRADING][PIPELINE][GATE] Shadow gate enabled but snapshot is missing; aborting trading cycle")
-                return
-            if shadow_snapshot.regime.phase != TradingShadowingPhase.TRADABLE:
-                logger.info("[TRADING][PIPELINE][GATE] Shadowing snapshot in %s phase — live trading is paused until sufficient data is collected.", shadow_snapshot.regime.phase.value)
-                return
-            if settings.TRADING_GATE_SHADOWING_EDGE_ENABLED and not self._is_shadow_edge_gate_satisfied(shadow_snapshot):
-                return
+        shadow_snapshot = self._step_load_shadowing_snapshot()
+        if shadow_snapshot is None:
+            logger.warning(
+                "[TRADING][PIPELINE][GATE] Shadowing regime snapshot not yet in cache; "
+                "aborting trading cycle until the regime is computed"
+            )
+            return
 
-        shadow_snapshot_active = (
-                shadow_snapshot is not None
-                and shadow_snapshot.regime.phase == TradingShadowingPhase.TRADABLE
-        )
+        regime_phase = shadow_snapshot.regime.phase
+        if not regime_phase.allows_live_trading:
+            logger.info(
+                "[TRADING][PIPELINE][GATE] Shadowing regime phase %s does not authorize live trading; aborting trading cycle",
+                regime_phase.value,
+            )
+            return
+
+        shadow_snapshot_active = regime_phase == TradingShadowingPhase.TRADABLE
 
         if settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             candidates = self._step_filter_volume(candidates)
@@ -190,29 +168,14 @@ class TradingPipeline:
             if not candidates:
                 return
 
-        if shadow_gate_enabled and shadow_snapshot_active:
+        if shadow_evaluation_active:
             self._step_shadowing_notional_boost(candidates, shadow_snapshot)
 
         if settings.TRADING_GATE_CORTEX_ENABLED:
-            if shadow_snapshot is None:
+            if not shadow_snapshot_active:
                 logger.warning(
-                    "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Shadowing snapshot is missing; "
+                    "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Cortex gate enabled but shadowing regime is not TRADABLE; "
                     "blocking execution for %d candidates",
-                    len(candidates),
-                )
-                return
-            if shadow_snapshot.regime.phase != TradingShadowingPhase.TRADABLE:
-                logger.warning(
-                    "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Shadowing snapshot phase is %s; "
-                    "blocking execution because cortex gate requires an active snapshot",
-                    shadow_snapshot.regime.phase.value,
-                )
-                return
-            if not self._is_cortex_gate_activation_ready(shadow_snapshot):
-                logger.warning(
-                    "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Cortex gate activation requires %d eligible outcomes, got %d; blocking execution for %d candidates",
-                    settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
-                    shadow_snapshot.regime.cortex_training_eligible_outcome_count,
                     len(candidates),
                 )
                 return
@@ -347,39 +310,6 @@ class TradingPipeline:
         )
         return snapshot
 
-    def _is_shadow_edge_gate_satisfied(self, shadow_snapshot: TradingShadowingSnapshot) -> bool:
-        chronicle_profit_factor = shadow_snapshot.regime.edge_chronicle_profit_factor
-        chronicle_threshold = shadow_snapshot.regime.edge_chronicle_profit_factor_threshold
-        if chronicle_profit_factor is None or chronicle_threshold is None:
-            logger.warning(
-                "[TRADING][PIPELINE][GATE][SHADOWING_SMA_PF] Missing chronicle performance metrics in regime payload; trading cycle blocked"
-            )
-            return False
-        if chronicle_profit_factor < chronicle_threshold:
-            logger.warning(
-                "[TRADING][PIPELINE][GATE][SHADOWING_SMA_PF] Chronicle profit factor %.2f is below %.2f; trading cycle blocked",
-                chronicle_profit_factor,
-                chronicle_threshold,
-            )
-            return False
-
-        sparse_expected_value_usd = shadow_snapshot.regime.edge_sparse_expected_value_usd
-        sparse_expected_value_threshold = shadow_snapshot.regime.edge_sparse_expected_value_usd_threshold
-        if sparse_expected_value_usd is None or sparse_expected_value_threshold is None:
-            logger.warning(
-                "[TRADING][PIPELINE][GATE][SHADOWING_SPARSE_EV] Missing sparse expected value metrics in regime payload; trading cycle blocked"
-            )
-            return False
-        if sparse_expected_value_usd < sparse_expected_value_threshold:
-            logger.warning(
-                "[TRADING][PIPELINE][GATE][SHADOWING_SPARSE_EV] Sparse expected value USD %.2f is below %.2f; trading cycle blocked",
-                sparse_expected_value_usd,
-                sparse_expected_value_threshold,
-            )
-            return False
-
-        return True
-
     def _step_shadowing_toxic_exposure_filter(self, candidates: list[TradingCandidate], shadow_snapshot) -> list[TradingCandidate]:
         return apply_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
 
@@ -401,15 +331,6 @@ class TradingPipeline:
             gate_enabled: bool,
     ) -> list[TradingCandidate]:
         return apply_trading_cortex_gate_filter(candidates, shadow_snapshot, gate_enabled)
-
-    def _is_cortex_gate_required(self) -> bool:
-        return settings.TRADING_GATE_CORTEX_ENABLED or settings.TRADING_CORTEX_ENABLED
-
-    def _is_cortex_gate_activation_ready(self, shadow_snapshot: TradingShadowingSnapshot) -> bool:
-        return (
-                shadow_snapshot.regime.cortex_training_eligible_outcome_count
-                >= settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING
-        )
 
     def _step_apply_existing_cortex_gate_snapshots(
             self,

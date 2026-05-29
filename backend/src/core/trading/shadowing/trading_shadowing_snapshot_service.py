@@ -38,6 +38,12 @@ from src.persistence.database_session_manager import get_database_session
 logger = get_application_logger(__name__)
 
 
+def _format_optional_float(value: Optional[float]) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.2f}"
+
+
 def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
     lookback_limit = settings.TRADING_SHADOWING_LOOKBACK_EVALUATIONS
     minimum_outcomes_for_shadowing = settings.TRADING_SHADOWING_MIN_ELIGIBLE_OUTCOMES_FOR_SHADOWING
@@ -113,24 +119,35 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
             sma_period=sparse_moving_average_period,
         )
 
+        chronicle_profit_factor_threshold = settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_THRESHOLD
+        sparse_expected_value_usd_threshold = settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_USD_THRESHOLD
+        edge_gate_enabled = settings.TRADING_GATE_SHADOWING_EDGE_ENABLED
+        edge_gate_satisfied = _is_shadow_edge_gate_satisfied(
+            edge_gate_enabled=edge_gate_enabled,
+            chronicle_profit_factor=chronicle_profit_factor,
+            chronicle_profit_factor_threshold=chronicle_profit_factor_threshold,
+            sparse_expected_value_usd=sparse_expected_value_usd,
+            sparse_expected_value_usd_threshold=sparse_expected_value_usd_threshold,
+        )
+
         logger.info(
-            "[TRADING][SHADOWING][SNAPSHOT][CHRONICLE_PF] Chronicle profit factor SMA — period=%d sparse_buckets=%d chronicle_pf=%.2f",
+            "[TRADING][SHADOWING][SNAPSHOT][CHRONICLE_PF] Chronicle profit factor SMA — period=%d sparse_buckets=%d chronicle_pf=%s",
             chronicle_moving_average_period,
             sparse_pf_buckets,
-            chronicle_profit_factor,
+            _format_optional_float(chronicle_profit_factor),
         )
         logger.info(
-            "[TRADING][SHADOWING][SNAPSHOT][SPARSE_EV] Sparse expected value USD — lookback_days=%.1f bucket_width_seconds=%d period=%d sparse_buckets=%d sparse_ev_usd=%.2f",
+            "[TRADING][SHADOWING][SNAPSHOT][SPARSE_EV] Sparse expected value USD — lookback_days=%.1f bucket_width_seconds=%d period=%d sparse_buckets=%d sparse_ev_usd=%s",
             settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
             settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,
             sparse_moving_average_period,
             sparse_ev_buckets,
-            sparse_expected_value_usd,
+            _format_optional_float(sparse_expected_value_usd),
         )
 
         logger.info(
-            "[TRADING][SHADOWING][SNAPSHOT] Shadowing snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f chronicle_pf=%.2f sparse_ev_usd=%.2f",
-            total_outcomes, len(metric_profiles), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_expected_pnl_velocity, chronicle_profit_factor, sparse_expected_value_usd
+            "[TRADING][SHADOWING][SNAPSHOT] Shadowing snapshot computed — outcomes=%d metrics=%d wr=%.1f%% pf=%.2f ev=%.2f velocity=%.2f chronicle_pf=%s sparse_ev_usd=%s edge_gate_satisfied=%s",
+            total_outcomes, len(metric_profiles), meta_win_rate * 100, meta_profit_factor, meta_expected_value_usd, meta_expected_pnl_velocity, _format_optional_float(chronicle_profit_factor), _format_optional_float(sparse_expected_value_usd), edge_gate_satisfied
         )
 
         is_shadow_gate_eligible_outcomes_sufficient = (
@@ -141,14 +158,15 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
         )
         shadowing_snapshot_ready = len(metric_profiles) > 0
         phase = derive_trading_shadowing_phase(
-            is_shadowing_enabled=settings.TRADING_SHADOWING_ENABLED,
             shadowing_ready=not (outcomes_insufficient or hours_insufficient),
             shadow_gate_ready=is_shadow_gate_eligible_outcomes_sufficient,
             cortex_training_ready=is_cortex_training_sufficient,
-            edge_gate_enabled=settings.TRADING_GATE_SHADOWING_EDGE_ENABLED,
+            edge_gate_enabled=edge_gate_enabled,
             toxic_metrics_gate_enabled=settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED,
             cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
+            fundamentals_gate_enabled=settings.TRADING_GATE_FUNDAMENTALS_ENABLED,
             shadowing_snapshot_ready=shadowing_snapshot_ready,
+            edge_gate_satisfied=edge_gate_satisfied,
         )
 
         if phase == TradingShadowingPhase.SHADOWING:
@@ -160,11 +178,22 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
                 settings.TRADING_CORTEX_MIN_ELIGIBLE_OUTCOMES_FOR_TRAINING,
             )
 
+        if phase == TradingShadowingPhase.BEAR:
+            logger.warning(
+                "[TRADING][SHADOWING][SNAPSHOT][BEAR] Edge gate enabled but not satisfied — live trading blocked: chronicle_pf=%s/%.2f sparse_ev_usd=%s/%.2f",
+                _format_optional_float(chronicle_profit_factor),
+                chronicle_profit_factor_threshold,
+                _format_optional_float(sparse_expected_value_usd),
+                sparse_expected_value_usd_threshold,
+            )
+
         return TradingShadowingSnapshot(
             regime=TradingShadowingRegime(
                 phase=phase,
                 edge_gate_enabled=settings.TRADING_GATE_SHADOWING_EDGE_ENABLED,
                 cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
+                fundamentals_gate_enabled=settings.TRADING_GATE_FUNDAMENTALS_ENABLED,
+                toxic_metrics_gate_enabled=settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED,
                 resolved_outcome_count=resolved_count,
                 required_outcome_count=minimum_outcomes_for_shadowing,
                 elapsed_hours=elapsed_hours,
@@ -238,11 +267,9 @@ def _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
 def _shadow_chart_sma_at_series_end(
         series_values: list[float],
         sma_period: int,
-        *,
-        empty_fallback: float,
-) -> float:
+) -> Optional[float]:
     if not series_values:
-        return empty_fallback
+        return None
     winsorized = winsorize_series_like_trading_shadowing_verdict_chronicle_chart(series_values)
     sma_series = simple_moving_average_like_trading_shadowing_verdict_chronicle_chart(winsorized, sma_period)
     return sma_series[-1]
@@ -252,7 +279,7 @@ def _compute_shadow_chart_sma_profit_factor_at_series_end(
         resolved_verdicts: list,
         current_time: datetime,
         sma_period: int,
-) -> tuple[float, int]:
+) -> tuple[Optional[float], int]:
     chronicle_lookback = timedelta(days=settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_MOVING_AVERAGE_LOOKBACK_DAYS)
     chronicle_bucket_width_seconds = settings.TRADING_SHADOWING_EDGE_CHRONICLE_PROFIT_FACTOR_BUCKET_WIDTH_SECONDS
     profit_factors_sparse, _, sparse_bucket_count = _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
@@ -261,7 +288,7 @@ def _compute_shadow_chart_sma_profit_factor_at_series_end(
         chronicle_lookback,
         chronicle_bucket_width_seconds,
     )
-    chronicle_pf = _shadow_chart_sma_at_series_end(profit_factors_sparse, sma_period, empty_fallback=1.0)
+    chronicle_pf = _shadow_chart_sma_at_series_end(profit_factors_sparse, sma_period)
     return chronicle_pf, sparse_bucket_count
 
 
@@ -269,7 +296,7 @@ def _compute_shadow_chart_sma_expected_value_usd_at_series_end(
         resolved_verdicts: list,
         current_time: datetime,
         sma_period: int,
-) -> tuple[float, int]:
+) -> tuple[Optional[float], int]:
     lookback = timedelta(days=settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS)
     granularity_seconds = settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS
     _, mean_pnl_usd_sparse, sparse_bucket_count = _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
@@ -278,8 +305,25 @@ def _compute_shadow_chart_sma_expected_value_usd_at_series_end(
         lookback,
         granularity_seconds,
     )
-    sma_ev_usd = _shadow_chart_sma_at_series_end(mean_pnl_usd_sparse, sma_period, empty_fallback=0.0)
+    sma_ev_usd = _shadow_chart_sma_at_series_end(mean_pnl_usd_sparse, sma_period)
     return sma_ev_usd, sparse_bucket_count
+
+
+def _is_shadow_edge_gate_satisfied(
+        edge_gate_enabled: bool,
+        chronicle_profit_factor: Optional[float],
+        chronicle_profit_factor_threshold: float,
+        sparse_expected_value_usd: Optional[float],
+        sparse_expected_value_usd_threshold: float,
+) -> bool:
+    if not edge_gate_enabled:
+        return True
+    if chronicle_profit_factor is None or sparse_expected_value_usd is None:
+        return False
+    return (
+            chronicle_profit_factor >= chronicle_profit_factor_threshold
+            and sparse_expected_value_usd >= sparse_expected_value_usd_threshold
+    )
 
 
 def _convert_bucket_profile_to_metric_profile(

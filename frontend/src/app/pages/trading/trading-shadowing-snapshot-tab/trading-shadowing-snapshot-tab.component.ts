@@ -2,25 +2,28 @@ import { CommonModule } from '@angular/common';
 import { Component, inject, Input } from '@angular/core';
 import { MetricsFormattingService } from '../../../core/metrics-formatting.service';
 import {
+    TradingCortexInferenceSnapshotPayload,
     TradingEvaluationShadowingMetricEvaluationPayload,
-    TradingEvaluationShadowingSnapshotPayload,
-    TradingShadowingRegimePayload
+    TradingEvaluationShadowingSnapshotPayload
 } from '../../../core/models';
-import { NumberFormattingService } from '../../../core/number-formatting.service';
 import { EXPLORATION_CATEGORIES, MetricCategory } from '../trading.constants';
+import { TradingOverviewShadowingRegimeComponent } from '../trading-overview/trading-overview-shadowing-regime/trading-overview-shadowing-regime.component';
 
 @Component({
     standalone: true,
     selector: 'trading-shadowing-snapshot-tab',
-    imports: [CommonModule],
+    imports: [CommonModule, TradingOverviewShadowingRegimeComponent],
     templateUrl: './trading-shadowing-snapshot-tab.component.html',
     styleUrl: './trading-shadowing-snapshot-tab.component.css'
 })
 export class TradingShadowingSnapshotTabComponent {
     @Input() snapshot: TradingEvaluationShadowingSnapshotPayload | null = null;
+
     private readonly metricsFormattingService = inject(MetricsFormattingService);
 
-    private readonly numberFormattingService = inject(NumberFormattingService);
+    public cortexInference(snapshotValue: TradingEvaluationShadowingSnapshotPayload | null): TradingCortexInferenceSnapshotPayload | null {
+        return snapshotValue?.cortex_inference ?? null;
+    }
 
     public formatMetricLabel(metricKey: string): string {
         return this.metricsFormattingService.formatMetricLabel(metricKey);
@@ -28,10 +31,6 @@ export class TradingShadowingSnapshotTabComponent {
 
     public formatMetricValue(metricKey: string, value: number | null | undefined): string {
         return this.metricsFormattingService.formatMetricValue(metricKey, value);
-    }
-
-    public formatUsd(value: number | null | undefined): string {
-        return this.numberFormattingService.formatUsdCompactForGrid(value) ?? '—';
     }
 
     public groupedShadowingMetrics(
@@ -48,26 +47,5 @@ export class TradingShadowingSnapshotTabComponent {
                 .sort((a, b) => (b.bucket_win_rate || 0) - (a.bucket_win_rate || 0));
             return { category, metrics };
         }).filter((group) => group.metrics.length > 0);
-    }
-
-    public outcomeCoverage(regime: TradingShadowingRegimePayload | null | undefined): number {
-        if (!regime || !regime.required_outcome_count || regime.required_outcome_count <= 0) {
-            return 0;
-        }
-        return this.clampPercentage(((regime.resolved_outcome_count ?? 0) / regime.required_outcome_count) * 100);
-    }
-
-    public thresholdCoverage(value: number | null | undefined, threshold: number | null | undefined): number {
-        if (value === null || value === undefined || threshold === null || threshold === undefined || threshold <= 0) {
-            return 0;
-        }
-        return this.clampPercentage((value / threshold) * 100);
-    }
-
-    private clampPercentage(value: number): number {
-        if (!Number.isFinite(value)) {
-            return 0;
-        }
-        return Math.max(0, Math.min(100, value));
     }
 }

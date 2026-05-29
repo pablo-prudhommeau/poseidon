@@ -2,13 +2,13 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 items-stretch">
         <div class="p-4 rounded-2xl bg-black/20 border border-blue-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between h-full min-h-0 transition-all hover:border-blue-500/30">
             <div class="flex justify-between items-center h-7 mb-3">
-                <span class="trading-overview-title text-blue-400">portfolio equity</span>
-                <i class="fa fa-wallet text-blue-500/50 text-xl"></i>
+                <span class="trading-overview-title text-blue-400/70">portfolio equity</span>
+                <i class="fa fa-wallet text-blue-400/70 text-lg"></i>
             </div>
             <div class="text-3xl font-black text-white tracking-tight">
                 {{ equity() | optionalNumber: '1.2-2' : '$ ' }}
             </div>
-            <div class="trading-overview-subtitlle mt-1">total value</div>
+            <div class="trading-overview-subtitle mt-1">total value</div>
             @if (equitySpark().length > 1) {
                 <div class="mt-3 -mx-1 h-10">
                     <sparkline [points]="equitySpark()"></sparkline>
@@ -37,15 +37,15 @@
             }"
         >
             <div class="flex justify-between items-center h-7 mb-3">
-                <span class="trading-overview-title" [ngClass]="realizedTotal() === null ? 'text-slate-300' : isNonNegative(realizedTotal()) ? 'text-emerald-300' : 'text-red-300'">pnl cockpit</span>
-                <i class="fa fa-chart-pie text-xl" [ngClass]="realizedTotal() === null ? 'text-slate-500/50' : isNonNegative(realizedTotal()) ? 'text-emerald-500/50' : 'text-red-500/50'"></i>
+                <span class="trading-overview-title" [ngClass]="realizedTotal() === null ? 'text-slate-300' : isNonNegative(realizedTotal()) ? 'text-emerald-400/80' : 'text-red-400/80'">pnl cockpit</span>
+                <i class="fa fa-chart-pie text-lg" [ngClass]="realizedTotal() === null ? 'text-slate-500/50' : isNonNegative(realizedTotal()) ? 'text-emerald-400/80' : 'text-red-400/80'"></i>
             </div>
             <div class="flex items-end gap-2">
                 <div class="text-3xl font-black tracking-tight" [ngClass]="realizedTotal() === null ? 'text-slate-400' : isNonNegative(realizedTotal()) ? 'text-emerald-400' : 'text-red-400'">
                     {{ realizedTotal() | optionalNumber: '1.2-2' : '$ ' }}
                 </div>
             </div>
-            <div class="trading-overview-subtitlle mt-1">realized cumulative</div>
+            <div class="trading-overview-subtitle mt-1">realized cumulative</div>
 
             <div class="mt-auto pt-3 border-t border-white/5">
                 <div class="grid grid-cols-2 gap-3 min-h-[36px]">
@@ -65,177 +65,17 @@
             </div>
         </div>
 
-        <div
-            class="p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col h-full min-h-0 transition-all border"
-            [ngClass]="{
-                'border-purple-500/20 hover:border-purple-500/30': shadowTradable(),
-                'border-amber-500/20 hover:border-amber-500/30': shadowingRegimeLabel() === 'shadowing',
-                'border-pink-500/20 hover:border-pink-500/30': shadowingRegimeLabel() === 'cortexing',
-                'border-slate-500/20 hover:border-slate-500/30': shadowingRegimeLabel() === 'disabled' || shadowingRegimeLabel() === 'syncing',
-            }"
-        >
-            <div class="flex justify-between items-center h-7 mb-3">
-                <span class="trading-overview-title" [ngClass]="shadowTitleTextClass()">shadowing regime</span>
-                <div class="flex items-center gap-2">
-                    <button type="button" class="chronicle-ghost-btn" [ngClass]="shadowAccentTextClass()" title="Shadowing verdict chronicle" (click)="openShadowChronicle.emit()">
-                        <i class="fa fa-bolt"></i>
-                    </button>
-                    <span class="px-2 py-1 rounded-lg border text-[8px] uppercase font-black tracking-widest" [ngClass]="shadowingRegimeClasses()">
-                        {{ shadowingRegimeLabel() }}
-                    </span>
-                </div>
-            </div>
-            <div class="flex flex-col">
-                <div class="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-3 gap-y-8 sm:gap-y-0 items-stretch">
-                    <div class="shadow-regime-metric-col flex flex-col min-w-0">
-                        <div class="min-h-[2.25rem] flex flex-col">
-                            <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowChronicleProfitFactorValueClass()">
-                                {{ formatMultiplier(shadowChronicleProfitFactor()) }}
-                            </span>
-                        </div>
-                        <div class="trading-overview-label mt-2 leading-snug cursor-help" [pTooltip]="shadowChronicleGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">
-                            {{ shadowChronicleGeometryLabel() }}
-                        </div>
-                        <div class="mt-3 flex flex-col justify-end flex-1">
-                            <div class="flex items-center justify-between text-[9px] text-slate-400 mb-2 leading-none">
-                                <span class="trading-overview-label inline-flex items-center gap-1">
-                                    gate floor
-                                    @if (shadowLearningDone()) {
-                                        <i class="fa fa-check text-emerald-400 text-[8px]"></i>
-                                    }
-                                </span>
-                                <span class="font-bold text-white tabular-nums">{{ shadowChronicleProfitFactorFloorLabel() }}</span>
-                            </div>
-                            <div class="w-full bg-slate-700/50 rounded-full h-1.5 mb-2 overflow-hidden">
-                                <div class="h-1.5 rounded-full transition-all duration-700" [ngClass]="shadowChronicleProfitFactorBarClass()" [style.width.%]="shadowChronicleProfitFactorProgress() ?? 0"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="shadow-regime-metric-col flex flex-col min-w-0 border-l-0 sm:border-l border-white/10 sm:pl-2">
-                        <div class="min-h-[2.25rem] flex flex-col">
-                            <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowSparseExpectedValueClass()">
-                                {{ shadowSparseExpectedValueUsd() | optionalNumber: '1.1-1' : '$ ' }}
-                            </span>
-                        </div>
-                        <div class="trading-overview-label mt-2 leading-snug cursor-help" [pTooltip]="shadowSparseExpectedValueGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">
-                            {{ shadowSparseExpectedValueGeometryLabel() }}
-                        </div>
-                        <div class="mt-3 flex flex-col justify-end flex-1">
-                            <div class="flex items-center justify-between text-[9px] text-slate-400 mb-2 leading-none">
-                                <span class="trading-overview-label inline-flex items-center gap-1">
-                                    floor
-                                    @if (shadowLearningDone()) {
-                                        <i class="fa fa-check text-emerald-400 text-[8px]"></i>
-                                    }
-                                </span>
-                                <span class="font-bold text-white tabular-nums">{{ shadowSparseExpectedValueFloorLabel() }}</span>
-                            </div>
-                            <div class="w-full bg-slate-700/50 rounded-full h-1.5 mb-2 overflow-hidden flex justify-end">
-                                <div class="h-1.5 rounded-full transition-all duration-700" [ngClass]="shadowSparseExpectedValueBarClass()" [style.width.%]="shadowSparseExpectedValueProgress() ?? 0"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="mt-auto pt-3 border-t border-white/5">
-                <div class="grid grid-cols-3 gap-3 min-h-[36px]">
-                    <div class="flex flex-col justify-center leading-none">
-                        <span class="trading-overview-label inline-flex items-center gap-1">
-                            win rate
-                            @if (shadowLearningDone()) {
-                                <i class="fa fa-check text-emerald-400 text-[8px]"></i>
-                            }
-                        </span>
-                        <div class="text-xs font-black text-white mt-1 leading-none">{{ shadowWinRate() | optionalNumber: '1.0-1' : '' : '%' }}</div>
-                    </div>
-                    <div class="flex flex-col justify-center border-l border-white/5 pl-2 leading-none">
-                        <span class="trading-overview-label inline-flex items-center gap-1 whitespace-nowrap">
-                            exp. pnl / h
-                            @if (shadowLearningDone()) {
-                                <i class="fa fa-check text-emerald-400 text-[8px]"></i>
-                            }
-                        </span>
-                        <div class="text-xs font-black text-white mt-1 leading-none">{{ shadowExpectedPnlVelocity() | optionalNumber: '1.2-2' : '' : '%' }}</div>
-                    </div>
-                    <div class="flex flex-col justify-center border-l border-white/5 pl-2 leading-none">
-                        <span class="trading-overview-label inline-flex items-center gap-1">
-                            meta ev
-                            @if (shadowLearningDone()) {
-                                <i class="fa fa-check text-emerald-400 text-[8px]"></i>
-                            }
-                        </span>
-                        <div class="text-xs font-black mt-1 leading-none" [ngClass]="shadowExpectedValueClass()">
-                            {{ shadowExpectedValue() | optionalNumber: '1.2-2' : '$ ' }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            @if (shadowLearningProgressVisible()) {
-                <div class="space-y-2 mt-3">
-                    <div>
-                        <div class="flex items-center justify-between text-[9px] text-slate-500 mb-1">
-                            <span class="trading-overview-label">shadowing</span>
-                            <span class="font-bold text-slate-500">
-                                <span class="cursor-help" [pTooltip]="shadowTotalTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">
-                                    <span [ngClass]="shadowRawProgressValueClass()">{{ shadowTotalResolvedCount() }}</span>
-                                    <span [ngClass]="shadowLearningTextClass()">/{{ shadowingRequiredCount() }} raw</span>
-                                    @if (shadowLearningDone()) {
-                                        <i class="fa fa-check text-emerald-400 text-[8px] ml-1"></i>
-                                    }
-                                </span>
-                                <span class="text-slate-500 px-1">•</span>
-                                <span class="cursor-help" [pTooltip]="shadowGateEligibleTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip">
-                                    <span [ngClass]="shadowGateProgressValueClass()">{{ shadowGateEligibleResolvedCount() }}</span>
-                                    <span [ngClass]="shadowLearningTextClass()">/{{ shadowGateRequiredCount() }} gate-ready</span>
-                                </span>
-                            </span>
-                        </div>
-                        <div class="relative w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
-                            <div class="absolute inset-y-0 left-0 transition-all duration-700" [ngClass]="shadowRawProgressBarClass()" [style.width.%]="shadowRawProgress()"></div>
-                            <div class="absolute inset-y-0 left-0 transition-all duration-700" [ngClass]="shadowGateReadyOverlayBarClass()" [style.width.%]="shadowGateReadyOverlayProgress()"></div>
-                        </div>
-                    </div>
-                    @if (cortexingProgressVisible()) {
-                        <div>
-                            <div class="flex items-center justify-between text-[9px] text-slate-500 mb-1">
-                                <span class="trading-overview-label">cortexing</span>
-                                <span class="font-bold text-slate-500">
-                                    <span class="cursor-help" [pTooltip]="cortexGateEligibleTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip"
-                                        ><span [ngClass]="cortexingProgressTextClass()">{{ cortexGateEligibleResolvedCount() }}</span
-                                        ><span class="text-slate-500">/{{ cortexTrainingRequiredCount() }} cortexing</span></span
-                                    >
-                                </span>
-                            </div>
-                            <div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
-                                <div class="h-1.5 transition-all duration-700" [ngClass]="cortexingProgressBarClass()" [style.width.%]="cortexGateEligibleProgress()"></div>
-                            </div>
-                        </div>
-                    }
-                    <div>
-                        <div class="flex items-center justify-between text-[9px] text-slate-500 mb-1">
-                            <span class="trading-overview-label">training</span>
-                            <span class="font-bold"
-                                ><span [ngClass]="shadowHoursProgressValueClass()">{{ shadowElapsedHours() | number: '1.2-2' }}h</span><span [ngClass]="shadowLearningTextClass()">/{{ shadowRequiredHours() | number: '1.2-2' }}h</span></span
-                            >
-                        </div>
-                        <div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
-                            <div class="h-1.5 rounded-full transition-all duration-700" [ngClass]="shadowHoursBarClass()" [style.width.%]="shadowHoursProgress()"></div>
-                        </div>
-                    </div>
-                </div>
-            }
-        </div>
+        <app-trading-overview-shadowing-regime (openChronicle)="openShadowChronicle.emit()"></app-trading-overview-shadowing-regime>
 
         <div class="sm:col-span-2 xl:col-span-2 p-4 rounded-2xl bg-black/20 border border-cyan-500/20 backdrop-blur-2xl shadow-xl flex flex-col transition-all hover:border-cyan-500/30">
             <div class="flex justify-between items-center h-7 mb-3">
                 <div class="flex items-center gap-2">
-                    <span class="trading-overview-title text-cyan-300">{{ liquidityTitle() }}</span>
+                    <span class="trading-overview-title text-cyan-300/80">{{ liquidityTitle() }}</span>
                     @if (blockchainBalances().length > 0) {
                         <span class="px-2 py-1 rounded-lg border text-[8px] uppercase font-black tracking-widest bg-cyan-500/10 text-cyan-300 border-cyan-500/20">live</span>
                     }
                 </div>
-                <i class="fa fa-coins text-cyan-500/50 text-xl"></i>
+                <i class="fa fa-coins text-cyan-300/80 text-lg"></i>
             </div>
 
             <div class="flex-1 grid grid-cols-1 lg:grid-cols-[0.86fr_1.14fr] gap-4 items-stretch">
@@ -244,7 +84,7 @@
                         <div class="text-3xl font-black text-white tracking-tight">
                             {{ cash() | optionalNumber: '1.2-2' : liquiditySymbol() + ' ' }}
                         </div>
-                        <div class="trading-overview-subtitlle mt-1">
+                        <div class="trading-overview-subtitle mt-1">
                             {{ liquiditySubtitle() }}
                         </div>
                     </div>

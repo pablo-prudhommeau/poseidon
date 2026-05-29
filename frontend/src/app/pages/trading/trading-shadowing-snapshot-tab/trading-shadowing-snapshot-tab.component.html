@@ -1,202 +1,71 @@
 <div class="space-y-6">
     @if (snapshot) {
         <div class="space-y-3">
-            <div class="shadow-section-header">
+            <div class="shadowing-section-header">
                 <div class="flex items-center gap-2 px-1">
                     <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
                         <i class="fa fa-ghost text-xs"></i>
                     </span>
                     <div class="leading-none">
-                        <div class="text-[10px] font-black uppercase text-slate-200">Shadow information</div>
-                        <div class="mt-1 text-[10px] text-slate-500">Shadow realm telemetry summary</div>
+                        <div class="text-[10px] font-black uppercase text-slate-200">Shadowing information</div>
+                        <div class="mt-1 text-[10px] text-slate-500">Shadowing regime telemetry</div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 xl:grid-cols-[1.45fr_0.72fr_0.83fr] gap-2.5">
-                <div class="shadow-hero-card rounded-2xl border border-white/5 bg-black/20 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <i class="fa fa-circle-info text-slate-500 text-xs"></i>
-                                <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Snapshot summary</span>
-                            </div>
-                            <p class="mt-1 text-[9px] leading-relaxed text-slate-500">Activation, coverage and core statistical edge.</p>
-                        </div>
-                        <span class="rounded-lg border px-2 py-1 text-[9px] font-black uppercase" [ngClass]="snapshot.regime.phase === 'TRADABLE' ? 'border-emerald-500/20 text-emerald-300' : 'border-white/10 text-slate-400'">
-                            {{ snapshot.regime.phase === 'TRADABLE' ? 'tradable' : 'standby' }}
-                        </span>
-                    </div>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-2.5 items-stretch">
+                <app-trading-overview-shadowing-regime [overrideRegime]="snapshot.regime" [showChronicleButton]="false" />
 
-                    <div class="mt-2.5 flex items-end gap-4">
-                        <div class="min-w-0 flex-1">
-                            <div class="text-[8px] font-black uppercase text-slate-500">Shadowing outcomes</div>
-                            <div class="mt-1 text-3xl font-black tracking-tight text-white">{{ snapshot.regime.resolved_outcome_count | number }}</div>
+                <div class="shadowing-mini-card rounded-2xl border border-white/5 bg-black/20 p-3 flex flex-col">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fa fa-microchip text-slate-500 text-xs"></i>
+                        <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Cortex inference</span>
+                    </div>
+                    @if (cortexInference(snapshot); as cortex) {
+                        <div class="flex items-end gap-2 mb-3">
+                            <span class="text-3xl font-black tabular-nums tracking-tight text-white">{{ cortex.final_trade_score | number: '1.2-2' }}</span>
+                            <span class="text-[8px] font-black uppercase text-slate-500 mb-1">trade score</span>
                         </div>
-                        <div class="grid min-w-0 flex-[1.15] grid-cols-3 gap-2">
+                        <div class="grid grid-cols-2 gap-2">
                             <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                <div class="text-[8px] font-black uppercase text-slate-500">Resolved</div>
-                                <div class="mt-1 text-sm font-black text-slate-100">{{ snapshot.regime.resolved_outcome_count | number }}</div>
+                                <div class="text-[8px] font-black uppercase text-slate-500">Success probability</div>
+                                <div class="mt-1 text-sm font-black text-slate-100">{{ cortex.success_probability * 100 | number: '1.1-1' }}%</div>
                             </div>
                             <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                <div class="text-[8px] font-black uppercase text-slate-500">Elapsed</div>
-                                <div class="mt-1 text-sm font-black text-slate-100">{{ snapshot.regime.elapsed_hours | number: '1.1-1' }}h</div>
+                                <div class="text-[8px] font-black uppercase text-slate-500">Toxicity probability</div>
+                                <div class="mt-1 text-sm font-black text-slate-100">{{ cortex.toxicity_probability * 100 | number: '1.1-1' }}%</div>
                             </div>
                             <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                <div class="text-[8px] font-black uppercase text-slate-500">Win rate</div>
-                                <div class="mt-1 text-sm font-black" [ngClass]="(snapshot.regime.metrics_meta_win_rate ?? 0) >= 0.5 ? 'text-slate-100' : 'text-red-300'">{{ (snapshot.regime.metrics_meta_win_rate ?? 0) * 100 | number: '1.1-1' }}%</div>
+                                <div class="text-[8px] font-black uppercase text-slate-500">Expected profit / loss</div>
+                                <div class="mt-1 text-sm font-black" [ngClass]="cortex.expected_profit_and_loss_percentage > 0 ? 'text-slate-100' : cortex.expected_profit_and_loss_percentage < 0 ? 'text-red-300' : 'text-slate-200'">{{ cortex.expected_profit_and_loss_percentage > 0 ? '+' : '' }}{{ cortex.expected_profit_and_loss_percentage | number: '1.2-2' }}%</div>
+                            </div>
+                            <div class="rounded-lg border border-white/5 bg-black/20 p-2">
+                                <div class="text-[8px] font-black uppercase text-slate-500">Predicted holding time</div>
+                                <div class="mt-1 text-sm font-black text-slate-100">{{ cortex.predicted_holding_time_minutes / 60.0 | number: '1.1-1' }}h</div>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <div class="shadow-mini-card rounded-2xl border border-white/5 bg-black/20 p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                        <i class="fa fa-power-off text-slate-500 text-xs"></i>
-                        <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Activation state</span>
-                    </div>
-                    <div class="text-2xl font-black tracking-tight" [ngClass]="snapshot.regime.phase === 'TRADABLE' ? 'text-emerald-300' : 'text-slate-300'">
-                        {{ snapshot.regime.phase === 'TRADABLE' ? 'YES' : 'NO' }}
-                    </div>
-                    <div class="mt-1 text-[9px] leading-relaxed text-slate-500">
-                        {{ snapshot.regime.phase === 'TRADABLE' ? 'Shadowing snapshot is confident enough to operate live.' : 'Shadowing snapshot is still accumulating conviction.' }}
-                    </div>
-                </div>
-
-                <div class="shadow-mini-card rounded-2xl border border-white/5 bg-black/20 p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                        <i class="fa fa-vault text-slate-500 text-xs"></i>
-                        <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Sparse reserve</span>
-                    </div>
-                    <div class="text-2xl font-black tracking-tight" [ngClass]="(snapshot.regime.edge_sparse_expected_value_usd ?? 0) >= 0 ? 'text-slate-100' : 'text-red-300'">
-                        {{ formatUsd(snapshot.regime.edge_sparse_expected_value_usd) }}
-                    </div>
-                    <div class="mt-1 text-[9px] leading-relaxed text-slate-500">Sparse-mode expected value.</div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 xl:grid-cols-[0.8fr_0.8fr_0.8fr_1.6fr] gap-2.5">
-                <div class="rounded-2xl border border-white/5 bg-black/20 p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                        <i class="fa fa-chart-line text-slate-500 text-xs"></i>
-                        <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Coverage</span>
-                    </div>
-                    <div class="flex items-end justify-between gap-3">
-                        <div class="text-2xl font-black tracking-tight text-white">{{ outcomeCoverage(snapshot.regime) | number: '1.0-0' }}%</div>
-                        <div class="text-right">
-                            <div class="text-[8px] font-black uppercase text-slate-500">Outcomes</div>
-                            <div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.regime.resolved_outcome_count | number }}/{{ snapshot.regime.required_outcome_count | number }}</div>
+                        <div class="mt-2 rounded-lg border border-white/5 bg-black/20 p-2">
+                            <div class="text-[8px] font-black uppercase text-slate-500">Model version</div>
+                            <div class="mt-1 text-[11px] font-bold text-slate-200 truncate" [title]="cortex.model_version">{{ cortex.model_version }}</div>
                         </div>
-                    </div>
-                    <div class="mt-2">
-                        <div class="mb-1 flex items-center justify-between text-[9px] text-slate-500">
-                            <span class="font-black uppercase">Outcomes</span>
-                            <span class="font-bold text-slate-300">{{ outcomeCoverage(snapshot.regime) | number: '1.0-0' }}%</span>
+                    } @else {
+                        <div class="flex flex-1 flex-col items-center justify-center p-6 text-slate-500 gap-2">
+                            <i class="fa fa-microchip text-xl opacity-20"></i>
+                            <span class="text-[10px] font-bold tracking-widest">no cortex inference</span>
                         </div>
-                        <div class="h-1.5 overflow-hidden rounded-full bg-slate-800">
-                            <div class="h-1.5 rounded-full bg-slate-300" [style.width.%]="outcomeCoverage(snapshot.regime)"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="rounded-2xl border border-white/5 bg-black/20 p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                        <i class="fa fa-wave-square text-slate-500 text-xs"></i>
-                        <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Chronicle gate floor</span>
-                    </div>
-                    <div class="flex items-end justify-between gap-3">
-                        <div class="text-2xl font-black tracking-tight" [ngClass]="(snapshot.regime.edge_chronicle_profit_factor ?? 0) >= (snapshot.regime.edge_chronicle_profit_factor_threshold ?? 0) ? 'text-slate-100' : 'text-red-300'">
-                            {{ snapshot.regime.edge_chronicle_profit_factor | number: '1.2-2' }}
-                        </div>
-                        <div class="text-right">
-                            <div class="text-[8px] font-black uppercase text-slate-500">Gate floor</div>
-                            <div class="mt-1 text-sm font-black text-slate-200">{{ snapshot.regime.edge_chronicle_profit_factor_threshold | number: '1.2-2' }}</div>
-                        </div>
-                    </div>
-                    <div class="mt-2">
-                        <div class="mb-1 flex items-center justify-between text-[9px] text-slate-500">
-                            <span class="font-black uppercase">Gate floor</span>
-                            <span class="font-bold text-slate-300">{{ thresholdCoverage(snapshot.regime.edge_chronicle_profit_factor, snapshot.regime.edge_chronicle_profit_factor_threshold) | number: '1.0-0' }}%</span>
-                        </div>
-                        <div class="h-1.5 overflow-hidden rounded-full bg-slate-800">
-                            <div class="h-1.5 rounded-full" [ngClass]="(snapshot.regime.edge_chronicle_profit_factor ?? 0) >= (snapshot.regime.edge_chronicle_profit_factor_threshold ?? 0) ? 'bg-slate-300' : 'bg-red-400'" [style.width.%]="thresholdCoverage(snapshot.regime.edge_chronicle_profit_factor, snapshot.regime.edge_chronicle_profit_factor_threshold)"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="rounded-2xl border border-white/5 bg-black/20 p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                        <i class="fa fa-bullseye text-slate-500 text-xs"></i>
-                        <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Sparse EV floor</span>
-                    </div>
-                    <div class="text-2xl font-black tracking-tight" [ngClass]="(snapshot.regime.edge_sparse_expected_value_usd ?? 0) >= (snapshot.regime.edge_sparse_expected_value_usd_threshold ?? 0) ? 'text-slate-100' : 'text-red-300'">
-                        {{ formatUsd(snapshot.regime.edge_sparse_expected_value_usd_threshold) }}
-                    </div>
-                    <div class="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-500">gate</div>
-                </div>
-
-                <div class="shadow-mini-card rounded-2xl border border-white/5 bg-black/20 p-3">
-                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                        <div>
-                            <div class="flex items-center gap-2 mb-2">
-                                <i class="fa fa-crosshairs text-slate-500 text-xs"></i>
-                                <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Signal quality</span>
-                            </div>
-                            <div class="grid grid-cols-3 gap-2">
-                                <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                    <div class="text-[8px] font-black uppercase text-slate-500">Meta avg pnl</div>
-                                    <div class="mt-1 text-sm font-black" [ngClass]="(snapshot.regime.metrics_meta_average_pnl ?? 0) > 0 ? 'text-slate-100' : (snapshot.regime.metrics_meta_average_pnl ?? 0) < 0 ? 'text-red-300' : 'text-slate-200'">{{ (snapshot.regime.metrics_meta_average_pnl ?? 0) > 0 ? '+' : '' }}{{ snapshot.regime.metrics_meta_average_pnl | number: '1.2-2' }}%</div>
-                                </div>
-                                <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                    <div class="text-[8px] font-black uppercase text-slate-500">Meta profit factor</div>
-                                    <div class="mt-1 text-sm font-black" [ngClass]="(snapshot.regime.metrics_meta_profit_factor ?? 0) >= 1 ? 'text-slate-100' : 'text-red-300'">
-                                        {{ snapshot.regime.metrics_meta_profit_factor | number: '1.2-2' }}
-                                    </div>
-                                </div>
-                                <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                    <div class="text-[8px] font-black uppercase text-slate-500">Win rate</div>
-                                    <div class="mt-1 text-sm font-black" [ngClass]="(snapshot.regime.metrics_meta_win_rate ?? 0) >= 0.5 ? 'text-slate-100' : 'text-red-300'">{{ (snapshot.regime.metrics_meta_win_rate ?? 0) * 100 | number: '1.1-1' }}%</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="xl:border-l xl:border-white/5 xl:pl-3">
-                            <div class="flex items-center gap-2 mb-2">
-                                <i class="fa fa-wave-square text-slate-500 text-xs"></i>
-                                <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Capital rhythm</span>
-                            </div>
-                            <div class="grid grid-cols-3 gap-2">
-                                <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                    <div class="text-[8px] font-black uppercase text-slate-500">Avg holding</div>
-                                    <div class="mt-1 text-sm font-black text-slate-100">{{ snapshot.regime.metrics_meta_average_holding_time_hours | number: '1.2-2' }}h</div>
-                                </div>
-                                <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                    <div class="text-[8px] font-black uppercase text-slate-500">Exp. PnL / h</div>
-                                    <div class="mt-1 text-sm font-black" [ngClass]="(snapshot.regime.metrics_meta_expected_pnl_velocity ?? 0) > 0 ? 'text-slate-100' : (snapshot.regime.metrics_meta_expected_pnl_velocity ?? 0) < 0 ? 'text-red-300' : 'text-slate-200'">
-                                        {{ snapshot.regime.metrics_meta_expected_pnl_velocity | number: '1.3-3' }}
-                                    </div>
-                                </div>
-                                <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                    <div class="text-[8px] font-black uppercase text-slate-500">Meta EV</div>
-                                    <div class="mt-1 text-sm font-black" [ngClass]="(snapshot.regime.metrics_meta_expected_value_usd ?? 0) >= 0 ? 'text-slate-100' : 'text-red-300'">
-                                        {{ formatUsd(snapshot.regime.metrics_meta_expected_value_usd) }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    }
                 </div>
             </div>
         </div>
 
         <div class="space-y-3">
-            <div class="shadow-section-header">
+            <div class="shadowing-section-header">
                 <div class="flex items-center gap-2 px-1">
                     <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
                         <i class="fa fa-chart-simple text-xs"></i>
                     </span>
                     <div class="leading-none">
-                        <div class="text-[10px] font-black uppercase text-slate-200">Shadow metrics</div>
+                        <div class="text-[10px] font-black uppercase text-slate-200">Shadowing metrics</div>
                         <div class="mt-1 text-[10px] text-slate-500">Evaluated buckets by category</div>
                     </div>
                 </div>

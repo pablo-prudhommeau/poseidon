@@ -496,8 +496,31 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     padding: 0 !important;
 }
 
+.trading-overview-label {
+    font-size: 9px;
+    color: rgb(100 116 139);
+    text-transform: uppercase;
+    font-weight: 900;
+    letter-spacing: 0.025em;
+}
+
+.trading-overview-subtitle {
+    font-size: 10px;
+    color: rgb(100 116 139);
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.025em;
+}
+
+.trading-overview-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+}
+
 .poseidon-tooltip {
-    --p-tooltip-background: rgba(18, 20, 23, 0.95);
+    --p-tooltip-background: rgba(18, 20, 23, 0.98);
     --p-tooltip-text-color: #e5e7eb;
 }
 
@@ -514,6 +537,15 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
         0 8px 10px -6px rgba(0, 0, 0, 0.5);
     max-width: 280px;
     text-align: center;
+}
+
+.poseidon-tooltip-roomy {
+    --p-tooltip-max-width: 550px;
+}
+
+.poseidon-tooltip-roomy .p-tooltip-text {
+    max-width: 550px;
+    text-align: left;
 }
 
 .shadow-chronicle-dialog .p-dialog-header-actions {

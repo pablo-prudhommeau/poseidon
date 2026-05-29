@@ -43,14 +43,6 @@ class TradingShadowingCache:
             self._last_successful_update_timestamp = get_current_local_datetime()
             logger.debug("[TRADING][CACHE] Shadowing snapshot and regime updated atomically")
         _touch_realm(CacheRealm.SHADOWING_SNAPSHOT)
-        _touch_realm(CacheRealm.SHADOWING_REGIME)
-
-    def update_trading_shadowing_regime_state(self, shadowing_regime_payload: TradingShadowingRegimePayload) -> None:
-        with self._lock:
-            self._cached_shadowing_regime = shadowing_regime_payload
-            self._last_successful_update_timestamp = get_current_local_datetime()
-            logger.debug("[TRADING][CACHE] Shadowing regime state updated")
-        _touch_realm(CacheRealm.SHADOWING_REGIME)
 
     def update_shadowing_verdict_chronicle(self, verdict_chronicle: TradingShadowingVerdictChroniclePayload) -> None:
         with self._lock:

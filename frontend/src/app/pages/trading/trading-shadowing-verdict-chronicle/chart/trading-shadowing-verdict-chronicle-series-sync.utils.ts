@@ -90,6 +90,7 @@ function synchronizeChronicleTapeBoundMetrics(model: ChronicleChartModel, arrays
         arrays.cortexGatePrecisionPercentageSeries,
         arrays.cortexGatePassRatePercentageSeries,
         arrays.expectedValuePerTradeUsdSeries,
+        arrays.portfolioEquityUsdSeries,
         arrays.profitFactorSeries,
         arrays.closedVerdictsPerHourSeries
     ];
@@ -104,6 +105,7 @@ function synchronizeChronicleTapeBoundMetrics(model: ChronicleChartModel, arrays
         arrays.movingAverageCortexGatePrecisionPercentageSeries,
         arrays.movingAverageCortexGatePassRatePercentageSeries,
         arrays.movingAverageExpectedValueSeries,
+        arrays.movingAveragePortfolioEquityUsdSeries,
         arrays.movingAverageProfitFactorSeries,
         arrays.movingAverageTradesPerHourSeries
     ];

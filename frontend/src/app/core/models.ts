@@ -1,6 +1,6 @@
 export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSING' | 'CLOSED' | 'STALED';
 export type PositionExitTriggerReason = 'TAKE_PROFIT_1' | 'TAKE_PROFIT_2' | 'STOP_LOSS';
-export type TradingShadowingPhase = 'DISABLED' | 'SYNCING' | 'SHADOWING' | 'CORTEXING' | 'TRADABLE';
+export type TradingShadowingPhase = 'DISABLED' | 'SYNCING' | 'SHADOWING' | 'CORTEXING' | 'BEAR' | 'TRADABLE';
 export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';
 export type TradeMode = 'LIVE' | 'PAPER';
@@ -208,6 +208,8 @@ export interface TradingShadowingRegimePayload {
     phase: TradingShadowingPhase;
     edge_gate_enabled: boolean;
     cortex_gate_enabled: boolean;
+    fundamentals_gate_enabled: boolean;
+    toxic_metrics_gate_enabled: boolean;
     resolved_outcome_count?: number | null;
     required_outcome_count?: number | null;
     elapsed_hours?: number | null;
@@ -299,9 +301,26 @@ export interface TradingEvaluationShadowingMetricEvaluationPayload {
     normalized_influence: number;
 }
 
+export interface TradingFilterVerdictPayload {
+    is_accepted: boolean;
+    rejection_reasons: string[];
+}
+
+export interface TradingCortexInferenceSnapshotPayload {
+    success_probability: number;
+    toxicity_probability: number;
+    expected_profit_and_loss_percentage: number;
+    predicted_holding_time_minutes: number;
+    final_trade_score: number;
+    model_version: string;
+    model_ready: boolean;
+    gate_verdict: TradingFilterVerdictPayload;
+}
+
 export interface TradingEvaluationShadowingSnapshotPayload {
     regime: TradingShadowingRegimePayload;
     metrics: TradingEvaluationShadowingMetricEvaluationPayload[];
+    cortex_inference?: TradingCortexInferenceSnapshotPayload | null;
 }
 
 export interface TradingEvaluationShadowingDiagnosticsPayload {
@@ -593,6 +612,7 @@ export interface TradingShadowingVerdictChronicleMetricPointPayload {
     average_pnl_percentage: number;
     average_win_rate_percentage: number;
     expected_value_per_trade_usd: number;
+    portfolio_equity_usd: number;
     closed_verdicts_per_hour: number;
     profit_factor: number;
     average_cortex_prediction_win_rate_percentage?: number | null;

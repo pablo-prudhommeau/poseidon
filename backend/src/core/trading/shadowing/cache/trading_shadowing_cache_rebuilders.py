@@ -4,12 +4,10 @@ from fastapi.encoders import jsonable_encoder
 
 from src.api.http.api_schemas import (
     TradingShadowingVerdictChroniclePayload,
-    TradingShadowingRegimePayload,
 )
 from src.api.websocket.websocket_manager import websocket_manager
 from src.api.websocket.websocket_structures import WebsocketMessageType
 from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_protocols import CacheRealmRebuildSkipped
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.cache.trading_cache_payload_builders import (
     build_shadowing_snapshot,
@@ -40,25 +38,7 @@ class _ShadowSnapshotRebuilder:
         trading_shadowing_cache.update_shadowing_snapshot(payload, shadowing_regime_payload)
 
     async def notify_websocket(self, payload: TradingShadowingSnapshot) -> None:
-        return
-
-
-class _ShadowingRegimeRebuilder:
-    realm = CacheRealm.SHADOWING_REGIME
-    ttl_seconds = 120.0
-
-    def rebuild(self) -> TradingShadowingRegimePayload:
-        shadow_snapshot = trading_shadowing_cache.get_shadowing_snapshot()
-        if shadow_snapshot is None:
-            raise CacheRealmRebuildSkipped("Shadowing regime cannot be rebuilt without shadow snapshot")
-        return build_shadowing_regime_payload(shadow_snapshot)
-
-    def apply_to_cache(self, payload: TradingShadowingRegimePayload) -> None:
-        shadowing_regime_payload = payload
-        trading_shadowing_cache.update_trading_shadowing_regime_state(shadowing_regime_payload)
-
-    async def notify_websocket(self, payload: TradingShadowingRegimePayload) -> None:
-        shadowing_regime_payload = payload
+        shadowing_regime_payload = build_shadowing_regime_payload(payload)
         await websocket_manager.broadcast_json_payload({
             "type": WebsocketMessageType.TRADING_SHADOWING_REGIME.value,
             "payload": jsonable_encoder(shadowing_regime_payload),
@@ -106,7 +86,7 @@ class _TradingShadowingVerdictChronicleRebuilder:
         #    delta_payload = build_trading_shadowing_verdict_chronicle_incremental_delta_payload(
         #        new_chronicle=self.__class__._new_chronicle,
         #        new_verdicts=self.__class__._new_verdicts,
-        #        previous_as_of_ms=self.__class__._previous_as_of_ms,
+        #        previous_as_of_timestamp_milliseconds=self.__class__._previous_as_of_timestamp_milliseconds,
         #        generated_at_iso=response.generated_at_iso,
         #        as_of_iso=response.as_of_iso,
         #        from_iso=response.from_iso,
@@ -123,6 +103,5 @@ class _TradingShadowingVerdictChronicleRebuilder:
 
 def register_trading_shadowing_rebuilders() -> None:
     cache_invalidator.register(_ShadowSnapshotRebuilder())
-    cache_invalidator.register(_ShadowingRegimeRebuilder())
     cache_invalidator.register(_TradingShadowingVerdictChronicleRebuilder())
     logger.info("[TRADING][SHADOWING][CACHE][REBUILDERS] %d trading rebuilders registered", len(cache_invalidator._rebuilders))

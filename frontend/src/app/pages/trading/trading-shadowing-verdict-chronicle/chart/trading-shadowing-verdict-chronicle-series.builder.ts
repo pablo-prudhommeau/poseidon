@@ -8,7 +8,7 @@ import type {
     ChronicleVerdictBubblePointMetadata,
     SciChartModule
 } from '../data/trading-shadowing-verdict-chronicle.models';
-import { CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
+import { CHRONICLE_DEFAULT_VISIBLE_SERIES, CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
 import { CHRONICLE_SERIES } from '../data/trading-shadowing-verdict-chronicle-series-names';
 import { buildChronicleCursorTooltipSvg } from '../data/trading-shadowing-verdict-chronicle-tooltip.formatter';
 import {
@@ -104,6 +104,15 @@ function applyUniformColumnWidthForTimeBuckets(
     const bucketMilliseconds = Math.max(1000, granularitySeconds * 1000);
     columnSeries.dataPointWidthMode = sci.EDataPointWidthMode.Range;
     columnSeries.dataPointWidth = bucketMilliseconds * 0.88;
+}
+
+function isChronicleSeriesVisibleByDefault(seriesName: string): boolean {
+    return CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(seriesName);
+}
+
+function applyChronicleSeriesDefaultVisibility(series: { seriesName?: string; isVisible?: boolean }): void {
+    const seriesName = (series.seriesName ?? '').trim();
+    series.isVisible = isChronicleSeriesVisibleByDefault(seriesName);
 }
 
 function buildVerdictCloudPointMetadata(point: ChronicleCartesianPoint): ChronicleVerdictBubblePointMetadata {
@@ -217,13 +226,21 @@ export function buildChronicleSeriesBundle(
 
     const expectedValueThreshold = resolveFiniteThreshold(meta.sparseExpectedValueUsdThreshold);
     const profitFactorThreshold = resolveFiniteThreshold(meta.chronicleProfitFactorThreshold);
+    const expectedValueGateThresholdVisibleByDefault = isChronicleSeriesVisibleByDefault(CHRONICLE_SERIES.evGateThreshold);
+    const profitFactorGateThresholdVisibleByDefault = isChronicleSeriesVisibleByDefault(CHRONICLE_SERIES.pfGateThreshold);
+    const cortexCalibrationBandVisibleByDefault = isChronicleSeriesVisibleByDefault(CHRONICLE_SERIES.cortexCalibrationBand);
 
     const regimeEvGateSubmergedBandSegments = buildRegimeEvGateSubmergedBandSegmentsFromArrays(
         chronicleArrays.metricTimestampsMilliseconds,
         chronicleArrays,
         expectedValueThreshold
     );
-    const regimeEvGateSubmergedBandSegmentBundles = buildRegimeEvGateSubmergedBandSegmentBundles(sci, wasmContext, regimeEvGateSubmergedBandSegments, true);
+    const regimeEvGateSubmergedBandSegmentBundles = buildRegimeEvGateSubmergedBandSegmentBundles(
+        sci,
+        wasmContext,
+        regimeEvGateSubmergedBandSegments,
+        expectedValueGateThresholdVisibleByDefault
+    );
 
     const goldenZoneExpectedValueBandDataSeries = new XyDataSeries(wasmContext, {
         xValues: chronicleArrays.metricTimestampsMilliseconds,
@@ -255,7 +272,12 @@ export function buildChronicleSeriesBundle(
         chronicleArrays,
         profitFactorThreshold
     );
-    const regimePfGateSubmergedBandSegmentBundles = buildRegimePfGateSubmergedBandSegmentBundles(sci, wasmContext, regimePfGateSubmergedBandSegments, true);
+    const regimePfGateSubmergedBandSegmentBundles = buildRegimePfGateSubmergedBandSegmentBundles(
+        sci,
+        wasmContext,
+        regimePfGateSubmergedBandSegments,
+        profitFactorGateThresholdVisibleByDefault
+    );
 
     const goldenZoneProfitFactorBandDataSeries = new XyDataSeries(wasmContext, {
         xValues: chronicleArrays.metricTimestampsMilliseconds,
@@ -420,6 +442,18 @@ export function buildChronicleSeriesBundle(
     );
     expectedValueLineSeries.isVisible = false;
 
+    const portfolioEquityLineSeries = createSplineMetricLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.portfolioEquityUsdSeries,
+        CHRONICLE_SERIES.portfolioEquityLine,
+        CHRONICLE_METRIC_COLORS.portfolioEquity,
+        'yEquity',
+        new GlowEffect(wasmContext, { intensity: 0.46, range: 2 })
+    );
+    portfolioEquityLineSeries.isVisible = false;
+
     const profitFactorLineSeries = createSplineMetricLine(
         sci,
         wasmContext,
@@ -550,6 +584,16 @@ export function buildChronicleSeriesBundle(
     );
 
     movingAverageExpectedValueLineSeries.opacity = 1;
+    const movingAveragePortfolioEquityLineSeries = createSplineMovingAverageLine(
+        sci,
+        wasmContext,
+        chronicleArrays.metricTimestampsMilliseconds,
+        chronicleArrays.movingAveragePortfolioEquityUsdSeries,
+        CHRONICLE_SERIES.smaPortfolioEquityLine,
+        CHRONICLE_METRIC_COLORS.smaPortfolioEquity,
+        'yEquity'
+    );
+    movingAveragePortfolioEquityLineSeries.opacity = 1;
     const movingAverageProfitFactorLineSeries = createSplineMovingAverageLine(
         sci,
         wasmContext,
@@ -577,7 +621,12 @@ export function buildChronicleSeriesBundle(
         chronicleArrays.averageWinRatePercentageSeries,
         chronicleArrays.averageCortexPredictionWinRatePercentageSeries
     );
-    const cortexCalibrationBandSegmentBundles = buildCortexCalibrationBandSegmentBundles(sci, wasmContext, cortexCalibrationBandSegments);
+    const cortexCalibrationBandSegmentBundles = buildCortexCalibrationBandSegmentBundles(
+        sci,
+        wasmContext,
+        cortexCalibrationBandSegments,
+        cortexCalibrationBandVisibleByDefault
+    );
 
     const verdictCloudMarkerSize = 7;
     const profitableVerdictXyDataSeries = new XyDataSeries(wasmContext, {
@@ -631,7 +680,7 @@ export function buildChronicleSeriesBundle(
         effect: new GlowEffect(wasmContext, { intensity: 0.55, range: 2 })
     });
 
-    sciChartSurface.renderableSeries.add(
+    const renderableSeriesWithDefaultVisibility: Array<{ seriesName?: string; isVisible?: boolean }> = [
         volumeColumnRenderableSeries,
         averagePnlLineSeries,
         averageWinRateLineSeries,
@@ -643,6 +692,7 @@ export function buildChronicleSeriesBundle(
         cortexGatePrecisionLineSeries,
         cortexGatePassRateLineSeries,
         expectedValueLineSeries,
+        portfolioEquityLineSeries,
         profitFactorLineSeries,
         tradesPerHourLineSeries,
         movingAveragePnlLineSeries,
@@ -655,6 +705,44 @@ export function buildChronicleSeriesBundle(
         movingAverageCortexGatePrecisionLineSeries,
         movingAverageCortexGatePassRateLineSeries,
         movingAverageExpectedValueLineSeries,
+        movingAveragePortfolioEquityLineSeries,
+        movingAverageProfitFactorLineSeries,
+        movingAverageTradesPerHourLineSeries,
+        goldenZoneExpectedValueBandSeries,
+        goldenZoneProfitFactorBandSeries,
+        profitableVerdictBubbleSeries,
+        lossVerdictBubbleSeries
+    ];
+    for (const series of renderableSeriesWithDefaultVisibility) {
+        applyChronicleSeriesDefaultVisibility(series);
+    }
+
+    sciChartSurface.renderableSeries.add(
+        volumeColumnRenderableSeries,
+        averagePnlLineSeries,
+        averageWinRateLineSeries,
+        averageCortexPredictionWinRateLineSeries,
+        cortexSkillScoreLineSeries,
+        cortexCalibrationGapLineSeries,
+        cortexHighConvictionAccuracyLineSeries,
+        cortexHighConvictionShareLineSeries,
+        cortexGatePrecisionLineSeries,
+        cortexGatePassRateLineSeries,
+        expectedValueLineSeries,
+        portfolioEquityLineSeries,
+        profitFactorLineSeries,
+        tradesPerHourLineSeries,
+        movingAveragePnlLineSeries,
+        movingAverageWinRateLineSeries,
+        movingAverageCortexPredictionWinRateLineSeries,
+        movingAverageCortexSkillScoreLineSeries,
+        movingAverageCortexCalibrationGapLineSeries,
+        movingAverageCortexHighConvictionAccuracyLineSeries,
+        movingAverageCortexHighConvictionShareLineSeries,
+        movingAverageCortexGatePrecisionLineSeries,
+        movingAverageCortexGatePassRateLineSeries,
+        movingAverageExpectedValueLineSeries,
+        movingAveragePortfolioEquityLineSeries,
         ...regimeEvGateSubmergedBandSegmentBundles.map((bundle) => bundle.series),
         goldenZoneExpectedValueBandSeries,
         movingAverageProfitFactorLineSeries,
@@ -680,6 +768,7 @@ export function buildChronicleSeriesBundle(
         cortexGatePrecisionLineSeries,
         cortexGatePassRateLineSeries,
         expectedValueLineSeries,
+        portfolioEquityLineSeries,
         profitFactorLineSeries,
         tradesPerHourLineSeries,
         movingAveragePnlLineSeries,
@@ -692,6 +781,7 @@ export function buildChronicleSeriesBundle(
         movingAverageCortexGatePrecisionLineSeries,
         movingAverageCortexGatePassRateLineSeries,
         movingAverageExpectedValueLineSeries,
+        movingAveragePortfolioEquityLineSeries,
         movingAverageProfitFactorLineSeries,
         movingAverageTradesPerHourLineSeries
     ]) {
@@ -745,6 +835,7 @@ export function buildChronicleSeriesBundle(
             cortexGatePrecisionLineSeries,
             cortexGatePassRateLineSeries,
             expectedValueLineSeries,
+            portfolioEquityLineSeries,
             profitFactorLineSeries,
             tradesPerHourLineSeries
         ],
@@ -759,6 +850,7 @@ export function buildChronicleSeriesBundle(
             movingAverageCortexGatePrecisionLineSeries,
             movingAverageCortexGatePassRateLineSeries,
             movingAverageExpectedValueLineSeries,
+            movingAveragePortfolioEquityLineSeries,
             movingAverageProfitFactorLineSeries,
             movingAverageTradesPerHourLineSeries
         ],

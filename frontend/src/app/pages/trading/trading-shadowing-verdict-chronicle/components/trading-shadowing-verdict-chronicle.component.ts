@@ -24,7 +24,8 @@ interface ChronicleSmaWindowOption {
     value: number;
 }
 
-const CHRONICLE_CORTEX_METRIC_SERIES_NAMES = new Set<string>([
+const CHRONICLE_CORTEX_METRIC_SERIES_NAMES: string[] = [
+    CHRONICLE_SERIES.cortexModelRolloutMarker,
     CHRONICLE_SERIES.cortexCalibrationBand,
     CHRONICLE_SERIES.averageCortexPredictionWinRateLine,
     CHRONICLE_SERIES.cortexSkillScoreLine,
@@ -40,7 +41,7 @@ const CHRONICLE_CORTEX_METRIC_SERIES_NAMES = new Set<string>([
     CHRONICLE_SERIES.smaCortexHighConvictionShareLine,
     CHRONICLE_SERIES.smaCortexGatePrecisionLine,
     CHRONICLE_SERIES.smaCortexGatePassRateLine
-]);
+];
 
 @Component({
     standalone: true,
@@ -89,13 +90,13 @@ export class TradingShadowingVerdictChronicleComponent {
         { label: '30d · 30m', value: 'last_30d_30m' satisfies ChronicleBucketLabel }
     ];
     readonly chartReady = signal<boolean>(false);
-    readonly cortexMetricsAvailable = computed<boolean>(() => this.legendItems().some((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name)));
+    readonly cortexMetricsAvailable = computed<boolean>(() => this.legendItems().some((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name)));
     readonly cortexMetricsChecked = computed<boolean>(() => {
-        const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name));
+        const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name));
         return cortexItems.length > 0 && cortexItems.every((item) => item.visible);
     });
     readonly cortexMetricsMixed = computed<boolean>(() => {
-        const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name));
+        const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name));
         return cortexItems.some((item) => item.visible) && !cortexItems.every((item) => item.visible);
     });
     readonly error = signal<string | null>(null);
@@ -184,7 +185,7 @@ export class TradingShadowingVerdictChronicleComponent {
 
     onCortexMetricsToggle(nextVisible: boolean): void {
         for (const item of this.legendItems()) {
-            if (CHRONICLE_CORTEX_METRIC_SERIES_NAMES.has(item.name)) {
+            if (CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name)) {
                 this.surfaceCoordinator.setSeriesVisibility(item.name, nextVisible);
             }
         }
