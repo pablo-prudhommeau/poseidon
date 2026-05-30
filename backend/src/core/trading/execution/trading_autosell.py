@@ -80,9 +80,11 @@ def _execute_sell_operation(
             return None
 
         if chain_enum == BlockchainNetwork.SOLANA:
-            from src.integrations.blockchain.solana.solana_rpc_client import get_spl_token_decimals
+            from src.integrations.blockchain.solana.solana_rpc_client import (
+                fetch_spl_token_balance_for_wallet_and_mint,
+                get_spl_token_decimals,
+            )
             from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
-            from src.integrations.blockchain.blockchain_free_cash_service import _fetch_solana_stablecoin_balance
             from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
 
             rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA)
@@ -96,7 +98,14 @@ def _execute_sell_operation(
 
             try:
                 wallet_address = build_default_solana_signer().address
-                actual_balance = _fetch_solana_stablecoin_balance(rpc_url, wallet_address, position.token_address)
+                token_account_balance_raw = fetch_spl_token_balance_for_wallet_and_mint(
+                    rpc_url,
+                    wallet_address,
+                    position.token_address,
+                )
+                if token_account_balance_raw is None:
+                    raise ValueError("Missing SPL token account balance")
+                actual_balance = float(token_account_balance_raw) / float(10 ** decimals)
                 if actual_balance < sell_quantity:
                     logger.warning("[TRADING][AUTOSELL][LIVE] Actual balance (%.6f) is less than theoretical (%.6f). Capping sell quantity.", actual_balance, sell_quantity)
                     sell_quantity = actual_balance

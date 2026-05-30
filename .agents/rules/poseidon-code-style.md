@@ -24,6 +24,7 @@ Pour chaque portion de code générée, je souhaiterais que tu te mettes dans un
 * N'affecte pas de manière hasardeuse des valeurs par défaut `0`, `""`, utilise proprement `Optional` ou throw des exceptions
 * L'ensemble des dates gérées dans l'application doivent utiliser la timezone locale système (et non UTC).
 * Lorsque tu `except` une exception, tu dois utiliser logger.exception pour pouvoir afficher la stacktrace
+* Place les imports (`import`, `from ... import ...`) en tête de fichier, regroupés selon les conventions du projet. N'utilise un import local à l'intérieur d'une fonction ou d'une méthode que lorsqu'il est indispensable pour éviter une dépendance circulaire avérée — jamais par convenance ou par habitude.
 
 ## Organisation du code
 * Tu dois respecter une organisation et des nommages comme suit : \<NOM_MODULE\>\[\_\<NOM_SOUS_MODULE\>\]\_\[\<TYPE\>\].py où :

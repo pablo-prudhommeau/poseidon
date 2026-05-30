@@ -59,7 +59,11 @@ def invalidate_rpc_cache_for_chain(chain: BlockchainNetwork) -> None:
     if removed_url:
         _blacklisted_rpc_urls[removed_url] = time.time()
     if removed_url or removed_provider:
-        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Invalidated cached RPC for %s (was %s) and temporarily blacklisted", chain.value, removed_url)
+        logger.debug(
+            "[BLOCKCHAIN][RPC][REGISTRY] RPC cache invalidated — blockchain_network=%s previous_rpc_url=%s",
+            chain.value,
+            removed_url,
+        )
 
 
 _PREMIUM_RPC_SETTING_NAME_BY_CHAIN: dict[BlockchainNetwork, str] = {
@@ -168,40 +172,83 @@ def resolve_rpc_url_for_chain(chain: BlockchainNetwork) -> str:
 
     free_endpoints = FREE_RPC_ENDPOINTS.get(chain, [])
     is_solana = (chain == BlockchainNetwork.SOLANA)
+    failed_free_endpoint_count = 0
 
     for free_rpc_url in free_endpoints:
         if _is_rpc_url_blacklisted(free_rpc_url):
-            logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Skipping blacklisted free RPC for %s at %s", chain.value, free_rpc_url)
+            logger.debug(
+                "[BLOCKCHAIN][RPC][REGISTRY] Skipping blacklisted free RPC — blockchain_network=%s rpc_url=%s",
+                chain.value,
+                free_rpc_url,
+            )
             continue
 
-        logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Testing free RPC for %s at %s", chain.value, free_rpc_url)
+        logger.debug(
+            "[BLOCKCHAIN][RPC][REGISTRY] Testing free RPC endpoint — blockchain_network=%s rpc_url=%s",
+            chain.value,
+            free_rpc_url,
+        )
         connectivity_test_passed = (
             _test_solana_rpc_connectivity(free_rpc_url) if is_solana
             else _test_evm_rpc_connectivity(free_rpc_url)
         )
         if connectivity_test_passed:
-            logger.info("[BLOCKCHAIN][RPC][REGISTRY] Connected to free RPC for %s at %s", chain.value, free_rpc_url)
+            logger.info(
+                "[BLOCKCHAIN][RPC][REGISTRY] Connected to free RPC endpoint — blockchain_network=%s rpc_url=%s",
+                chain.value,
+                free_rpc_url,
+            )
             _resolved_rpc_url_cache[chain] = free_rpc_url
             return free_rpc_url
-        logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Free RPC unreachable for %s at %s", chain.value, free_rpc_url)
+        failed_free_endpoint_count += 1
+        logger.debug(
+            "[BLOCKCHAIN][RPC][REGISTRY] Free RPC endpoint unreachable — blockchain_network=%s rpc_url=%s",
+            chain.value,
+            free_rpc_url,
+        )
+
+    if failed_free_endpoint_count > 0:
+        logger.warning(
+            "[BLOCKCHAIN][RPC][REGISTRY] All tested free RPC endpoints unreachable — "
+            "blockchain_network=%s tested_endpoint_count=%d",
+            chain.value,
+            failed_free_endpoint_count,
+        )
 
     premium_rpc_url = _get_premium_rpc_url(chain)
     if premium_rpc_url:
         if _is_rpc_url_blacklisted(premium_rpc_url):
-            logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Skipping blacklisted premium RPC for %s", chain.value)
+            logger.debug(
+                "[BLOCKCHAIN][RPC][REGISTRY] Skipping blacklisted premium RPC endpoint — blockchain_network=%s",
+                chain.value,
+            )
         else:
-            logger.debug("[BLOCKCHAIN][RPC][REGISTRY] Testing premium RPC for %s at %s", chain.value, premium_rpc_url)
+            logger.debug(
+                "[BLOCKCHAIN][RPC][REGISTRY] Testing premium RPC endpoint — blockchain_network=%s rpc_url=%s",
+                chain.value,
+                premium_rpc_url,
+            )
             connectivity_test_passed = (
                 _test_solana_rpc_connectivity(premium_rpc_url) if is_solana
                 else _test_evm_rpc_connectivity(premium_rpc_url)
             )
             if connectivity_test_passed:
-                logger.info("[BLOCKCHAIN][RPC][REGISTRY] Connected to premium RPC for %s", chain.value)
+                logger.info(
+                    "[BLOCKCHAIN][RPC][REGISTRY] Connected to premium RPC endpoint — "
+                    "blockchain_network=%s",
+                    chain.value,
+                )
                 _resolved_rpc_url_cache[chain] = premium_rpc_url
                 return premium_rpc_url
-            logger.warning("[BLOCKCHAIN][RPC][REGISTRY] Premium RPC also unreachable for %s", chain.value)
+            logger.warning(
+                "[BLOCKCHAIN][RPC][REGISTRY] Premium RPC endpoint unreachable — blockchain_network=%s",
+                chain.value,
+            )
     else:
-        logger.debug("[BLOCKCHAIN][RPC][REGISTRY] No premium RPC configured for chain %s", chain.value)
+        logger.debug(
+            "[BLOCKCHAIN][RPC][REGISTRY] No premium RPC configured — blockchain_network=%s",
+            chain.value,
+        )
 
     raise ConnectionError(f"[BLOCKCHAIN][RPC][REGISTRY] No reachable RPC endpoint found for chain {chain.value}")
 

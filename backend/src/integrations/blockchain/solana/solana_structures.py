@@ -19,6 +19,15 @@ class SolanaPoolPriceResult(BaseModel):
     dex_identifier: str
 
 
+class SolanaWalletTokenAccountSnapshot(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    token_account_address: str
+    token_mint_address: str
+    balance_raw: int
+    owner_program_id: str
+
+
 SOLANA_WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112"
 
 SOLANA_KNOWN_STABLECOIN_MINTS: set[str] = {
@@ -39,3 +48,6 @@ SOLANA_PUMPFUN_TOKEN_DECIMALS = 6
 SOLANA_SPL_TOKEN_BALANCE_OFFSET = 64
 SOLANA_SPL_TOKEN_MINT_OFFSET = 0
 SOLANA_SPL_TOKEN_DECIMALS_OFFSET = 44
+SOLANA_SPL_TOKEN_ACCOUNT_DATA_LENGTH = 165
+SOLANA_SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+SOLANA_TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"

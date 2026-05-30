@@ -48,7 +48,11 @@ class SolanaSigner:
         self.keypair = Keypair.from_seed(raw_private_key)
         self._rpc_url = configuration.rpc_url
 
-        logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Initialized signer. Address=%s", self.keypair.pubkey())
+        logger.info(
+            "[BLOCKCHAIN][SOLANA][SIGNER] Signer initialized — blockchain_network=%s wallet_address=%s",
+            BlockchainNetwork.SOLANA.value,
+            self.keypair.pubkey(),
+        )
 
     @property
     def address(self) -> str:
@@ -206,7 +210,7 @@ class SolanaSigner:
                 pass
             return None
         except Exception as exception:
-            logger.exception("[BLOCKCHAIN][SOLANA][SIGNER] is_blockhash_valid failed — %s", exception)
+            logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Blockhash validity check failed — error=%s", exception)
             return None
 
     def _sign_versioned_bytes(self, raw_bytes: bytes) -> bytes:
@@ -225,7 +229,10 @@ class SolanaSigner:
             return signed_bytes
         except Exception as exception_constructor_keypair:
             constructor_keypair_exception = exception_constructor_keypair
-            logger.exception("[BLOCKCHAIN][SOLANA][SIGNER] constructor(keypairs) path failed: %s", exception_constructor_keypair)
+            logger.debug(
+                "[BLOCKCHAIN][SOLANA][SIGNER] Signing path failed — signing_path=constructor_keypairs error=%s",
+                exception_constructor_keypair,
+            )
 
         try:
             manual_signature: Signature = self.keypair.sign_message(bytes(message))
@@ -244,7 +251,12 @@ class SolanaSigner:
         if len(raw_bytes) == 0:
             raise ValueError("Raw transaction payload is empty")
 
-        logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Preparing to sign+broadcast serialized transaction (bytes=%d)", len(raw_bytes))
+        logger.debug(
+            "[BLOCKCHAIN][SOLANA][SIGNER] Preparing transaction signing and broadcast — "
+            "blockchain_network=%s transaction_payload_bytes=%d",
+            BlockchainNetwork.SOLANA.value,
+            len(raw_bytes),
+        )
 
         try:
             parsed = VersionedTransaction.from_bytes(raw_bytes)
@@ -256,9 +268,15 @@ class SolanaSigner:
                     f"({blockhash_text}). Rebuild the LI.FI transaction and retry."
                 )
             if valid is True:
-                logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Recent blockhash is valid: %s", blockhash_text)
+                logger.debug(
+                    "[BLOCKCHAIN][SOLANA][SIGNER] Recent blockhash validated — recent_blockhash=%s",
+                    blockhash_text,
+                )
         except Exception as exception_check:
-            logger.exception("[BLOCKCHAIN][SOLANA][SIGNER] Pre-send blockhash check skipped (%s)", exception_check)
+            logger.debug(
+                "[BLOCKCHAIN][SOLANA][SIGNER] Pre-send blockhash check skipped — reason=%s",
+                exception_check,
+            )
 
         signed_payload = self._sign_versioned_bytes(raw_bytes)
 
@@ -267,7 +285,12 @@ class SolanaSigner:
             opts=TxOpts(skip_preflight=True, max_retries=5, preflight_commitment="processed"),
         )
         signature = self._extract_signature(response)
-        logger.info("[BLOCKCHAIN][SOLANA][SIGNER] Broadcasted signature %s", signature)
+        logger.info(
+            "[BLOCKCHAIN][SOLANA][SIGNER] Transaction broadcasted — "
+            "blockchain_network=%s transaction_signature=%s",
+            BlockchainNetwork.SOLANA.value,
+            signature,
+        )
         return signature
 
     def confirm_transaction(self, signature_str: str, timeout_seconds: int = 45) -> bool:
@@ -288,7 +311,12 @@ class SolanaSigner:
                     if statuses and len(statuses) > 0 and statuses[0] is not None:
                         status = statuses[0]
                         if hasattr(status, "err") and status.err is not None:
-                            logger.error("[BLOCKCHAIN][SOLANA][SIGNER] Transaction %s failed with error: %s", signature_str, status.err)
+                            logger.error(
+                                "[BLOCKCHAIN][SOLANA][SIGNER] Transaction confirmation failed — "
+                                "transaction_signature=%s error=%s",
+                                signature_str,
+                                status.err,
+                            )
                             return False
 
                         if hasattr(status, "confirmation_status"):
@@ -296,12 +324,39 @@ class SolanaSigner:
                             if "confirmed" in conf_status.lower() or "finalized" in conf_status.lower():
                                 return True
             except Exception as exception:
-                logger.debug("[BLOCKCHAIN][SOLANA][SIGNER] Error checking status: %s", exception)
+                logger.debug(
+                    "[BLOCKCHAIN][SOLANA][SIGNER] Error while checking transaction confirmation status — "
+                    "transaction_signature=%s error=%s",
+                    signature_str,
+                    exception,
+                )
 
             time.sleep(2.0)
 
-        logger.warning("[BLOCKCHAIN][SOLANA][SIGNER] Transaction %s confirmation timed out after %d seconds", signature_str, timeout_seconds)
+        logger.warning(
+            "[BLOCKCHAIN][SOLANA][SIGNER] Transaction confirmation timed out — "
+            "transaction_signature=%s timeout_seconds=%d",
+            signature_str,
+            timeout_seconds,
+        )
         return False
+
+    def broadcast_presigned_transaction(self, signed_raw_bytes: bytes) -> str:
+        if len(signed_raw_bytes) == 0:
+            raise ValueError("Signed transaction payload is empty")
+
+        response = self.client.send_raw_transaction(
+            signed_raw_bytes,
+            opts=TxOpts(skip_preflight=True, max_retries=5, preflight_commitment="processed"),
+        )
+        signature = self._extract_signature(response)
+        logger.info(
+            "[BLOCKCHAIN][SOLANA][SIGNER] Presigned transaction broadcasted — "
+            "blockchain_network=%s transaction_signature=%s",
+            BlockchainNetwork.SOLANA.value,
+            signature,
+        )
+        return signature
 
 
 def build_default_solana_signer() -> SolanaSigner:

@@ -24,6 +24,7 @@ export interface AppStatus {
     position_guard_interval_seconds: number;
     shadowing_enabled: boolean;
     aave_sentinel_enabled: boolean;
+    trading_wallet_maintenance_enabled: boolean;
 }
 
 export interface AppStatusResponse {
