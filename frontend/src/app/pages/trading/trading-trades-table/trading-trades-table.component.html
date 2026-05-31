@@ -2,10 +2,10 @@
 
 <ng-template #actionsTemplate let-row="row">
     <div class="flex items-center justify-center gap-1.5 h-full">
-        <button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400" title="View details" (click)="openDetails(row)">
+        <button class="poseidon-grid-action-btn poseidon-grid-action-btn--details" title="View details" (click)="openDetails(row)">
             <i class="fas fa-expand"></i>
         </button>
-        <a [href]="dexUrlForPair(row)" target="_blank" rel="noopener" class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400" title="Open on DexScreener">
+        <a [href]="dexUrlForPair(row)" target="_blank" rel="noopener" class="poseidon-grid-action-btn poseidon-grid-action-btn--dex" title="Open on DexScreener">
             <i class="fas fa-arrow-up-right-from-square"></i>
         </a>
     </div>

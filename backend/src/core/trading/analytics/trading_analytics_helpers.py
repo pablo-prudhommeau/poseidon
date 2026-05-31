@@ -5,7 +5,7 @@ from src.core.trading.analytics.trading_analytics_structures import (
     AnalyticsOutcomeRecord,
     AnalyticsResolvedTradeOutcome,
 )
-from src.persistence.models import TradingEvaluation, TradingOutcome, TradingShadowingProbe, TradingShadowingVerdict
+from src.persistence.models import TradingEvaluation, TradingPosition, TradingShadowingProbe, TradingShadowingVerdict
 
 FRACTIONS = [0.0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95, 0.97, 0.98, 0.99, 0.995, 0.999, 1.0]
 MINIMUM_POINTS_PER_BUCKET = 30
@@ -117,12 +117,37 @@ def build_market_snapshot_from_shadowing_probe(probe: TradingShadowingProbe) -> 
     )
 
 
-def aggregate_evaluation_outcomes(evaluation: TradingEvaluation) -> TradingOutcome | None:
+def build_exit_reason_by_evaluation_id(positions: list[TradingPosition]) -> dict[int, str]:
+    latest_position_by_evaluation_id: dict[int, TradingPosition] = {}
+    for position in positions:
+        existing = latest_position_by_evaluation_id.get(position.evaluation_id)
+        if existing is None or position.id > existing.id:
+            latest_position_by_evaluation_id[position.evaluation_id] = position
+
+    return {
+        evaluation_id: position.exit_reason
+        for evaluation_id, position in latest_position_by_evaluation_id.items()
+        if position.exit_reason
+    }
+
+
+def aggregate_evaluation_outcomes(
+        evaluation: TradingEvaluation,
+        exit_reason: str = "",
+) -> AnalyticsResolvedTradeOutcome | None:
     if not evaluation.outcomes:
         return None
 
     if len(evaluation.outcomes) == 1:
-        return evaluation.outcomes[0]
+        outcome = evaluation.outcomes[0]
+        return AnalyticsResolvedTradeOutcome(
+            realized_profit_and_loss_usd=outcome.realized_profit_and_loss_usd,
+            realized_profit_and_loss_percentage=outcome.realized_profit_and_loss_percentage,
+            holding_duration_minutes=outcome.holding_duration_minutes,
+            is_profitable=outcome.is_profitable,
+            exit_reason=exit_reason,
+            occurred_at=outcome.occurred_at,
+        )
 
     total_profit_and_loss_usd = sum(outcome.realized_profit_and_loss_usd for outcome in evaluation.outcomes)
     average_holding_duration_minutes = sum(outcome.holding_duration_minutes for outcome in evaluation.outcomes) / len(evaluation.outcomes)
@@ -136,24 +161,13 @@ def aggregate_evaluation_outcomes(evaluation: TradingEvaluation) -> TradingOutco
 
     last_outcome = evaluation.outcomes[-1]
 
-    return TradingOutcome(
+    return AnalyticsResolvedTradeOutcome(
         realized_profit_and_loss_usd=total_profit_and_loss_usd,
         realized_profit_and_loss_percentage=total_profit_and_loss_percentage,
         holding_duration_minutes=average_holding_duration_minutes,
         is_profitable=is_profitable,
-        exit_reason=last_outcome.exit_reason,
+        exit_reason=exit_reason,
         occurred_at=last_outcome.occurred_at,
-    )
-
-
-def build_resolved_outcome_from_trading_outcome(outcome: TradingOutcome) -> AnalyticsResolvedTradeOutcome:
-    return AnalyticsResolvedTradeOutcome(
-        realized_profit_and_loss_usd=outcome.realized_profit_and_loss_usd,
-        realized_profit_and_loss_percentage=outcome.realized_profit_and_loss_percentage,
-        holding_duration_minutes=outcome.holding_duration_minutes,
-        is_profitable=outcome.is_profitable,
-        exit_reason=outcome.exit_reason,
-        occurred_at=outcome.occurred_at,
     )
 
 
@@ -185,14 +199,12 @@ def build_resolved_outcome_from_shadowing_verdict(verdict: TradingShadowingVerdi
     )
 
 
-def map_trading_evaluation(evaluation: TradingEvaluation) -> AnalyticsOutcomeRecord:
+def map_trading_evaluation(
+        evaluation: TradingEvaluation,
+        exit_reason: str = "",
+) -> AnalyticsOutcomeRecord:
     market_snapshot = build_market_snapshot_from_evaluation(evaluation)
-    aggregated_outcome = aggregate_evaluation_outcomes(evaluation)
-    resolved_outcome = (
-        build_resolved_outcome_from_trading_outcome(aggregated_outcome)
-        if aggregated_outcome is not None
-        else None
-    )
+    resolved_outcome = aggregate_evaluation_outcomes(evaluation, exit_reason=exit_reason)
     return AnalyticsOutcomeRecord(
         market_snapshot=market_snapshot,
         resolved_outcome=resolved_outcome,

@@ -249,17 +249,6 @@
     font-weight: 800;
 }
 
-.poseidon-grid-pill--closing {
-    background: linear-gradient(90deg, #0f172a, #ffffff, #0f172a);
-    background-size: 200% 100%;
-    color: #ffffff !important;
-    border-color: rgba(255, 255, 255, 0.6) !important;
-    animation: poseidonPillShimmer 1.2s infinite linear;
-    text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
-    box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.1em;
-}
-
 .poseidon-grid-pill--closing-positive {
     background: linear-gradient(90deg, #0d9488, #5eead4, #0d9488);
     background-size: 200% 100%;
@@ -298,6 +287,66 @@
 .poseidon-grid-pill--sell {
     background-color: #4f46e5;
     border-color: rgba(79, 70, 229, 0.55);
+}
+
+.poseidon-grid-action-btn {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.poseidon-grid-action-btn--details {
+    border-color: rgba(168, 85, 247, 0.22);
+    background: rgba(168, 85, 247, 0.1);
+    color: rgb(192 132 252);
+}
+
+.poseidon-grid-action-btn--details:hover {
+    border-color: rgba(168, 85, 247, 0.38);
+    background: rgba(168, 85, 247, 0.18);
+    color: rgb(216 180 254);
+}
+
+.poseidon-grid-action-btn--dex {
+    border-color: rgba(59, 130, 246, 0.22);
+    background: rgba(59, 130, 246, 0.1);
+    color: rgb(96 165 250);
+}
+
+.poseidon-grid-action-btn--dex:hover {
+    border-color: rgba(59, 130, 246, 0.38);
+    background: rgba(59, 130, 246, 0.18);
+    color: rgb(147 197 253);
+}
+
+.poseidon-grid-action-btn--close {
+    appearance: none;
+}
+
+.poseidon-grid-action-btn--close-enabled {
+    cursor: pointer;
+    border-color: rgba(239, 68, 68, 0.22);
+    background: rgba(239, 68, 68, 0.1);
+    color: rgb(248 113 113);
+}
+
+.poseidon-grid-action-btn--close-enabled:hover {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.18);
+    color: rgb(252 165 165);
+}
+
+.poseidon-grid-action-btn--close-disabled {
+    cursor: not-allowed;
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgb(100 116 139);
 }
 
 ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell-comp-wrapper {

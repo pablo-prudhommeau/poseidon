@@ -30,7 +30,9 @@ EVM_BLOCKCHAIN_NETWORKS = {
 }
 
 
-def resolve_wallet_maintenance_chain_handlers() -> list[TradingWalletMaintenanceChainHandler]:
+def resolve_wallet_maintenance_chain_handlers() -> list[
+    TradingWalletMaintenanceChainHandler
+]:
     if settings.PAPER_MODE or not settings.TRADING_WALLET_MAINTENANCE_ENABLED:
         return []
 
@@ -52,7 +54,11 @@ def resolve_wallet_maintenance_chain_handlers() -> list[TradingWalletMaintenance
             continue
 
         if blockchain_network in EVM_BLOCKCHAIN_NETWORKS:
-            handlers.append(TradingWalletMaintenanceEvmHandler(blockchain_network=blockchain_network))
+            handlers.append(
+                TradingWalletMaintenanceEvmHandler(
+                    blockchain_network=blockchain_network
+                )
+            )
 
     return handlers
 
@@ -67,7 +73,9 @@ def run_wallet_maintenance_cycle() -> TradingWalletMaintenanceCycleSummary:
             "[TRADING][WALLETMAINTENANCE][SERVICE] No active chain handlers for maintenance cycle — "
             "reason=no_active_chain_handlers"
         )
-        return TradingWalletMaintenanceCycleSummary(gas_results=gas_results, reclaim_results=reclaim_results)
+        return TradingWalletMaintenanceCycleSummary(
+            gas_results=gas_results, reclaim_results=reclaim_results
+        )
 
     for handler in handlers:
         blockchain_network = handler.blockchain_network()

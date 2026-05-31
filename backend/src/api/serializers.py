@@ -23,7 +23,6 @@ from src.core.trading.screener.trading_screener_structures import TRADING_SCREEN
 from src.core.trading.screener.trading_screener_structures import TradingScreenerEnvelope
 from src.core.trading.trading_structures import TradingPortfolio
 from src.core.trading.trading_utils import get_currency_symbol
-from src.core.trading.trading_utils import infer_closing_exit_trigger_reason
 from src.core.utils.date_utils import format_datetime_to_local_iso
 from src.integrations.aave.aave_structures import AaveLiveMetrics
 from src.logging.logger import get_application_logger
@@ -83,7 +82,7 @@ def serialize_trading_position(trading_position: TradingPosition, last_price: Op
         updated_at=format_datetime_to_local_iso(trading_position.updated_at),
         closed_at=format_datetime_to_local_iso(trading_position.closed_at) if trading_position.closed_at else None,
         last_price=last_price,
-        exit_trigger_reason=infer_closing_exit_trigger_reason(trading_position, last_price),
+        exit_reason=trading_position.exit_reason,
     )
 
 

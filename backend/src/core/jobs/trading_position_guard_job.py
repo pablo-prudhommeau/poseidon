@@ -7,7 +7,7 @@ from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.cache.trading_cache import trading_cache
-from src.core.trading.execution.trading_autosell import check_thresholds_and_autosell_for_token_address
+from src.core.trading.execution.trading_execution_guard_service import check_thresholds_and_exit_for_token_address
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
@@ -112,7 +112,7 @@ class TradingPositionGuardJob:
                 if price_usd <= 0.0:
                     continue
                 try:
-                    newly_created_trades = check_thresholds_and_autosell_for_token_address(
+                    newly_created_trades = check_thresholds_and_exit_for_token_address(
                         database_session, token, price_usd,
                     )
                     if newly_created_trades:

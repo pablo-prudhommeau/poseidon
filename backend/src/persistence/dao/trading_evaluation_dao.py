@@ -41,7 +41,6 @@ class TradingEvaluationDao:
             realized_profit_and_loss_usd: float,
             holding_duration_minutes: float,
             was_profitable: bool,
-            exit_reason: Optional[str] = None,
     ) -> Optional[TradingEvaluationPayload]:
         logger.debug("[DATABASE][DAO][TRADING_EVALUATION][OUTCOME] Linking trade outcome for trade id %s", trade_id)
 
@@ -61,7 +60,6 @@ class TradingEvaluationDao:
             realized_profit_and_loss_usd=realized_profit_and_loss_usd,
             holding_duration_minutes=holding_duration_minutes,
             is_profitable=was_profitable,
-            exit_reason=exit_reason,
         )
 
         TradingOutcomeDao(self.database_session).save(outcome_record)

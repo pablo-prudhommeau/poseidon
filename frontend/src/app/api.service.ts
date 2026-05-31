@@ -36,6 +36,10 @@ export interface AppStatusResponse {
 export class ApiService {
     private http = inject(HttpClient);
 
+    closePosition(positionId: number): Observable<void> {
+        return this.http.post<void>(`/api/trading/positions/${positionId}/close`, null);
+    }
+
     createDcaStrategy(payload: DcaStrategyCreatePayload): Observable<DcaStrategyCreateResponse> {
         return this.http.post<DcaStrategyCreateResponse>('/api/dca/strategies', payload);
     }

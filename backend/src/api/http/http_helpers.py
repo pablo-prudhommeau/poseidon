@@ -29,6 +29,7 @@ from src.core.dca.dca_scheduler import DcaScheduler
 from src.core.dca.dca_structures import DcaStrategyStatus
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.analytics.trading_analytics_helpers import (
+    build_exit_reason_by_evaluation_id,
     map_trading_evaluation,
     map_trading_shadowing_verdict,
 )
@@ -62,7 +63,17 @@ def build_live_trading_analytics_response(
     staled_positions = position_dao.retrieve_by_phase(PositionPhase.STALED)
     staled_token_addresses: set[str] = {position.token_address for position in staled_positions}
 
-    analytics_records = [map_trading_evaluation(evaluation_row) for evaluation_row in evaluation_rows]
+    evaluation_ids = [evaluation_row.id for evaluation_row in evaluation_rows]
+    linked_positions = position_dao.retrieve_by_evaluation_ids(evaluation_ids)
+    exit_reason_by_evaluation_id = build_exit_reason_by_evaluation_id(linked_positions)
+
+    analytics_records = [
+        map_trading_evaluation(
+            evaluation_row,
+            exit_reason=exit_reason_by_evaluation_id.get(evaluation_row.id, ""),
+        )
+        for evaluation_row in evaluation_rows
+    ]
     return build_analytics_response(analytics_records, total_evaluations, staled_token_addresses)
 
 

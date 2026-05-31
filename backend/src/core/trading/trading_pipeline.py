@@ -19,8 +19,8 @@ from src.core.trading.evaluators.trading_risk_filter import apply_risk_filter
 from src.core.trading.evaluators.trading_shadowing_notional_booster import apply_shadowing_notional_boost
 from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
-from src.core.trading.execution.trading_executor import TradingExecutor
-from src.core.trading.execution.trading_order_builder import build_route_for_live_execution
+from src.core.trading.execution.trading_execution_swap_service import execute_buy
+from src.core.trading.execution.trading_execution_blockchain_route_service import build_route_for_live_execution
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import evaluate_candidate_shadowing
 from src.core.trading.shadowing.trading_shadowing_structures import (
@@ -38,9 +38,6 @@ logger = get_application_logger(__name__)
 
 
 class TradingPipeline:
-    def __init__(self) -> None:
-        self._executor = TradingExecutor()
-
     def run_once(self) -> None:
         logger.info("[TRADING][PIPELINE] Starting new trading cycle")
         try:
@@ -452,7 +449,7 @@ class TradingPipeline:
                 "available" if execution_route is not None else "paper",
             )
 
-            buy_succeeded = self._executor.buy(order_payload)
+            buy_succeeded = execute_buy(order_payload)
 
             if buy_succeeded:
                 available_cash_usd = free_cash_after

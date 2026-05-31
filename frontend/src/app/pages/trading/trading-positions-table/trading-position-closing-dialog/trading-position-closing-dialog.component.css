@@ -1,0 +1,395 @@
+::ng-deep .poseidon-confirm-dialog {
+    border-radius: 1rem !important;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.35),
+        0 24px 64px rgba(0, 0, 0, 0.55);
+    background: rgb(10 10 10);
+}
+
+::ng-deep .poseidon-confirm-dialog .p-dialog-header {
+    padding: 1rem 1.15rem 0.85rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgb(10 10 10);
+}
+
+::ng-deep .poseidon-confirm-dialog .p-dialog-content {
+    background: rgb(10 10 10);
+}
+
+::ng-deep .poseidon-confirm-dialog .p-dialog-footer {
+    padding: 0.85rem 1.15rem 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgb(10 10 10);
+    border-bottom-left-radius: 1rem;
+    border-bottom-right-radius: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.poseidon-confirm-dialog-header {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.poseidon-confirm-dialog-title {
+    font-size: 1rem;
+    font-weight: 900;
+    color: rgb(248 250 252);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.poseidon-confirm-dialog-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    background: rgba(239, 68, 68, 0.1);
+    color: rgb(252 165 165);
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.12);
+}
+
+.poseidon-confirm-dialog-icon--severe {
+    border-color: rgba(248, 113, 113, 0.45);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(127, 29, 29, 0.35));
+    color: rgb(254 226 226);
+    box-shadow: 0 0 28px rgba(239, 68, 68, 0.22);
+}
+
+.poseidon-confirm-dialog-body {
+    padding: 1rem 1.15rem 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.poseidon-confirm-dialog-lead {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.65;
+    color: rgb(203 213 225);
+}
+
+.poseidon-confirm-dialog-emphasis {
+    font-weight: 900;
+    color: rgb(248 250 252);
+    letter-spacing: -0.01em;
+}
+
+.poseidon-confirm-dialog-summary {
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(0, 0, 0, 0.25);
+    padding: 0.7rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.poseidon-confirm-dialog-summary-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.poseidon-confirm-dialog-symbol-chip {
+    grid-column: 1;
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.poseidon-confirm-dialog-phase-transition-inline {
+    grid-column: 2;
+    justify-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+}
+
+.poseidon-confirm-dialog-updated-at {
+    grid-column: 3;
+    justify-self: end;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    color: rgb(97 111 131);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.poseidon-confirm-dialog-updated-at-age {
+    color: rgb(226 232 240);
+    font-weight: 900;
+}
+
+.poseidon-confirm-dialog-phase-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: rgb(100 116 139);
+    font-size: 0.58rem;
+    line-height: 1;
+}
+
+.poseidon-confirm-dialog-metrics-columns {
+    display: flex;
+    align-items: stretch;
+    gap: 1.75rem;
+}
+
+.poseidon-confirm-dialog-metrics-column {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.poseidon-confirm-dialog-metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.poseidon-confirm-dialog-metric-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    color: rgb(100 116 139);
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.poseidon-confirm-dialog-metric-value {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    text-align: right;
+}
+
+.poseidon-confirm-dialog-metric-value--strong {
+    color: rgb(248 250 252);
+    font-weight: 900;
+}
+
+.poseidon-confirm-dialog-metric-value--muted {
+    color: rgb(203 213 225);
+    font-weight: 700;
+}
+
+.poseidon-confirm-dialog-metric-value.delta-tick-up,
+.poseidon-confirm-dialog-metric-value.poseidon-grid-notional-live--positive,
+.poseidon-confirm-dialog-pnl-values .last-price-tick-up .last-price-value {
+    color: rgb(52 211 153);
+    text-shadow: 0 0 10px rgba(52, 211, 153, 0.52);
+}
+
+.poseidon-confirm-dialog-metric-value.delta-tick-down,
+.poseidon-confirm-dialog-metric-value.poseidon-grid-notional-live--negative,
+.poseidon-confirm-dialog-pnl-values .last-price-tick-down .last-price-value {
+    color: rgb(251 113 133);
+    text-shadow: 0 0 10px rgba(251, 113, 133, 0.48);
+}
+
+.poseidon-confirm-dialog-metric-value.poseidon-confirm-dialog-metric-value--neutral,
+.poseidon-confirm-dialog-metric-value.poseidon-grid-notional-live--neutral {
+    color: rgb(148 163 184);
+}
+
+.poseidon-confirm-dialog-metric--pnl {
+    margin-top: 0.15rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.poseidon-confirm-dialog-pnl-values {
+    display: inline-grid;
+    grid-template-columns: auto auto auto;
+    align-items: center;
+    column-gap: 0.35rem;
+    justify-items: end;
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
+.poseidon-confirm-dialog-pnl-values .last-price-value,
+.poseidon-confirm-dialog-pnl-values .poseidon-confirm-dialog-metric-value {
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+}
+
+.poseidon-confirm-dialog-pnl-tick {
+    width: auto;
+    justify-content: flex-end;
+    padding: 0 0.12rem;
+}
+
+.poseidon-confirm-dialog-pnl-tick .last-price-arrow {
+    font-size: 0.68rem;
+}
+
+.poseidon-confirm-dialog-pnl-separator {
+    color: rgb(71 85 105);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    align-self: center;
+}
+
+.poseidon-confirm-dialog-footnote {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.65;
+    color: rgb(100 116 139);
+}
+
+.poseidon-confirm-dialog-footnote-market {
+    display: block;
+    font-style: italic;
+    color: rgb(148 163 184);
+}
+
+.poseidon-confirm-dialog-irreversible {
+    display: block;
+    margin-top: 0.75rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(252 165 165);
+}
+
+.poseidon-confirm-dialog-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    height: 2.25rem;
+    padding: 0 0.95rem;
+    border-radius: 0.75rem;
+    border: 1px solid transparent;
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-transform: uppercase;
+    transition: all 0.18s ease;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+    vertical-align: middle;
+}
+
+.poseidon-confirm-dialog-button-label {
+    display: block;
+    line-height: 1;
+}
+
+.poseidon-confirm-dialog-button-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.78rem;
+    height: 0.78rem;
+    font-size: 0.72rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.poseidon-confirm-dialog-button-icon::before {
+    display: block;
+    line-height: 1;
+}
+
+.poseidon-confirm-dialog-button-label,
+.poseidon-confirm-dialog-button-icon {
+    transform: translateY(0.5px);
+}
+
+.poseidon-confirm-dialog-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.poseidon-confirm-dialog-button--ghost {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgb(148 163 184);
+}
+
+.poseidon-confirm-dialog-button--ghost:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgb(226 232 240);
+}
+
+.poseidon-confirm-dialog-button--danger,
+.poseidon-confirm-dialog-button--severe {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(127, 29, 29, 0.35));
+    color: rgb(254 226 226);
+    box-shadow: 0 5px 10px rgba(239, 68, 68, 0.18);
+}
+
+.poseidon-confirm-dialog-button--danger:hover:not(:disabled),
+.poseidon-confirm-dialog-button--severe:hover:not(:disabled) {
+    border-color: rgba(248, 113, 113, 0.45);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.32), rgba(127, 29, 29, 0.45));
+    color: rgb(255 255 255);
+}
+
+@media (max-width: 560px) {
+    .poseidon-confirm-dialog-summary-toolbar {
+        grid-template-columns: 1fr auto;
+        row-gap: 0.45rem;
+    }
+
+    .poseidon-confirm-dialog-symbol-chip {
+        grid-column: 1 / -1;
+    }
+
+    .poseidon-confirm-dialog-phase-transition-inline {
+        grid-column: 1;
+        justify-self: start;
+    }
+
+    .poseidon-confirm-dialog-updated-at {
+        grid-column: 2;
+    }
+
+    .poseidon-confirm-dialog-metrics-columns {
+        flex-direction: column;
+        gap: 0.45rem;
+    }
+}

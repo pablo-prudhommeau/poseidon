@@ -76,6 +76,26 @@
     background: rgba(255, 255, 255, 0.04);
 }
 
+.position-modal-header-action--danger {
+    border-color: rgba(239, 68, 68, 0.18);
+    background: rgba(239, 68, 68, 0.08);
+    color: rgb(252 165 165);
+}
+
+.position-modal-header-action--danger:hover:not(:disabled) {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.16);
+    color: rgb(254 202 202);
+}
+
+.position-modal-header-action--danger:disabled {
+    opacity: 1;
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgb(100 116 139);
+    cursor: not-allowed;
+}
+
 .position-modal-section-header {
     display: flex;
     align-items: center;

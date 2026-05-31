@@ -178,7 +178,7 @@ class TradingPositionPayload(BaseModel):
     updated_at: str
     closed_at: Optional[str] = None
     last_price: Optional[float] = None
-    exit_trigger_reason: Optional[str] = None
+    exit_reason: Optional[str] = None
 
 
 class TradingTradePayload(BaseModel):

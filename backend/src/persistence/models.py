@@ -54,6 +54,7 @@ class TradingPosition(DatabaseBaseModel):
     take_profit_tier_2_price: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss_price: Mapped[float] = mapped_column(Float, nullable=False)
     position_phase: Mapped[PositionPhase] = mapped_column(SQLAlchemyEnum(PositionPhase, name="positionphase"), nullable=False)
+    exit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     opened_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(onupdate=get_current_local_datetime, nullable=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
@@ -243,7 +244,6 @@ class TradingOutcome(DatabaseBaseModel):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     evaluation_id: Mapped[int] = mapped_column(ForeignKey("trading_evaluations.id"), nullable=False, index=True)
     trade_id: Mapped[int] = mapped_column(ForeignKey("trading_trades.id"), nullable=False)
-    exit_reason: Mapped[str] = mapped_column(String(64), nullable=False)
     realized_profit_and_loss_percentage: Mapped[float] = mapped_column(Float, nullable=False)
     realized_profit_and_loss_usd: Mapped[float] = mapped_column(Float, nullable=False)
     holding_duration_minutes: Mapped[float] = mapped_column(Float, nullable=False)
@@ -253,7 +253,7 @@ class TradingOutcome(DatabaseBaseModel):
     evaluation: Mapped[TradingEvaluation] = relationship("TradingEvaluation", back_populates="outcomes")
 
     def __repr__(self) -> str:
-        return f"<TradingOutcome evaluation_id={self.evaluation_id} exit_reason={self.exit_reason} is_profitable={self.is_profitable}>"
+        return f"<TradingOutcome evaluation_id={self.evaluation_id} is_profitable={self.is_profitable}>"
 
 
 class DcaStrategy(DatabaseBaseModel):

@@ -9,13 +9,17 @@ from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_helpers impor
 from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_structures import (
     TradingWalletMaintenanceSolanaGasBudgetSnapshot,
 )
-from src.integrations.blockchain.solana.solana_rpc_client import format_lamports_as_sol_text
+from src.integrations.blockchain.solana.solana_rpc_client import (
+    format_lamports_as_sol_text,
+)
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
 
-def build_solana_gas_budget_snapshot() -> TradingWalletMaintenanceSolanaGasBudgetSnapshot:
+def build_solana_gas_budget_snapshot() -> (
+    TradingWalletMaintenanceSolanaGasBudgetSnapshot
+):
     cost_snapshot = build_solana_gas_reserve_cost_snapshot()
     minimum_cycle_number = settings.TRADING_SOLANA_GAS_MINIMUM_CYCLE_NUMBER
     refill_target_cycle_number = settings.TRADING_SOLANA_GAS_REFILL_TARGET_CYCLE_NUMBER

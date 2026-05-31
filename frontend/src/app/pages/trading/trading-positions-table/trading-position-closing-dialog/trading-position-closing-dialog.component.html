@@ -1,0 +1,126 @@
+<p-dialog [visible]="visible()" (visibleChange)="onDialogVisibleChange($event)" [modal]="true" [draggable]="false" [closable]="!submitInProgress()" [dismissableMask]="!submitInProgress()" appendTo="body" [style]="{ width: '34rem', maxWidth: '95vw' }" styleClass="poseidon-confirm-dialog" [contentStyle]="{ padding: '0' }">
+    <ng-template pTemplate="header">
+        <div class="poseidon-confirm-dialog-header">
+            <span class="poseidon-confirm-dialog-icon poseidon-confirm-dialog-icon--severe shrink-0">
+                <i class="fas fa-ban"></i>
+            </span>
+            <div class="min-w-0 flex-1">
+                <div class="poseidon-confirm-dialog-title">Close position</div>
+            </div>
+        </div>
+    </ng-template>
+
+    <div class="poseidon-confirm-dialog-body">
+        <p class="poseidon-confirm-dialog-lead">
+            You are about to
+            <span class="poseidon-confirm-dialog-emphasis">fully close</span>
+            your position. Review the metrics below before confirming a
+            <span class="poseidon-confirm-dialog-emphasis">market sell</span>
+            of your remaining balance.
+        </p>
+
+        <div class="poseidon-confirm-dialog-summary">
+            <div class="poseidon-confirm-dialog-summary-toolbar">
+                <span #symbolChipHost class="poseidon-confirm-dialog-symbol-chip"></span>
+                <div class="poseidon-confirm-dialog-phase-transition-inline">
+                    @if (livePosition()?.position_phase; as currentPhase) {
+                        <span class="poseidon-grid-pill" [ngClass]="currentPhaseClasses()">{{ currentPhase }}</span>
+                    }
+                    <span class="poseidon-confirm-dialog-phase-arrow" aria-hidden="true">
+                        <i class="fas fa-arrow-right-long"></i>
+                    </span>
+                    <span class="poseidon-grid-pill" [ngClass]="closingPreviewClasses()">CLOSING</span>
+                </div>
+                <span class="poseidon-confirm-dialog-updated-at">
+                    Updated
+                    <span class="poseidon-confirm-dialog-updated-at-age">{{ refreshAgeNumeric() }}</span>
+                    @if (refreshAgeNumeric() !== 'now' && refreshAgeNumeric() !== '--') {
+                        ago
+                    }
+                </span>
+            </div>
+
+            <div class="poseidon-confirm-dialog-metrics-columns">
+                <div class="poseidon-confirm-dialog-metrics-column">
+                    <div class="poseidon-confirm-dialog-metric">
+                        <span class="poseidon-confirm-dialog-metric-label">Open qty</span>
+                        <span class="poseidon-confirm-dialog-metric-value poseidon-confirm-dialog-metric-value--muted">{{ formatCompactQuantity(livePosition()?.open_quantity) }}</span>
+                    </div>
+                    <div class="poseidon-confirm-dialog-metric">
+                        <span class="poseidon-confirm-dialog-metric-label">Entry price</span>
+                        <span class="poseidon-confirm-dialog-metric-value poseidon-confirm-dialog-metric-value--muted">{{ formatCompactUsd(livePosition()?.entry_price) }}</span>
+                    </div>
+                    <div class="poseidon-confirm-dialog-metric">
+                        <span class="poseidon-confirm-dialog-metric-label">Cost basis</span>
+                        <span class="poseidon-confirm-dialog-metric-value poseidon-confirm-dialog-metric-value--muted">{{ formatCurrency(remainingCostBasisUsd(livePosition()), 'USD', 2, 2) }}</span>
+                    </div>
+                </div>
+                <div class="poseidon-confirm-dialog-metrics-column">
+                    <div class="poseidon-confirm-dialog-metric">
+                        <span class="poseidon-confirm-dialog-metric-label">Remaining qty</span>
+                        <span class="poseidon-confirm-dialog-metric-value poseidon-confirm-dialog-metric-value--strong">{{ formatCompactQuantity(livePosition()?.current_quantity) }}</span>
+                    </div>
+                    <div class="poseidon-confirm-dialog-metric">
+                        <span class="poseidon-confirm-dialog-metric-label">Last price</span>
+                        <span class="poseidon-confirm-dialog-metric-value poseidon-confirm-dialog-metric-value--strong">{{ formatCompactUsd(livePosition()?.last_price) }}</span>
+                    </div>
+                    <div class="poseidon-confirm-dialog-metric">
+                        <span class="poseidon-confirm-dialog-metric-label">Live notional</span>
+                        <span class="poseidon-confirm-dialog-metric-value" [ngClass]="liveNotionalMetricClasses()">{{ liveNotionalLabel() }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="poseidon-confirm-dialog-metric poseidon-confirm-dialog-metric--pnl">
+                <span class="poseidon-confirm-dialog-metric-label">Unrealized P&amp;L</span>
+                <span class="poseidon-confirm-dialog-pnl-values">
+                    @for (pulseKey of [deltaTickPulseKey()]; track pulseKey) {
+                        @switch (deltaTickVariant()) {
+                            @case ('up') {
+                                <span class="last-price-tick last-price-tick-up poseidon-confirm-dialog-pnl-tick">
+                                    <span class="last-price-ripple"></span>
+                                    <i class="fas fa-arrow-trend-up last-price-arrow" aria-hidden="true"></i>
+                                    <span class="last-price-value poseidon-grid-emphasized-metric">{{ deltaPercentLabel() }}</span>
+                                </span>
+                            }
+                            @case ('down') {
+                                <span class="last-price-tick last-price-tick-down poseidon-confirm-dialog-pnl-tick">
+                                    <span class="last-price-ripple"></span>
+                                    <i class="fas fa-arrow-trend-down last-price-arrow" aria-hidden="true"></i>
+                                    <span class="last-price-value poseidon-grid-emphasized-metric">{{ deltaPercentLabel() }}</span>
+                                </span>
+                            }
+                            @default {
+                                <span class="poseidon-confirm-dialog-metric-value poseidon-confirm-dialog-metric-value--neutral poseidon-grid-emphasized-metric">{{ deltaPercentLabel() }}</span>
+                            }
+                        }
+                    }
+                    <span class="poseidon-confirm-dialog-pnl-separator" aria-hidden="true">·</span>
+                    <span class="poseidon-confirm-dialog-metric-value" [ngClass]="pnlUsdMetricClasses()">{{ unrealizedPnlUsdLabel() }}</span>
+                </span>
+            </div>
+        </div>
+
+        <p class="poseidon-confirm-dialog-footnote">
+            <span class="poseidon-confirm-dialog-footnote-market"> A market sell will be submitted for your full remaining balance. The final execution price may differ from the last quote due to liquidity and slippage. </span>
+            <span class="poseidon-confirm-dialog-irreversible">This action cannot be undone !</span>
+        </p>
+    </div>
+
+    <ng-template pTemplate="footer">
+        <div class="flex items-center justify-end gap-2">
+            <button type="button" class="poseidon-confirm-dialog-button poseidon-confirm-dialog-button--ghost" [disabled]="submitInProgress()" (click)="onDismiss()">
+                <span class="poseidon-confirm-dialog-button-label">Cancel</span>
+            </button>
+            <button type="button" class="poseidon-confirm-dialog-button poseidon-confirm-dialog-button--severe" [disabled]="submitInProgress()" (click)="confirmClose()">
+                @if (!submitInProgress()) {
+                    <span class="poseidon-confirm-dialog-button-label">Confirm close</span>
+                    <i class="fas fa-ban poseidon-confirm-dialog-button-icon" aria-hidden="true"></i>
+                } @else {
+                    <i class="fas fa-circle-notch poseidon-confirm-dialog-button-icon animate-spin" aria-hidden="true"></i>
+                    <span class="poseidon-confirm-dialog-button-label">Submitting</span>
+                }
+            </button>
+        </div>
+    </ng-template>
+</p-dialog>

@@ -10,7 +10,7 @@ from solders.transaction import VersionedTransaction
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.execution.trading_executor import SWAP_EXECUTION_LOCK
+from src.core.trading.execution.trading_execution_swap_service import SWAP_EXECUTION_LOCK
 from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_structures import (
     TradingWalletMaintenanceSolanaReclaimableTokenAccount,
 )

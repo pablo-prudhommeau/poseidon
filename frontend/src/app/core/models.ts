@@ -1,5 +1,5 @@
 export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSING' | 'CLOSED' | 'STALED';
-export type PositionExitTriggerReason = 'TAKE_PROFIT_1' | 'TAKE_PROFIT_2' | 'STOP_LOSS';
+export type PositionExitTriggerReason = 'TAKE_PROFIT_1' | 'TAKE_PROFIT_2' | 'STOP_LOSS' | 'MANUAL';
 export type TradingShadowingPhase = 'DISABLED' | 'SYNCING' | 'SHADOWING' | 'CORTEXING' | 'BEAR' | 'TRADABLE';
 export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';
@@ -189,7 +189,7 @@ export interface TradingPositionPayload {
     updated_at: string;
     closed_at?: string | null;
     last_price?: number | null;
-    exit_trigger_reason?: PositionExitTriggerReason | null;
+    exit_reason?: PositionExitTriggerReason | null;
 }
 
 export interface TradingPositionPricePayload {

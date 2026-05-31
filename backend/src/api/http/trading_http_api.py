@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import (
@@ -23,6 +23,12 @@ from src.api.http.http_helpers import (
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.paper import paper_service
+from src.core.trading.execution.trading_execution_position_service import (
+    PositionCloseConflictError,
+    PositionCloseNotFoundError,
+    close_position,
+    execute_manual_close_sell,
+)
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_fastapi_database_session
 
@@ -114,3 +120,24 @@ async def get_trading_position_by_evaluation_id(
         evaluation_id,
     )
     return linked_position
+
+
+@router.post("/positions/{position_id}/close", status_code=204)
+def close_trading_position(
+        position_id: int,
+        background_tasks: BackgroundTasks,
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> Response:
+    logger.debug("[HTTP][TRADING][POSITIONS][CLOSE] Initiating manual close for position id=%s", position_id)
+    try:
+        close_position(database_session, position_id)
+    except PositionCloseNotFoundError as exception:
+        logger.info("[HTTP][TRADING][POSITIONS][CLOSE] Position id=%s not closable: %s", position_id, exception)
+        raise HTTPException(status_code=404, detail="Position not found or not closable") from exception
+    except PositionCloseConflictError as exception:
+        logger.info("[HTTP][TRADING][POSITIONS][CLOSE] Position id=%s close conflict: %s", position_id, exception)
+        raise HTTPException(status_code=409, detail="Position is already closing") from exception
+
+    background_tasks.add_task(execute_manual_close_sell, position_id)
+    logger.info("[HTTP][TRADING][POSITIONS][CLOSE] Position id=%s marked CLOSING, sell scheduled", position_id)
+    return Response(status_code=204)

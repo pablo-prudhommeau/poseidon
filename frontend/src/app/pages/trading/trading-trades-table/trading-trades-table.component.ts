@@ -266,15 +266,16 @@ export class TradingTradesTableComponent implements AfterViewInit {
                 headerComponentParams: { iconClass: 'fa-link', alignRight: true }
             },
             {
-                headerName: '',
+                headerName: 'actions',
                 colId: 'actions',
                 pinned: 'right',
                 width: 100,
                 suppressHeaderMenuButton: true,
                 sortable: false,
                 filter: false,
+                headerClass: 'poseidon-header-align-center',
                 headerComponent: IconHeaderRendererComponent,
-                headerComponentParams: { iconClass: 'fa-ellipsis-vertical', hideLabel: true },
+                headerComponentParams: { iconClass: 'fa-gear', alignCenter: true },
                 cellRenderer: TemplateCellRendererComponent,
                 cellRendererParams: { template: this.actionsTemplate }
             }

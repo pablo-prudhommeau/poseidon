@@ -2,12 +2,19 @@
 
 <ng-template #actionsTemplate let-row="row">
     <div class="flex items-center justify-center gap-1.5 h-full">
-        <button class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30 transition-all text-slate-500 hover:text-purple-400" title="View details" (click)="openDetails(row)">
+        <button class="poseidon-grid-action-btn poseidon-grid-action-btn--details" title="View details" (click)="openDetails(row)">
             <i class="fas fa-expand"></i>
         </button>
-        <a [href]="dexUrlForPair(row)" target="_blank" rel="noopener" class="cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/5 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/30 transition-all text-slate-500 hover:text-blue-400" title="Open on DexScreener">
+        <a [href]="dexUrlForPair(row)" target="_blank" rel="noopener" class="poseidon-grid-action-btn poseidon-grid-action-btn--dex" title="Open on DexScreener">
             <i class="fas fa-arrow-up-right-from-square"></i>
         </a>
+        <button type="button" class="poseidon-grid-action-btn poseidon-grid-action-btn--close disabled:opacity-100" [ngClass]="closePositionActionClasses(row)" [disabled]="!canClosePosition(row)" [title]="canClosePosition(row) ? 'Close position' : 'Close unavailable'" (click)="openCloseConfirm(row)">
+            @if (!isCloseRequestInProgress(row)) {
+                <i class="fas fa-ban"></i>
+            } @else {
+                <i class="fas fa-circle-notch animate-spin"></i>
+            }
+        </button>
     </div>
 </ng-template>
 
@@ -21,6 +28,15 @@
                     </div>
                 </div>
                 <div class="position-modal-header-actions flex flex-wrap items-center justify-end gap-2">
+                    <button type="button" class="position-modal-header-action position-modal-header-action--danger" title="Close position" (click)="openCloseConfirm(selectedPosition())" [disabled]="!canClosePosition(selectedPosition())" [class.pointer-events-none]="!canClosePosition(selectedPosition())">
+                        @if (!isCloseRequestInProgress(selectedPosition())) {
+                            <i class="fas fa-ban text-[11px]"></i>
+                            <span>Close</span>
+                        } @else {
+                            <i class="fas fa-circle-notch text-[11px] animate-spin"></i>
+                            <span>Closing</span>
+                        }
+                    </button>
                     <a [href]="dexUrlForPair(selectedPosition())" target="_blank" rel="noopener" class="position-modal-header-action" title="Open on DexScreener">
                         <i class="fas fa-chart-line text-[11px]"></i>
                         <span>Open Dex</span>
@@ -196,18 +212,16 @@
                                 <div class="space-y-2.5">
                                     <div class="position-modal-detail-row">
                                         <span class="position-modal-detail-label">Phase</span>
-                                        <span
-                                            class="poseidon-grid-pill"
-                                            [ngClass]="{
-                                                'poseidon-grid-pill--info': selectedPosition()?.position_phase === 'OPEN',
-                                                'poseidon-grid-pill--warn': selectedPosition()?.position_phase === 'PARTIAL',
-                                                'poseidon-grid-pill--closing': selectedPosition()?.position_phase === 'CLOSING',
-                                                'poseidon-grid-pill--neutral': selectedPosition()?.position_phase !== 'OPEN' && selectedPosition()?.position_phase !== 'PARTIAL' && selectedPosition()?.position_phase !== 'CLOSING',
-                                            }"
-                                        >
+                                        <span class="poseidon-grid-pill" [ngClass]="selectedPositionPhaseClasses()">
                                             {{ selectedPosition()?.position_phase || '—' }}
                                         </span>
                                     </div>
+                                    @if (selectedPosition()?.position_phase === 'CLOSING' && selectedPosition()?.exit_reason) {
+                                        <div class="position-modal-detail-row">
+                                            <span class="position-modal-detail-label">Exit reason</span>
+                                            <span class="position-modal-detail-value">{{ formatExitReasonLabel(selectedPosition()?.exit_reason) }}</span>
+                                        </div>
+                                    }
                                     <div class="position-modal-detail-row">
                                         <span class="position-modal-detail-label">Open quantity</span>
                                         <span class="position-modal-detail-value">{{ formatCompactQuantity(selectedPosition()?.open_quantity) }}</span>
@@ -444,3 +458,5 @@
         </div>
     </ng-template>
 </p-dialog>
+
+<trading-position-closing-dialog [visible]="confirmCloseVisible()" [positionId]="pendingClosePositionId()" [positionSnapshot]="pendingClosePositionSnapshot()" [livePositions]="positionsRowData()" [submitInProgress]="isCloseDialogSubmitInProgress()" (visibleChange)="onClosingDialogVisibleChange($event)" (closeSubmitStarted)="onCloseSubmitStarted($event)" (closeSubmitFinished)="onCloseSubmitFinished($event)" />
