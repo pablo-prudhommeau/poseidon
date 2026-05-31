@@ -18,6 +18,7 @@ logger = get_application_logger(__name__)
 DEFAULT_TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280
 POSITION_LIFECYCLE_TRADE_COUNT = 3
 
+
 def build_solana_gas_budget_snapshot() -> TradingWalletMaintenanceSolanaGasBudgetSnapshot:
     max_open_positions = settings.TRADING_MAX_OPEN_POSITIONS
     average_swap_fee_lamports = settings.TRADING_SOLANA_GAS_AVERAGE_SWAP_FEE_LAMPORTS

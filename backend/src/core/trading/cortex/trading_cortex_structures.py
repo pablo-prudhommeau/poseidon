@@ -116,6 +116,7 @@ class TradingCortexFinalScoreBreakdown(BaseModel):
     expected_profit_and_loss_signal: float
     shadow_exposure_signal: float
     regime_signal: float
+    holding_time_signal: float
     weighted_score: float
     final_trade_score: float
 

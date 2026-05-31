@@ -17,7 +17,6 @@ from src.integrations.blockchain.blockchain_rpc_registry import (
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_KNOWN_STABLECOIN_MINTS,
     SOLANA_SPL_TOKEN_BALANCE_OFFSET,
-    SOLANA_SPL_TOKEN_ACCOUNT_DATA_LENGTH,
     SOLANA_SPL_TOKEN_PROGRAM_ID,
     SOLANA_TOKEN_2022_PROGRAM_ID,
     SOLANA_WRAPPED_SOL_MINT,

@@ -13,7 +13,7 @@ def apply_ai_scorer(candidates: list[TradingCandidate]) -> list[TradingCandidate
         logger.debug("[TRADING][EVALUATOR][AI] AI scoring is disabled, passing all candidates through")
         for candidate in candidates:
             candidate.ai_analysis.adjusted_quality_score = candidate.quality_score
-        return candidates
+        return sorted(candidates, key=lambda candidate_item: candidate_item.ai_analysis.adjusted_quality_score, reverse=True)
 
     from src.core.trading.ai.trading_chart_signal_provider import TradingChartAiSignalProvider
 
@@ -59,4 +59,4 @@ def apply_ai_scorer(candidates: list[TradingCandidate]) -> list[TradingCandidate
         )
 
     logger.info("[TRADING][EVALUATOR][AI] Processed %d candidates", len(candidates))
-    return candidates
+    return sorted(candidates, key=lambda candidate_item: candidate_item.ai_analysis.adjusted_quality_score, reverse=True)

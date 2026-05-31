@@ -5,10 +5,10 @@ import asyncio
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.trading.wallet_maintenance.trading_wallet_maintenance_service import run_wallet_maintenance_cycle
 from src.core.trading.wallet_maintenance.trading_wallet_maintenance_structures import (
     TradingWalletMaintenanceOperationStatus,
 )
-from src.core.trading.wallet_maintenance.trading_wallet_maintenance_service import run_wallet_maintenance_cycle
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

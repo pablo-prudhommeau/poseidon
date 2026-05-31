@@ -18,6 +18,14 @@ def _cortex_holding_time_max_minutes() -> float:
     return settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS * 60.0
 
 
+def sort_trading_candidates_by_cortex_final_trade_score(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+    return sorted(
+        candidates,
+        key=lambda candidate: candidate.cortex_diagnostics.inference_snapshot.final_trade_score,
+        reverse=True,
+    )
+
+
 def apply_trading_cortex_gate_filter(
         candidates: list[TradingCandidate],
         shadow_snapshot: TradingShadowingSnapshot,
@@ -133,7 +141,7 @@ def apply_trading_cortex_gate_filter(
             len(candidates),
         )
 
-    return retained + skipped_without_cortex
+    return sort_trading_candidates_by_cortex_final_trade_score(retained) + skipped_without_cortex
 
 
 def _log_cortex_evaluation_details(

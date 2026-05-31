@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.evaluators.trading_age_filter import apply_age_filter
@@ -78,23 +80,36 @@ class TradingPipeline:
         if not settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             logger.debug("[TRADING][PIPELINE][GATE][FUNDAMENTALS] Fundamentals gate is disabled")
 
-        shadow_snapshot = self._step_load_shadowing_snapshot()
-        if shadow_snapshot is None:
-            logger.warning(
-                "[TRADING][PIPELINE][GATE] Shadowing regime snapshot not yet in cache; "
-                "aborting trading cycle until the regime is computed"
-            )
-            return
+        shadow_snapshot: Optional[TradingShadowingSnapshot] = None
+        shadow_snapshot_active = False
+        shadowing_snapshot_required = (
+                settings.TRADING_GATE_CORTEX_ENABLED
+                or settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED
+        )
 
-        regime_phase = shadow_snapshot.regime.phase
-        if not regime_phase.allows_live_trading:
-            logger.info(
-                "[TRADING][PIPELINE][GATE] Shadowing regime phase %s does not authorize live trading; aborting trading cycle",
-                regime_phase.value,
-            )
-            return
+        if shadowing_snapshot_required:
+            shadow_snapshot = self._step_load_shadowing_snapshot()
+            if shadow_snapshot is None:
+                logger.warning(
+                    "[TRADING][PIPELINE][GATE] Shadowing regime snapshot not yet in cache; "
+                    "aborting trading cycle until the regime is computed"
+                )
+                return
 
-        shadow_snapshot_active = regime_phase == TradingShadowingPhase.TRADABLE
+            regime_phase = shadow_snapshot.regime.phase
+            if not regime_phase.allows_live_trading:
+                logger.info(
+                    "[TRADING][PIPELINE][GATE] Shadowing regime phase %s does not authorize live trading; aborting trading cycle",
+                    regime_phase.value,
+                )
+                return
+
+            shadow_snapshot_active = regime_phase == TradingShadowingPhase.TRADABLE
+        else:
+            logger.debug(
+                "[TRADING][PIPELINE][GATE] Shadowing snapshot not required — "
+                "cortex gate and shadowing toxic metrics gate are disabled"
+            )
 
         if settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             candidates = self._step_filter_volume(candidates)
@@ -160,9 +175,9 @@ class TradingPipeline:
             if not candidates:
                 return
 
-            candidates = self._step_ai_scorer(candidates)
-            if not candidates:
-                return
+        candidates = self._step_ai_scorer(candidates)
+        if not candidates:
+            return
 
         if settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED:
             candidates = self._step_shadowing_toxic_exposure_filter(candidates, shadow_snapshot)
@@ -180,10 +195,7 @@ class TradingPipeline:
                     len(candidates),
                 )
                 return
-            if all(candidate.cortex_diagnostics.inference_snapshot is not None for candidate in candidates):
-                candidates = self._step_apply_existing_cortex_gate_snapshots(candidates)
-            else:
-                candidates = self._step_apply_trading_cortex_gate(candidates, shadow_snapshot, True)
+            candidates = self._step_apply_trading_cortex_gate(candidates, shadow_snapshot, True)
             if not candidates:
                 return
 
@@ -332,36 +344,6 @@ class TradingPipeline:
             gate_enabled: bool,
     ) -> list[TradingCandidate]:
         return apply_trading_cortex_gate_filter(candidates, shadow_snapshot, gate_enabled)
-
-    def _step_apply_existing_cortex_gate_snapshots(
-            self,
-            candidates: list[TradingCandidate],
-    ) -> list[TradingCandidate]:
-        retained: list[TradingCandidate] = []
-        rejected: list[TradingCandidate] = []
-        for candidate in candidates:
-            cortex_inference_snapshot = candidate.cortex_diagnostics.inference_snapshot
-            if (
-                    cortex_inference_snapshot is not None
-                    and cortex_inference_snapshot.model_ready
-                    and cortex_inference_snapshot.gate_verdict.is_accepted
-            ):
-                retained.append(candidate)
-            else:
-                rejected.append(candidate)
-
-        if rejected:
-            logger.info(
-                "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Retained %d / %d candidates from existing cortex snapshots",
-                len(retained),
-                len(candidates),
-            )
-        else:
-            logger.debug(
-                "[TRADING][PIPELINE][TRADING][CORTEX][GATE] All %d candidates passed from existing cortex snapshots",
-                len(candidates),
-            )
-        return retained
 
     def _step_execute(self, candidates: list[TradingCandidate]) -> None:
         from sqlalchemy import select, func
