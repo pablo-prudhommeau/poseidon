@@ -29,6 +29,12 @@ class TradingCortexTrainingJob:
         self._training_cooldown_seconds = settings.TRADING_CORTEX_TRAINING_COOLDOWN_HOURS * 3600
 
     async def run_loop(self) -> None:
+        loop_interval_seconds = settings.TRADING_CORTEX_LOOP_INTERVAL_SECONDS
+        logger.info(
+            "[TRADING][CORTEX][TRAINING_JOB] Training loop starting (interval=%ss, cooldown=%sh)",
+            loop_interval_seconds,
+            settings.TRADING_CORTEX_TRAINING_COOLDOWN_HOURS,
+        )
         while True:
             try:
                 await self._run_training_async()
@@ -37,12 +43,10 @@ class TradingCortexTrainingJob:
             except Exception as exc:
                 logger.error("[TRADING][CORTEX][TRAINING_JOB] Unexpected failure in training loop: %s", exc)
 
-            logger.info("[TRADING][CORTEX][TRAINING_JOB] Sleeping for %d seconds before next training iteration", self._training_cooldown_seconds)
-            await asyncio.sleep(self._training_cooldown_seconds)
+            await asyncio.sleep(loop_interval_seconds)
 
     async def _run_training_async(self) -> None:
         if self._is_training_cooldown_active():
-            logger.info("[TRADING][CORTEX][TRAINING_JOB] Training skipped due to active cooldown")
             return
 
         loop = asyncio.get_event_loop()
@@ -100,7 +104,7 @@ class TradingCortexTrainingJob:
 
             if time_since_last_training.total_seconds() < self._training_cooldown_seconds:
                 remaining_seconds = self._training_cooldown_seconds - time_since_last_training.total_seconds()
-                logger.info(
+                logger.debug(
                     "[TRADING][CORTEX][TRAINING_JOB] Cooldown active. Last training was %s (%.1f hours ago). Next training in %.1f hours.",
                     last_training_at,
                     time_since_last_training.total_seconds() / 3600,

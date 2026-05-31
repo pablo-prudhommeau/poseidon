@@ -4,7 +4,13 @@ import asyncio
 import threading
 
 from src.configuration.config import settings
+from src.core.jobs.aave_sentinel_job import AaveSentinelJob
+from src.core.jobs.dca_job import DcaJob
 from src.core.jobs.job_structures import BackgroundJobsRuntimeStatus
+from src.core.jobs.trading_cortex_training_job import TradingCortexTrainingJob
+from src.core.jobs.trading_cycle_job import TradingCycleJob
+from src.core.jobs.trading_position_guard_job import TradingPositionGuardJob
+from src.core.jobs.trading_shadowing_job import TradingShadowingJob
 from src.core.jobs.trading_wallet_maintenance_job import TradingWalletMaintenanceJob
 from src.core.structures.structures import Mode
 from src.logging.logger import get_application_logger
@@ -25,18 +31,12 @@ _stop_event = threading.Event()
 def start_background_jobs() -> None:
     global _started, _stop_event
     global _trading_cycle_thread, _shadowing_thread
-    global _position_guard_task, _aave_sentinel_task, _dca_background_task, _wallet_maintenance_task
+    global _position_guard_task, _aave_sentinel_task, _dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task
 
     if _started:
         return
 
     _stop_event.clear()
-
-    from src.core.jobs.trading_cycle_job import TradingCycleJob
-    from src.core.jobs.trading_shadowing_job import TradingShadowingJob
-    from src.core.jobs.trading_position_guard_job import TradingPositionGuardJob
-    from src.core.jobs.aave_sentinel_job import AaveSentinelJob
-    from src.core.jobs.dca_job import DcaJob
 
     event_loop = asyncio.get_event_loop()
 
@@ -80,10 +80,11 @@ def start_background_jobs() -> None:
         logger.info("[ORCHESTRATOR][DCA_JOB] DCA disabled in settings, task not scheduled")
 
     if settings.TRADING_CORTEX_ENABLED:
-        from src.core.jobs.trading_cortex_training_job import TradingCortexTrainingJob
-        global _trading_cortex_training_task
         _trading_cortex_training_task = event_loop.create_task(TradingCortexTrainingJob().run_loop())
-        logger.info("[ORCHESTRATOR][TRADING][CORTEX][TRAINING] Scheduled task started")
+        logger.info(
+            "[ORCHESTRATOR][TRADING][CORTEX][TRAINING] Scheduled task started (interval=%ss)",
+            settings.TRADING_CORTEX_LOOP_INTERVAL_SECONDS,
+        )
     else:
         logger.info("[ORCHESTRATOR][TRADING][CORTEX][TRAINING] TradingCortex disabled in settings, task not scheduled")
 
