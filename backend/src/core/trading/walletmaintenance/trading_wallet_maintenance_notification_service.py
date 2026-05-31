@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.core.trading.wallet_maintenance.trading_wallet_maintenance_structures import (
+from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures import (
     TradingWalletMaintenanceCycleSummary,
     TradingWalletMaintenanceOperationStatus,
 )
@@ -44,4 +44,4 @@ def dispatch_wallet_maintenance_alerts(cycle_summary: TradingWalletMaintenanceCy
             emoji_indicator="🚨",
         )
 
-    logger.debug("[TRADING][WALLET_MAINTENANCE][SERVICE] Alert dispatch completed")
+    logger.debug("[TRADING][WALLETMAINTENANCE][SERVICE] Alert dispatch completed")

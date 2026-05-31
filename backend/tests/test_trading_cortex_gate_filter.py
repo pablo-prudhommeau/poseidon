@@ -78,7 +78,7 @@ def test_sort_trading_candidates_by_cortex_final_trade_score_descending() -> Non
         _build_candidate("MID", 55.0),
     ]
 
-    ordered = sort_trading_candidates_by_cortex_final_trade_score(candidates)
+    ordered = sort_trading_candidates_by_cortex_final_trade_score(candidates, descending=True)
 
     assert [candidate.token.symbol for candidate in ordered] == ["HIGH", "MID", "LOW"]
 

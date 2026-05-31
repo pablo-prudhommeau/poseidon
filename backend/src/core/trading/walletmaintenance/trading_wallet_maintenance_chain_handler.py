@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Protocol
 
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.wallet_maintenance.trading_wallet_maintenance_structures import (
-    TradingNativeGasThresholdSnapshot,
+from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures import (
     TradingWalletMaintenanceChainGasResult,
     TradingWalletMaintenanceChainReclaimResult,
 )
@@ -18,7 +17,4 @@ class TradingWalletMaintenanceChainHandler(Protocol):
         ...
 
     def run_dormant_account_reclaim(self) -> TradingWalletMaintenanceChainReclaimResult:
-        ...
-
-    def resolve_native_gas_threshold_for_buy_guard(self) -> Optional[TradingNativeGasThresholdSnapshot]:
         ...

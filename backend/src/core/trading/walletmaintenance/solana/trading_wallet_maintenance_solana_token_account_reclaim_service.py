@@ -11,10 +11,10 @@ from solders.transaction import VersionedTransaction
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.execution.trading_executor import SWAP_EXECUTION_LOCK
-from src.core.trading.wallet_maintenance.solana.trading_wallet_maintenance_solana_structures import (
+from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_structures import (
     TradingWalletMaintenanceSolanaReclaimableTokenAccount,
 )
-from src.core.trading.wallet_maintenance.trading_wallet_maintenance_structures import (
+from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures import (
     TradingWalletMaintenanceChainReclaimResult,
     TradingWalletMaintenanceOperationStatus,
 )
@@ -50,7 +50,7 @@ def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainR
         wallet_address = signer.address
     except Exception:
         logger.exception(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Signer unavailable — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Signer unavailable — "
             "blockchain_network=%s reason=signer_unavailable",
             blockchain_network.value,
         )
@@ -69,7 +69,7 @@ def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainR
 
     if not reclaimable_accounts:
         logger.debug(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Scan completed — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Scan completed — "
             "blockchain_network=%s wallet_address=%s reclaimable_account_count=0 reason=no_reclaimable_accounts",
             blockchain_network.value,
             wallet_address,
@@ -101,7 +101,7 @@ def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainR
                     raise RuntimeError(f"Reclaim transaction {transaction_signature} failed confirmation")
         except Exception:
             logger.exception(
-                "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Batch reclaim failed — "
+                "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Batch reclaim failed — "
                 "blockchain_network=%s wallet_address=%s reclaimable_account_count=%d reason=reclaim_execution_failed",
                 blockchain_network.value,
                 wallet_address,
@@ -122,7 +122,7 @@ def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainR
         reclaimed_account_count += len(batch_accounts)
         transaction_signatures.append(transaction_signature)
         logger.info(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Closed empty token accounts — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Closed empty token accounts — "
             "blockchain_network=%s wallet_address=%s reclaimable_account_count=%d transaction_signature=%s "
             "native_balance_delta_lamports=%d",
             blockchain_network.value,
@@ -160,7 +160,7 @@ def _resolve_reclaimable_token_accounts(
             continue
         if token_account.token_mint_address in mint_addresses_with_non_zero_balance:
             logger.debug(
-                "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Skipping empty token account — "
+                "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Skipping empty token account — "
                 "token_account_address=%s token_mint_address=%s reason=mint_has_non_zero_balance",
                 token_account.token_account_address,
                 token_account.token_mint_address,
@@ -173,7 +173,7 @@ def _resolve_reclaimable_token_accounts(
         )
         if last_activity_timestamp is None:
             logger.debug(
-                "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Skipping empty token account — "
+                "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Skipping empty token account — "
                 "token_account_address=%s token_mint_address=%s reason=no_on_chain_transaction_history",
                 token_account.token_account_address,
                 token_account.token_mint_address,
@@ -181,7 +181,7 @@ def _resolve_reclaimable_token_accounts(
             continue
         if last_activity_timestamp >= inactive_cutoff:
             logger.debug(
-                "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Skipping empty token account — "
+                "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Skipping empty token account — "
                 "token_account_address=%s token_mint_address=%s last_activity_timestamp=%s reason=recent_on_chain_activity",
                 token_account.token_account_address,
                 token_account.token_mint_address,
@@ -203,7 +203,7 @@ def _resolve_reclaimable_token_accounts(
         )
 
     logger.debug(
-        "[TRADING][WALLET_MAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Reclaimable token account scan completed — "
+        "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Reclaimable token account scan completed — "
         "wallet_token_account_count=%d reclaimable_account_count=%d inactive_cutoff_timestamp=%s",
         len(token_accounts),
         len(reclaimable_accounts),

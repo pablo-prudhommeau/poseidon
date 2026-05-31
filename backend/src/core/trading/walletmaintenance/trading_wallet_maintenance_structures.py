@@ -15,15 +15,6 @@ class TradingWalletMaintenanceOperationStatus(str, Enum):
     NOT_REQUIRED = "not_required"
 
 
-class TradingNativeGasThresholdSnapshot(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    blockchain_network: BlockchainNetwork
-    threshold_raw_lamports: int
-    target_raw_lamports: int
-    native_token_symbol: str
-
-
 class TradingWalletMaintenanceChainGasResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

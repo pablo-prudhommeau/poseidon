@@ -5,8 +5,8 @@ import asyncio
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
-from src.core.trading.wallet_maintenance.trading_wallet_maintenance_service import run_wallet_maintenance_cycle
-from src.core.trading.wallet_maintenance.trading_wallet_maintenance_structures import (
+from src.core.trading.walletmaintenance.trading_wallet_maintenance_service import run_wallet_maintenance_cycle
+from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures import (
     TradingWalletMaintenanceOperationStatus,
 )
 from src.logging.logger import get_application_logger
@@ -18,7 +18,7 @@ class TradingWalletMaintenanceJob:
     async def run_loop(self) -> None:
         interval_seconds = settings.TRADING_WALLET_MAINTENANCE_INTERVAL_SECONDS
         logger.info(
-            "[TRADING][WALLET_MAINTENANCE][JOB] Wallet maintenance loop starting — interval_seconds=%s",
+            "[TRADING][WALLETMAINTENANCE][JOB] Wallet maintenance loop starting — interval_seconds=%s",
             interval_seconds,
         )
         while True:
@@ -26,7 +26,7 @@ class TradingWalletMaintenanceJob:
                 await self._execute_maintenance_cycle()
             except Exception:
                 logger.exception(
-                    "[TRADING][WALLET_MAINTENANCE][JOB] Wallet maintenance cycle failed — reason=cycle_execution_failed"
+                    "[TRADING][WALLETMAINTENANCE][JOB] Wallet maintenance cycle failed — reason=cycle_execution_failed"
                 )
             await asyncio.sleep(interval_seconds)
 
@@ -67,7 +67,7 @@ class TradingWalletMaintenanceJob:
         if cycle_summary.gas_results or cycle_summary.reclaim_results:
             cache_invalidator.mark_dirty(CacheRealm.AVAILABLE_CASH, CacheRealm.PORTFOLIO)
         logger.info(
-            "[TRADING][WALLET_MAINTENANCE][JOB] Wallet maintenance cycle completed with gas and reclaim outcomes — "
+            "[TRADING][WALLETMAINTENANCE][JOB] Wallet maintenance cycle completed with gas and reclaim outcomes — "
             "gas_result_count=%d gas_success_count=%d gas_failed_count=%d gas_skipped_count=%d "
             "gas_not_required_count=%d reclaim_result_count=%d reclaim_success_count=%d "
             "reclaim_failed_count=%d reclaim_skipped_count=%d reclaim_not_required_count=%d",

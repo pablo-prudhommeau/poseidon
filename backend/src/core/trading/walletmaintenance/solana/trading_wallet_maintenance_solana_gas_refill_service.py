@@ -5,10 +5,10 @@ import base64
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.execution.trading_executor import SWAP_EXECUTION_LOCK
-from src.core.trading.wallet_maintenance.solana.trading_wallet_maintenance_solana_gas_budget_service import (
+from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_gas_budget_service import (
     build_solana_gas_budget_snapshot,
 )
-from src.core.trading.wallet_maintenance.trading_wallet_maintenance_structures import (
+from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures import (
     TradingWalletMaintenanceChainGasResult,
     TradingWalletMaintenanceOperationStatus,
 )
@@ -52,7 +52,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
         wallet_address = signer.address
     except Exception:
         logger.exception(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Signer unavailable — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Signer unavailable — "
             "blockchain_network=%s reason=signer_unavailable",
             blockchain_network.value,
         )
@@ -65,7 +65,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     native_balance_before_lamports = fetch_solana_native_balance_lamports(rpc_url, wallet_address)
     if native_balance_before_lamports is None:
         logger.warning(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Failed to read native balance — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Failed to read native balance — "
             "blockchain_network=%s wallet_address=%s reason=native_balance_unavailable",
             blockchain_network.value,
             wallet_address,
@@ -78,7 +78,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
 
     if native_balance_before_lamports >= budget_snapshot.refill_threshold_lamports:
         logger.debug(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Refill not required — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill not required — "
             "blockchain_network=%s wallet_address=%s native_balance_before=%s refill_threshold=%s "
             "reason=native_balance_above_threshold",
             blockchain_network.value,
@@ -97,7 +97,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     refill_delta_lamports = budget_snapshot.refill_target_lamports - native_balance_before_lamports
     if refill_delta_lamports <= 0:
         logger.debug(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Refill not required — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill not required — "
             "blockchain_network=%s wallet_address=%s native_balance_before=%s refill_target=%s "
             "reason=native_balance_above_target",
             blockchain_network.value,
@@ -116,7 +116,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     sol_usd_price = resolve_sol_usd_price(rpc_url)
     if sol_usd_price is None or sol_usd_price <= 0.0:
         logger.warning(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] SOL/USD price unavailable — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] SOL/USD price unavailable — "
             "blockchain_network=%s wallet_address=%s reason=sol_usd_price_unavailable",
             blockchain_network.value,
             wallet_address,
@@ -133,7 +133,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     available_stablecoin_usd = max(0.0, stablecoin_balance - settings.TRADING_MIN_FREE_CASH_USD)
     if available_stablecoin_usd <= 0.0:
         logger.warning(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Refill blocked — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill blocked — "
             "blockchain_network=%s wallet_address=%s stablecoin_balance_usd=%s "
             "min_free_cash_buffer_usd=%s available_stablecoin_usd=%s reason=insufficient_stablecoin_for_refill",
             blockchain_network.value,
@@ -154,7 +154,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     stablecoin_spend_raw = int(stablecoin_spend_usd * (10 ** SOLANA_STABLECOIN_DECIMALS))
     if stablecoin_spend_raw <= 0:
         logger.warning(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Refill blocked — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill blocked — "
             "blockchain_network=%s wallet_address=%s stablecoin_spend_usd=%s reason=stablecoin_spend_amount_zero",
             blockchain_network.value,
             wallet_address,
@@ -168,11 +168,11 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
         )
 
     logger.info(
-        "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Starting native SOL refill via stablecoin swap for %d cycles "
+        "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Starting native SOL refill via stablecoin swap for %d cycles "
         "of 4 operations per position (ATA + entry + TP1 + TP2/SL) — blockchain_network=%s wallet_address=%s max_open_positions=%d "
         "native_balance_before=%s refill_target=%s stablecoin_spend_usd=%s "
         "min_free_cash_buffer_usd=%s",
-        settings.TRADING_SOLANA_GAS_REFILL_THRESHOLD_MULTIPLIER,
+        settings.TRADING_SOLANA_GAS_MINIMUM_CYCLE_NUMBER,
         blockchain_network.value,
         wallet_address,
         budget_snapshot.max_open_positions,
@@ -199,7 +199,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
                 raise RuntimeError(f"Refill transaction {transaction_signature} failed confirmation")
     except Exception:
         logger.exception(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Refill execution failed — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill execution failed — "
             "blockchain_network=%s wallet_address=%s stablecoin_spend_usd=%s reason=refill_execution_failed",
             blockchain_network.value,
             wallet_address,
@@ -224,7 +224,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     native_balance_delta_lamports = native_balance_after_lamports - native_balance_before_lamports
     if native_balance_delta_lamports <= 0:
         logger.warning(
-            "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Refill confirmed on-chain but native balance unchanged after polling — "
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill confirmed on-chain but native balance unchanged after polling — "
             "blockchain_network=%s wallet_address=%s transaction_signature=%s "
             "native_balance_before=%s native_balance_after=%s stablecoin_spend_usd=%s "
             "reason=native_balance_unchanged_after_refill",
@@ -246,7 +246,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
         )
 
     logger.info(
-        "[TRADING][WALLET_MAINTENANCE][SOLANA][GAS][REFILL] Native SOL refill completed successfully — "
+        "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Native SOL refill completed successfully — "
         "blockchain_network=%s wallet_address=%s transaction_signature=%s native_balance_before=%s "
         "native_balance_after=%s native_balance_delta_lamports=%d stablecoin_spend_usd=%s reason=refill_executed",
         blockchain_network.value,

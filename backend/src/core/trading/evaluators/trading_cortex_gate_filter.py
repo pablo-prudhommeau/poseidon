@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 from src.configuration.config import settings
-from src.core.trading.cortex.trading_cortex_inference_provider import get_trading_cortex_inference_service
-from src.core.trading.cortex.trading_cortex_request_builder import TradingCortexRequestBuilder
-from src.core.trading.cortex.trading_cortex_structures import TradingCortexScoringBatchRequest, TradingCortexScoringResponse
+from src.core.trading.cortex.trading_cortex_inference_provider import (
+    get_trading_cortex_inference_service,
+)
+from src.core.trading.cortex.trading_cortex_request_builder import (
+    TradingCortexRequestBuilder,
+)
+from src.core.trading.cortex.trading_cortex_structures import (
+    TradingCortexScoringBatchRequest,
+    TradingCortexScoringResponse,
+)
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingSnapshot,
 )
-from src.core.trading.trading_structures import TradingFilterVerdict, TradingCortexInferenceSnapshot, TradingCandidate
+from src.core.trading.trading_structures import (
+    TradingCandidate,
+    TradingCortexInferenceSnapshot,
+    TradingFilterVerdict,
+)
 from src.core.utils.log_utils import get_visual_width
-from src.logging.logger import get_application_logger, console_color_codes
+from src.logging.logger import console_color_codes, get_application_logger
 
 logger = get_application_logger(__name__)
 
@@ -18,11 +29,11 @@ def _cortex_holding_time_max_minutes() -> float:
     return settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS * 60.0
 
 
-def sort_trading_candidates_by_cortex_final_trade_score(candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+def sort_trading_candidates_by_cortex_final_trade_score(candidates: list[TradingCandidate],descending: bool) -> list[TradingCandidate]:
     return sorted(
         candidates,
         key=lambda candidate: candidate.cortex_diagnostics.inference_snapshot.final_trade_score,
-        reverse=True,
+        reverse=descending,
     )
 
 
@@ -141,7 +152,7 @@ def apply_trading_cortex_gate_filter(
             len(candidates),
         )
 
-    return sort_trading_candidates_by_cortex_final_trade_score(retained) + skipped_without_cortex
+    return sort_trading_candidates_by_cortex_final_trade_score(retained, descending=True) + skipped_without_cortex
 
 
 def _log_cortex_evaluation_details(
@@ -153,7 +164,10 @@ def _log_cortex_evaluation_details(
     grey: str = console_color_codes["GREY"]
     reset: str = console_color_codes["RESET"]
 
-    for candidate in rejected:
+    rejected_by_score_ascending = sort_trading_candidates_by_cortex_final_trade_score(rejected, descending=False)
+    retained_by_score_ascending = sort_trading_candidates_by_cortex_final_trade_score(retained, descending=False)
+
+    for candidate in rejected_by_score_ascending:
         snapshot = candidate.cortex_diagnostics.inference_snapshot
         if not snapshot:
             continue
@@ -165,7 +179,7 @@ def _log_cortex_evaluation_details(
         metrics_table: str = _format_cortex_metrics_table(snapshot)
         logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Reasons: %s", prefix, padding, metrics_table)
 
-    for candidate in retained:
+    for candidate in retained_by_score_ascending:
         snapshot = candidate.cortex_diagnostics.inference_snapshot
         if not snapshot:
             continue
