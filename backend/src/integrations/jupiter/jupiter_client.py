@@ -75,7 +75,7 @@ def fetch_jupiter_swap_transaction(
         quoteResponse=quote_response,
         userPublicKey=user_public_key,
         wrapAndUnwrapSol=True,
-        useSharedAccounts=True,
+        useSharedAccounts=False,
         dynamicComputeUnitLimit=True,
         skipUserAccountsRpcCalls=True
     )

@@ -43,7 +43,7 @@ class JupiterSwapRequest(BaseModel):
     quote_response: JupiterQuoteResponse = Field(alias="quoteResponse")
     user_public_key: str = Field(alias="userPublicKey")
     wrap_and_unwrap_sol: bool = Field(default=True, alias="wrapAndUnwrapSol")
-    use_shared_accounts: bool = Field(default=True, alias="useSharedAccounts")
+    use_shared_accounts: bool = Field(default=False, alias="useSharedAccounts")
     dynamic_compute_unit_limit: bool = Field(default=True, alias="dynamicComputeUnitLimit")
     skip_user_accounts_rpc_calls: bool = Field(default=True, alias="skipUserAccountsRpcCalls")
 
