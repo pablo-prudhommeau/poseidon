@@ -12,6 +12,7 @@ services:
       - "8080:80"
     volumes:
       - ./db:/app/db
+      - ./logs:/app/backend/data/logs
       - ./models:/app/backend/data/models
       - ./memray:/app/backend/data/memray
       - ./screenshots:/app/data/screenshots

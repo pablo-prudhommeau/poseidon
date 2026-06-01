@@ -87,7 +87,7 @@ class TradingPipeline:
         if shadowing_snapshot_required:
             shadow_snapshot = self._step_load_shadowing_snapshot()
             if shadow_snapshot is None:
-                logger.warning(
+                logger.info(
                     "[TRADING][PIPELINE][GATE] Shadowing regime snapshot not yet in cache; "
                     "aborting trading cycle until the regime is computed"
                 )

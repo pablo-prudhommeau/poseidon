@@ -8,6 +8,7 @@ __pycache__/
 !.idea/biome.xml
 *.iws
 backend/data
+logs/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json

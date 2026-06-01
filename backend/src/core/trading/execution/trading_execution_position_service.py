@@ -148,6 +148,36 @@ def execute_closing_sell(
         reason: PositionExitTriggerReason,
         previous_phase: PositionPhase,
 ) -> Optional[TradingTrade]:
+    try:
+        return _execute_closing_sell(
+            database_session=database_session,
+            position=position,
+            execution_price=execution_price,
+            sell_quantity=sell_quantity,
+            reason=reason,
+            previous_phase=previous_phase,
+        )
+    except Exception:
+        logger.exception(
+            "[TRADING][EXECUTION][POSITION] Closing sell failed — position_id=%s token=%s reason=%s previous_phase=%s",
+            position.id,
+            position.token_symbol,
+            reason.value,
+            previous_phase.value,
+        )
+        if position.position_phase == PositionPhase.CLOSING:
+            revert_position_closing(database_session, position, previous_phase)
+        return None
+
+
+def _execute_closing_sell(
+        database_session: Session,
+        position: TradingPosition,
+        execution_price: float,
+        sell_quantity: float,
+        reason: PositionExitTriggerReason,
+        previous_phase: PositionPhase,
+) -> Optional[TradingTrade]:
     execution_outcome = None
 
     if not settings.PAPER_MODE:

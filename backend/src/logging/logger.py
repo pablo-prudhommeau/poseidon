@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from logging.handlers import TimedRotatingFileHandler
 from typing import Optional
 
 from src.configuration.config import settings
@@ -38,6 +39,7 @@ level_to_color_mapping = {
 }
 
 application_namespace = "poseidon"
+application_log_file_name = "poseidon.log"
 default_logger_name_width = 40
 
 
@@ -144,25 +146,57 @@ class PoseidonColorFormatter(logging.Formatter):
         return formatted_line
 
 
-def install_unfiltered_console_handler(root_logger: logging.Logger) -> None:
+def install_console_handler(root_logger: logging.Logger) -> None:
+    console_logging_level = get_logging_level_from_string(settings.LOG_LEVEL_CONSOLE)
+
     for handler in root_logger.handlers:
         if isinstance(handler, PoseidonStreamHandler):
-            handler.setLevel(logging.NOTSET)
+            handler.setLevel(console_logging_level)
             return
 
     console_handler = PoseidonStreamHandler(stream=sys.stdout)
-    console_handler.setLevel(logging.NOTSET)
+    console_handler.setLevel(console_logging_level)
     console_handler.setFormatter(PoseidonColorFormatter(enable_color=check_color_support_enabled()))
     root_logger.addHandler(console_handler)
+
+
+def install_timed_rotating_file_handler(application_logger: logging.Logger) -> None:
+    if not settings.LOG_TO_FILE_ENABLED:
+        return
+
+    for handler in application_logger.handlers:
+        if isinstance(handler, TimedRotatingFileHandler):
+            return
+
+    log_directory_path = settings.LOG_DIRECTORY
+    os.makedirs(log_directory_path, exist_ok=True)
+    log_file_path = os.path.join(log_directory_path, application_log_file_name)
+
+    file_handler = TimedRotatingFileHandler(
+        filename=log_file_path,
+        when=settings.LOG_FILE_ROTATION_WHEN,
+        backupCount=settings.LOG_FILE_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(get_logging_level_from_string(settings.LOG_LEVEL_FILE))
+    file_handler.setFormatter(PoseidonColorFormatter(enable_color=False))
+    application_logger.addHandler(file_handler)
 
 
 def initialize_application_logging() -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(get_logging_level_from_string(settings.LOG_LEVEL))
-    install_unfiltered_console_handler(root_logger)
+    install_console_handler(root_logger)
+
+    from src.logging.application_exception_hooks import install_application_exception_hooks
+    from src.logging.incident_logging_handler import install_incident_logging_handler
+
+    install_incident_logging_handler(root_logger)
+    install_application_exception_hooks()
 
     application_logger = logging.getLogger(application_namespace)
-    application_logger.setLevel(get_logging_level_from_string(settings.LOG_LEVEL_POSEIDON))
+    application_logger.setLevel(get_logging_level_from_string(settings.LOG_LEVEL_FILE))
+    install_timed_rotating_file_handler(application_logger)
 
     logging.getLogger("requests").setLevel(get_logging_level_from_string(settings.LOG_LEVEL_LIB_REQUESTS))
     logging.getLogger("urllib3").setLevel(get_logging_level_from_string(settings.LOG_LEVEL_LIB_URLLIB3))

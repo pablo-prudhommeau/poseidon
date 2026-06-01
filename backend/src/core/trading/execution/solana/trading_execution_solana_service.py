@@ -11,6 +11,7 @@ from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
+from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.integrations.blockchain.blockchain_structures import (
     BlockchainExecutionRoute,
@@ -224,8 +225,11 @@ def _fetch_onchain_price_for_token(token: Token) -> Optional[float]:
 
         logger.debug("[TRADING][EXECUTION][SOLANA][PRICE] No valid on-chain price for %s", token)
         return None
-    except Exception as exception:
-        logger.exception("[TRADING][EXECUTION][SOLANA][PRICE] On-chain price fetch failed for %s — %s", token, exception)
+    except BlockchainPriceUnavailableError as price_unavailable_error:
+        logger.warning("[TRADING][EXECUTION][SOLANA][PRICE] %s", price_unavailable_error)
+        return None
+    except Exception:
+        logger.exception("[TRADING][EXECUTION][SOLANA][PRICE] On-chain price fetch failed for %s", token)
         return None
 
 

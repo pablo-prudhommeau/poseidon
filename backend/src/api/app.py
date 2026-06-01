@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 
 from src.api.http.http_api import router as http_router
 from src.api.http.trading_http_api import router as trading_http_router
@@ -18,6 +19,7 @@ from src.core.jobs.job_structures import ApiStatusResponse
 from src.core.jobs.orchestrator import read_background_jobs_runtime_status, start_background_jobs
 from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders
 from src.core.trading.shadowing.cache.trading_shadowing_cache_rebuilders import register_trading_shadowing_rebuilders
+from src.logging.application_exception_hooks import install_asyncio_unhandled_exception_handler
 from src.logging.logger import get_application_logger, initialize_application_logging
 from src.persistence.database_migration_manager import run_database_migrations
 from src.persistence.database_session_manager import get_database_session
@@ -76,8 +78,19 @@ def create_app() -> FastAPI:
 
     application.add_middleware(GZipMiddleware, minimum_size=500)
 
+    @application.exception_handler(Exception)
+    async def unhandled_http_exception_handler(request: Request, exception: Exception) -> JSONResponse:
+        logger.exception(
+            "[HTTP][API] Unhandled exception — method=%s path=%s",
+            request.method,
+            request.url.path,
+        )
+        return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
     @application.on_event("startup")
     async def on_startup() -> None:
+        install_asyncio_unhandled_exception_handler(asyncio.get_running_loop())
+
         if settings.DATABASE_AUTO_MIGRATE:
             await asyncio.to_thread(run_database_migrations)
 

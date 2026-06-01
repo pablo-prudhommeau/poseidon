@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Optional
 
+import requests
+
 from src.configuration.config import settings
+from src.core.structures.structures import BlockchainNetwork
+from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
 from src.integrations.blockchain.solana.dex_parsers.meteora_pool_parser import MeteoraPoolParser
 from src.integrations.blockchain.solana.dex_parsers.orca_pool_parser import OrcaPoolParser
 from src.integrations.blockchain.solana.dex_parsers.pumpfun_pool_parser import PumpfunPoolParser
@@ -33,6 +37,22 @@ _DEX_PARSER_REGISTRY: dict = {
     "meteora": _meteora_parser,
     "orca": _orca_parser,
 }
+
+
+def _raise_solana_price_unavailable_from_infrastructure_failure(
+        infrastructure_failure: BaseException,
+) -> None:
+    raise BlockchainPriceUnavailableError(
+        str(infrastructure_failure),
+        blockchain_network=BlockchainNetwork.SOLANA,
+    ) from infrastructure_failure
+
+
+def _resolve_solana_rpc_url_for_price_fetch() -> str:
+    try:
+        return get_solana_rpc_url()
+    except ConnectionError as connection_error:
+        _raise_solana_price_unavailable_from_infrastructure_failure(connection_error)
 
 
 def _parse_pool_price_by_dex(
@@ -68,7 +88,7 @@ def read_solana_pool_price_usd(
         logger.debug("[BLOCKCHAIN][PRICE][SOL] DEX %s not in supported list, skipping %s", normalized_dex, target_token_address[:8])
         return None
 
-    rpc_url = get_solana_rpc_url()
+    rpc_url = _resolve_solana_rpc_url_for_price_fetch()
 
     try:
         account_info = rpc_get_account_info(rpc_url, pool_address)
@@ -91,9 +111,8 @@ def read_solana_pool_price_usd(
         logger.debug("[BLOCKCHAIN][PRICE][SOL] %s (%s) = %.10f USD via RPC (%s)", target_token_address[:8], normalized_dex, price_usd, normalized_dex)
         return price_usd
 
-    except Exception:
-        logger.exception("[BLOCKCHAIN][PRICE][SOL] RPC price fetch failed for %s (%s)", target_token_address[:8], normalized_dex)
-        return None
+    except (ConnectionError, requests.RequestException) as infrastructure_failure:
+        _raise_solana_price_unavailable_from_infrastructure_failure(infrastructure_failure)
 
 
 def read_solana_pool_prices_usd_batch(
@@ -114,7 +133,7 @@ def read_solana_pool_prices_usd_batch(
     if not eligible_descriptors:
         return {}
 
-    rpc_url = get_solana_rpc_url()
+    rpc_url = _resolve_solana_rpc_url_for_price_fetch()
     results: dict[str, float] = {}
 
     pool_addresses = [pair_address for _, pair_address, _ in eligible_descriptors]
@@ -136,11 +155,16 @@ def read_solana_pool_prices_usd_batch(
                 price_usd = convert_price_to_usd(rpc_url, price_in_quote, quote_mint)
                 if price_usd is not None and price_usd > 0:
                     results[token_address] = price_usd
-            except Exception:
-                logger.exception("[BLOCKCHAIN][PRICE][SOL] Batch parse error for %s (%s)", token_address[:8], dex_id)
+            except Exception as parse_exception:
+                logger.warning(
+                    "[BLOCKCHAIN][PRICE][SOL] Batch parse error for %s (%s) — %s",
+                    token_address[:8],
+                    dex_id,
+                    parse_exception,
+                )
 
-    except Exception:
-        logger.exception("[BLOCKCHAIN][PRICE][SOL] RPC batch fetch failed for %d pools", len(eligible_descriptors))
+    except (ConnectionError, requests.RequestException) as infrastructure_failure:
+        _raise_solana_price_unavailable_from_infrastructure_failure(infrastructure_failure)
 
     logger.info("[BLOCKCHAIN][PRICE][SOL] Batch resolved %d / %d pool prices via RPC", len(results), len(eligible_descriptors))
     return results

@@ -207,7 +207,7 @@ def _read_native_token_usd_price(web3_provider: Web3, chain: BlockchainNetwork) 
 
         logger.debug("[BLOCKCHAIN][PRICE][EVM] Native token price on %s = %.4f USD", chain.value, price_in_quote)
         return price_in_quote
-    except Exception as exception:
+    except Exception:
         logger.exception("[BLOCKCHAIN][PRICE][EVM] Failed to read native token price on %s", chain.value)
         return None
 
@@ -254,6 +254,6 @@ def read_evm_pair_price_usd(
         )
         return None
 
-    except Exception as exception:
+    except Exception:
         logger.exception("[BLOCKCHAIN][PRICE][EVM] Failed to read price for pair %s on %s", pair_address[:10], chain.value)
         return None

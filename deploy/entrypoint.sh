@@ -2,6 +2,7 @@
 set -eu
 
 for writable_directory in \
+    /app/backend/data/logs \
     /app/backend/data/models \
     /app/backend/data/memray \
     /app/data/screenshots \

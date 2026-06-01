@@ -53,6 +53,12 @@ class Settings:
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "WARNING").upper()
     LOG_LEVEL_POSEIDON: str = os.getenv("LOG_LEVEL_POSEIDON", "DEBUG").upper()
+    LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", str(Path(__file__).resolve().parents[2] / "data" / "logs"))
+    LOG_LEVEL_CONSOLE: str = os.getenv("LOG_LEVEL_CONSOLE", "INFO").upper()
+    LOG_LEVEL_FILE: str = os.getenv("LOG_LEVEL_FILE", "DEBUG").upper()
+    LOG_FILE_ROTATION_WHEN: str = os.getenv("LOG_FILE_ROTATION_WHEN", "midnight")
+    LOG_FILE_BACKUP_COUNT: int = int(os.getenv("LOG_FILE_BACKUP_COUNT", "90"))
+    LOG_TO_FILE_ENABLED: bool = _as_bool(os.getenv("LOG_TO_FILE_ENABLED"), True)
     LOG_LEVEL_LIB_REQUESTS: str = os.getenv("LOG_LEVEL_LIB_REQUESTS", "WARNING").upper()
     LOG_LEVEL_LIB_URLLIB3: str = os.getenv("LOG_LEVEL_LIB_URLLIB3", "WARNING").upper()
     LOG_LEVEL_LIB_WEBSOCKETS: str = os.getenv("LOG_LEVEL_LIB_WEBSOCKETS", "WARNING").upper()
@@ -61,6 +67,11 @@ class Settings:
     LOG_LEVEL_LIB_ASYNCIO: str = os.getenv("LOG_LEVEL_LIB_ASYNCIO", "WARNING").upper()
     LOG_LEVEL_LIB_ANYIO: str = os.getenv("LOG_LEVEL_LIB_ANYIO", "WARNING").upper()
     LOG_LEVEL_LIB_OPENAI: str = os.getenv("LOG_LEVEL_LIB_OPENAI", "WARNING").upper()
+
+    LOGGING_INCIDENT_FORWARDING_ENABLED: bool = _as_bool(os.getenv("LOGGING_INCIDENT_FORWARDING_ENABLED"), True)
+    LOGGING_INCIDENT_MINIMUM_LEVEL: str = os.getenv("LOGGING_INCIDENT_MINIMUM_LEVEL", "ERROR").upper()
+    LOGGING_INCIDENT_COOLDOWN_SECONDS: int = int(os.getenv("LOGGING_INCIDENT_COOLDOWN_SECONDS", "120"))
+    LOGGING_INCIDENT_MAX_BODY_CHARACTERS: int = int(os.getenv("LOGGING_INCIDENT_MAX_BODY_CHARACTERS", "3500"))
 
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")

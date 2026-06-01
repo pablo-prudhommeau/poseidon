@@ -38,7 +38,7 @@ COPY --from=frontend-build /app/frontend/dist/frontend/browser/ /usr/share/nginx
 
 RUN groupadd --system poseidon \
     && useradd --system --gid poseidon --create-home --home-dir /home/poseidon poseidon \
-    && mkdir -p /app/backend/data/models /app/backend/data/memray /app/data/screenshots /app/db /run/nginx \
+    && mkdir -p /app/backend/data/logs /app/backend/data/models /app/backend/data/memray /app/data/screenshots /app/db /run/nginx \
     && rm -f /etc/nginx/sites-enabled/default \
     && chmod +x /app/deploy/entrypoint.sh \
     && chown -R poseidon:poseidon /app/backend /app/deploy /app/data /app/db /home/poseidon /ms-playwright

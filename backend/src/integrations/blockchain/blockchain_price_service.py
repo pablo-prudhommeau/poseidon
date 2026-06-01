@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from src.core.structures.structures import Token
+from src.core.structures.structures import BlockchainNetwork, Token
+from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
 from src.integrations.blockchain.blockchain_rpc_registry import (
     get_supported_evm_chains,
     resolve_web3_provider_for_chain,
@@ -12,8 +13,6 @@ from src.integrations.blockchain.solana.blockchain_solana_price_reader import re
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
-
-from src.core.structures.structures import BlockchainNetwork
 
 
 def fetch_onchain_price_for_token(token: Token) -> Optional[float]:
@@ -31,7 +30,10 @@ def fetch_onchain_price_for_token(token: Token) -> Optional[float]:
     if chain in get_supported_evm_chains():
         web3_provider = resolve_web3_provider_for_chain(chain)
         if web3_provider is None:
-            return None
+            raise BlockchainPriceUnavailableError(
+                f"[BLOCKCHAIN][PRICE][SERVICE] No RPC provider for chain {chain.value}",
+                blockchain_network=chain,
+            )
         return read_evm_pair_price_usd(web3_provider, chain, pair_address, token_address)
 
     logger.debug("[BLOCKCHAIN][PRICE][SERVICE] Unsupported chain %s for token %s", chain.value, token.symbol)
@@ -88,8 +90,8 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
                         "[BLOCKCHAIN][PRICE][SERVICE] No valid price for %s (%s) on solana",
                         token.symbol, token.pair_address[:10],
                     )
-        except Exception:
-            logger.exception("[BLOCKCHAIN][PRICE][SERVICE] Unhandled error fetching batched solana prices")
+        except BlockchainPriceUnavailableError as price_unavailable_error:
+            logger.warning("[BLOCKCHAIN][PRICE][SERVICE] %s", price_unavailable_error)
 
     failed_pair_addresses: set[str] = set()
     logged_pair_addresses: set[str] = set()
@@ -107,7 +109,7 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
                     logged_pair_addresses.add(pair_address)
                     logger.debug(
                         "[BLOCKCHAIN][PRICE][SERVICE] %s (%s) = %.12f USD",
-                        token.symbol, pair_address[:10], price_usd,
+                        token.symbol, pair_address[:10],
                     )
             else:
                 failed_pair_addresses.add(pair_address)
@@ -115,11 +117,15 @@ def fetch_onchain_prices_for_tokens(tokens: list[Token]) -> dict[str, float]:
                     "[BLOCKCHAIN][PRICE][SERVICE] No valid price for %s (%s) on %s",
                     token.symbol, pair_address[:10], token.chain.value,
                 )
+        except BlockchainPriceUnavailableError as price_unavailable_error:
+            failed_pair_addresses.add(pair_address)
+            logger.warning("[BLOCKCHAIN][PRICE][SERVICE] %s", price_unavailable_error)
         except Exception:
             failed_pair_addresses.add(pair_address)
             logger.exception(
                 "[BLOCKCHAIN][PRICE][SERVICE] Unhandled error fetching price for %s (%s)",
-                token.symbol, pair_address[:10],
+                token.symbol,
+                pair_address[:10],
             )
 
     logger.info(

@@ -59,7 +59,7 @@ class CacheInvalidator:
                         )
                         if cold_rebuild_without_prior_explicit_invalidation:
                             staleness_seconds = now_monotonic - previous_rebuild_monotonic
-                            logger.warning(
+                            logger.debug(
                                 "[CACHE][TTL_GUARD][STALE_REALM] realm=%s elapsed_since_last_rebuild=%.1fs ttl_seconds=%.1fs "
                                 "no explicit mark_dirty this interval; cold rebuild scheduled — verify mutators invalidate this realm",
                                 realm_candidate.value,
