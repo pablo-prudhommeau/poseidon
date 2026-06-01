@@ -20,7 +20,7 @@ from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import compute_shadowing_snapshot
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingSnapshot
-from src.core.trading.trading_portfolio_helpers import build_trading_portfolio
+from src.core.trading.trading_helpers import build_trading_portfolio
 from src.core.trading.trading_service import (
     compute_available_cash_usd,
     compute_holdings_and_unrealized_totals,

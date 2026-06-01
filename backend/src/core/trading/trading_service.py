@@ -13,7 +13,7 @@ from src.configuration.config import settings
 from src.core.structures.structures import Token
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.screener.trading_screener_provider import get_trading_screener_provider
-from src.core.trading.trading_evaluation_helpers import build_trading_evaluation
+from src.core.trading.trading_helpers import build_trading_evaluation
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.trading_utils import convert_trading_position_to_token, normalize_side_to_upper
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime, parse_iso_datetime_to_local

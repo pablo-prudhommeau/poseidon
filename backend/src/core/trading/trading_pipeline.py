@@ -28,6 +28,7 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingPhase,
 )
 from src.core.trading.trading_service import fetch_trading_candidates_sync, record_skipped_trading_evaluation, record_trading_evaluation
+from src.core.trading.trading_utils import is_buy_notional_executable, resolve_spendable_cash_usd
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload
 from src.core.trading.trading_utils import refresh_candidates_from_screener
 from src.core.trading.gasreserve.trading_gas_reserve_service import is_gas_reserve_sufficient_for_buy
@@ -398,17 +399,19 @@ class TradingPipeline:
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
                 continue
 
-            available_to_spend = max(0.0, available_cash_usd - min_free_cash)
             order_notional = total_equity_usd * per_buy_fraction * candidate.shadowing_diagnostics.notional_boost_factor
+            spendable_cash_usd = resolve_spendable_cash_usd(available_cash_usd, min_free_cash)
 
-            if order_notional > available_to_spend:
-                logger.warning(
-                    "[TRADING][PIPELINE][EXECUTE] Cap notional to respect min cash buffer: %.2f -> %.2f for %s",
-                    order_notional, available_to_spend, candidate.token.symbol
+            if not is_buy_notional_executable(order_notional, available_cash_usd, min_free_cash):
+                logger.info(
+                    "[TRADING][PIPELINE][EXECUTE] Skip %s — order notional %.4f exceeds spendable cash %.4f "
+                    "(available=%.4f buffer=%.4f)",
+                    candidate.token.symbol,
+                    order_notional,
+                    spendable_cash_usd,
+                    available_cash_usd,
+                    min_free_cash,
                 )
-                order_notional = available_to_spend
-
-            if order_notional <= 0:
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
                 continue
 
