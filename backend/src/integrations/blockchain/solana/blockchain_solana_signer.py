@@ -132,8 +132,11 @@ class SolanaSigner:
         if sol_usd is None or sol_usd <= 0.0:
             logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] SOL/USD unavailable; fee USD set to 0 for signature=%s", signature_text)
             total_usd = 0.0
+            swap_fee_usd = 0.0
         else:
             total_usd = total_sol * sol_usd
+            base_sol = base_fee_lamports / 1_000_000_000.0
+            swap_fee_usd = base_sol * sol_usd
 
         breakdown = SolanaTransactionFeeBreakdown(
             base_fee_lamports=base_fee_lamports,
@@ -141,6 +144,7 @@ class SolanaSigner:
             total_lamports=total_lamports,
             total_sol=total_sol,
             total_usd=total_usd,
+            swap_fee_usd=swap_fee_usd,
         )
         logger.info(
             "[BLOCKCHAIN][SOLANA][SIGNER][FEE] signature=%s base_lamports=%d rent_lamports=%d total_usd=%.6f",

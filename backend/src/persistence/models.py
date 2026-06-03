@@ -91,12 +91,20 @@ class TradingPortfolioSnapshot(DatabaseBaseModel):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     total_equity_value: Mapped[float] = mapped_column(Float, nullable=False)
-    available_cash_balance: Mapped[float] = mapped_column(Float, nullable=False)
-    active_holdings_value: Mapped[float] = mapped_column(Float, nullable=False)
+    deployable_cash_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    holdings_mark_to_market_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    wallet_auxiliary_assets_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    sizing_capital_usd: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
 
     def __repr__(self) -> str:
-        return f"<TradingPortfolioSnapshot total_equity_value={self.total_equity_value} available_cash_balance={self.available_cash_balance} active_holdings_value={self.active_holdings_value}>"
+        return (
+            f"<TradingPortfolioSnapshot total_equity_value={self.total_equity_value} "
+            f"deployable_cash_usd={self.deployable_cash_usd} "
+            f"holdings_mark_to_market_usd={self.holdings_mark_to_market_usd} "
+            f"wallet_auxiliary_assets_usd={self.wallet_auxiliary_assets_usd} "
+            f"sizing_capital_usd={self.sizing_capital_usd}>"
+        )
 
 
 class TradingEvaluation(DatabaseBaseModel):

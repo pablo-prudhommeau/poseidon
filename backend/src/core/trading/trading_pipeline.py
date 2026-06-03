@@ -362,19 +362,17 @@ class TradingPipeline:
                 for rank, candidate in enumerate(candidates, start=1):
                     record_skipped_trading_evaluation(candidate, rank, "NO_PORTFOLIO_SNAPSHOT")
                 return
-            else:
-                total_equity_usd = latest_snapshot.total_equity_value
-
         from src.core.trading.cache.trading_cache import trading_cache
         available_cash_usd = trading_cache.get_available_cash_usd()
-        if available_cash_usd is None:
+        sizing_capital_usd = trading_cache.get_sizing_capital_usd()
+        if available_cash_usd is None or sizing_capital_usd is None:
             logger.warning(
-                "[TRADING][PIPELINE][EXECUTE] Available cash not yet in cache — cache not yet warmed up; skipping execution cycle"
+                "[TRADING][PIPELINE][EXECUTE] Portfolio cache not yet warmed up — skipping execution cycle"
             )
             for rank, candidate in enumerate(candidates, start=1):
                 record_skipped_trading_evaluation(candidate, rank, "CACHE_NOT_READY")
             return
-        per_buy_fraction = settings.TRADING_PER_BUY_FRACTION
+        per_buy_capital_fraction = settings.TRADING_PER_BUY_CAPITAL_FRACTION
         min_free_cash = settings.TRADING_MIN_FREE_CASH_USD
         max_positions = settings.TRADING_MAX_OPEN_POSITIONS
 
@@ -399,7 +397,11 @@ class TradingPipeline:
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
                 continue
 
-            order_notional = total_equity_usd * per_buy_fraction * candidate.shadowing_diagnostics.notional_boost_factor
+            order_notional = (
+                sizing_capital_usd
+                * per_buy_capital_fraction
+                * candidate.shadowing_diagnostics.notional_boost_factor
+            )
             spendable_cash_usd = resolve_spendable_cash_usd(available_cash_usd, min_free_cash)
 
             if not is_buy_notional_executable(order_notional, available_cash_usd, min_free_cash):

@@ -338,7 +338,10 @@
     height: 1.75rem;
     border-radius: 0.5rem;
     border: 1px solid transparent;
-    transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+    transition:
+        color 0.18s ease,
+        background-color 0.18s ease,
+        border-color 0.18s ease;
 }
 
 .poseidon-grid-action-btn--details {
@@ -617,6 +620,16 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     letter-spacing: 0.025em;
 }
 
+.trading-overview-label-with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.trading-overview-label-icon {
+    font-size: 8px;
+}
+
 .trading-overview-subtitle {
     font-size: 10px;
     color: rgb(100 116 139);
@@ -632,6 +645,149 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     letter-spacing: 0.1em;
 }
 
+.trading-overview-card-footer {
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgb(255 255 255 / 0.05);
+}
+
+.trading-overview-footer-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 0;
+    row-gap: 0.5rem;
+}
+
+.trading-overview-footer-grid--2x2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trading-overview-footer-grid .trading-overview-footer-cell {
+    white-space: nowrap;
+}
+
+.trading-overview-footer-grid .trading-overview-footer-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.trading-overview-footer-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 0 0.625rem;
+}
+
+.trading-overview-footer-cell-edge-start {
+    padding-left: 0;
+}
+
+.trading-overview-footer-cell-edge-end {
+    padding-right: 0;
+}
+
+.trading-overview-footer-cell-divider::before {
+    content: '';
+    position: absolute;
+    top: 0.125rem;
+    bottom: 0.125rem;
+    left: 0;
+    width: 1px;
+    background-color: rgb(255 255 255 / 0.05);
+}
+
+.trading-overview-footer-row-separator ~ .trading-overview-footer-cell-divider::before {
+    top: 0.375rem;
+}
+
+.trading-overview-footer-row-separator {
+    grid-column: 1 / -1;
+    margin-top: 0.25rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgb(255 255 255 / 0.05);
+}
+
+.trading-overview-footer-cell-empty {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.trading-overview-hero-value {
+    font-size: 1.875rem;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    color: rgb(255 255 255);
+    font-variant-numeric: tabular-nums;
+}
+
+.trading-overview-footer-value {
+    margin-top: 0.125rem;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: rgb(255 255 255);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 10px rgb(255 255 255 / 0.22);
+}
+
+.trading-overview-footer-value[class*='text-emerald-400'] {
+    text-shadow: 0 0 10px rgb(52 211 153 / 0.35);
+}
+
+.trading-overview-footer-value[class*='text-red-400'] {
+    text-shadow: 0 0 10px rgb(248 113 113 / 0.35);
+}
+
+.trading-overview-footer-value[class*='text-cyan-200'] {
+    text-shadow: 0 0 10px rgb(103 232 249 / 0.3);
+}
+
+.trading-overview-footer-value[class*='text-cyan-100'] {
+    text-shadow: 0 0 10px rgb(207 250 254 / 0.25);
+}
+
+.trading-overview-hero-spacer {
+    height: 2.5rem;
+    margin-top: 0.75rem;
+}
+
+.trading-overview-swap-fees-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    max-width: 100%;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px dashed rgb(100 116 139 / 0.4);
+    font-size: 0.75rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.trading-overview-swap-fees-icon {
+    flex-shrink: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    color: rgb(100 116 139);
+}
+
+.trading-overview-swap-fees-inline .trading-overview-label {
+    font-size: inherit;
+    font-weight: 500;
+    color: rgb(100 116 139);
+    letter-spacing: 0.025em;
+}
+
+.trading-overview-swap-fees-inline .trading-overview-footer-value {
+    margin-top: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    color: rgb(255 255 255);
+    text-shadow: none;
+}
+
 .poseidon-tooltip {
     --p-tooltip-background: rgba(18, 20, 23, 0.98);
     --p-tooltip-text-color: #e5e7eb;
@@ -641,7 +797,7 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 0.75rem;
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     font-weight: 500;
     line-height: 1.5;
     padding: 0.65rem 0.85rem;
@@ -650,6 +806,12 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
         0 8px 10px -6px rgba(0, 0, 0, 0.5);
     max-width: 280px;
     text-align: center;
+    overflow-wrap: break-word;
+    word-break: normal;
+}
+
+.poseidon-tooltip-compact .p-tooltip-text {
+    max-width: 140px;
 }
 
 .poseidon-tooltip-roomy {
@@ -659,6 +821,56 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
 .poseidon-tooltip-roomy .p-tooltip-text {
     max-width: 550px;
     text-align: left;
+}
+
+.poseidon-tooltip-roomy.poseidon-tooltip-compact {
+    --p-tooltip-max-width: 275px;
+}
+
+.poseidon-tooltip-roomy.poseidon-tooltip-compact .p-tooltip-text {
+    max-width: 275px;
+}
+
+.poseidon-tooltip-roomy-medium {
+    --p-tooltip-max-width: 400px;
+}
+
+.poseidon-tooltip-roomy-medium .p-tooltip-text {
+    max-width: 400px;
+    text-align: left;
+}
+
+.poseidon-tooltip .poseidon-tooltip-title {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 900;
+    line-height: 1.2;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.poseidon-tooltip .p-tooltip-text .poseidon-tooltip-body {
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.poseidon-tooltip .p-tooltip-text .poseidon-tooltip-label {
+    color: rgb(100 116 139);
+    font-size: inherit;
+    font-weight: inherit;
+    letter-spacing: 0.025em;
+    line-height: inherit;
+    text-transform: uppercase;
+}
+
+.poseidon-tooltip .poseidon-tooltip-muted {
+    color: rgb(100 116 139);
+    font-style: italic;
+}
+
+.poseidon-tooltip .poseidon-tooltip-rent-separator {
+    color: rgb(71 85 105);
+    font-weight: 600;
 }
 
 .shadow-chronicle-dialog .p-dialog-header-actions {

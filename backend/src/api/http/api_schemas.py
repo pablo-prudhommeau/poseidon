@@ -212,6 +212,16 @@ class TradingEquityCurvePointPayload(BaseModel):
     total_equity_value: float
 
 
+class SolanaTokenAccountRentPayload(BaseModel):
+    active_usd: float
+    closable_usd: float
+    pending_reclaim_usd: float
+    locked_sol: float
+    active_account_count: int
+    closable_account_count: int
+    pending_reclaim_account_count: int
+
+
 class BlockchainCashBalancePayload(BaseModel):
     blockchain_network: BlockchainNetwork
     stablecoin_symbol: str
@@ -221,6 +231,7 @@ class BlockchainCashBalancePayload(BaseModel):
     native_token_symbol: str
     native_token_balance_raw: float
     native_token_balance_usd: float = 0.0
+    solana_token_account_rent: Optional[SolanaTokenAccountRentPayload] = None
 
 
 class TradingLiquidityPayload(BaseModel):
@@ -234,12 +245,17 @@ class TradingLiquidityPayload(BaseModel):
 
 class TradingPortfolioPayload(BaseModel):
     total_equity_value: float
-    available_cash_balance: float
-    active_holdings_value: float
+    deployable_cash_usd: float
+    holdings_mark_to_market_usd: float
+    wallet_auxiliary_assets_usd: float
+    sizing_capital_usd: float
+    cumulative_swap_fees_usd: float
     created_at: str
     equity_curve: List[TradingEquityCurvePointPayload]
     unrealized_profit_and_loss: float
     realized_profit_and_loss_24h: float
+    realized_profit_and_loss_7d: float
+    realized_profit_and_loss_30d: float
     realized_profit_and_loss_total: float
     blockchain_balances: List[BlockchainCashBalancePayload] = Field(default_factory=list)
 
@@ -426,7 +442,7 @@ class TradingShadowingVerdictChronicleMetricPointPayload(BaseModel):
     average_pnl_percentage: float
     average_win_rate_percentage: float
     expected_value_per_trade_usd: float
-    portfolio_equity_usd: float
+    total_wallet_value_usd: float
     closed_verdicts_per_hour: float
     profit_factor: float
     average_cortex_prediction_win_rate_percentage: Optional[float] = None

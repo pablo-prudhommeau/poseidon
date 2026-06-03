@@ -21,7 +21,7 @@ from src.core.trading.shadowing.trading_shadowing_regime_gate_timeline import (
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleBucketConfiguration,
     TradingShadowingVerdictChronicleCortexReliabilityBin,
-    TradingShadowingVerdictChroniclePortfolioEquityPoint,
+    TradingShadowingVerdictChroniclePortfolioWalletValuePoint,
     TradingShadowingVerdictChronicleVerdict,
     TradingShadowingVerdictChronicleMetricPoint,
     TradingShadowingVerdictChronicleVolumePoint,
@@ -230,7 +230,7 @@ def compute_trading_shadowing_verdict_chronicle_incremental(
 
     max_id = max(chronicle_verdict.id for chronicle_verdict in working_verdicts)
     new_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
-    portfolio_snapshots: list[TradingShadowingVerdictChroniclePortfolioEquityPoint] = []
+    portfolio_snapshots: list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint] = []
     with get_database_session() as database_session:
         verdict_dao = TradingShadowingVerdictDao(database_session)
         portfolio_snapshot_dao = TradingPortfolioSnapshotDao(database_session)
@@ -281,7 +281,7 @@ def compute_trading_shadowing_verdict_chronicle_incremental(
 
 def _build_trading_shadowing_verdict_chronicle(
         verdicts: list[TradingShadowingVerdictChronicleVerdict],
-        portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint],
+        portfolio_wallet_value_points: list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint],
         now_local: datetime,
         bucket_configurations: list[TradingShadowingVerdictChronicleBucketConfiguration],
         series_end_datetime: datetime,
@@ -301,7 +301,7 @@ def _build_trading_shadowing_verdict_chronicle(
         )
         buckets.append(_build_bucket(
             verdicts=verdicts,
-            portfolio_equity_points=portfolio_equity_points,
+            portfolio_wallet_value_points=portfolio_wallet_value_points,
             bucket_configuration=bucket_configuration,
             from_datetime=bucket_from_datetime,
             to_datetime=bucket_to_datetime,
@@ -322,7 +322,7 @@ def _build_trading_shadowing_verdict_chronicle(
 
 def _build_bucket(
         verdicts: Iterable[TradingShadowingVerdictChronicleVerdict],
-        portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint],
+        portfolio_wallet_value_points: list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint],
         bucket_configuration: TradingShadowingVerdictChronicleBucketConfiguration,
         from_datetime: datetime,
         to_datetime: datetime,
@@ -347,24 +347,24 @@ def _build_bucket(
 
     metric_points: list[TradingShadowingVerdictChronicleMetricPoint] = []
     volume_points: list[TradingShadowingVerdictChronicleVolumePoint] = []
-    sorted_portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint] = sorted(
-        portfolio_equity_points,
-        key=lambda portfolio_equity_point: portfolio_equity_point.timestamp_milliseconds,
+    sorted_portfolio_wallet_value_points: list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint] = sorted(
+        portfolio_wallet_value_points,
+        key=lambda portfolio_wallet_value_point: portfolio_wallet_value_point.timestamp_milliseconds,
     )
-    portfolio_equity_point_index = 0
-    latest_known_portfolio_equity: float = (
-        sorted_portfolio_equity_points[0].total_equity_value
-        if sorted_portfolio_equity_points
+    portfolio_wallet_value_point_index = 0
+    latest_known_portfolio_wallet_value: float = (
+        sorted_portfolio_wallet_value_points[0].total_wallet_value_usd
+        if sorted_portfolio_wallet_value_points
         else 0.0
     )
 
     for bucket_timestamp in sorted(grouped_verdicts.keys()):
-        while portfolio_equity_point_index < len(sorted_portfolio_equity_points):
-            portfolio_equity_point = sorted_portfolio_equity_points[portfolio_equity_point_index]
-            if portfolio_equity_point.timestamp_milliseconds > bucket_timestamp:
+        while portfolio_wallet_value_point_index < len(sorted_portfolio_wallet_value_points):
+            portfolio_wallet_value_point = sorted_portfolio_wallet_value_points[portfolio_wallet_value_point_index]
+            if portfolio_wallet_value_point.timestamp_milliseconds > bucket_timestamp:
                 break
-            latest_known_portfolio_equity = portfolio_equity_point.total_equity_value
-            portfolio_equity_point_index += 1
+            latest_known_portfolio_wallet_value = portfolio_wallet_value_point.total_wallet_value_usd
+            portfolio_wallet_value_point_index += 1
 
         items = grouped_verdicts[bucket_timestamp]
         verdict_count = len(items)
@@ -412,7 +412,7 @@ def _build_bucket(
             average_pnl_percentage=sum(pnl_percentage_values) / verdict_count,
             average_win_rate_percentage=(win_count / verdict_count) * 100.0,
             expected_value_per_trade_usd=sum(pnl_usd_values) / verdict_count,
-            portfolio_equity_usd=latest_known_portfolio_equity,
+            total_wallet_value_usd=latest_known_portfolio_wallet_value,
             closed_verdicts_per_hour=_compute_closed_verdicts_per_hour(verdict_count, bucket_configuration.granularity_seconds),
             profit_factor=_compute_profit_factor(gross_profit_usd, gross_loss_usd),
             average_cortex_prediction_win_rate_percentage=average_cortex_prediction_win_rate_percentage,
@@ -577,20 +577,20 @@ def _load_portfolio_snapshots_for_chronicle(
         portfolio_snapshot_dao: TradingPortfolioSnapshotDao,
         global_from_datetime: datetime,
         fetch_end_datetime: datetime,
-) -> list[TradingShadowingVerdictChroniclePortfolioEquityPoint]:
-    chronicle_portfolio_equity_points: list[TradingShadowingVerdictChroniclePortfolioEquityPoint] = []
+) -> list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint]:
+    chronicle_portfolio_wallet_value_points: list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint] = []
     snapshots_in_window = portfolio_snapshot_dao.retrieve_snapshots_in_window(
         start_datetime=global_from_datetime,
         end_datetime=fetch_end_datetime,
     )
     for snapshot in snapshots_in_window:
-        chronicle_portfolio_equity_points.append(TradingShadowingVerdictChroniclePortfolioEquityPoint(
+        chronicle_portfolio_wallet_value_points.append(TradingShadowingVerdictChroniclePortfolioWalletValuePoint(
             timestamp_milliseconds=int(snapshot.created_at.timestamp() * 1000),
-            total_equity_value=snapshot.total_equity_value,
+            total_wallet_value_usd=snapshot.total_equity_value,
         ))
     return sorted(
-        chronicle_portfolio_equity_points,
-        key=lambda chronicle_portfolio_equity_point: chronicle_portfolio_equity_point.timestamp_milliseconds,
+        chronicle_portfolio_wallet_value_points,
+        key=lambda chronicle_portfolio_wallet_value_point: chronicle_portfolio_wallet_value_point.timestamp_milliseconds,
     )
 
 

@@ -26,6 +26,8 @@ import { buildShadowingRegimeStatusTooltip } from './trading-overview-shadowing-
     styleUrl: './trading-overview-shadowing-regime.component.css'
 })
 export class TradingOverviewShadowingRegimeComponent {
+    readonly chronicleButtonTooltipHtml = `<p class="poseidon-tooltip-body text-slate-200">Shadowing verdict chronicle</p>`;
+
     readonly overrideRegime = input<TradingShadowingRegimePayload | null | undefined>(undefined);
 
     private readonly webSocketService = inject(WebSocketService);
@@ -37,10 +39,10 @@ export class TradingOverviewShadowingRegimeComponent {
         }
         return this.webSocketService.tradingShadowingRegime();
     });
-
     readonly shadowingStatus = computed(() => this.shadowingRegime());
     readonly cortexGateEnabled = computed(() => this.shadowingStatus()?.cortex_gate_enabled ?? false);
     readonly cortexTrainingRequiredCount = computed(() => this.shadowingStatus()?.cortex_training_required_outcome_count ?? 0);
+
     readonly shadowingRequiredCount = computed(() => this.shadowingStatus()?.required_outcome_count ?? 0);
 
     readonly shadowingReadyForGate = computed(() => {
@@ -92,20 +94,21 @@ export class TradingOverviewShadowingRegimeComponent {
         }
         return this.shadowingPhase() === 'CORTEXING' ? 'cortexing' : 'shadowingGate';
     });
-
     readonly cortexingProgressBarClass = computed(() => PROGRESS_TONE[this.cortexingTone()].bar);
+
     readonly cortexingProgressTextClass = computed(() => PROGRESS_TONE[this.cortexingTone()].value);
 
     readonly shadowingLearningProgressVisible = computed(() => {
         const phase = this.shadowingPhase();
         return phase === 'SHADOWING' || phase === 'CORTEXING';
     });
-
     readonly cortexingProgressVisible = computed(() => this.cortexGateEnabled() && this.shadowingLearningProgressVisible());
     readonly formatMultiplier = formatMultiplier;
     readonly fundamentalsGateEnabled = computed(() => this.shadowingRegime()?.fundamentals_gate_enabled ?? false);
     readonly openChronicle = output<void>();
+
     readonly phasePalette = computed(() => resolvePhasePalette(this.shadowingPhase()));
+
     readonly shadowingCardBorderClass = computed<string>(() => this.phasePalette().cardBorder);
 
     readonly shadowingChronicleGeometryLabel = computed(() => {
@@ -146,7 +149,7 @@ export class TradingOverviewShadowingRegimeComponent {
         const coverage = formatHumanDurationFromSeconds(period * bucket);
         const history = formatHumanDurationFromDays(lookbackDays);
         return (
-            `<p class="mb-2"><span class="text-purple-200 font-black uppercase tracking-[0.16em] text-[9px]">profit factor</span></p>` +
+            `<p class="mb-2"><span class="poseidon-tooltip-title text-purple-200">profit factor</span></p>` +
             `<p class="mb-2">For every dollar lost on resolved verdicts, how many dollars are won. ${emphasize('Above 1.00')} means the strategy is net profitable — the higher it climbs, the stronger the edge.</p>` +
             `<p>It is a moving average over the latest ${emphasize(String(period))} ${windowDuration}-long windows that actually contain verdicts (${emphasize(coverage)} of activity), and only looks back over the last ${emphasize(history)}.</p>`
         );
@@ -216,7 +219,7 @@ export class TradingOverviewShadowingRegimeComponent {
         if (progress === null || !this.shadowingEdgeGateEnabled() || this.shadowingLearningDone()) {
             return 'text-white';
         }
-        return progress >= 100 ? 'text-purple-400' : 'text-red-400';
+        return progress >= 100 ? '!text-purple-400' : '!text-red-400';
     });
 
     readonly shadowingEdgeGateSatisfied = computed<boolean>(() => {
@@ -415,7 +418,7 @@ export class TradingOverviewShadowingRegimeComponent {
         if (progress === null || !this.shadowingEdgeGateEnabled() || this.shadowingLearningDone()) {
             return 'text-white';
         }
-        return progress >= 100 ? 'text-purple-400' : 'text-red-400';
+        return progress >= 100 ? '!text-purple-400' : '!text-red-400';
     });
 
     readonly shadowingSparseExpectedValueFloorLabel = computed(() => {
@@ -463,7 +466,7 @@ export class TradingOverviewShadowingRegimeComponent {
         const coverage = formatHumanDurationFromSeconds(period * bucket);
         const history = formatHumanDurationFromDays(lookbackDays);
         return (
-            `<p class="mb-2"><span class="text-purple-200 font-black uppercase tracking-[0.16em] text-[9px]">expected value</span></p>` +
+            `<p class="mb-2"><span class="poseidon-tooltip-title text-purple-200">expected value</span></p>` +
             `<p class="mb-2">The average dollars won or lost on each resolved verdict. ${emphasize('Above zero')} means a typical trade ends in profit — the higher it climbs, the stronger the edge.</p>` +
             `<p>It is a moving average over the latest ${emphasize(String(period))} ${windowDuration}-long windows that actually contain verdicts (${emphasize(coverage)} of activity), and only looks back over the last ${emphasize(history)}.</p>`
         );

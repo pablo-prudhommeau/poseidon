@@ -28,8 +28,7 @@ from src.integrations.blockchain.solana.solana_rpc_client import (
     list_wallet_spl_token_accounts,
 )
 from src.integrations.blockchain.solana.solana_structures import (
-    SOLANA_SPL_TOKEN_PROGRAM_ID,
-    SOLANA_TOKEN_2022_PROGRAM_ID,
+    SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS,
     SolanaWalletTokenAccountSnapshot,
 )
 from src.logging.logger import get_application_logger
@@ -37,12 +36,6 @@ from src.logging.logger import get_application_logger
 logger = get_application_logger(__name__)
 
 SOLANA_CLOSE_ACCOUNT_INSTRUCTION_INDEX = 9
-SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS = {
-    SOLANA_SPL_TOKEN_PROGRAM_ID,
-    SOLANA_TOKEN_2022_PROGRAM_ID,
-}
-
-
 def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainReclaimResult:
     blockchain_network = BlockchainNetwork.SOLANA
     try:
@@ -157,7 +150,7 @@ def _resolve_reclaimable_token_accounts(
             continue
         if token_account.token_mint_address == stablecoin_address:
             continue
-        if token_account.owner_program_id not in SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS:
+        if token_account.owner_program_id not in SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS:
             continue
         if token_account.token_mint_address in mint_addresses_with_non_zero_balance:
             logger.debug(

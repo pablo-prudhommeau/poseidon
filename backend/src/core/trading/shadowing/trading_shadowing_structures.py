@@ -116,9 +116,9 @@ class TradingShadowingVerdictChronicleVerdict(BaseModel):
     cortex_predicted_holding_time_minutes: Optional[float] = None
 
 
-class TradingShadowingVerdictChroniclePortfolioEquityPoint(BaseModel):
+class TradingShadowingVerdictChroniclePortfolioWalletValuePoint(BaseModel):
     timestamp_milliseconds: int
-    total_equity_value: float
+    total_wallet_value_usd: float
 
 
 class TradingShadowingVerdictChronicleMetricPoint(BaseModel):
@@ -126,7 +126,7 @@ class TradingShadowingVerdictChronicleMetricPoint(BaseModel):
     average_pnl_percentage: float
     average_win_rate_percentage: float
     expected_value_per_trade_usd: float
-    portfolio_equity_usd: float
+    total_wallet_value_usd: float
     profit_factor: float
     closed_verdicts_per_hour: float
     average_cortex_prediction_win_rate_percentage: Optional[float] = None

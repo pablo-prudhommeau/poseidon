@@ -110,8 +110,8 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
-        const yPortfolioEquityAxis = new NumericAxis(wasmContext, {
-            id: 'yEquity',
+        const yPortfolioWalletValueAxis = new NumericAxis(wasmContext, {
+            id: 'yWalletValue',
             axisAlignment: EAxisAlignment.Right,
             autoRange: EAutoRange.Always,
             growBy: new NumberRange(0, 0),
@@ -120,8 +120,8 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             drawMinorGridLines: false,
             maxAutoTicks: 10,
             minorsPerMajor: 4,
-            axisTitle: CHRONICLE_AXIS_TITLES.portfolioEquity,
-            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.portfolioEquity },
+            axisTitle: CHRONICLE_AXIS_TITLES.portfolioWalletValue,
+            axisTitleStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.portfolioWalletValue },
             labelStyle: { fontSize: 11, color: CHRONICLE_METRIC_COLORS.axisTick }
         });
 
@@ -190,7 +190,7 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             yPercentage,
             yVolume,
             yExpectedValueAxis,
-            yPortfolioEquityAxis,
+            yPortfolioWalletValueAxis,
             yProfitFactorAxis,
             yTradesPerHourAxis,
             yRegimeEvAxis,
@@ -209,7 +209,7 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             volumeColumnRenderableSeries: seriesBundle.volumeColumnRenderableSeries,
             yVolumeAxis: yVolume,
             yExpectedValueAxis,
-            yPortfolioEquityAxis,
+            yPortfolioWalletValueAxis,
             yProfitFactorAxis,
             yTradesPerHourAxis,
             yRegimeEvAxis,

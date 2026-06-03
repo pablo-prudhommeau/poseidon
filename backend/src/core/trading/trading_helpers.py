@@ -127,6 +127,7 @@ def build_trading_portfolio(
         equity_curve: list[TradingPortfolioEquityCurvePoint],
 ) -> TradingPortfolio:
     from src.core.trading.trading_service import (
+        compute_cumulative_swap_fees_from_trade_payloads,
         compute_holdings_and_unrealized_totals,
         compute_realized_profit_and_loss_totals,
     )
@@ -135,18 +136,27 @@ def build_trading_portfolio(
         open_positions,
         prices_by_pair_address,
     )
-    realized_profit_and_loss_total, realized_profit_and_loss_24h = compute_realized_profit_and_loss_totals(
-        trades,
-        cutoff_hours=24,
-    )
+    (
+        realized_profit_and_loss_total,
+        realized_profit_and_loss_24h,
+        realized_profit_and_loss_7d,
+        realized_profit_and_loss_30d,
+    ) = compute_realized_profit_and_loss_totals(trades)
+
+    cumulative_swap_fees_usd = compute_cumulative_swap_fees_from_trade_payloads(trades)
 
     return TradingPortfolio(
         total_equity_value=portfolio_snapshot.total_equity_value,
-        available_cash_balance=portfolio_snapshot.available_cash_balance,
-        active_holdings_value=portfolio_snapshot.active_holdings_value,
+        deployable_cash_usd=portfolio_snapshot.deployable_cash_usd,
+        holdings_mark_to_market_usd=portfolio_snapshot.holdings_mark_to_market_usd,
+        wallet_auxiliary_assets_usd=portfolio_snapshot.wallet_auxiliary_assets_usd,
+        sizing_capital_usd=portfolio_snapshot.sizing_capital_usd,
+        cumulative_swap_fees_usd=cumulative_swap_fees_usd,
         created_at=portfolio_snapshot.created_at,
         equity_curve=equity_curve,
         unrealized_profit_and_loss=unrealized_profit_and_loss,
         realized_profit_and_loss_24h=realized_profit_and_loss_24h,
+        realized_profit_and_loss_7d=realized_profit_and_loss_7d,
+        realized_profit_and_loss_30d=realized_profit_and_loss_30d,
         realized_profit_and_loss_total=realized_profit_and_loss_total,
     )

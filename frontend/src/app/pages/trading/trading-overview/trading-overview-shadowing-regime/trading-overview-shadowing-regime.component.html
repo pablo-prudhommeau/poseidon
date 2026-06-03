@@ -3,7 +3,7 @@
         <span class="trading-overview-title" [ngClass]="shadowingTitleTextClass()">shadowing regime</span>
         <div class="flex items-center gap-2">
             @if (showChronicleButton()) {
-                <button type="button" class="chronicle-ghost-btn border rounded-lg" [ngClass]="shadowingRegimeClasses()" title="Shadowing verdict chronicle" (click)="openChronicle.emit()">
+                <button type="button" class="chronicle-ghost-btn border rounded-lg cursor-help" [ngClass]="shadowingRegimeClasses()" [pTooltip]="chronicleButtonTooltipHtml" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip" (click)="openChronicle.emit()">
                     <i class="fa fa-bolt"></i>
                 </button>
             }
@@ -15,12 +15,12 @@
     <div class="flex flex-col">
         <div class="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-3 gap-y-8 sm:gap-y-0 items-stretch">
             <div class="shadowing-regime-metric-col flex flex-col min-w-0">
-                <div class="min-h-[2.25rem] flex flex-col">
-                    <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowingChronicleProfitFactorValueClass()">
+                <div class="flex flex-col">
+                    <span class="trading-overview-hero-value" [ngClass]="shadowingChronicleProfitFactorValueClass()">
                         {{ formatMultiplier(shadowingChronicleProfitFactor()) }}
                     </span>
                 </div>
-                <div class="trading-overview-subtitle mt-1 cursor-help whitespace-nowrap" [pTooltip]="shadowingChronicleGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy">
+                <div class="trading-overview-subtitle mt-1 cursor-help whitespace-nowrap" [pTooltip]="shadowingChronicleGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
                     <span [innerHTML]="shadowingChronicleGeometryLabel()"></span>
                 </div>
                 <div class="mt-3 flex flex-col justify-end flex-1">
@@ -40,12 +40,12 @@
             </div>
 
             <div class="shadowing-regime-metric-col flex flex-col min-w-0 border-l-0 sm:border-l border-white/10 sm:pl-2">
-                <div class="min-h-[2.25rem] flex flex-col">
-                    <span class="text-3xl font-black tabular-nums tracking-tight" [ngClass]="shadowingSparseExpectedValueClass()">
+                <div class="flex flex-col">
+                    <span class="trading-overview-hero-value" [ngClass]="shadowingSparseExpectedValueClass()">
                         {{ shadowingSparseExpectedValueUsd() | optionalNumber: '1.1-1' : '$ ' }}
                     </span>
                 </div>
-                <div class="trading-overview-subtitle mt-1 cursor-help whitespace-nowrap" [pTooltip]="shadowingSparseExpectedValueGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy">
+                <div class="trading-overview-subtitle mt-1 cursor-help whitespace-nowrap" [pTooltip]="shadowingSparseExpectedValueGeometryTooltip()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
                     <span [innerHTML]="shadowingSparseExpectedValueGeometryLabel()"></span>
                 </div>
                 <div class="mt-3 flex flex-col justify-end flex-1">
@@ -65,36 +65,34 @@
             </div>
         </div>
     </div>
-    <div class="mt-auto pt-3 border-t border-white/5">
-        <div class="grid grid-cols-3 gap-3 min-h-[36px]">
-            <div class="flex flex-col justify-center leading-none">
-                <span class="trading-overview-label inline-flex items-center gap-1">
-                    win rate
+    <div class="trading-overview-card-footer">
+        <div class="trading-overview-footer-grid">
+            <div class="trading-overview-footer-cell trading-overview-footer-cell-edge-start">
+                <span class="trading-overview-label trading-overview-label-with-icon">
+                    <span>win rate</span>
                     @if (shadowingLearningDone()) {
-                        <i class="fa fa-check text-emerald-400 text-[8px]"></i>
+                        <i class="fa fa-check text-emerald-400 trading-overview-label-icon" aria-hidden="true"></i>
                     }
                 </span>
-                <div class="text-xs font-black text-white mt-1 leading-none">{{ shadowingWinRate() | optionalNumber: '1.0-1' : '' : '%' }}</div>
+                <span class="trading-overview-footer-value">{{ shadowingWinRate() | optionalNumber: '1.0-1' : '' : '%' }}</span>
             </div>
-            <div class="flex flex-col justify-center border-l border-white/5 pl-2 leading-none">
-                <span class="trading-overview-label inline-flex items-center gap-1 whitespace-nowrap">
-                    exp. pnl / h
+            <div class="trading-overview-footer-cell trading-overview-footer-cell-divider">
+                <span class="trading-overview-label trading-overview-label-with-icon">
+                    <span>exp. pnl / h</span>
                     @if (shadowingLearningDone()) {
-                        <i class="fa fa-check text-emerald-400 text-[8px]"></i>
+                        <i class="fa fa-check text-emerald-400 trading-overview-label-icon" aria-hidden="true"></i>
                     }
                 </span>
-                <div class="text-xs font-black text-white mt-1 leading-none">{{ shadowingExpectedPnlVelocity() | optionalNumber: '1.2-2' : '' : '%' }}</div>
+                <span class="trading-overview-footer-value">{{ shadowingExpectedPnlVelocity() | optionalNumber: '1.2-2' : '' : '%' }}</span>
             </div>
-            <div class="flex flex-col justify-center border-l border-white/5 pl-2 leading-none">
-                <span class="trading-overview-label inline-flex items-center gap-1">
-                    meta ev
+            <div class="trading-overview-footer-cell trading-overview-footer-cell-divider trading-overview-footer-cell-edge-end">
+                <span class="trading-overview-label trading-overview-label-with-icon">
+                    <span>meta ev</span>
                     @if (shadowingLearningDone()) {
-                        <i class="fa fa-check text-emerald-400 text-[8px]"></i>
+                        <i class="fa fa-check text-emerald-400 trading-overview-label-icon" aria-hidden="true"></i>
                     }
                 </span>
-                <div class="text-xs font-black text-white mt-1 leading-none">
-                    {{ shadowingExpectedValue() | optionalNumber: '1.2-2' : '$ ' }}
-                </div>
+                <span class="trading-overview-footer-value">{{ shadowingExpectedValue() | optionalNumber: '1.2-2' : '$ ' }}</span>
             </div>
         </div>
     </div>

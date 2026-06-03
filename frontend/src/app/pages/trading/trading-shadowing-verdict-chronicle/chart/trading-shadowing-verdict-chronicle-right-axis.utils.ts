@@ -290,10 +290,10 @@ export function harmonizeChronicleRightAxes(
             usesSplineLineHeadroom: true
         },
         {
-            axis: model.yPortfolioEquityAxis,
+            axis: model.yPortfolioWalletValueAxis,
             values: [
-                ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.portfolioEquityLine, arrays.portfolioEquityUsdSeries),
-                ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.smaPortfolioEquityLine, arrays.movingAveragePortfolioEquityUsdSeries)
+                ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.portfolioWalletValueLine, arrays.portfolioWalletValueUsdSeries),
+                ...valuesIfSeriesVisible(model, CHRONICLE_SERIES.smaPortfolioWalletValueLine, arrays.movingAveragePortfolioWalletValueUsdSeries)
             ],
             normalization: 'step-one',
             usesSplineLineHeadroom: true

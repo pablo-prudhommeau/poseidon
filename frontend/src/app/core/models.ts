@@ -244,6 +244,16 @@ export interface TradingShadowingRegimePayload {
     cortex_training_required_outcome_count?: number | null;
 }
 
+export interface SolanaTokenAccountRentPayload {
+    active_usd: number;
+    closable_usd: number;
+    pending_reclaim_usd: number;
+    locked_sol: number;
+    active_account_count: number;
+    closable_account_count: number;
+    pending_reclaim_account_count: number;
+}
+
 export interface BlockchainCashBalancePayload {
     blockchain_network: string;
     stablecoin_symbol: string;
@@ -253,6 +263,7 @@ export interface BlockchainCashBalancePayload {
     native_token_symbol: string;
     native_token_balance_raw: number;
     native_token_balance_usd: number;
+    solana_token_account_rent?: SolanaTokenAccountRentPayload | null;
 }
 
 export interface TradingLiquidityPayload {
@@ -266,12 +277,17 @@ export interface TradingLiquidityPayload {
 
 export interface TradingPortfolioPayload {
     total_equity_value: number;
-    available_cash_balance: number;
-    active_holdings_value: number;
+    deployable_cash_usd: number;
+    holdings_mark_to_market_usd: number;
+    wallet_auxiliary_assets_usd: number;
+    sizing_capital_usd: number;
+    cumulative_swap_fees_usd: number;
     created_at: string;
     equity_curve: TradingEquityCurvePointPayload[];
     unrealized_profit_and_loss: number;
     realized_profit_and_loss_24h: number;
+    realized_profit_and_loss_7d: number;
+    realized_profit_and_loss_30d: number;
     realized_profit_and_loss_total: number;
     blockchain_balances: BlockchainCashBalancePayload[];
 }
@@ -620,7 +636,7 @@ export interface TradingShadowingVerdictChronicleMetricPointPayload {
     average_pnl_percentage: number;
     average_win_rate_percentage: number;
     expected_value_per_trade_usd: number;
-    portfolio_equity_usd: number;
+    total_wallet_value_usd: number;
     closed_verdicts_per_hour: number;
     profit_factor: number;
     average_cortex_prediction_win_rate_percentage?: number | null;

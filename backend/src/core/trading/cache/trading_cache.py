@@ -34,6 +34,7 @@ class TradingCache:
         self._cached_liquidity: Optional[TradingLiquidityPayload] = None
         self._cached_prices_by_pair_address: Optional[dict[str, float]] = None
         self._cached_available_cash_usd: Optional[float] = None
+        self._cached_sizing_capital_usd: Optional[float] = None
         self._last_successful_update_timestamp: datetime = get_current_local_datetime()
 
     def update_prices_by_pair_address(self, prices_by_pair_address: dict[str, float]) -> None:
@@ -92,6 +93,23 @@ class TradingCache:
                 available_cash_balance_usd,
             )
         _touch_realm(CacheRealm.AVAILABLE_CASH)
+
+    def update_trading_sizing_capital_state(self, sizing_capital_usd: float) -> None:
+        with self._lock:
+            self._cached_sizing_capital_usd = sizing_capital_usd
+            if self._cached_portfolio is not None:
+                self._cached_portfolio = self._cached_portfolio.model_copy(
+                    update={"sizing_capital_usd": sizing_capital_usd},
+                )
+            self._last_successful_update_timestamp = get_current_local_datetime()
+            logger.debug(
+                "[TRADING][CACHE] Sizing capital state updated — sizing_capital=%.2f",
+                sizing_capital_usd,
+            )
+
+    def get_sizing_capital_usd(self) -> Optional[float]:
+        with self._lock:
+            return self._cached_sizing_capital_usd
 
     def get_trading_liquidity_state(self) -> Optional[TradingLiquidityPayload]:
         with self._lock:

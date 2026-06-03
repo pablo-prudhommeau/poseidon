@@ -21,7 +21,6 @@ from src.core.utils.math_utils import quantize_2dp, decimal_from_primitive
 from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
-from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.database_session_manager import get_database_session
@@ -39,10 +38,11 @@ class _FifoInventoryLot:
 
 def compute_realized_profit_and_loss_totals(
         trades: Iterable[TradingTradePayload],
-        *,
-        cutoff_hours: int = 24,
-) -> tuple[float, float]:
-    cutoff_timestamp = get_current_local_datetime() - timedelta(hours=cutoff_hours)
+) -> tuple[float, float, float, float]:
+    now = get_current_local_datetime()
+    cutoff_24h = now - timedelta(hours=24)
+    cutoff_7d = now - timedelta(days=7)
+    cutoff_30d = now - timedelta(days=30)
 
     def trade_timestamp(trade: TradingTradePayload) -> datetime:
         return parse_iso_datetime_to_local(trade.created_at)
@@ -51,7 +51,19 @@ def compute_realized_profit_and_loss_totals(
 
     lots_by_token: Dict[Token, Deque[_FifoInventoryLot]] = defaultdict(deque)
     realized_total: Decimal = Decimal("0")
-    realized_recent: Decimal = Decimal("0")
+    realized_24h: Decimal = Decimal("0")
+    realized_7d: Decimal = Decimal("0")
+    realized_30d: Decimal = Decimal("0")
+
+    def accumulate_realized(trade_time: datetime, contribution: Decimal) -> None:
+        nonlocal realized_total, realized_24h, realized_7d, realized_30d
+        realized_total += contribution
+        if trade_time >= cutoff_24h:
+            realized_24h += contribution
+        if trade_time >= cutoff_7d:
+            realized_7d += contribution
+        if trade_time >= cutoff_30d:
+            realized_30d += contribution
 
     for trade in sorted_trades:
         side = normalize_side_to_upper(trade.trade_side)
@@ -87,11 +99,9 @@ def compute_realized_profit_and_loss_totals(
             continue
 
         if side == "SELL" and trade.realized_profit_and_loss is not None:
-            is_recent = trade_timestamp(trade) >= cutoff_timestamp
+            trade_time = trade_timestamp(trade)
             usd_contribution = decimal_from_primitive(trade.realized_profit_and_loss)
-            realized_total += usd_contribution
-            if is_recent:
-                realized_recent += usd_contribution
+            accumulate_realized(trade_time, usd_contribution)
             remaining_to_match = quantity
             while remaining_to_match > 1e-12 and lots_by_token[token]:
                 lot = lots_by_token[token][0]
@@ -105,7 +115,7 @@ def compute_realized_profit_and_loss_totals(
         if side == "SELL":
             sell_fee_per_unit_usd = fee_usd / quantity if quantity > 0.0 else 0.0
             remaining_to_match = quantity
-            is_recent = trade_timestamp(trade) >= cutoff_timestamp
+            trade_time = trade_timestamp(trade)
 
             while remaining_to_match > 1e-12 and lots_by_token[token]:
                 lot = lots_by_token[token][0]
@@ -114,9 +124,7 @@ def compute_realized_profit_and_loss_totals(
                 pnl_per_unit = unit_price_usd - lot.unit_price_usd - lot.buy_fee_per_unit_usd - sell_fee_per_unit_usd
                 pnl_contribution = decimal_from_primitive(matched_quantity) * decimal_from_primitive(pnl_per_unit)
 
-                realized_total += pnl_contribution
-                if is_recent:
-                    realized_recent += pnl_contribution
+                accumulate_realized(trade_time, pnl_contribution)
 
                 lot.quantity -= matched_quantity
                 remaining_to_match -= matched_quantity
@@ -125,7 +133,9 @@ def compute_realized_profit_and_loss_totals(
 
     return (
         float(quantize_2dp(realized_total)),
-        float(quantize_2dp(realized_recent)),
+        float(quantize_2dp(realized_24h)),
+        float(quantize_2dp(realized_7d)),
+        float(quantize_2dp(realized_30d)),
     )
 
 
@@ -166,23 +176,46 @@ def compute_holdings_and_unrealized_totals(
 def compute_available_cash_usd(*, database_session: Optional[Session] = None) -> float:
     if settings.PAPER_MODE:
         if database_session is not None:
-            return compute_trade_ledger_available_cash_usd(database_session)
+            return compute_paper_deployable_cash_usd(database_session)
         with get_database_session() as opened_database_session:
-            return compute_trade_ledger_available_cash_usd(opened_database_session)
-    return _compute_live_available_cash_usd()
+            return compute_paper_deployable_cash_usd(opened_database_session)
+    return _compute_live_deployable_cash_usd()
 
 
-def compute_trade_ledger_available_cash_usd(database_session: Session) -> float:
-    baseline_cash_usd = _resolve_trade_ledger_baseline_cash_usd(database_session)
-    trade_records = _retrieve_trades_for_trade_ledger(database_session)
-    available_cash = compute_available_cash_from_trades(baseline_cash_usd, trade_records)
-    operating_mode_label = "paper" if settings.PAPER_MODE else "live"
+def compute_paper_deployable_cash_usd(database_session: Session) -> float:
+    trade_records = TradingTradeDao(database_session).retrieve_recent_trades(limit_count=100000)
+    deployable_cash_usd = compute_available_cash_from_trades(settings.PAPER_STARTING_CASH, trade_records)
     logger.debug(
-        "[TRADING][CASH][LEDGER] Trade-ledger available cash resolved — mode=%s balance=%.2f",
-        operating_mode_label,
-        available_cash,
+        "[TRADING][CASH][PAPER] Deployable cash resolved — balance=%.2f",
+        deployable_cash_usd,
     )
-    return available_cash
+    return deployable_cash_usd
+
+
+def compute_cumulative_swap_fees_usd(trades: Iterable[TradingTrade]) -> float:
+    cumulative_fees: Decimal = Decimal("0")
+    for trade_record in trades:
+        try:
+            fee_usd = float(trade_record.transaction_fee) if trade_record.transaction_fee is not None else 0.0
+        except (TypeError, ValueError):
+            continue
+        if fee_usd <= 0.0:
+            continue
+        cumulative_fees += decimal_from_primitive(fee_usd)
+    return float(quantize_2dp(cumulative_fees))
+
+
+def compute_cumulative_swap_fees_from_trade_payloads(trades: Iterable[TradingTradePayload]) -> float:
+    cumulative_fees: Decimal = Decimal("0")
+    for trade_payload in trades:
+        try:
+            fee_usd = float(trade_payload.transaction_fee) if trade_payload.transaction_fee is not None else 0.0
+        except (TypeError, ValueError):
+            continue
+        if fee_usd <= 0.0:
+            continue
+        cumulative_fees += decimal_from_primitive(fee_usd)
+    return float(quantize_2dp(cumulative_fees))
 
 
 def has_any_closing_positions(database_session: Session) -> bool:
@@ -276,56 +309,7 @@ def record_skipped_trading_evaluation(evaluation_candidate: TradingCandidate, se
     record_trading_evaluation(evaluation_candidate, rank=sequence_rank, decision="SKIP", reason=exclusion_reason)
 
 
-def _resolve_trade_ledger_baseline_cash_usd(database_session: Session) -> float:
-    if settings.PAPER_MODE:
-        return settings.PAPER_STARTING_CASH
-    return _resolve_live_trade_ledger_baseline_cash_usd(database_session)
-
-
-def _resolve_live_trade_ledger_baseline_cash_usd(database_session: Session) -> float:
-    portfolio_dao = TradingPortfolioSnapshotDao(database_session)
-    latest_portfolio_snapshot = portfolio_dao.retrieve_latest_snapshot()
-    if latest_portfolio_snapshot is not None:
-        return latest_portfolio_snapshot.available_cash_balance
-
-    logger.info(
-        "[TRADING][CASH][LEDGER] No portfolio snapshot in live mode; "
-        "bootstrapping trade-ledger baseline from on-chain balances"
-    )
-    on_chain_cash_balance_usd = _compute_live_available_cash_usd()
-    trade_dao = TradingTradeDao(database_session)
-    all_trade_records = trade_dao.retrieve_recent_trades(limit_count=100000)
-    cash_from_zero_baseline = compute_available_cash_from_trades(0.0, all_trade_records)
-    return on_chain_cash_balance_usd - cash_from_zero_baseline
-
-
-def _retrieve_trades_for_trade_ledger(database_session: Session) -> List[TradingTrade]:
-    trade_dao = TradingTradeDao(database_session)
-    all_trade_records = trade_dao.retrieve_recent_trades(limit_count=100000)
-
-    if settings.PAPER_MODE:
-        return all_trade_records
-
-    portfolio_dao = TradingPortfolioSnapshotDao(database_session)
-    latest_portfolio_snapshot = portfolio_dao.retrieve_latest_snapshot()
-    if latest_portfolio_snapshot is None:
-        return all_trade_records
-
-    ledger_anchor_timestamp = ensure_timezone_aware(latest_portfolio_snapshot.created_at)
-    if ledger_anchor_timestamp is None:
-        return all_trade_records
-
-    trade_records_after_ledger_anchor: List[TradingTrade] = []
-    for trade_record in all_trade_records:
-        trade_timestamp = ensure_timezone_aware(trade_record.created_at)
-        if trade_timestamp is None:
-            continue
-        if trade_timestamp > ledger_anchor_timestamp:
-            trade_records_after_ledger_anchor.append(trade_record)
-    return trade_records_after_ledger_anchor
-
-
-def _compute_live_available_cash_usd() -> float:
+def _compute_live_deployable_cash_usd() -> float:
     try:
         balances = fetch_stablecoin_balances_for_allowed_chains()
     except ConnectionError:

@@ -71,7 +71,7 @@ def _build_metric_point_payload(metric_point: TradingShadowingVerdictChronicleMe
         average_pnl_percentage=metric_point.average_pnl_percentage,
         average_win_rate_percentage=metric_point.average_win_rate_percentage,
         expected_value_per_trade_usd=metric_point.expected_value_per_trade_usd,
-        portfolio_equity_usd=metric_point.portfolio_equity_usd,
+        total_wallet_value_usd=metric_point.total_wallet_value_usd,
         closed_verdicts_per_hour=metric_point.closed_verdicts_per_hour,
         profit_factor=metric_point.profit_factor,
         average_cortex_prediction_win_rate_percentage=metric_point.average_cortex_prediction_win_rate_percentage,

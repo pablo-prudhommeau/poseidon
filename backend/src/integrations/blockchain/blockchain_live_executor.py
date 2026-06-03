@@ -65,7 +65,7 @@ class LiveExecutionService:
             self._solana_signer.fetch_confirmed_transaction_fee_breakdown_usd,
             signature,
         )
-        fee_usd = 0.0 if fee_breakdown is None else fee_breakdown.total_usd
+        fee_usd = 0.0 if fee_breakdown is None else fee_breakdown.swap_fee_usd
         return BlockchainExecutionResult(
             network=BlockchainNetwork.SOLANA,
             transaction_hash_or_signature=signature,

@@ -5,6 +5,7 @@ from typing import Iterable, Optional
 from src.api.http.api_schemas import (
     TradingPortfolioPayload,
     BlockchainCashBalancePayload,
+    SolanaTokenAccountRentPayload,
     TradingLiquidityPayload,
     TradingTradePayload,
     TradingPositionPayload,
@@ -21,11 +22,14 @@ from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import compute_shadowing_snapshot
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingSnapshot
 from src.core.trading.trading_helpers import build_trading_portfolio
+from src.core.trading.portfolio.trading_portfolio_solana_wallet_auxiliary_service import (
+    resolve_solana_token_account_rent_breakdown,
+)
+from src.core.trading.portfolio.trading_portfolio_structures import SolanaTokenAccountRentBreakdown
+from src.core.trading.portfolio.trading_portfolio_valuation_service import build_trading_portfolio_valuation
 from src.core.trading.trading_service import (
     compute_available_cash_usd,
-    compute_holdings_and_unrealized_totals,
     has_any_closing_positions,
-    compute_trade_ledger_available_cash_usd,
 )
 from src.core.utils.date_utils import (
     get_current_local_datetime,
@@ -111,9 +115,6 @@ def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[Trading
                 )
             return previous_portfolio
 
-        available_cash_usd = compute_trade_ledger_available_cash_usd(database_session)
-        trading_cache.update_trading_available_cash_state(available_cash_balance_usd=available_cash_usd)
-
         database_session.expire_all()
         if has_any_closing_positions(database_session):
             if previous_portfolio is not None:
@@ -132,17 +133,33 @@ def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[Trading
                 )
             return previous_portfolio
 
-        total_holdings_value, _ = compute_holdings_and_unrealized_totals(open_positions, prices_lookup)
-        total_equity_usd = float(quantize_2dp(decimal_from_primitive(available_cash_usd) + decimal_from_primitive(total_holdings_value)))
+        portfolio_valuation = build_trading_portfolio_valuation(
+            database_session=database_session,
+            open_positions=open_positions,
+            prices_by_pair_address=prices_lookup,
+        )
+        trading_cache.update_trading_available_cash_state(
+            available_cash_balance_usd=portfolio_valuation.deployable_cash_usd,
+        )
+        trading_cache.update_trading_sizing_capital_state(
+            sizing_capital_usd=portfolio_valuation.sizing_capital_usd,
+        )
 
         portfolio_dao.create_snapshot(
-            equity=total_equity_usd,
-            cash=available_cash_usd,
-            holdings=total_holdings_value,
+            total_equity_value=portfolio_valuation.total_equity_value,
+            deployable_cash_usd=portfolio_valuation.deployable_cash_usd,
+            holdings_mark_to_market_usd=portfolio_valuation.holdings_mark_to_market_usd,
+            wallet_auxiliary_assets_usd=portfolio_valuation.wallet_auxiliary_assets_usd,
+            sizing_capital_usd=portfolio_valuation.sizing_capital_usd,
         )
         logger.debug(
-            "[TRADING][CACHE][PORTFOLIO] Equity snapshot created — equity=%.2f cash=%.2f holdings=%.2f",
-            total_equity_usd, available_cash_usd, total_holdings_value,
+            "[TRADING][CACHE][PORTFOLIO] Equity snapshot created — equity=%.2f deployable=%.2f holdings=%.2f "
+            "wallet_auxiliary=%.2f sizing_capital=%.2f",
+            portfolio_valuation.total_equity_value,
+            portfolio_valuation.deployable_cash_usd,
+            portfolio_valuation.holdings_mark_to_market_usd,
+            portfolio_valuation.wallet_auxiliary_assets_usd,
+            portfolio_valuation.sizing_capital_usd,
         )
 
     return build_trading_portfolio_payload_reusing_cached_chain_balances(prices_lookup)
@@ -186,8 +203,9 @@ def build_trading_liquidity_payload() -> TradingLiquidityPayload:
         )
 
     blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
+    solana_rent_breakdown = resolve_solana_token_account_rent_breakdown()
     blockchain_balance_payloads = [
-        _convert_blockchain_cash_balance_to_payload(balance)
+        _convert_blockchain_cash_balance_to_payload(balance, solana_rent_breakdown)
         for balance in blockchain_balances_raw
     ]
     available_cash_usd = sum(balance.balance_raw for balance in blockchain_balance_payloads)
@@ -275,20 +293,15 @@ def build_trading_portfolio_payload(
         )
 
         if blockchain_balances_override_payload is None:
-            blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
-            blockchain_balance_payloads = [
-                BlockchainCashBalancePayload(
-                    blockchain_network=balance.blockchain_network,
-                    stablecoin_symbol=balance.stablecoin_symbol,
-                    stablecoin_address=balance.stablecoin_address,
-                    stablecoin_currency_symbol=balance.stablecoin_currency_symbol,
-                    balance_raw=balance.balance_raw,
-                    native_token_symbol=balance.native_token_symbol,
-                    native_token_balance_raw=balance.native_token_balance_raw,
-                    native_token_balance_usd=balance.native_token_balance_usd,
-                )
-                for balance in blockchain_balances_raw
-            ]
+            if settings.PAPER_MODE:
+                blockchain_balance_payloads: list[BlockchainCashBalancePayload] = []
+            else:
+                blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
+                solana_rent_breakdown = resolve_solana_token_account_rent_breakdown()
+                blockchain_balance_payloads = [
+                    _convert_blockchain_cash_balance_to_payload(balance, solana_rent_breakdown)
+                    for balance in blockchain_balances_raw
+                ]
         else:
             blockchain_balance_payloads = list(blockchain_balances_override_payload)
 
@@ -351,7 +364,21 @@ def build_shadowing_snapshot() -> TradingShadowingSnapshot:
     return compute_shadowing_snapshot()
 
 
-def _convert_blockchain_cash_balance_to_payload(balance: BlockchainCashBalance) -> BlockchainCashBalancePayload:
+def _convert_blockchain_cash_balance_to_payload(
+        balance: BlockchainCashBalance,
+        solana_rent_breakdown: SolanaTokenAccountRentBreakdown,
+) -> BlockchainCashBalancePayload:
+    solana_rent_payload: Optional[SolanaTokenAccountRentPayload] = None
+    if balance.blockchain_network == BlockchainNetwork.SOLANA:
+        solana_rent_payload = SolanaTokenAccountRentPayload(
+            active_usd=solana_rent_breakdown.active_usd,
+            closable_usd=solana_rent_breakdown.closable_usd,
+            pending_reclaim_usd=solana_rent_breakdown.pending_reclaim_usd,
+            locked_sol=solana_rent_breakdown.locked_sol,
+            active_account_count=solana_rent_breakdown.active_account_count,
+            closable_account_count=solana_rent_breakdown.closable_account_count,
+            pending_reclaim_account_count=solana_rent_breakdown.pending_reclaim_account_count,
+        )
     return BlockchainCashBalancePayload(
         blockchain_network=balance.blockchain_network,
         stablecoin_symbol=balance.stablecoin_symbol,
@@ -361,6 +388,7 @@ def _convert_blockchain_cash_balance_to_payload(balance: BlockchainCashBalance) 
         native_token_symbol=balance.native_token_symbol,
         native_token_balance_raw=balance.native_token_balance_raw,
         native_token_balance_usd=balance.native_token_balance_usd,
+        solana_token_account_rent=solana_rent_payload,
     )
 
 

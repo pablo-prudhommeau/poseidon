@@ -23,6 +23,7 @@ class SolanaTransactionFeeBreakdown(BaseModel):
     total_lamports: int
     total_sol: float
     total_usd: float
+    swap_fee_usd: float
 
 
 class SolanaPoolPriceResult(BaseModel):
@@ -66,3 +67,9 @@ SOLANA_SPL_TOKEN_DECIMALS_OFFSET = 44
 SOLANA_SPL_TOKEN_ACCOUNT_DATA_LENGTH = 165
 SOLANA_SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 SOLANA_TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS: frozenset[str] = frozenset(
+    {
+        SOLANA_SPL_TOKEN_PROGRAM_ID,
+        SOLANA_TOKEN_2022_PROGRAM_ID,
+    },
+)

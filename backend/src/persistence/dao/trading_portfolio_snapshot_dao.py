@@ -56,12 +56,21 @@ class TradingPortfolioSnapshotDao:
             for snapshot in reversed(equity_snapshots)
         ]
 
-    def create_snapshot(self, equity: float, cash: float, holdings: float) -> TradingPortfolioSnapshot:
+    def create_snapshot(
+            self,
+            total_equity_value: float,
+            deployable_cash_usd: float,
+            holdings_mark_to_market_usd: float,
+            wallet_auxiliary_assets_usd: float,
+            sizing_capital_usd: float,
+    ) -> TradingPortfolioSnapshot:
         new_snapshot = TradingPortfolioSnapshot(
-            total_equity_value=equity,
-            available_cash_balance=cash,
-            active_holdings_value=holdings,
-            created_at=get_current_local_datetime()
+            total_equity_value=total_equity_value,
+            deployable_cash_usd=deployable_cash_usd,
+            holdings_mark_to_market_usd=holdings_mark_to_market_usd,
+            wallet_auxiliary_assets_usd=wallet_auxiliary_assets_usd,
+            sizing_capital_usd=sizing_capital_usd,
+            created_at=get_current_local_datetime(),
         )
         self.save(new_snapshot)
         return new_snapshot

@@ -108,10 +108,15 @@ class TradingPortfolioEquityCurvePoint(BaseModel):
 
 class TradingPortfolio(BaseModel):
     total_equity_value: float
-    available_cash_balance: float
-    active_holdings_value: float
+    deployable_cash_usd: float
+    holdings_mark_to_market_usd: float
+    wallet_auxiliary_assets_usd: float
+    sizing_capital_usd: float
+    cumulative_swap_fees_usd: float
     created_at: datetime
     equity_curve: list[TradingPortfolioEquityCurvePoint] = Field(default_factory=list)
     unrealized_profit_and_loss: float = 0.0
     realized_profit_and_loss_24h: float = 0.0
+    realized_profit_and_loss_7d: float = 0.0
+    realized_profit_and_loss_30d: float = 0.0
     realized_profit_and_loss_total: float = 0.0

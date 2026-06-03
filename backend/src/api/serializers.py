@@ -92,8 +92,11 @@ def serialize_trading_portfolio(
 ) -> TradingPortfolioPayload:
     return TradingPortfolioPayload(
         total_equity_value=portfolio.total_equity_value,
-        available_cash_balance=portfolio.available_cash_balance,
-        active_holdings_value=portfolio.active_holdings_value,
+        deployable_cash_usd=portfolio.deployable_cash_usd,
+        holdings_mark_to_market_usd=portfolio.holdings_mark_to_market_usd,
+        wallet_auxiliary_assets_usd=portfolio.wallet_auxiliary_assets_usd,
+        sizing_capital_usd=portfolio.sizing_capital_usd,
+        cumulative_swap_fees_usd=portfolio.cumulative_swap_fees_usd,
         created_at=format_datetime_to_local_iso(portfolio.created_at),
         equity_curve=[
             TradingEquityCurvePointPayload(
@@ -105,6 +108,8 @@ def serialize_trading_portfolio(
         unrealized_profit_and_loss=portfolio.unrealized_profit_and_loss,
         realized_profit_and_loss_total=portfolio.realized_profit_and_loss_total,
         realized_profit_and_loss_24h=portfolio.realized_profit_and_loss_24h,
+        realized_profit_and_loss_7d=portfolio.realized_profit_and_loss_7d,
+        realized_profit_and_loss_30d=portfolio.realized_profit_and_loss_30d,
         blockchain_balances=blockchain_balances,
     )
 

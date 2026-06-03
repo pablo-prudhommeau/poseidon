@@ -334,7 +334,13 @@ def _execute_closing_sell(
 
     exit_notional = sell_quantity * execution_price
     entry_notional = sell_quantity * position.entry_price
-    trade_pnl_usd = exit_notional - entry_notional
+    allocated_buy_swap_fee_usd = _resolve_allocated_buy_swap_fee_usd_for_sell(
+        database_session=database_session,
+        evaluation_id=position.evaluation_id,
+        sell_quantity=sell_quantity,
+    )
+    sell_swap_fee_usd = live_transaction_fee_usd
+    trade_pnl_usd = exit_notional - entry_notional - allocated_buy_swap_fee_usd - sell_swap_fee_usd
     sell_trade.realized_profit_and_loss = trade_pnl_usd
 
     database_session.flush()
@@ -528,3 +534,23 @@ def resolve_execution_price_for_position(position: TradingPosition) -> float:
         )
 
     return position.entry_price
+
+
+def _resolve_allocated_buy_swap_fee_usd_for_sell(
+        database_session: Session,
+        evaluation_id: int,
+        sell_quantity: float,
+) -> float:
+    if sell_quantity <= 0.0:
+        return 0.0
+    trade_dao = TradingTradeDao(database_session)
+    evaluation_trades = trade_dao.retrieve_by_evaluation_id(evaluation_id)
+    for trade_record in evaluation_trades:
+        if trade_record.trade_side != TradeSide.BUY:
+            continue
+        buy_quantity = trade_record.execution_quantity if trade_record.execution_quantity is not None else 0.0
+        if buy_quantity <= 0.0:
+            return 0.0
+        buy_swap_fee_usd = trade_record.transaction_fee if trade_record.transaction_fee is not None else 0.0
+        return buy_swap_fee_usd * (sell_quantity / buy_quantity)
+    return 0.0
