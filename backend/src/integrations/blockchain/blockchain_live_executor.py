@@ -7,6 +7,10 @@ from typing import Optional
 import base58
 
 from src.core.structures.structures import BlockchainNetwork
+from src.integrations.blockchain.blockchain_execution_structures import (
+    BlockchainTransactionExecutionError,
+    BlockchainTransactionFailureReason,
+)
 from src.integrations.blockchain.blockchain_structures import BlockchainEvmRoute, BlockchainSolanaRoute
 from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer, EvmSigner
 from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer, SolanaSigner
@@ -43,9 +47,17 @@ class LiveExecutionService:
         signature = self._solana_signer.send_raw_transaction(serialized)
         logger.info("[BLOCKCHAIN][EXECUTOR][SOL] Broadcast success — signature=%s. Waiting for confirmation...", signature)
 
-        is_confirmed = await asyncio.to_thread(self._solana_signer.confirm_transaction, signature, 45)
-        if not is_confirmed:
-            raise RuntimeError(f"Solana transaction {signature} failed during on-chain execution or timed out")
+        confirmation_result = await asyncio.to_thread(self._solana_signer.confirm_transaction, signature, 45)
+        if not confirmation_result.is_confirmed:
+            failure_reason = confirmation_result.failure_reason
+            if failure_reason is None:
+                failure_reason = BlockchainTransactionFailureReason.UNKNOWN
+            raise BlockchainTransactionExecutionError(
+                message=f"Solana transaction {signature} failed during on-chain execution or timed out",
+                transaction_signature=signature,
+                failure_reason=failure_reason,
+                raw_error_text=confirmation_result.raw_error_text,
+            )
 
         logger.info("[BLOCKCHAIN][EXECUTOR][SOL] Confirmation success — signature=%s", signature)
 

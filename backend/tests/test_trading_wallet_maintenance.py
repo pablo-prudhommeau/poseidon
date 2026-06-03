@@ -78,6 +78,7 @@ def test_resolve_reclaimable_token_accounts_accepts_token_2022_accounts_with_old
         token_mint_address="Hkpi2SkNWm5LogyY1Bz4zYTq5REVvco2aYWd1tYppump",
         balance_raw=0,
         owner_program_id=SOLANA_TOKEN_2022_PROGRAM_ID,
+        account_state="initialized",
     )
     now = datetime(2026, 5, 30, 12, 0, 0).astimezone()
     old_activity = now - timedelta(hours=100)
@@ -111,12 +112,14 @@ def test_resolve_reclaimable_token_accounts_skips_when_mint_has_non_zero_balance
         token_mint_address="Hkpi2SkNWm5LogyY1Bz4zYTq5REVvco2aYWd1tYppump",
         balance_raw=0,
         owner_program_id=SOLANA_SPL_TOKEN_PROGRAM_ID,
+        account_state="initialized",
     )
     active_token_account = SolanaWalletTokenAccountSnapshot(
         token_account_address="ActiveAccount111111111111111111111111111111",
         token_mint_address="Hkpi2SkNWm5LogyY1Bz4zYTq5REVvco2aYWd1tYppump",
         balance_raw=1_000_000,
         owner_program_id=SOLANA_SPL_TOKEN_PROGRAM_ID,
+        account_state="initialized",
     )
     now = datetime(2026, 5, 30, 12, 0, 0).astimezone()
 
@@ -147,6 +150,7 @@ def test_resolve_reclaimable_token_accounts_skips_recent_on_chain_activity() -> 
         token_mint_address="Hkpi2SkNWm5LogyY1Bz4zYTq5REVvco2aYWd1tYppump",
         balance_raw=0,
         owner_program_id=SOLANA_SPL_TOKEN_PROGRAM_ID,
+        account_state="initialized",
     )
     now = datetime(2026, 5, 30, 12, 0, 0).astimezone()
     recent_activity = now - timedelta(hours=24)
@@ -178,6 +182,7 @@ def test_resolve_reclaimable_token_accounts_skips_without_on_chain_transaction_h
         token_mint_address="Hkpi2SkNWm5LogyY1Bz4zYTq5REVvco2aYWd1tYppump",
         balance_raw=0,
         owner_program_id=SOLANA_SPL_TOKEN_PROGRAM_ID,
+        account_state="initialized",
     )
     now = datetime(2026, 5, 30, 12, 0, 0).astimezone()
 

@@ -19,7 +19,13 @@ except Exception:
     SendTransactionResp = object
 
 from src.configuration.config import settings
-from src.integrations.blockchain.solana.solana_structures import SolanaTransactionFeeBreakdown
+from src.integrations.blockchain.solana.solana_structures import (
+    SolanaTransactionConfirmationResult,
+    SolanaTransactionFeeBreakdown,
+)
+from src.integrations.blockchain.solana.solana_utils import (
+    resolve_blockchain_transaction_failure_reason_from_confirmation_error,
+)
 from src.integrations.blockchain.solana.solana_rpc_client import resolve_sol_usd_price
 from src.logging.logger import get_application_logger
 
@@ -293,14 +299,22 @@ class SolanaSigner:
         )
         return signature
 
-    def confirm_transaction(self, signature_str: str, timeout_seconds: int = 45) -> bool:
+    def confirm_transaction(self, signature_str: str, timeout_seconds: int = 45) -> SolanaTransactionConfirmationResult:
         import time
         from solders.signature import Signature
 
         try:
             signature_obj = Signature.from_string(signature_str)
         except Exception:
-            return False
+            failure_reason = resolve_blockchain_transaction_failure_reason_from_confirmation_error(
+                raw_error_text="invalid_signature",
+                confirmation_timed_out=False,
+            )
+            return SolanaTransactionConfirmationResult(
+                is_confirmed=False,
+                failure_reason=failure_reason,
+                raw_error_text="invalid_signature",
+            )
 
         start_time = time.time()
         while time.time() - start_time < timeout_seconds:
@@ -311,18 +325,32 @@ class SolanaSigner:
                     if statuses and len(statuses) > 0 and statuses[0] is not None:
                         status = statuses[0]
                         if hasattr(status, "err") and status.err is not None:
+                            raw_error_text = str(status.err)
+                            failure_reason = resolve_blockchain_transaction_failure_reason_from_confirmation_error(
+                                raw_error_text=raw_error_text,
+                                confirmation_timed_out=False,
+                            )
                             logger.error(
                                 "[BLOCKCHAIN][SOLANA][SIGNER] Transaction confirmation failed — "
-                                "transaction_signature=%s error=%s",
+                                "transaction_signature=%s failure_reason=%s error=%s",
                                 signature_str,
-                                status.err,
+                                failure_reason.value,
+                                raw_error_text,
                             )
-                            return False
+                            return SolanaTransactionConfirmationResult(
+                                is_confirmed=False,
+                                failure_reason=failure_reason,
+                                raw_error_text=raw_error_text,
+                            )
 
                         if hasattr(status, "confirmation_status"):
                             conf_status = str(status.confirmation_status)
                             if "confirmed" in conf_status.lower() or "finalized" in conf_status.lower():
-                                return True
+                                return SolanaTransactionConfirmationResult(
+                                    is_confirmed=True,
+                                    failure_reason=None,
+                                    raw_error_text="",
+                                )
             except Exception as exception:
                 logger.debug(
                     "[BLOCKCHAIN][SOLANA][SIGNER] Error while checking transaction confirmation status — "
@@ -339,7 +367,15 @@ class SolanaSigner:
             signature_str,
             timeout_seconds,
         )
-        return False
+        failure_reason = resolve_blockchain_transaction_failure_reason_from_confirmation_error(
+            raw_error_text="",
+            confirmation_timed_out=True,
+        )
+        return SolanaTransactionConfirmationResult(
+            is_confirmed=False,
+            failure_reason=failure_reason,
+            raw_error_text="confirmation_timeout",
+        )
 
     def broadcast_presigned_transaction(self, signed_raw_bytes: bytes) -> str:
         if len(signed_raw_bytes) == 0:

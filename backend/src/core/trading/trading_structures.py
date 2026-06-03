@@ -17,6 +17,10 @@ class PositionExitTriggerReason(str, enum.Enum):
     TAKE_PROFIT_2 = "TAKE_PROFIT_2"
     STOP_LOSS = "STOP_LOSS"
     MANUAL = "MANUAL"
+    KILLED = "KILLED"
+    FROZEN_ACCOUNT = "FROZEN_ACCOUNT"
+    CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
+    WALLET_BALANCE_EMPTY = "WALLET_BALANCE_EMPTY"
 
 
 class TradingFilterVerdict(BaseModel):

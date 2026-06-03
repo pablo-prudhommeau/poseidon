@@ -1,4 +1,18 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
 from pydantic import BaseModel, ConfigDict
+
+from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
+
+
+@dataclass(frozen=True)
+class SolanaTransactionConfirmationResult:
+    is_confirmed: bool
+    failure_reason: Optional[BlockchainTransactionFailureReason]
+    raw_error_text: str
 
 
 class SolanaTransactionFeeBreakdown(BaseModel):
@@ -26,6 +40,7 @@ class SolanaWalletTokenAccountSnapshot(BaseModel):
     token_mint_address: str
     balance_raw: int
     owner_program_id: str
+    account_state: str
 
 
 SOLANA_WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112"

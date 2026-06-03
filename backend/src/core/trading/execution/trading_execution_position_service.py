@@ -11,7 +11,18 @@ from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.execution.trading_execution_blockchain_route_service import build_route_for_live_sell
 from src.core.trading.execution.trading_execution_handler_service import resolve_execution_chain_handler_for_blockchain
+from src.core.trading.execution.trading_blockchain_circuit_breaker_service import (
+    record_retryable_exit_failure,
+    reset_retryable_exit_failure_count,
+    should_block_live_sell_before_broadcast,
+    should_mark_position_staled_after_retryable_exit_failure,
+    should_mark_position_staled_immediately_after_failure,
+)
+from src.core.trading.execution.solana.trading_execution_solana_service import (
+    resolve_solana_wallet_token_transfer_blocked_for_mint,
+)
 from src.core.trading.execution.trading_execution_swap_service import run_live_sell_blocking
+from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
 from src.core.trading.trading_structures import PositionExitTriggerReason
 from src.core.trading.trading_utils import convert_trading_position_to_token
 from src.core.utils.date_utils import get_current_local_datetime
@@ -30,6 +41,10 @@ class PositionCloseNotFoundError(Exception):
 
 
 class PositionCloseConflictError(Exception):
+    pass
+
+
+class PositionRecoveryConflictError(Exception):
     pass
 
 
@@ -215,11 +230,21 @@ def _execute_closing_sell(
 
         if sell_quantity <= 0.0:
             logger.error(
-                "[TRADING][EXECUTION][POSITION][LIVE] Actual balance is zero or less for %s. Sell aborted.",
+                "[TRADING][EXECUTION][POSITION][LIVE] Wallet SPL balance is zero for %s while position still holds quantity — marking STALED (external sell or ledger desync)",
                 position.token_symbol,
             )
-            revert_position_closing(database_session, position, previous_phase)
+            mark_position_staled(database_session, position, PositionExitTriggerReason.WALLET_BALANCE_EMPTY)
             return None
+
+        if chain_enum == BlockchainNetwork.SOLANA:
+            wallet_token_transfer_blocked = resolve_solana_wallet_token_transfer_blocked_for_mint(position.token_address)
+            if should_block_live_sell_before_broadcast(wallet_token_transfer_blocked):
+                logger.error(
+                    "[TRADING][EXECUTION][POSITION][LIVE][SELL] Wallet token account frozen for %s — position marked STALED, no on-chain sell transaction sent",
+                    position.token_symbol,
+                )
+                mark_position_staled(database_session, position, PositionExitTriggerReason.FROZEN_ACCOUNT)
+                return None
 
         execution_route = build_route_for_live_sell(
             token_mint=position.token_address,
@@ -236,7 +261,7 @@ def _execute_closing_sell(
             revert_position_closing(database_session, position, previous_phase)
             return None
 
-        execution_outcome = run_live_sell_blocking(
+        sell_execution_outcome = run_live_sell_blocking(
             token_symbol=position.token_symbol,
             token_address=position.token_address,
             pair_address=position.pair_address,
@@ -248,13 +273,22 @@ def _execute_closing_sell(
             origin_evaluation_id=position.evaluation_id,
         )
 
-        if execution_outcome is None:
+        if sell_execution_outcome.execution_result is None:
             logger.warning(
-                "[TRADING][EXECUTION][POSITION][LIVE] Execution failed or aborted by slippage guard for %s.",
+                "[TRADING][EXECUTION][POSITION][LIVE] Execution failed or aborted for %s.",
                 position.token_symbol,
             )
-            revert_position_closing(database_session, position, previous_phase)
+            _handle_failed_closing_sell(
+                database_session=database_session,
+                position=position,
+                previous_phase=previous_phase,
+                failure_reason=sell_execution_outcome.failure_reason,
+            )
             return None
+
+        execution_outcome = sell_execution_outcome.execution_result
+        if position.id is not None:
+            reset_retryable_exit_failure_count(position.id)
 
     trade_dao = TradingTradeDao(database_session)
     execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
@@ -333,6 +367,136 @@ def revert_position_closing(
     position.exit_reason = None
     database_session.commit()
     cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
+
+
+def mark_position_staled(
+        database_session: Session,
+        position: TradingPosition,
+        staled_exit_reason: PositionExitTriggerReason,
+) -> None:
+    position.position_phase = PositionPhase.STALED
+    position.exit_reason = staled_exit_reason.value
+    database_session.commit()
+    cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
+    logger.warning(
+        "[TRADING][EXECUTION][POSITION][STALED] Position marked STALED — position_id=%s token=%s exit_reason=%s",
+        position.id,
+        position.token_symbol,
+        staled_exit_reason.value,
+    )
+
+
+def kill_staled_position(database_session: Session, position_id: int) -> None:
+    position = database_session.get(TradingPosition, position_id)
+    if position is None:
+        raise PositionCloseNotFoundError(f"Position {position_id} not found")
+
+    if position.position_phase != PositionPhase.STALED:
+        raise PositionRecoveryConflictError(f"Position {position_id} is not STALED")
+
+    open_quantity = position.open_quantity or 0.0
+    entry_price = position.entry_price or 0.0
+    entry_notional_usd = open_quantity * entry_price
+
+    trade_dao = TradingTradeDao(database_session)
+    execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
+    kill_trade = TradingTrade(
+        evaluation_id=position.evaluation_id,
+        trade_side=TradeSide.SELL,
+        token_symbol=position.token_symbol,
+        blockchain_network=position.blockchain_network,
+        execution_price=0.0,
+        execution_quantity=0.0,
+        transaction_fee=0.0,
+        realized_profit_and_loss=-entry_notional_usd,
+        execution_status=execution_status,
+        token_address=position.token_address,
+        pair_address=position.pair_address,
+        dex_id=position.dex_id,
+        transaction_hash=None,
+        created_at=get_current_local_datetime(),
+    )
+    trade_dao.save(kill_trade)
+
+    position.current_quantity = 0.0
+    position.position_phase = PositionPhase.CLOSED
+    position.closed_at = get_current_local_datetime()
+    position.exit_reason = PositionExitTriggerReason.KILLED.value
+
+    current_time = get_current_local_datetime().replace(tzinfo=None)
+    opened_time = position.opened_at.replace(tzinfo=None) if position.opened_at else current_time
+    holding_duration_minutes = (current_time - opened_time).total_seconds() / 60.0
+
+    TradingEvaluationDao(database_session).link_trade_outcome(
+        token_address=position.token_address,
+        trade_id=kill_trade.id,
+        closed_at=get_current_local_datetime(),
+        realized_profit_and_loss_percentage=-100.0,
+        realized_profit_and_loss_usd=-entry_notional_usd,
+        holding_duration_minutes=holding_duration_minutes,
+        was_profitable=False,
+    )
+
+    reset_retryable_exit_failure_count(position_id)
+    database_session.commit()
+    cache_invalidator.mark_dirty(
+        CacheRealm.POSITIONS,
+        CacheRealm.TRADES,
+        CacheRealm.AVAILABLE_CASH,
+        CacheRealm.PORTFOLIO,
+    )
+    logger.info(
+        "[TRADING][EXECUTION][POSITION][KILL] Staled position killed — position_id=%s token=%s",
+        position_id,
+        position.token_symbol,
+    )
+
+
+def reopen_staled_position(database_session: Session, position_id: int) -> None:
+    position = database_session.get(TradingPosition, position_id)
+    if position is None:
+        raise PositionCloseNotFoundError(f"Position {position_id} not found")
+
+    if position.position_phase != PositionPhase.STALED:
+        raise PositionRecoveryConflictError(f"Position {position_id} is not STALED")
+
+    position.position_phase = infer_reopen_phase_after_failed_close(position)
+    position.exit_reason = None
+    reset_retryable_exit_failure_count(position_id)
+    database_session.commit()
+    cache_invalidator.mark_dirty(CacheRealm.POSITIONS, CacheRealm.PORTFOLIO)
+    logger.info(
+        "[TRADING][EXECUTION][POSITION][REOPEN] Staled position reopened — position_id=%s token=%s phase=%s",
+        position_id,
+        position.token_symbol,
+        position.position_phase.value,
+    )
+
+
+def _handle_failed_closing_sell(
+        database_session: Session,
+        position: TradingPosition,
+        previous_phase: PositionPhase,
+        failure_reason: BlockchainTransactionFailureReason | None,
+) -> None:
+    position_id = position.id
+    if position_id is None:
+        revert_position_closing(database_session, position, previous_phase)
+        return
+
+    if should_mark_position_staled_immediately_after_failure(failure_reason):
+        staled_reason = PositionExitTriggerReason.FROZEN_ACCOUNT
+        if failure_reason != BlockchainTransactionFailureReason.ACCOUNT_FROZEN:
+            staled_reason = PositionExitTriggerReason.CIRCUIT_BREAKER
+        mark_position_staled(database_session, position, staled_reason)
+        return
+
+    record_retryable_exit_failure(position_id)
+    if should_mark_position_staled_after_retryable_exit_failure(position_id):
+        mark_position_staled(database_session, position, PositionExitTriggerReason.CIRCUIT_BREAKER)
+        return
+
+    revert_position_closing(database_session, position, previous_phase)
 
 
 def infer_reopen_phase_after_failed_close(position: TradingPosition) -> PositionPhase:

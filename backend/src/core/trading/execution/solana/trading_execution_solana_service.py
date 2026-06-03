@@ -10,6 +10,9 @@ from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
+from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
+from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
+from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionExecutionError
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
 from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
@@ -17,6 +20,8 @@ from src.integrations.blockchain.blockchain_structures import (
     BlockchainExecutionRoute,
     BlockchainSolanaRoute,
 )
+from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
+from src.integrations.blockchain.solana.solana_rpc_client import resolve_wallet_token_account_transfer_blocked
 from src.integrations.jupiter.jupiter_client import generate_jupiter_swap_transaction
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_position_dao import TradingPositionDao
@@ -183,6 +188,16 @@ def run_solana_live_buy_blocking(
     )
 
 
+def resolve_solana_wallet_token_transfer_blocked_for_mint(token_mint_address: str) -> bool:
+    signer = build_default_solana_signer()
+    rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA)
+    return resolve_wallet_token_account_transfer_blocked(
+        rpc_url=rpc_url,
+        wallet_address=signer.address,
+        token_mint_address=token_mint_address,
+    )
+
+
 def run_solana_live_sell_blocking(
         token_symbol: str,
         token_address: str,
@@ -192,7 +207,7 @@ def run_solana_live_sell_blocking(
         execution_price: float,
         execution_route: BlockchainExecutionRoute,
         origin_evaluation_id: int,
-) -> Optional[BlockchainExecutionResult]:
+) -> TradingLiveSellExecutionOutcome:
     return _run_awaitable_blocking(
         _execute_solana_live_sell(
             token_symbol=token_symbol,
@@ -369,7 +384,7 @@ async def _execute_solana_live_sell(
         execution_price: float,
         execution_route: BlockchainExecutionRoute,
         origin_evaluation_id: int,
-) -> Optional[BlockchainExecutionResult]:
+) -> TradingLiveSellExecutionOutcome:
     execution_service = LiveExecutionService()
     try:
         logger.info(
@@ -387,7 +402,7 @@ async def _execute_solana_live_sell(
         jit_price_usd = await asyncio.to_thread(_fetch_onchain_price_for_token, temp_token)
         if jit_price_usd is None or jit_price_usd <= 0.0:
             logger.warning("[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Skip JIT: Unable to fetch price right before execution. Aborting.")
-            return None
+            return TradingLiveSellExecutionOutcome(execution_result=None, failure_reason=None)
 
         maximum_slippage = settings.TRADING_MAX_SLIPPAGE
         low_price, high_price = sorted([jit_price_usd, execution_price])
@@ -399,11 +414,11 @@ async def _execute_solana_live_sell(
                 jit_price_usd,
                 maximum_slippage * 100.0,
             )
-            return None
+            return TradingLiveSellExecutionOutcome(execution_result=None, failure_reason=None)
 
         if execution_route.solana_route is None:
             logger.error("[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Missing Solana route payload for %s", token_symbol)
-            return None
+            return TradingLiveSellExecutionOutcome(execution_result=None, failure_reason=None)
 
         execution_outcome = await execution_service.solana_execute_route(execution_route.solana_route)
         logger.info(
@@ -412,8 +427,20 @@ async def _execute_solana_live_sell(
             execution_outcome.transaction_hash_or_signature,
             execution_outcome.transaction_fee_usd,
         )
-        return execution_outcome
+        return TradingLiveSellExecutionOutcome(execution_result=execution_outcome, failure_reason=None)
 
+    except BlockchainTransactionExecutionError as execution_error:
+        logger.error(
+            "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Execution failed for %s (%s) — failure_reason=%s signature=%s",
+            token_symbol,
+            token_address,
+            execution_error.failure_reason.value,
+            execution_error.transaction_signature,
+        )
+        return TradingLiveSellExecutionOutcome(
+            execution_result=None,
+            failure_reason=execution_error.failure_reason,
+        )
     except Exception as exception:
         logger.exception(
             "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Execution failed for %s (%s) — %s",
@@ -421,7 +448,7 @@ async def _execute_solana_live_sell(
             token_address,
             exception,
         )
-        return None
+        return TradingLiveSellExecutionOutcome(execution_result=None, failure_reason=None)
     finally:
         try:
             await execution_service.close()

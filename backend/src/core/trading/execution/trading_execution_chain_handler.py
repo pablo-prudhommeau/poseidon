@@ -4,7 +4,7 @@ from typing import Optional, Protocol
 
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.trading_structures import TradingCandidate
-from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult
+from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
 from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 
 
@@ -52,5 +52,5 @@ class TradingExecutionChainHandler(Protocol):
             execution_price: float,
             execution_route: BlockchainExecutionRoute,
             origin_evaluation_id: int,
-    ) -> Optional[BlockchainExecutionResult]:
+    ) -> TradingLiveSellExecutionOutcome:
         ...

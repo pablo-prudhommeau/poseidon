@@ -64,6 +64,13 @@
     box-shadow: 0 0 28px rgba(239, 68, 68, 0.22);
 }
 
+.poseidon-confirm-dialog-icon--recovery {
+    border-color: rgba(245, 158, 11, 0.42);
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(120, 53, 15, 0.32));
+    color: rgb(253 224 71);
+    box-shadow: 0 0 28px rgba(245, 158, 11, 0.2);
+}
+
 .poseidon-confirm-dialog-body {
     padding: 1rem 1.15rem 0.35rem;
     display: flex;
@@ -147,6 +154,50 @@
     color: rgb(100 116 139);
     font-size: 0.58rem;
     line-height: 1;
+}
+
+.poseidon-confirm-dialog-phase-transition--recovery {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 0.35rem;
+}
+
+.poseidon-confirm-dialog-phase-outcomes {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.poseidon-confirm-dialog-phase-separator {
+    color: rgb(100 116 139);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.poseidon-confirm-dialog-staled-reason {
+    margin: 0;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.poseidon-confirm-dialog-staled-reason .poseidon-confirm-dialog-metric-label {
+    margin-right: 0.35rem;
+}
+
+.poseidon-confirm-dialog-staled-reason-value {
+    font-style: italic;
+    font-weight: 400;
+    color: rgb(250 204 21);
+}
+
+.poseidon-confirm-dialog-metrics-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.1rem;
 }
 
 .poseidon-confirm-dialog-metrics-columns {
@@ -337,6 +388,10 @@
     transform: translateY(0.5px);
 }
 
+.poseidon-confirm-dialog-button .poseidon-ui-spinner--dialog {
+    transform: none;
+}
+
 .poseidon-confirm-dialog-button:disabled {
     opacity: 0.55;
     cursor: not-allowed;
@@ -366,6 +421,19 @@
 .poseidon-confirm-dialog-button--severe:hover:not(:disabled) {
     border-color: rgba(248, 113, 113, 0.45);
     background: linear-gradient(135deg, rgba(239, 68, 68, 0.32), rgba(127, 29, 29, 0.45));
+    color: rgb(255 255 255);
+}
+
+.poseidon-confirm-dialog-button--info {
+    border-color: rgba(59, 130, 246, 0.35);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(30, 58, 138, 0.35));
+    color: rgb(191 219 254);
+    box-shadow: 0 5px 10px rgba(59, 130, 246, 0.16);
+}
+
+.poseidon-confirm-dialog-button--info:hover:not(:disabled) {
+    border-color: rgba(96, 165, 250, 0.45);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.32), rgba(30, 58, 138, 0.45));
     color: rgb(255 255 255);
 }
 

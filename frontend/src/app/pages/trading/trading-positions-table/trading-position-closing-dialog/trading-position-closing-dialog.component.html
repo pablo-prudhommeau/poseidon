@@ -113,12 +113,11 @@
                 <span class="poseidon-confirm-dialog-button-label">Cancel</span>
             </button>
             <button type="button" class="poseidon-confirm-dialog-button poseidon-confirm-dialog-button--severe" [disabled]="submitInProgress()" (click)="confirmClose()">
-                @if (!submitInProgress()) {
-                    <span class="poseidon-confirm-dialog-button-label">Confirm close</span>
-                    <i class="fas fa-ban poseidon-confirm-dialog-button-icon" aria-hidden="true"></i>
+                <span class="poseidon-confirm-dialog-button-label">{{ submitInProgress() ? 'Closing position' : 'Confirm close' }}</span>
+                @if (submitInProgress()) {
+                    <span class="poseidon-ui-spinner poseidon-ui-spinner--dialog" aria-hidden="true" role="status"></span>
                 } @else {
-                    <i class="fas fa-circle-notch poseidon-confirm-dialog-button-icon animate-spin" aria-hidden="true"></i>
-                    <span class="poseidon-confirm-dialog-button-label">Submitting</span>
+                    <i class="fas fa-ban poseidon-confirm-dialog-button-icon" aria-hidden="true"></i>
                 }
             </button>
         </div>

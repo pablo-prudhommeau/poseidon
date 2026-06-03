@@ -9,6 +9,7 @@ import { ApiService } from '../../../../api.service';
 import { DefiIconsService } from '../../../../core/defi-icons.service';
 import { TradingPositionPayload } from '../../../../core/models';
 import { NumberFormattingService } from '../../../../core/number-formatting.service';
+import { positionPhasePillNgClasses } from '../../trading-position-phase-pill.utils';
 import {
     computeTradingPositionDeltaPercent,
     formatDeltaPercentLabel,
@@ -233,15 +234,9 @@ export class TradingPositionClosingDialogComponent {
 
     private phaseClassesForPosition(position: TradingPositionPayload | null | undefined): Record<string, boolean> {
         const phase = position?.position_phase;
-        const classes: Record<string, boolean> = {
-            'poseidon-grid-pill--info': phase === 'OPEN',
-            'poseidon-grid-pill--warn': phase === 'PARTIAL',
-            'poseidon-grid-pill--neutral': phase !== 'OPEN' && phase !== 'PARTIAL' && phase !== 'CLOSING'
-        };
-        if (phase === 'CLOSING') {
-            classes[this.resolveClosingPreviewPillClass(position)] = true;
-        }
-        return classes;
+        return positionPhasePillNgClasses(phase, {
+            closingPreviewClass: phase === 'CLOSING' ? this.resolveClosingPreviewPillClass(position) : undefined
+        });
     }
 
     private renderSymbolChip(position: TradingPositionPayload): void {

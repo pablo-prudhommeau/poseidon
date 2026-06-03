@@ -96,7 +96,8 @@ def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainR
                     signer=signer,
                     reclaimable_accounts=batch_accounts,
                 )
-                is_confirmed = signer.confirm_transaction(transaction_signature, 45)
+                confirmation_result = signer.confirm_transaction(transaction_signature, 45)
+                is_confirmed = confirmation_result.is_confirmed
                 if not is_confirmed:
                     raise RuntimeError(f"Reclaim transaction {transaction_signature} failed confirmation")
         except Exception:

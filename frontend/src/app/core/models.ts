@@ -1,5 +1,13 @@
 export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSING' | 'CLOSED' | 'STALED';
-export type PositionExitTriggerReason = 'TAKE_PROFIT_1' | 'TAKE_PROFIT_2' | 'STOP_LOSS' | 'MANUAL';
+export type PositionExitTriggerReason =
+    | 'TAKE_PROFIT_1'
+    | 'TAKE_PROFIT_2'
+    | 'STOP_LOSS'
+    | 'MANUAL'
+    | 'KILLED'
+    | 'FROZEN_ACCOUNT'
+    | 'CIRCUIT_BREAKER'
+    | 'WALLET_BALANCE_EMPTY';
 export type TradingShadowingPhase = 'DISABLED' | 'SYNCING' | 'SHADOWING' | 'CORTEXING' | 'BEAR' | 'TRADABLE';
 export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';

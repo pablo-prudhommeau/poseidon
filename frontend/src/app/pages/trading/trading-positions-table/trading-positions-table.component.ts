@@ -47,9 +47,15 @@ import {
     formatPositionNotionalCellHtml,
     orderTradingPositionNotionalUsd
 } from '../trading-position-grid-metrics';
+import { formatPositionExitReasonLabel } from '../trading-position-exit-reason.utils';
+import { positionPhasePillNgClasses, resolvePositionPhasePillClass } from '../trading-position-phase-pill.utils';
 import { TradingPositionModalService } from '../trading-position-modal.service';
 import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snapshot-tab/trading-shadowing-snapshot-tab.component';
 import { TradingPositionClosingDialogComponent } from './trading-position-closing-dialog/trading-position-closing-dialog.component';
+import {
+    StaledRecoverySubmitAction,
+    TradingPositionStaledRecoveryDialogComponent
+} from './trading-position-staled-recovery-dialog/trading-position-staled-recovery-dialog.component';
 
 @Component({
     standalone: true,
@@ -70,7 +76,8 @@ import { TradingPositionClosingDialogComponent } from './trading-position-closin
         SkeletonModule,
         NgApexchartsModule,
         TradingShadowingSnapshotTabComponent,
-        TradingPositionClosingDialogComponent
+        TradingPositionClosingDialogComponent,
+        TradingPositionStaledRecoveryDialogComponent
     ],
     templateUrl: './trading-positions-table.component.html',
     styleUrl: './trading-positions-table.component.css'
@@ -81,8 +88,9 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     public readonly agGridTheme = balhamDarkThemeCompact;
     public readonly closingPositionIds = signal<Set<number>>(new Set());
     public columnDefinitions: ColDef<TradingPositionPayload>[] = [];
-
     public readonly confirmCloseVisible = signal<boolean>(false);
+
+    public readonly confirmRecoveryVisible = signal<boolean>(false);
     public readonly defaultColumnDefinition: ColDef<TradingPositionPayload> = {
         resizable: true,
         sortable: true,
@@ -93,13 +101,17 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     public readonly detailsVisible = signal<boolean>(false);
     public readonly getRowId = (params: GetRowIdParams<TradingPositionPayload>): string => String(params.data?.id ?? '');
     public readonly pendingClosePositionId = signal<number | null>(null);
-
     public readonly isCloseDialogSubmitInProgress = computed<boolean>(() => {
         const positionId = this.pendingClosePositionId();
         return positionId !== null && this.closingPositionIds().has(positionId);
     });
-
+    public readonly pendingRecoverySubmitAction = signal<StaledRecoverySubmitAction | null>(null);
+    public readonly isRecoveryDialogSubmitInProgress = computed<boolean>(() => this.pendingRecoverySubmitAction() !== null);
     public readonly pendingClosePositionSnapshot = signal<TradingPositionPayload | null>(null);
+
+    public readonly pendingRecoveryPositionId = signal<number | null>(null);
+
+    public readonly pendingRecoveryPositionSnapshot = signal<TradingPositionPayload | null>(null);
 
     private readonly webSocketService = inject(WebSocketService);
 
@@ -107,6 +119,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         const rows = this.webSocketService.tradingPositions() ?? [];
         return Array.isArray(rows) ? (rows as TradingPositionPayload[]) : [];
     });
+
+    public readonly recoveryPositionIds = signal<Set<number>>(new Set());
 
     public readonly selectedAnalytics = signal<TradingEvaluationPayload | null>(null);
     private readonly selectedPositionId = signal<number | null>(null);
@@ -209,19 +223,9 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 sortable: true,
                 cellRenderer: (params: ValueFormatterParams<TradingPositionPayload>) => {
                     const value: string = String(params.value ?? '');
-                    const severity: string = this.phaseSeverity(value);
-                    let pillClass = 'poseidon-grid-pill--neutral';
-                    if (severity === 'info') {
-                        pillClass = 'poseidon-grid-pill--info';
-                    } else if (severity === 'warn') {
-                        pillClass = 'poseidon-grid-pill--warn';
-                    } else if (severity === 'secondary') {
-                        if (value === 'CLOSING') {
-                            pillClass = this.resolveClosingPreviewPillClass(params.data);
-                        } else {
-                            pillClass = 'poseidon-grid-pill--neutral';
-                        }
-                    }
+                    const pillClass = resolvePositionPhasePillClass(value, {
+                        closingPreviewClass: value === 'CLOSING' ? this.resolveClosingPreviewPillClass(params.data) : undefined
+                    });
 
                     return `<span class="poseidon-grid-pill ${pillClass}">${value}</span>`;
                 },
@@ -443,6 +447,16 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         return !this.closingPositionIds().has(row.id);
     }
 
+    public canRecoverStaledPosition(row: TradingPositionPayload | null | undefined): boolean {
+        if (!row) {
+            return false;
+        }
+        if (row.position_phase !== 'STALED') {
+            return false;
+        }
+        return !this.recoveryPositionIds().has(row.id);
+    }
+
     public closePositionActionClasses(row: TradingPositionPayload | null | undefined): Record<string, boolean> {
         const canClose = this.canClosePosition(row);
         return {
@@ -497,10 +511,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     }
 
     public formatExitReasonLabel(reason: PositionExitTriggerReason | null | undefined): string {
-        if (!reason) {
-            return '—';
-        }
-        return reason.replaceAll('_', ' ');
+        return formatPositionExitReasonLabel(reason);
     }
 
     public formatNumber(value: unknown, min: number, max: number): string {
@@ -527,6 +538,13 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             return false;
         }
         return this.closingPositionIds().has(row.id);
+    }
+
+    public isRecoveryRequestInProgress(row: TradingPositionPayload | null | undefined): boolean {
+        if (!row) {
+            return false;
+        }
+        return this.recoveryPositionIds().has(row.id);
     }
 
     public nextPositionForSelected(): TradingPositionPayload | null {
@@ -558,6 +576,15 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
     }
 
+    public onKillSubmitFinished(event: { positionId: number; success: boolean }): void {
+        this.onRecoverySubmitFinished(event);
+    }
+
+    public onKillSubmitStarted(positionId: number): void {
+        this.pendingRecoverySubmitAction.set('kill');
+        this.recoveryPositionIds.update((current) => new Set(current).add(positionId));
+    }
+
     public onPositionsGridReady(event: GridReadyEvent): void {
         this.positionsGridApi = event.api;
         this.applyPositionsColumnVisibilityForViewport();
@@ -572,6 +599,37 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             mediaNarrow.removeEventListener('change', handler);
             mediaExtraSmall.removeEventListener('change', handler);
         });
+    }
+
+    public onRecoveryDialogVisibleChange(visible: boolean): void {
+        this.confirmRecoveryVisible.set(visible);
+        if (!visible) {
+            this.pendingRecoveryPositionId.set(null);
+            this.pendingRecoveryPositionSnapshot.set(null);
+            this.pendingRecoverySubmitAction.set(null);
+        }
+    }
+
+    public onRecoverySubmitFinished(event: { positionId: number; success: boolean }): void {
+        this.pendingRecoverySubmitAction.set(null);
+        this.recoveryPositionIds.update((current) => {
+            const next = new Set(current);
+            next.delete(event.positionId);
+            return next;
+        });
+        if (event.success) {
+            this.pendingRecoveryPositionId.set(null);
+            this.pendingRecoveryPositionSnapshot.set(null);
+        }
+    }
+
+    public onReopenSubmitFinished(event: { positionId: number; success: boolean }): void {
+        this.onRecoverySubmitFinished(event);
+    }
+
+    public onReopenSubmitStarted(positionId: number): void {
+        this.pendingRecoverySubmitAction.set('reopen');
+        this.recoveryPositionIds.update((current) => new Set(current).add(positionId));
     }
 
     public openCloseConfirm(row: TradingPositionPayload | null): void {
@@ -618,27 +676,17 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         this.openDetails(position);
     }
 
-    public orderNotionalUsd(row: TradingPositionPayload | null, priceBasis: 'entry' | 'last'): number | null {
-        return orderTradingPositionNotionalUsd(row, priceBasis, this.numberFormattingService);
+    public openStaledRecoveryConfirm(row: TradingPositionPayload | null): void {
+        if (!row || !this.canRecoverStaledPosition(row)) {
+            return;
+        }
+        this.pendingRecoveryPositionId.set(row.id);
+        this.pendingRecoveryPositionSnapshot.set(row);
+        this.confirmRecoveryVisible.set(true);
     }
 
-    public phaseSeverity(phase: string | null | undefined): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
-        if (!phase) {
-            return 'secondary';
-        }
-        if (phase === 'OPEN') {
-            return 'info';
-        }
-        if (phase === 'PARTIAL') {
-            return 'warn';
-        }
-        if (phase === 'CLOSING') {
-            return 'secondary';
-        }
-        if (phase === 'CLOSED' || phase === 'STALED') {
-            return 'secondary';
-        }
-        return 'secondary';
+    public orderNotionalUsd(row: TradingPositionPayload | null, priceBasis: 'entry' | 'last'): number | null {
+        return orderTradingPositionNotionalUsd(row, priceBasis, this.numberFormattingService);
     }
 
     public previousPositionForSelected(): TradingPositionPayload | null {
@@ -671,17 +719,17 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         return Math.max(0, Math.min(100, rawPercentage));
     }
 
+    public recoveryPositionActionClasses(row: TradingPositionPayload | null | undefined): Record<string, boolean> {
+        const canRecover = this.canRecoverStaledPosition(row);
+        return {
+            'poseidon-grid-action-btn--recovery-enabled': canRecover,
+            'poseidon-grid-action-btn--recovery-disabled': !canRecover
+        };
+    }
+
     public resolveClosingPreviewPillClass(row: TradingPositionPayload | null | undefined): string {
         const delta = computeTradingPositionDeltaPercent(row ?? null, this.numberFormattingService) ?? 0;
         return delta < 0 ? 'poseidon-grid-pill--closing-negative' : 'poseidon-grid-pill--closing-positive';
-    }
-
-    public selectedPositionClosingPillClass(): string {
-        const position = this.selectedPosition();
-        if (position?.position_phase !== 'CLOSING') {
-            return 'poseidon-grid-pill--neutral';
-        }
-        return this.resolveClosingPreviewPillClass(position);
     }
 
     public selectedPositionPhaseClasses(): Record<string, boolean> {
@@ -807,15 +855,9 @@ export class TradingPositionsTableComponent implements AfterViewInit {
 
     private phaseClassesForPosition(position: TradingPositionPayload | null | undefined): Record<string, boolean> {
         const phase = position?.position_phase;
-        const classes: Record<string, boolean> = {
-            'poseidon-grid-pill--info': phase === 'OPEN',
-            'poseidon-grid-pill--warn': phase === 'PARTIAL',
-            'poseidon-grid-pill--neutral': phase !== 'OPEN' && phase !== 'PARTIAL' && phase !== 'CLOSING'
-        };
-        if (phase === 'CLOSING') {
-            classes[this.resolveClosingPreviewPillClass(position)] = true;
-        }
-        return classes;
+        return positionPhasePillNgClasses(phase, {
+            closingPreviewClass: phase === 'CLOSING' ? this.resolveClosingPreviewPillClass(position) : undefined
+        });
     }
 
     private resetSelectedPositionIcons(row: TradingPositionPayload | null): void {

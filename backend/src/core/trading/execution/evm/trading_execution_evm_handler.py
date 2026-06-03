@@ -4,7 +4,7 @@ from typing import Optional
 
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.trading_structures import TradingCandidate
-from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult
+from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
 from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 from src.logging.logger import get_application_logger
 
@@ -82,11 +82,11 @@ class TradingExecutionEvmHandler:
             execution_price: float,
             execution_route: BlockchainExecutionRoute,
             origin_evaluation_id: int,
-    ) -> Optional[BlockchainExecutionResult]:
+    ) -> TradingLiveSellExecutionOutcome:
         logger.warning(
             "[TRADING][EXECUTION][EVM][SWAP] Live sell blocked — blockchain_network=%s token=%s reason=%s",
             self._blockchain_network.value,
             token_symbol,
             EVM_TRADING_NOT_SUPPORTED_REASON,
         )
-        return None
+        return TradingLiveSellExecutionOutcome(execution_result=None, failure_reason=None)

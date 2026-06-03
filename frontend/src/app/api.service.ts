@@ -79,7 +79,15 @@ export class ApiService {
         return this.http.get<TradingAnalyticsResponse>('/api/trading/analytics');
     }
 
+    killStaledPosition(positionId: number): Observable<void> {
+        return this.http.post<void>(`/api/trading/positions/${positionId}/kill`, null);
+    }
+
     resetPaper(): Observable<TradingPaperResetPayload> {
         return this.http.post<TradingPaperResetPayload>('/api/trading/paper/reset', {});
+    }
+
+    reopenStaledPosition(positionId: number): Observable<void> {
+        return this.http.post<void>(`/api/trading/positions/${positionId}/reopen`, null);
     }
 }

@@ -308,6 +308,7 @@ def list_wallet_spl_token_accounts(rpc_url: str, wallet_address: str) -> list[So
         if not isinstance(account_info, dict):
             continue
         token_mint_address = str(account_info.get("mint", ""))
+        account_state = str(account_info.get("state", "initialized"))
         token_amount_payload = account_info.get("tokenAmount")
         if not isinstance(token_amount_payload, dict):
             continue
@@ -321,9 +322,23 @@ def list_wallet_spl_token_accounts(rpc_url: str, wallet_address: str) -> list[So
                 token_mint_address=token_mint_address,
                 balance_raw=balance_raw,
                 owner_program_id=owner_program_id,
+                account_state=account_state,
             )
         )
     return parsed_accounts
+
+
+def resolve_wallet_token_account_transfer_blocked(
+        rpc_url: str,
+        wallet_address: str,
+        token_mint_address: str,
+) -> bool:
+    token_accounts = list_wallet_spl_token_accounts(rpc_url, wallet_address)
+    for token_account in token_accounts:
+        if token_account.token_mint_address != token_mint_address:
+            continue
+        return token_account.account_state.strip().lower() == "frozen"
+    return False
 
 
 def rpc_get_latest_confirmed_transaction_block_time(rpc_url: str, account_address: str) -> Optional[int]:

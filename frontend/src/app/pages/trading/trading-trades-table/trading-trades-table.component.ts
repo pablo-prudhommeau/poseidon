@@ -30,6 +30,7 @@ import { IconHeaderRendererComponent } from '../../../renderers/icon-header.rend
 import { SymbolChipRendererComponent } from '../../../renderers/symbol-chip.renderer';
 import { TemplateCellRendererComponent } from '../../../renderers/template-cell.renderer';
 import { tradingGridsLeadingColumnLayout } from '../trading.constants';
+import { positionPhasePillNgClasses } from '../trading-position-phase-pill.utils';
 import { TradingPositionModalService } from '../trading-position-modal.service';
 import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snapshot-tab/trading-shadowing-snapshot-tab.component';
 
@@ -60,6 +61,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
     @ViewChild('actionsTemplate', { static: false }) private actionsTemplate?: TemplateRef<unknown>;
 
     public readonly agGridTheme = balhamDarkThemeCompact;
+
     public columnDefinitions: ColDef<TradingTradePayload>[] = [];
     public readonly defaultColumnDefinition: ColDef<TradingTradePayload> = {
         resizable: true,
@@ -67,10 +69,9 @@ export class TradingTradesTableComponent implements AfterViewInit {
         filter: true,
         flex: 1
     };
-
     public readonly detailsVisible = signal<boolean>(false);
-    public readonly getRowId = (params: GetRowIdParams<TradingTradePayload>): string => String(params.data?.id ?? '');
 
+    public readonly getRowId = (params: GetRowIdParams<TradingTradePayload>): string => String(params.data?.id ?? '');
     private readonly webSocketService = inject(WebSocketService);
 
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
@@ -79,6 +80,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
     });
 
     private readonly selectedTradeId = signal<number | null>(null);
+
     private readonly selectedTradeSnapshot = signal<TradingTradePayload | null>(null);
     public readonly selectedTrade = computed<TradingTradePayload | null>(() => {
         const tradeId = this.selectedTradeId();
@@ -91,10 +93,11 @@ export class TradingTradesTableComponent implements AfterViewInit {
     public readonly positionForSelectedTrade = computed<TradingPositionPayload | null>(() => this.findPositionForTrade(this.selectedTrade()));
     public readonly selectedAnalytics = signal<TradingEvaluationPayload | null>(null);
     public selectedTradeChainIconCandidates: string[] = [];
-
     public selectedTradeChainIconIndex: number = 0;
+
     public selectedTradeDexIconCandidates: string[] = [];
     public selectedTradeDexIconIndex: number = 0;
+    protected readonly positionPhasePillNgClasses = positionPhasePillNgClasses;
     private readonly apiService = inject(ApiService);
     private readonly datetimeDisplayService = inject(DatetimeDisplayService);
 

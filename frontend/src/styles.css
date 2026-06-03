@@ -279,6 +279,13 @@
     border-color: rgba(100, 116, 139, 0.6);
 }
 
+.poseidon-grid-pill--closed {
+    background-color: #0f172a;
+    color: #f8fafc;
+    border-color: rgba(2, 6, 23, 0.85);
+    font-weight: 800;
+}
+
 .poseidon-grid-pill--buy {
     background-color: #059669;
     border-color: rgba(5, 150, 105, 0.55);
@@ -287,6 +294,39 @@
 .poseidon-grid-pill--sell {
     background-color: #4f46e5;
     border-color: rgba(79, 70, 229, 0.55);
+}
+
+@keyframes poseidon-ui-spinner-rotate {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.poseidon-ui-spinner {
+    display: block;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    border-top-color: currentColor;
+    border-right-color: rgba(255, 255, 255, 0.38);
+    animation: poseidon-ui-spinner-rotate 0.72s linear infinite;
+    flex-shrink: 0;
+}
+
+.poseidon-ui-spinner--dialog {
+    width: 0.84rem;
+    height: 0.84rem;
+}
+
+.poseidon-ui-spinner--grid {
+    width: 0.9rem;
+    height: 0.9rem;
+}
+
+.poseidon-ui-spinner--compact {
+    width: 0.68rem;
+    height: 0.68rem;
+    border-width: 1.5px;
 }
 
 .poseidon-grid-action-btn {
@@ -343,6 +383,30 @@
 }
 
 .poseidon-grid-action-btn--close-disabled {
+    cursor: not-allowed;
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgb(100 116 139);
+}
+
+.poseidon-grid-action-btn--recovery {
+    appearance: none;
+}
+
+.poseidon-grid-action-btn--recovery-enabled {
+    cursor: pointer;
+    border-color: rgba(245, 158, 11, 0.32);
+    background: rgba(245, 158, 11, 0.14);
+    color: rgb(251 191 36);
+}
+
+.poseidon-grid-action-btn--recovery-enabled:hover {
+    border-color: rgba(251, 191, 36, 0.48);
+    background: rgba(245, 158, 11, 0.24);
+    color: rgb(253 224 71);
+}
+
+.poseidon-grid-action-btn--recovery-disabled {
     cursor: not-allowed;
     border-color: rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.04);

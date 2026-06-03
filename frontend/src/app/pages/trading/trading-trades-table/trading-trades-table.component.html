@@ -166,14 +166,7 @@
                                 <div class="space-y-2.5">
                                     <div class="trade-modal-detail-row">
                                         <span class="trade-modal-detail-label">Phase</span>
-                                        <span
-                                            class="poseidon-grid-pill"
-                                            [ngClass]="{
-                                                'poseidon-grid-pill--info': livePosition.position_phase === 'OPEN',
-                                                'poseidon-grid-pill--warn': livePosition.position_phase === 'PARTIAL',
-                                                'poseidon-grid-pill--neutral': livePosition.position_phase !== 'OPEN' && livePosition.position_phase !== 'PARTIAL',
-                                            }"
-                                        >
+                                        <span class="poseidon-grid-pill" [ngClass]="positionPhasePillNgClasses(livePosition.position_phase)">
                                             {{ livePosition.position_phase }}
                                         </span>
                                     </div>

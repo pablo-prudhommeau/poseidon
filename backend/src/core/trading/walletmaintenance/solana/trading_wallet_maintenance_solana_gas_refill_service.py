@@ -210,7 +210,8 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
             )
             serialized_transaction = base64.b64decode(base64_transaction)
             transaction_signature = signer.send_raw_transaction(serialized_transaction)
-            is_confirmed = signer.confirm_transaction(transaction_signature, 45)
+            confirmation_result = signer.confirm_transaction(transaction_signature, 45)
+            is_confirmed = confirmation_result.is_confirmed
             if not is_confirmed:
                 raise RuntimeError(
                     f"Refill transaction {transaction_signature} failed confirmation"

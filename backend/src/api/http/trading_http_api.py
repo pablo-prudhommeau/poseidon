@@ -26,8 +26,11 @@ from src.core.paper import paper_service
 from src.core.trading.execution.trading_execution_position_service import (
     PositionCloseConflictError,
     PositionCloseNotFoundError,
+    PositionRecoveryConflictError,
     close_position,
     execute_manual_close_sell,
+    kill_staled_position,
+    reopen_staled_position,
 )
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_fastapi_database_session
@@ -140,4 +143,42 @@ def close_trading_position(
 
     background_tasks.add_task(execute_manual_close_sell, position_id)
     logger.info("[HTTP][TRADING][POSITIONS][CLOSE] Position id=%s marked CLOSING, sell scheduled", position_id)
+    return Response(status_code=204)
+
+
+@router.post("/positions/{position_id}/kill", status_code=204)
+def kill_staled_trading_position(
+        position_id: int,
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> Response:
+    logger.debug("[HTTP][TRADING][POSITIONS][KILL] Initiating kill for staled position id=%s", position_id)
+    try:
+        kill_staled_position(database_session, position_id)
+    except PositionCloseNotFoundError as exception:
+        logger.info("[HTTP][TRADING][POSITIONS][KILL] Position id=%s not found: %s", position_id, exception)
+        raise HTTPException(status_code=404, detail="Position not found") from exception
+    except PositionRecoveryConflictError as exception:
+        logger.info("[HTTP][TRADING][POSITIONS][KILL] Position id=%s kill conflict: %s", position_id, exception)
+        raise HTTPException(status_code=409, detail="Position is not STALED") from exception
+
+    logger.info("[HTTP][TRADING][POSITIONS][KILL] Position id=%s killed from STALED", position_id)
+    return Response(status_code=204)
+
+
+@router.post("/positions/{position_id}/reopen", status_code=204)
+def reopen_staled_trading_position(
+        position_id: int,
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> Response:
+    logger.debug("[HTTP][TRADING][POSITIONS][REOPEN] Initiating reopen for staled position id=%s", position_id)
+    try:
+        reopen_staled_position(database_session, position_id)
+    except PositionCloseNotFoundError as exception:
+        logger.info("[HTTP][TRADING][POSITIONS][REOPEN] Position id=%s not found: %s", position_id, exception)
+        raise HTTPException(status_code=404, detail="Position not found") from exception
+    except PositionRecoveryConflictError as exception:
+        logger.info("[HTTP][TRADING][POSITIONS][REOPEN] Position id=%s reopen conflict: %s", position_id, exception)
+        raise HTTPException(status_code=409, detail="Position is not STALED") from exception
+
+    logger.info("[HTTP][TRADING][POSITIONS][REOPEN] Position id=%s reopened from STALED", position_id)
     return Response(status_code=204)

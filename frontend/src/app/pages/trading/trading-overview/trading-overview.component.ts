@@ -155,9 +155,7 @@ export class TradingOverviewComponent implements OnDestroy {
 
     readonly positions = computed<TradingPositionPayload[]>(() => this.webSocketService.tradingPositions());
 
-    readonly openPositionCount = computed(
-        () => this.positions().filter((position) => position.position_phase === 'OPEN' || position.position_phase === 'PARTIAL').length
-    );
+    readonly openPositionCount = computed(() => this.positions().length);
 
     readonly openShadowChronicle = output<void>();
     readonly realized24h = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.realized_profit_and_loss_24h));

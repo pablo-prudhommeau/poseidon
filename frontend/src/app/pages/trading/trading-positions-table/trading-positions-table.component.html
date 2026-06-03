@@ -8,13 +8,23 @@
         <a [href]="dexUrlForPair(row)" target="_blank" rel="noopener" class="poseidon-grid-action-btn poseidon-grid-action-btn--dex" title="Open on DexScreener">
             <i class="fas fa-arrow-up-right-from-square"></i>
         </a>
-        <button type="button" class="poseidon-grid-action-btn poseidon-grid-action-btn--close disabled:opacity-100" [ngClass]="closePositionActionClasses(row)" [disabled]="!canClosePosition(row)" [title]="canClosePosition(row) ? 'Close position' : 'Close unavailable'" (click)="openCloseConfirm(row)">
-            @if (!isCloseRequestInProgress(row)) {
-                <i class="fas fa-ban"></i>
-            } @else {
-                <i class="fas fa-circle-notch animate-spin"></i>
-            }
-        </button>
+        @if (row.position_phase === 'STALED') {
+            <button type="button" class="poseidon-grid-action-btn poseidon-grid-action-btn--recovery disabled:opacity-100" [ngClass]="recoveryPositionActionClasses(row)" [disabled]="!canRecoverStaledPosition(row)" [title]="canRecoverStaledPosition(row) ? 'Recover staled position' : 'Recovery unavailable'" (click)="openStaledRecoveryConfirm(row)">
+                @if (!isRecoveryRequestInProgress(row)) {
+                    <i class="fas fa-hand"></i>
+                } @else {
+                    <span class="poseidon-ui-spinner poseidon-ui-spinner--grid" aria-hidden="true" role="status"></span>
+                }
+            </button>
+        } @else {
+            <button type="button" class="poseidon-grid-action-btn poseidon-grid-action-btn--close disabled:opacity-100" [ngClass]="closePositionActionClasses(row)" [disabled]="!canClosePosition(row)" [title]="canClosePosition(row) ? 'Close position' : 'Close unavailable'" (click)="openCloseConfirm(row)">
+                @if (!isCloseRequestInProgress(row)) {
+                    <i class="fas fa-ban"></i>
+                } @else {
+                    <span class="poseidon-ui-spinner poseidon-ui-spinner--grid" aria-hidden="true" role="status"></span>
+                }
+            </button>
+        }
     </div>
 </ng-template>
 
@@ -33,7 +43,7 @@
                             <i class="fas fa-ban text-[11px]"></i>
                             <span>Close</span>
                         } @else {
-                            <i class="fas fa-circle-notch text-[11px] animate-spin"></i>
+                            <span class="poseidon-ui-spinner poseidon-ui-spinner--compact" aria-hidden="true" role="status"></span>
                             <span>Closing</span>
                         }
                     </button>
@@ -460,3 +470,4 @@
 </p-dialog>
 
 <trading-position-closing-dialog [visible]="confirmCloseVisible()" [positionId]="pendingClosePositionId()" [positionSnapshot]="pendingClosePositionSnapshot()" [livePositions]="positionsRowData()" [submitInProgress]="isCloseDialogSubmitInProgress()" (visibleChange)="onClosingDialogVisibleChange($event)" (closeSubmitStarted)="onCloseSubmitStarted($event)" (closeSubmitFinished)="onCloseSubmitFinished($event)" />
+<trading-position-staled-recovery-dialog [visible]="confirmRecoveryVisible()" [positionId]="pendingRecoveryPositionId()" [positionSnapshot]="pendingRecoveryPositionSnapshot()" [livePositions]="positionsRowData()" [submitAction]="pendingRecoverySubmitAction()" (visibleChange)="onRecoveryDialogVisibleChange($event)" (killSubmitStarted)="onKillSubmitStarted($event)" (killSubmitFinished)="onKillSubmitFinished($event)" (reopenSubmitStarted)="onReopenSubmitStarted($event)" (reopenSubmitFinished)="onReopenSubmitFinished($event)" />
