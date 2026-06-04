@@ -263,7 +263,7 @@ export interface BlockchainCashBalancePayload {
     native_token_symbol: string;
     native_token_balance_raw: number;
     native_token_balance_usd: number;
-    solana_token_account_rent?: SolanaTokenAccountRentPayload | null;
+    solana_token_account_rent?: SolanaTokenAccountRentPayload;
 }
 
 export interface TradingLiquidityPayload {

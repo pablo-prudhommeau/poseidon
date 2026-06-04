@@ -170,17 +170,15 @@
                                         </span>
                                         <span class="text-[10px] text-cyan-200/50 uppercase font-bold">gas</span>
                                     </div>
-                                    @if (resolveSolanaRentLockedSol(balance); as rentLockedSol) {
-                                        @if (resolveSolanaRentTotalUsd(balance); as rentTotalUsd) {
-                                            <div class="flex items-center justify-between pt-0.5 cursor-help" [pTooltip]="buildSolanaRentTooltip(balance)" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
-                                                <span class="text-[10px] font-bold text-cyan-100/60 leading-none">
-                                                    {{ rentLockedSol | number: '1.4-4' }}
-                                                    <span class="text-cyan-200/70"> SOL</span>
-                                                    <span class="text-[10px] pl-1 font-medium text-cyan-200/45">($ {{ rentTotalUsd | number: '1.2-2' }})</span>
-                                                </span>
-                                                <span class="text-[10px] text-cyan-200/45 uppercase font-bold">rent</span>
-                                            </div>
-                                        }
+                                    @if (isSolanaBalanceCard(balance)) {
+                                        <div class="flex items-center justify-between pt-0.5 cursor-help" [pTooltip]="buildSolanaRentTooltip(balance)" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
+                                            <span class="text-[10px] font-bold text-cyan-100/60 leading-none">
+                                                {{ resolveSolanaRentLockedSol(balance) | number: '1.4-4' }}
+                                                <span class="text-cyan-200/70"> SOL</span>
+                                                <span class="text-[10px] pl-1 font-medium text-cyan-200/45">($ {{ resolveSolanaRentTotalUsd(balance) | number: '1.2-2' }})</span>
+                                            </span>
+                                            <span class="text-[10px] text-cyan-200/45 uppercase font-bold">rent</span>
+                                        </div>
                                     }
                                 </div>
                             } @else {

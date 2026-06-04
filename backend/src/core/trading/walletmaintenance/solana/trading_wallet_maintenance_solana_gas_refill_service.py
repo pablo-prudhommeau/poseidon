@@ -32,6 +32,7 @@ from src.integrations.blockchain.solana.solana_rpc_client import (
 )
 from src.integrations.blockchain.solana.solana_structures import SOLANA_WRAPPED_SOL_MINT
 from src.integrations.jupiter.jupiter_client import generate_jupiter_swap_transaction
+from src.integrations.jupiter.jupiter_structures import JupiterApiUnavailableError
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -216,6 +217,22 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
                 raise RuntimeError(
                     f"Refill transaction {transaction_signature} failed confirmation"
                 )
+    except JupiterApiUnavailableError as jupiter_unavailable_error:
+        logger.warning(
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Jupiter unavailable — "
+            "blockchain_network=%s wallet_address=%s stablecoin_spend_usd=%s failure_reason=%s",
+            blockchain_network.value,
+            wallet_address,
+            _format_stablecoin_raw_as_usd_text(stablecoin_spend_raw),
+            jupiter_unavailable_error.failure_reason.value,
+        )
+        return TradingWalletMaintenanceChainGasResult(
+            blockchain_network=blockchain_network,
+            status=TradingWalletMaintenanceOperationStatus.FAILED,
+            reason="jupiter_unavailable",
+            native_balance_before_lamports=native_balance_before_lamports,
+            stablecoin_spent_raw=stablecoin_spend_raw,
+        )
     except Exception:
         logger.exception(
             "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill execution failed — "

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.execution.trading_execution_position_service import (
     execute_closing_sell,
     execute_position_exit_sell,
 )
 from src.core.trading.trading_structures import PositionExitTriggerReason
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
+from src.integrations.blockchain.solana.solana_structures import SolanaRpcFailureReason
 from src.persistence.models import PositionPhase, TradingPosition
 
 
@@ -34,15 +37,18 @@ def _build_closing_position() -> TradingPosition:
 
 @patch("src.core.trading.execution.trading_execution_position_service.settings")
 @patch("src.core.trading.execution.trading_execution_position_service.resolve_execution_chain_handler_for_blockchain")
-def test_execute_closing_sell_reverts_on_connection_error(
+def test_execute_closing_sell_reverts_on_rpc_unavailable(
         resolve_execution_chain_handler_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
     settings_mock.PAPER_MODE = False
     position = _build_closing_position()
     chain_handler = MagicMock()
-    chain_handler.resolve_sell_token_decimals.side_effect = ConnectionError(
+    chain_handler.resolve_sell_token_decimals.side_effect = BlockchainRpcUnavailableError(
         "[BLOCKCHAIN][RPC][REGISTRY] No reachable RPC endpoint found for chain solana",
+        blockchain_network=BlockchainNetwork.SOLANA,
+        rpc_method="getAccountInfo",
+        failure_reason=SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
     )
     resolve_execution_chain_handler_mock.return_value = chain_handler
     database_session = MagicMock()
@@ -138,7 +144,12 @@ def test_execute_position_exit_sell_reverts_when_mark_closing_then_rpc_fails(
 
     mark_position_closing_mock.side_effect = _mark_closing
     chain_handler = MagicMock()
-    chain_handler.resolve_sell_token_decimals.side_effect = ConnectionError("no rpc")
+    chain_handler.resolve_sell_token_decimals.side_effect = BlockchainRpcUnavailableError(
+        "no rpc",
+        blockchain_network=BlockchainNetwork.SOLANA,
+        rpc_method="getAccountInfo",
+        failure_reason=SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
+    )
     resolve_execution_chain_handler_mock.return_value = chain_handler
     database_session = MagicMock()
 

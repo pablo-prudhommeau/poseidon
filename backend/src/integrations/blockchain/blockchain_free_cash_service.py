@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from typing import Optional
 
+import requests
 from pydantic import BaseModel
+from web3 import Web3
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.trading_utils import get_currency_symbol
-from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
+from src.integrations.blockchain.blockchain_rpc_registry import (
+    invalidate_rpc_cache_for_chain,
+    resolve_rpc_url_for_chain,
+    resolve_web3_provider_for_chain,
+)
+from src.integrations.blockchain.evm.blockchain_evm_price_reader import read_evm_native_token_price_usd
+from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer
+from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -42,8 +52,6 @@ def _get_stablecoin_address_for_blockchain(blockchain: BlockchainNetwork) -> str
 
 
 def _fetch_solana_stablecoin_balance(rpc_url: str, wallet_address: str, token_mint: str) -> float:
-    import requests
-
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -80,8 +88,6 @@ def _fetch_solana_stablecoin_balance(rpc_url: str, wallet_address: str, token_mi
 
 
 def _fetch_solana_native_balance(rpc_url: str, wallet_address: str) -> float:
-    import requests
-
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -109,8 +115,6 @@ def _fetch_solana_native_balance(rpc_url: str, wallet_address: str) -> float:
 
 
 def _fetch_evm_stablecoin_balance(rpc_url: str, wallet_address: str, token_address: str) -> float:
-    from web3 import Web3
-
     web3_client = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
 
     erc20_abi = [
@@ -138,8 +142,6 @@ def _fetch_evm_stablecoin_balance(rpc_url: str, wallet_address: str, token_addre
 
 
 def _fetch_evm_native_balance(rpc_url: str, wallet_address: str) -> float:
-    from web3 import Web3
-
     web3_client = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
     balance_wei = web3_client.eth.get_balance(Web3.to_checksum_address(wallet_address))
     return float(balance_wei) / 10 ** 18
@@ -159,7 +161,6 @@ def _resolve_blockchain_network(chain: str) -> Optional[BlockchainNetwork]:
 def _get_wallet_address_for_blockchain(blockchain: BlockchainNetwork) -> str:
     if blockchain == BlockchainNetwork.SOLANA:
         try:
-            from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
             solana_signer = build_default_solana_signer()
             return solana_signer.address
         except ConnectionError:
@@ -168,7 +169,6 @@ def _get_wallet_address_for_blockchain(blockchain: BlockchainNetwork) -> str:
             logger.exception("[BLOCKCHAIN][FREE_CASH] Solana signer unavailable — %s", exception)
             return ""
 
-    from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer
     try:
         evm_signer = build_default_evm_signer(chain=blockchain)
         return evm_signer.wallet_address
@@ -227,21 +227,25 @@ def fetch_stablecoin_balance_for_blockchain(blockchain: BlockchainNetwork) -> Bl
                 raise
 
             if blockchain == BlockchainNetwork.SOLANA:
-                balance_raw = _fetch_solana_stablecoin_balance(rpc_url, wallet_address, stablecoin_address)
-                native_token_balance_raw = _fetch_solana_native_balance(rpc_url, wallet_address)
+                from src.integrations.blockchain.solana.solana_onchain_wallet_context_service import (
+                    resolve_solana_onchain_wallet_context,
+                )
+
+                wallet_context = resolve_solana_onchain_wallet_context(force_refresh=attempt > 0)
+                balance_raw = wallet_context.stablecoin_balance_raw
+                native_token_balance_raw = wallet_context.native_token_balance_raw
+                native_token_balance_usd = wallet_context.native_token_balance_usd
             else:
                 balance_raw = _fetch_evm_stablecoin_balance(rpc_url, wallet_address, stablecoin_address)
                 native_token_balance_raw = _fetch_evm_native_balance(rpc_url, wallet_address)
 
             fetch_succeeded = True
             break
-        except ConnectionError as exception:
-            from src.integrations.blockchain.blockchain_rpc_registry import invalidate_rpc_cache_for_chain
+        except (ConnectionError, BlockchainRpcUnavailableError) as exception:
             invalidate_rpc_cache_for_chain(blockchain)
-            last_connection_error = exception
-            logger.warning("[BLOCKCHAIN][FREE_CASH] RPC failure (%s), retrying %d/%d...", exception, attempt + 1, max_retries)
+            last_connection_error = ConnectionError(str(exception))
+            logger.debug("[BLOCKCHAIN][FREE_CASH] RPC failure (%s), retrying %d/%d...", exception, attempt + 1, max_retries)
         except Exception as exception:
-            from src.integrations.blockchain.blockchain_rpc_registry import invalidate_rpc_cache_for_chain
             invalidate_rpc_cache_for_chain(blockchain)
             logger.warning("[BLOCKCHAIN][FREE_CASH] Unexpected RPC error (%s), retrying %d/%d...", type(exception).__name__, attempt + 1, max_retries)
 
@@ -257,18 +261,12 @@ def fetch_stablecoin_balance_for_blockchain(blockchain: BlockchainNetwork) -> Bl
 
     try:
         native_token_price_usd: float | None = None
-        if blockchain == BlockchainNetwork.SOLANA:
-            from src.integrations.blockchain.solana.solana_rpc_client import resolve_sol_usd_price
-            native_token_price_usd = resolve_sol_usd_price(rpc_url)
-        else:
-            from src.integrations.blockchain.blockchain_rpc_registry import resolve_web3_provider_for_chain
-            from src.integrations.blockchain.evm.blockchain_evm_price_reader import read_evm_native_token_price_usd
+        if blockchain != BlockchainNetwork.SOLANA:
             web3_provider = resolve_web3_provider_for_chain(blockchain)
             if web3_provider is not None:
                 native_token_price_usd = read_evm_native_token_price_usd(web3_provider, blockchain)
-
-        if native_token_price_usd is not None and native_token_price_usd > 0.0:
-            native_token_balance_usd = native_token_balance_raw * native_token_price_usd
+                if native_token_price_usd is not None and native_token_price_usd > 0.0:
+                    native_token_balance_usd = native_token_balance_raw * native_token_price_usd
     except Exception:
         logger.exception(
             "[BLOCKCHAIN][FREE_CASH] Failed to resolve native token USD equivalent for %s",

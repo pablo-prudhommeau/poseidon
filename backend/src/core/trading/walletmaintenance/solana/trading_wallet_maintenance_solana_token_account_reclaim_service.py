@@ -19,17 +19,22 @@ from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures im
     TradingWalletMaintenanceOperationStatus,
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso, get_current_local_datetime
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
 from src.integrations.blockchain.solana.blockchain_solana_signer import SolanaSigner, build_default_solana_signer
-from src.integrations.blockchain.solana.solana_rpc_client import (
-    fetch_solana_native_balance_lamports,
-    fetch_token_account_last_activity_datetime,
-    list_wallet_spl_token_accounts,
-)
+from src.integrations.blockchain.solana.solana_rpc_client import fetch_solana_native_balance_lamports
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS,
     SolanaWalletTokenAccountSnapshot,
+)
+from src.integrations.blockchain.solana.solana_onchain_wallet_context_service import (
+    invalidate_solana_onchain_wallet_context_cache,
+)
+from src.integrations.blockchain.solana.solana_wallet_snapshot_service import (
+    invalidate_solana_wallet_snapshot_cache,
+    resolve_cached_token_account_last_activity_datetime,
+    resolve_solana_wallet_snapshot,
 )
 from src.logging.logger import get_application_logger
 
@@ -54,7 +59,23 @@ def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainR
         )
 
     rpc_url = resolve_rpc_url_for_chain(blockchain_network)
-    token_accounts = list_wallet_spl_token_accounts(rpc_url, wallet_address)
+    try:
+        wallet_snapshot = resolve_solana_wallet_snapshot(force_refresh=True)
+        rpc_url = wallet_snapshot.rpc_url
+        token_accounts = wallet_snapshot.token_accounts
+    except BlockchainRpcUnavailableError:
+        logger.warning(
+            "[TRADING][WALLETMAINTENANCE][SOLANA][TOKEN_ACCOUNT][RECLAIM] Wallet snapshot unavailable — "
+            "blockchain_network=%s wallet_address=%s reason=rpc_unavailable",
+            blockchain_network.value,
+            wallet_address,
+        )
+        return TradingWalletMaintenanceChainReclaimResult(
+            blockchain_network=blockchain_network,
+            status=TradingWalletMaintenanceOperationStatus.FAILED,
+            reason="rpc_unavailable",
+        )
+
     reclaimable_accounts = _resolve_reclaimable_token_accounts(
         rpc_url=rpc_url,
         token_accounts=token_accounts,
@@ -126,6 +147,10 @@ def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainR
             max(0, native_balance_after_lamports - native_balance_before_lamports),
         )
 
+    if reclaimed_account_count > 0:
+        invalidate_solana_wallet_snapshot_cache()
+        invalidate_solana_onchain_wallet_context_cache()
+
     return TradingWalletMaintenanceChainReclaimResult(
         blockchain_network=blockchain_network,
         status=TradingWalletMaintenanceOperationStatus.SUCCESS,
@@ -161,7 +186,7 @@ def _resolve_reclaimable_token_accounts(
             )
             continue
 
-        last_activity_timestamp = fetch_token_account_last_activity_datetime(
+        last_activity_timestamp = resolve_cached_token_account_last_activity_datetime(
             rpc_url=rpc_url,
             token_account_address=token_account.token_account_address,
         )

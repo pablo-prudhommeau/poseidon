@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class JupiterApiFailureReason(str, Enum):
+    RATE_LIMITED = "RATE_LIMITED"
+    HTTP_ERROR = "HTTP_ERROR"
+    NETWORK_ERROR = "NETWORK_ERROR"
+
+
+class JupiterApiUnavailableError(Exception):
+    def __init__(
+            self,
+            message: str,
+            failure_reason: JupiterApiFailureReason,
+            http_status_code: Optional[int] = None,
+    ) -> None:
+        super().__init__(message)
+        self.failure_reason = failure_reason
+        self.http_status_code = http_status_code
 
 
 class JupiterRoutePlanStepSwapInfo(BaseModel):

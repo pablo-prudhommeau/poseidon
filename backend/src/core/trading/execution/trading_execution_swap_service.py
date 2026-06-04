@@ -178,23 +178,17 @@ def execute_buy(payload: TradingOrderPayload) -> bool:
         return True
 
     if payload.execution_route is None:
-        logger.info(
-            "[TRADING][EXECUTION][SWAP][LIVE][BUY] Skip: missing execution route for %s (LIVE disabled for this order)",
-            payload.target_token,
+        raise ValueError(
+            f"Live buy requires an execution route for {payload.target_token.symbol}",
         )
-        return False
-
-    chain_handler = resolve_execution_chain_handler_for_blockchain(payload.target_token.chain)
-    if chain_handler is None:
-        logger.warning(
-            "[TRADING][EXECUTION][SWAP][LIVE][BUY] Skip: no handler for blockchain_network=%s token=%s",
-            payload.target_token.chain.value,
-            payload.target_token.symbol,
-        )
-        return False
 
     with SWAP_EXECUTION_LOCK:
         logger.debug("[TRADING][EXECUTION][SWAP][LIVE][BUY] Acquired global execution lock")
+        chain_handler = resolve_execution_chain_handler_for_blockchain(payload.target_token.chain)
+        if chain_handler is None:
+            raise ValueError(
+                f"No live execution handler for blockchain_network={payload.target_token.chain.value}",
+            )
         return chain_handler.run_live_buy_blocking(
             token=payload.target_token,
             quantity=quantity,

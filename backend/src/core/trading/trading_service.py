@@ -18,7 +18,9 @@ from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.trading_utils import convert_trading_position_to_token, normalize_side_to_upper
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime, parse_iso_datetime_to_local
 from src.core.utils.math_utils import quantize_2dp, decimal_from_primitive
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
+from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading_position_dao import TradingPositionDao
@@ -141,7 +143,7 @@ def compute_realized_profit_and_loss_totals(
 
 def compute_holdings_and_unrealized_totals(
         positions: Iterable[TradingPosition],
-        prices_by_pair_address: dict[str, float],
+        onchain_prices_by_pair_address: OnchainPricesByPairAddress,
 ) -> tuple[float, float]:
     holdings_value_dec = Decimal("0")
     unrealized_dec = Decimal("0")
@@ -149,9 +151,11 @@ def compute_holdings_and_unrealized_totals(
     for position in positions:
         token = convert_trading_position_to_token(position)
         pair_address = position.pair_address
-        price_usd: Optional[float] = None
-        if pair_address:
-            price_usd = prices_by_pair_address.get(pair_address)
+        price_usd = (
+            onchain_prices_by_pair_address.try_resolve_price_usd_for_pair_address(pair_address)
+            if pair_address
+            else None
+        )
 
         entry_price = position.entry_price or 0.0
 
@@ -312,7 +316,7 @@ def record_skipped_trading_evaluation(evaluation_candidate: TradingCandidate, se
 def _compute_live_deployable_cash_usd() -> float:
     try:
         balances = fetch_stablecoin_balances_for_allowed_chains()
-    except ConnectionError:
+    except (ConnectionError, BlockchainRpcUnavailableError):
         cached_cash = trading_cache.get_available_cash_usd()
         if cached_cash is not None:
             logger.warning(

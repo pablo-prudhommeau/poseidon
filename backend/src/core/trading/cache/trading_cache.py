@@ -14,6 +14,7 @@ from src.api.http.api_schemas import (
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.cache.trading_cache_structures import TradingState
+from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 
@@ -32,16 +33,22 @@ class TradingCache:
         self._cached_trades: list[TradingTradePayload] = []
         self._cached_portfolio: Optional[TradingPortfolioPayload] = None
         self._cached_liquidity: Optional[TradingLiquidityPayload] = None
-        self._cached_prices_by_pair_address: Optional[dict[str, float]] = None
+        self._cached_onchain_prices_by_pair_address: Optional[OnchainPricesByPairAddress] = None
         self._cached_available_cash_usd: Optional[float] = None
         self._cached_sizing_capital_usd: Optional[float] = None
         self._last_successful_update_timestamp: datetime = get_current_local_datetime()
 
-    def update_prices_by_pair_address(self, prices_by_pair_address: dict[str, float]) -> None:
+    def update_onchain_prices_by_pair_address(
+            self,
+            onchain_prices_by_pair_address: OnchainPricesByPairAddress,
+    ) -> None:
         with self._lock:
-            self._cached_prices_by_pair_address = prices_by_pair_address
+            self._cached_onchain_prices_by_pair_address = onchain_prices_by_pair_address
             self._last_successful_update_timestamp = get_current_local_datetime()
-            logger.debug("[TRADING][CACHE] Prices by pair address updated (%d entries)", len(prices_by_pair_address))
+            logger.debug(
+                "[TRADING][CACHE] On-chain prices by pair address updated (%d entries)",
+                onchain_prices_by_pair_address.entry_count(),
+            )
         _touch_realm(CacheRealm.PRICES)
 
     def update_trading_positions_state(self, positions_payload: list[TradingPositionPayload]) -> None:
@@ -119,9 +126,9 @@ class TradingCache:
         with self._lock:
             return self._cached_available_cash_usd
 
-    def get_prices_by_pair_address(self) -> Optional[dict[str, float]]:
+    def get_onchain_prices_by_pair_address(self) -> Optional[OnchainPricesByPairAddress]:
         with self._lock:
-            return self._cached_prices_by_pair_address
+            return self._cached_onchain_prices_by_pair_address
 
     def get_trading_state(self) -> TradingState:
         with self._lock:
@@ -131,7 +138,7 @@ class TradingCache:
                 trades=self._cached_trades,
                 portfolio=self._cached_portfolio,
                 liquidity=self._cached_liquidity,
-                prices_by_pair_address=self._cached_prices_by_pair_address,
+                prices_by_pair_address=self._cached_onchain_prices_by_pair_address,
                 available_cash_usd=self._cached_available_cash_usd
             )
 

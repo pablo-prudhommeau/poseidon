@@ -2,21 +2,28 @@ from __future__ import annotations
 
 from typing import Optional
 
+import base58
 import requests
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
+from src.integrations.blockchain.blockchain_exceptions import (
+    BlockchainPriceUnavailableError,
+    BlockchainRpcUnavailableError,
+)
 from src.integrations.blockchain.solana.dex_parsers.meteora_pool_parser import MeteoraPoolParser
 from src.integrations.blockchain.solana.dex_parsers.orca_pool_parser import OrcaPoolParser
 from src.integrations.blockchain.solana.dex_parsers.pumpfun_pool_parser import PumpfunPoolParser
 from src.integrations.blockchain.solana.dex_parsers.pumpswap_pool_parser import PumpswapPoolParser
 from src.integrations.blockchain.solana.dex_parsers.raydium_pool_parser import RaydiumPoolParser
+from src.integrations.blockchain.solana.solana_structures import SolanaPriceParseResources
 from src.integrations.blockchain.solana.solana_rpc_client import (
     convert_price_to_usd,
     decode_account_data,
     extract_owner_program,
     get_solana_rpc_url,
+    prefetch_spl_token_balances_for_vault_addresses,
+    prefetch_spl_token_decimals_for_mint_addresses,
     rpc_get_account_info,
     rpc_get_multiple_accounts,
 )
@@ -55,11 +62,60 @@ def _resolve_solana_rpc_url_for_price_fetch() -> str:
         _raise_solana_price_unavailable_from_infrastructure_failure(connection_error)
 
 
+def _extract_raydium_amm_v4_resource_addresses(account_data: bytes) -> tuple[list[str], list[str]]:
+    if len(account_data) < _raydium_parser.AMM_V4_MINIMUM_DATA_LENGTH:
+        return [], []
+
+    base_mint = base58.b58encode(
+        account_data[_raydium_parser.AMM_V4_BASE_MINT_OFFSET:_raydium_parser.AMM_V4_BASE_MINT_OFFSET + 32],
+    ).decode("ascii")
+    quote_mint = base58.b58encode(
+        account_data[_raydium_parser.AMM_V4_QUOTE_MINT_OFFSET:_raydium_parser.AMM_V4_QUOTE_MINT_OFFSET + 32],
+    ).decode("ascii")
+    base_vault = base58.b58encode(
+        account_data[_raydium_parser.AMM_V4_BASE_VAULT_OFFSET:_raydium_parser.AMM_V4_BASE_VAULT_OFFSET + 32],
+    ).decode("ascii")
+    quote_vault = base58.b58encode(
+        account_data[_raydium_parser.AMM_V4_QUOTE_VAULT_OFFSET:_raydium_parser.AMM_V4_QUOTE_VAULT_OFFSET + 32],
+    ).decode("ascii")
+    return [base_vault, quote_vault], [base_mint, quote_mint]
+
+
+def _build_raydium_batch_parse_resources(
+        rpc_url: str,
+        account_infos: list[Optional[dict]],
+        eligible_descriptors: list[tuple[str, str, str]],
+) -> SolanaPriceParseResources:
+    vault_addresses: list[str] = []
+    mint_addresses: list[str] = []
+
+    for descriptor_index, (_, _, dex_id) in enumerate(eligible_descriptors):
+        if dex_id != "raydium":
+            continue
+        account_info = account_infos[descriptor_index] if descriptor_index < len(account_infos) else None
+        if account_info is None:
+            continue
+        account_data = decode_account_data(account_info)
+        if account_data is None:
+            continue
+        extracted_vault_addresses, extracted_mint_addresses = _extract_raydium_amm_v4_resource_addresses(account_data)
+        vault_addresses.extend(extracted_vault_addresses)
+        mint_addresses.extend(extracted_mint_addresses)
+
+    vault_balances_by_address = prefetch_spl_token_balances_for_vault_addresses(rpc_url, vault_addresses)
+    mint_decimals_by_address = prefetch_spl_token_decimals_for_mint_addresses(rpc_url, mint_addresses)
+    return SolanaPriceParseResources(
+        vault_balances_by_address=vault_balances_by_address,
+        mint_decimals_by_address=mint_decimals_by_address,
+    )
+
+
 def _parse_pool_price_by_dex(
         rpc_url: str,
         dex_id: str,
         account_info: dict,
         target_token_address: str,
+        parse_resources: SolanaPriceParseResources | None = None,
 ) -> Optional[tuple[float, str]]:
     account_data = decode_account_data(account_info)
     if account_data is None:
@@ -72,6 +128,15 @@ def _parse_pool_price_by_dex(
     if parser is None:
         logger.debug("[BLOCKCHAIN][PRICE][SOL] Unsupported DEX %s for pool parsing", normalized_dex)
         return None
+
+    if normalized_dex == "raydium":
+        return _raydium_parser.parse_pool_price(
+            rpc_url,
+            account_data,
+            target_token_address,
+            owner_program,
+            parse_resources=parse_resources,
+        )
 
     return parser.parse_pool_price(rpc_url, account_data, target_token_address, owner_program)
 
@@ -111,7 +176,7 @@ def read_solana_pool_price_usd(
         logger.debug("[BLOCKCHAIN][PRICE][SOL] %s (%s) = %.10f USD via RPC (%s)", target_token_address[:8], normalized_dex, price_usd, normalized_dex)
         return price_usd
 
-    except (ConnectionError, requests.RequestException) as infrastructure_failure:
+    except (ConnectionError, requests.RequestException, BlockchainRpcUnavailableError) as infrastructure_failure:
         _raise_solana_price_unavailable_from_infrastructure_failure(infrastructure_failure)
 
 
@@ -122,7 +187,7 @@ def read_solana_pool_prices_usd_batch(
         return {}
 
     supported_dex_ids = settings.TRADING_SOLANA_SUPPORTED_DEX_IDS
-    eligible_descriptors = []
+    eligible_descriptors: list[tuple[str, str, str]] = []
     for token_address, pair_address, dex_id in pool_descriptors:
         normalized_dex = dex_id.lower().strip()
         if normalized_dex in supported_dex_ids:
@@ -140,6 +205,11 @@ def read_solana_pool_prices_usd_batch(
 
     try:
         account_infos = rpc_get_multiple_accounts(rpc_url, pool_addresses)
+        parse_resources = _build_raydium_batch_parse_resources(
+            rpc_url=rpc_url,
+            account_infos=account_infos,
+            eligible_descriptors=eligible_descriptors,
+        )
 
         for descriptor_index, (token_address, pair_address, dex_id) in enumerate(eligible_descriptors):
             account_info = account_infos[descriptor_index] if descriptor_index < len(account_infos) else None
@@ -147,7 +217,13 @@ def read_solana_pool_prices_usd_batch(
                 continue
 
             try:
-                price_result = _parse_pool_price_by_dex(rpc_url, dex_id, account_info, token_address)
+                price_result = _parse_pool_price_by_dex(
+                    rpc_url,
+                    dex_id,
+                    account_info,
+                    token_address,
+                    parse_resources=parse_resources,
+                )
                 if price_result is None:
                     continue
 
@@ -163,7 +239,7 @@ def read_solana_pool_prices_usd_batch(
                     parse_exception,
                 )
 
-    except (ConnectionError, requests.RequestException) as infrastructure_failure:
+    except (ConnectionError, requests.RequestException, BlockchainRpcUnavailableError) as infrastructure_failure:
         _raise_solana_price_unavailable_from_infrastructure_failure(infrastructure_failure)
 
     logger.info("[BLOCKCHAIN][PRICE][SOL] Batch resolved %d / %d pool prices via RPC", len(results), len(eligible_descriptors))

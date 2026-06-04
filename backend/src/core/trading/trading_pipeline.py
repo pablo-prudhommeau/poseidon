@@ -21,6 +21,11 @@ from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import 
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
 from src.core.trading.execution.trading_execution_swap_service import execute_buy
 from src.core.trading.execution.trading_execution_blockchain_route_service import build_route_for_live_execution
+from src.integrations.blockchain.blockchain_exceptions import (
+    BlockchainExecutionRouteBuildError,
+    BlockchainTradingNotSupportedError,
+)
+from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import evaluate_candidate_shadowing
 from src.core.trading.shadowing.trading_shadowing_structures import (
@@ -423,7 +428,16 @@ class TradingPipeline:
 
             dex_price = candidate.market_snapshot.price_usd
 
-            execution_route = build_route_for_live_execution(candidate, order_notional)
+            execution_route: Optional[BlockchainExecutionRoute] = None
+            if not settings.PAPER_MODE:
+                try:
+                    execution_route = build_route_for_live_execution(candidate, order_notional)
+                except BlockchainTradingNotSupportedError:
+                    record_skipped_trading_evaluation(candidate, rank, "UNSUPPORTED_CHAIN")
+                    continue
+                except BlockchainExecutionRouteBuildError:
+                    record_skipped_trading_evaluation(candidate, rank, "ROUTE_BUILD_FAILED")
+                    continue
 
             free_cash_before = available_cash_usd
             free_cash_after = available_cash_usd - order_notional
@@ -449,9 +463,9 @@ class TradingPipeline:
             )
 
             logger.info(
-                "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f quality=%.2f shadow_mult=%.2f route=%s",
+                "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f quality=%.2f shadow_mult=%.2f mode=%s",
                 rank, candidate.token.symbol, tail(candidate.token.token_address), order_notional, candidate.ai_analysis.adjusted_quality_score, candidate.shadowing_diagnostics.notional_boost_factor,
-                "available" if execution_route is not None else "paper",
+                "paper" if settings.PAPER_MODE else "live",
             )
 
             buy_succeeded = execute_buy(order_payload)

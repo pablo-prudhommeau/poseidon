@@ -17,6 +17,7 @@ from src.core.trading.trading_structures import (
     TradingPortfolioEquityCurvePoint,
 )
 from src.core.utils.date_utils import get_current_local_datetime
+from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.persistence.models import TradingEvaluation, TradingPortfolioSnapshot, TradingPosition
 
 
@@ -123,7 +124,7 @@ def build_trading_portfolio(
         portfolio_snapshot: TradingPortfolioSnapshot,
         trades: list[TradingTradePayload],
         open_positions: Iterable[TradingPosition],
-        prices_by_pair_address: dict[str, float],
+        onchain_prices_by_pair_address: OnchainPricesByPairAddress,
         equity_curve: list[TradingPortfolioEquityCurvePoint],
 ) -> TradingPortfolio:
     from src.core.trading.trading_service import (
@@ -134,7 +135,7 @@ def build_trading_portfolio(
 
     _, unrealized_profit_and_loss = compute_holdings_and_unrealized_totals(
         open_positions,
-        prices_by_pair_address,
+        onchain_prices_by_pair_address,
     )
     (
         realized_profit_and_loss_total,

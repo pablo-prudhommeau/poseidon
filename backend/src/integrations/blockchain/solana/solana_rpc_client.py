@@ -10,10 +10,17 @@ import requests
 
 from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import convert_epoch_to_local_datetime
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_rpc_registry import (
     invalidate_rpc_cache_for_chain,
     list_fallback_rpc_urls_for_chain,
+    resolve_rpc_url_for_chain,
 )
+from src.integrations.blockchain.solana.solana_rpc_rate_limiter_service import (
+    register_rpc_failure_backoff,
+    wait_before_rpc_request,
+)
+from src.integrations.blockchain.solana.solana_structures import SolanaRpcFailureReason
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_KNOWN_STABLECOIN_MINTS,
     SOLANA_SPL_TOKEN_BALANCE_OFFSET,
@@ -30,6 +37,7 @@ SOLANA_RPC_TIMEOUT_SECONDS = 8
 SOLANA_SOL_USD_CACHE_TTL_SECONDS = 30
 SOLANA_NATIVE_BALANCE_POLL_INTERVAL_SECONDS = 2.0
 SOLANA_NATIVE_BALANCE_POLL_TIMEOUT_SECONDS = 30.0
+SOLANA_MULTIPLE_ACCOUNTS_CHUNK_SIZE = 10
 
 SOLANA_SOL_USDC_REFERENCE_POOL = "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2"
 
@@ -40,12 +48,12 @@ _spl_decimals_cache: dict[str, int] = {}
 
 
 def get_solana_rpc_url() -> str:
-    from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
     return resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA)
 
 
-def _rpc_post(rpc_url: str, payload: dict) -> Optional[dict]:
+def solana_rpc_post(rpc_url: str, payload: dict) -> dict:
     rpc_method = str(payload.get("method", "unknown"))
+    wait_before_rpc_request(rpc_url)
     try:
         response = requests.post(
             rpc_url,
@@ -53,46 +61,134 @@ def _rpc_post(rpc_url: str, payload: dict) -> Optional[dict]:
             timeout=SOLANA_RPC_TIMEOUT_SECONDS,
             headers={"Content-Type": "application/json"},
         )
-        if response.status_code == 429:
-            logger.debug(
-                "[BLOCKCHAIN][SOL][RPC] RPC request rate-limited — rpc_method=%s rpc_url=%s http_status=429",
-                rpc_method,
-                rpc_url,
-            )
-            return None
-        if response.status_code != 200:
-            logger.debug(
-                "[BLOCKCHAIN][SOL][RPC] RPC request failed with non-200 status — "
-                "rpc_method=%s rpc_url=%s http_status=%d",
-                rpc_method,
-                rpc_url,
-                response.status_code,
-            )
-            return None
-        return response.json()
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as timeout_error:
         logger.debug(
             "[BLOCKCHAIN][SOL][RPC] RPC request timeout — rpc_method=%s rpc_url=%s",
             rpc_method,
             rpc_url,
         )
-        return None
-    except requests.exceptions.RequestException as e:
+        raise BlockchainRpcUnavailableError(
+            f"[BLOCKCHAIN][SOL][RPC] Timeout for {rpc_method}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method=rpc_method,
+            failure_reason=SolanaRpcFailureReason.TIMEOUT,
+            rpc_url=rpc_url,
+        ) from timeout_error
+    except requests.exceptions.RequestException as network_error:
         logger.debug(
             "[BLOCKCHAIN][SOL][RPC] RPC network error — rpc_method=%s rpc_url=%s error=%s",
             rpc_method,
             rpc_url,
-            str(e),
+            str(network_error),
         )
-        return None
-    except Exception as e:
+        raise BlockchainRpcUnavailableError(
+            f"[BLOCKCHAIN][SOL][RPC] Network error for {rpc_method}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method=rpc_method,
+            failure_reason=SolanaRpcFailureReason.NETWORK_ERROR,
+            rpc_url=rpc_url,
+        ) from network_error
+
+    if response.status_code == 429:
         logger.debug(
-            "[BLOCKCHAIN][SOL][RPC] RPC unexpected error — rpc_method=%s rpc_url=%s error=%s",
+            "[BLOCKCHAIN][SOL][RPC] RPC request rate-limited — rpc_method=%s rpc_url=%s http_status=429",
             rpc_method,
             rpc_url,
-            str(e),
         )
-        return None
+        register_rpc_failure_backoff(rpc_url, SolanaRpcFailureReason.RATE_LIMITED)
+        raise BlockchainRpcUnavailableError(
+            f"[BLOCKCHAIN][SOL][RPC] HTTP 429 for {rpc_method}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method=rpc_method,
+            failure_reason=SolanaRpcFailureReason.RATE_LIMITED,
+            rpc_url=rpc_url,
+        )
+
+    if response.status_code != 200:
+        logger.debug(
+            "[BLOCKCHAIN][SOL][RPC] RPC request failed with non-200 status — "
+            "rpc_method=%s rpc_url=%s http_status=%d",
+            rpc_method,
+            rpc_url,
+            response.status_code,
+        )
+        raise BlockchainRpcUnavailableError(
+            f"[BLOCKCHAIN][SOL][RPC] HTTP {response.status_code} for {rpc_method}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method=rpc_method,
+            failure_reason=SolanaRpcFailureReason.HTTP_ERROR,
+            rpc_url=rpc_url,
+        )
+
+    response_json = response.json()
+    error_payload = response_json.get("error")
+    if error_payload is not None:
+        error_code = 0
+        if isinstance(error_payload, dict):
+            error_code = int(error_payload.get("code", 0))
+        if error_code == 429:
+            register_rpc_failure_backoff(rpc_url, SolanaRpcFailureReason.RATE_LIMITED)
+            raise BlockchainRpcUnavailableError(
+                f"[BLOCKCHAIN][SOL][RPC] JSON-RPC 429 for {rpc_method}",
+                blockchain_network=BlockchainNetwork.SOLANA,
+                rpc_method=rpc_method,
+                failure_reason=SolanaRpcFailureReason.RATE_LIMITED,
+                rpc_url=rpc_url,
+            )
+        logger.debug(
+            "[BLOCKCHAIN][SOL][RPC] JSON-RPC error — rpc_method=%s rpc_url=%s error=%s",
+            rpc_method,
+            rpc_url,
+            str(error_payload),
+        )
+        raise BlockchainRpcUnavailableError(
+            f"[BLOCKCHAIN][SOL][RPC] JSON-RPC error for {rpc_method}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method=rpc_method,
+            failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+            rpc_url=rpc_url,
+        )
+
+    return response_json
+
+
+def execute_solana_rpc_with_endpoint_fallbacks(rpc_url: str, payload: dict) -> dict:
+    rpc_method = str(payload.get("method", "unknown"))
+    candidate_urls: list[str] = [rpc_url]
+    for fallback_url in list_fallback_rpc_urls_for_chain(BlockchainNetwork.SOLANA, rpc_url):
+        if fallback_url not in candidate_urls:
+            candidate_urls.append(fallback_url)
+
+    last_rate_limit_error: Optional[BlockchainRpcUnavailableError] = None
+    last_infrastructure_error: Optional[BlockchainRpcUnavailableError] = None
+
+    for candidate_url in candidate_urls:
+        try:
+            return solana_rpc_post(candidate_url, payload)
+        except BlockchainRpcUnavailableError as rpc_unavailable_error:
+            if rpc_unavailable_error.failure_reason == SolanaRpcFailureReason.RATE_LIMITED:
+                last_rate_limit_error = rpc_unavailable_error
+                continue
+            last_infrastructure_error = rpc_unavailable_error
+            continue
+
+    if last_rate_limit_error is not None:
+        raise last_rate_limit_error
+
+    if last_infrastructure_error is not None:
+        raise last_infrastructure_error
+
+    raise BlockchainRpcUnavailableError(
+        f"[BLOCKCHAIN][SOL][RPC] All endpoints exhausted for {rpc_method}",
+        blockchain_network=BlockchainNetwork.SOLANA,
+        rpc_method=rpc_method,
+        failure_reason=SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
+        rpc_url=rpc_url,
+    )
+
+
+def _invalidate_solana_rpc_cache_after_endpoints_exhausted() -> None:
+    invalidate_rpc_cache_for_chain(BlockchainNetwork.SOLANA)
 
 
 def rpc_get_account_info(rpc_url: str, account_address: str) -> Optional[dict]:
@@ -103,43 +199,30 @@ def rpc_get_account_info(rpc_url: str, account_address: str) -> Optional[dict]:
         "params": [account_address, {"encoding": "base64"}],
     }
 
-    response_json = _rpc_post(rpc_url, payload)
-    if response_json is not None:
-        result = response_json.get("result")
-        if result is not None and result.get("value") is not None:
-            return result["value"]
+    try:
+        response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+    except BlockchainRpcUnavailableError:
+        logger.debug(
+            "[BLOCKCHAIN][SOL][RPC] getAccountInfo unavailable — account_address_prefix=%s",
+            account_address[:12],
+        )
+        _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+        raise
 
-    for fallback_url in list_fallback_rpc_urls_for_chain(BlockchainNetwork.SOLANA, rpc_url):
-        response_json = _rpc_post(fallback_url, payload)
-        if response_json is not None:
-            result = response_json.get("result")
-            if result is not None and result.get("value") is not None:
-                logger.debug(
-                    "[BLOCKCHAIN][SOL][RPC] getAccountInfo recovered via fallback endpoint — "
-                    "account_address_prefix=%s rpc_url=%s",
-                    account_address[:12],
-                    fallback_url,
-                )
-                return result["value"]
-
-    logger.warning(
-        "[BLOCKCHAIN][SOL][RPC] getAccountInfo failed across all endpoints — "
-        "account_address_prefix=%s reason=rpc_endpoints_exhausted",
-        account_address[:12],
-    )
-    invalidate_rpc_cache_for_chain(BlockchainNetwork.SOLANA)
-    return None
+    result = response_json.get("result")
+    if result is None:
+        return None
+    return result.get("value")
 
 
 def rpc_get_multiple_accounts(rpc_url: str, account_addresses: list[str]) -> list[Optional[dict]]:
     if not account_addresses:
         return []
 
-    MAX_ACCOUNTS_PER_REQUEST = 10
-    all_results = []
+    all_results: list[Optional[dict]] = []
 
-    for i in range(0, len(account_addresses), MAX_ACCOUNTS_PER_REQUEST):
-        chunk = account_addresses[i:i + MAX_ACCOUNTS_PER_REQUEST]
+    for chunk_start_index in range(0, len(account_addresses), SOLANA_MULTIPLE_ACCOUNTS_CHUNK_SIZE):
+        chunk = account_addresses[chunk_start_index:chunk_start_index + SOLANA_MULTIPLE_ACCOUNTS_CHUNK_SIZE]
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -147,37 +230,35 @@ def rpc_get_multiple_accounts(rpc_url: str, account_addresses: list[str]) -> lis
             "params": [chunk, {"encoding": "base64"}],
         }
 
-        response_json = _rpc_post(rpc_url, payload)
-        chunk_result = None
-
-        if response_json is not None:
-            result = response_json.get("result")
-            if result is not None and result.get("value") is not None:
-                chunk_result = result["value"]
-
-        if chunk_result is None:
-            for fallback_url in list_fallback_rpc_urls_for_chain(BlockchainNetwork.SOLANA, rpc_url):
-                response_json = _rpc_post(fallback_url, payload)
-                if response_json is not None:
-                    result = response_json.get("result")
-                    if result is not None and result.get("value") is not None:
-                        chunk_result = result["value"]
-                        logger.debug(
-                            "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts recovered via fallback endpoint — "
-                            "chunk_account_count=%d rpc_url=%s",
-                            len(chunk),
-                            fallback_url,
-                        )
-                        break
-
-        if chunk_result is None:
-            logger.warning(
-                "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts failed across all endpoints — "
-                "chunk_account_count=%d reason=rpc_endpoints_exhausted",
+        try:
+            response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+        except BlockchainRpcUnavailableError:
+            logger.debug(
+                "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts unavailable — chunk_account_count=%d",
                 len(chunk),
             )
-            invalidate_rpc_cache_for_chain(BlockchainNetwork.SOLANA)
-            chunk_result = [None] * len(chunk)
+            _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+            raise
+
+        result = response_json.get("result")
+        if result is None:
+            raise BlockchainRpcUnavailableError(
+                "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts missing result payload",
+                blockchain_network=BlockchainNetwork.SOLANA,
+                rpc_method="getMultipleAccounts",
+                failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+                rpc_url=rpc_url,
+            )
+
+        chunk_result = result.get("value")
+        if chunk_result is None:
+            raise BlockchainRpcUnavailableError(
+                "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts missing value payload",
+                blockchain_network=BlockchainNetwork.SOLANA,
+                rpc_method="getMultipleAccounts",
+                failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+                rpc_url=rpc_url,
+            )
 
         all_results.extend(chunk_result)
 
@@ -197,22 +278,25 @@ def extract_owner_program(account_info: dict) -> str:
     return account_info.get("owner", "")
 
 
+def read_spl_token_balance_from_account_info(account_info: dict) -> Optional[int]:
+    account_data = decode_account_data(account_info)
+    if account_data is None or len(account_data) < 72:
+        return None
+    return struct.unpack_from("<Q", account_data, SOLANA_SPL_TOKEN_BALANCE_OFFSET)[0]
+
+
 def fetch_spl_token_balance(rpc_url: str, vault_address: str) -> Optional[int]:
     account_info = rpc_get_account_info(rpc_url, vault_address)
     if account_info is None:
         return None
-    account_data = decode_account_data(account_info)
-    if account_data is None or len(account_data) < 72:
-        return None
-    balance = struct.unpack_from("<Q", account_data, SOLANA_SPL_TOKEN_BALANCE_OFFSET)[0]
-    return balance
+    return read_spl_token_balance_from_account_info(account_info)
 
 
 def fetch_spl_token_balance_for_wallet_and_mint(
         rpc_url: str,
         wallet_address: str,
         token_mint_address: str,
-) -> Optional[int]:
+) -> int:
     token_accounts = list_wallet_spl_token_accounts(rpc_url, wallet_address)
     for token_account in token_accounts:
         if token_account.token_mint_address != token_mint_address:
@@ -228,19 +312,15 @@ def rpc_get_minimum_balance_for_rent_exemption(rpc_url: str, account_data_length
         "method": "getMinimumBalanceForRentExemption",
         "params": [account_data_length],
     }
-    response_json = _rpc_post(rpc_url, payload)
-    if response_json is None:
-        for fallback_url in list_fallback_rpc_urls_for_chain(BlockchainNetwork.SOLANA, rpc_url):
-            response_json = _rpc_post(fallback_url, payload)
-            if response_json is not None:
-                break
-    if response_json is None:
-        logger.warning(
-            "[BLOCKCHAIN][SOL][RPC] getMinimumBalanceForRentExemption failed across all endpoints — "
-            "account_data_length=%d reason=rpc_endpoints_exhausted",
+    try:
+        response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+    except BlockchainRpcUnavailableError:
+        logger.debug(
+            "[BLOCKCHAIN][SOL][RPC] getMinimumBalanceForRentExemption unavailable — account_data_length=%d",
             account_data_length,
         )
         return None
+
     result_value = response_json.get("result")
     if result_value is None:
         return None
@@ -250,6 +330,8 @@ def rpc_get_minimum_balance_for_rent_exemption(rpc_url: str, account_data_length
 def list_wallet_spl_token_accounts(rpc_url: str, wallet_address: str) -> list[SolanaWalletTokenAccountSnapshot]:
     token_account_entries: list[dict] = []
     supported_program_ids = [SOLANA_SPL_TOKEN_PROGRAM_ID, SOLANA_TOKEN_2022_PROGRAM_ID]
+    infrastructure_failure_count = 0
+
     for supported_program_id in supported_program_ids:
         payload = {
             "jsonrpc": "2.0",
@@ -261,16 +343,13 @@ def list_wallet_spl_token_accounts(rpc_url: str, wallet_address: str) -> list[So
                 {"encoding": "jsonParsed"},
             ],
         }
-        response_json = _rpc_post(rpc_url, payload)
-        if response_json is None:
-            for fallback_url in list_fallback_rpc_urls_for_chain(BlockchainNetwork.SOLANA, rpc_url):
-                response_json = _rpc_post(fallback_url, payload)
-                if response_json is not None:
-                    break
-        if response_json is None:
-            logger.warning(
-                "[BLOCKCHAIN][SOL][RPC] getTokenAccountsByOwner failed across all endpoints — "
-                "wallet_address=%s owner_program_id=%s reason=rpc_endpoints_exhausted",
+        try:
+            response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+        except BlockchainRpcUnavailableError:
+            infrastructure_failure_count += 1
+            logger.debug(
+                "[BLOCKCHAIN][SOL][RPC] getTokenAccountsByOwner unavailable — "
+                "wallet_address=%s owner_program_id=%s",
                 wallet_address,
                 supported_program_id,
             )
@@ -279,6 +358,26 @@ def list_wallet_spl_token_accounts(rpc_url: str, wallet_address: str) -> list[So
         fetched_entries = response_json.get("result", {}).get("value", [])
         if isinstance(fetched_entries, list):
             token_account_entries.extend(fetched_entries)
+
+    if infrastructure_failure_count == len(supported_program_ids):
+        _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][RPC] getTokenAccountsByOwner failed across all owner programs",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getTokenAccountsByOwner",
+            failure_reason=SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
+            rpc_url=rpc_url,
+        )
+
+    if infrastructure_failure_count > 0:
+        _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][RPC] getTokenAccountsByOwner partially unavailable",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getTokenAccountsByOwner",
+            failure_reason=SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
+            rpc_url=rpc_url,
+        )
 
     if not token_account_entries:
         return []
@@ -352,38 +451,19 @@ def rpc_get_latest_confirmed_transaction_block_time(rpc_url: str, account_addres
         ],
     }
 
-    response_json = _rpc_post(rpc_url, payload)
-    if response_json is not None:
-        signature_entries = response_json.get("result")
-        if isinstance(signature_entries, list) and signature_entries:
-            block_time_value = signature_entries[0].get("blockTime")
-            if block_time_value is not None:
-                return int(block_time_value)
+    try:
+        response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+    except BlockchainRpcUnavailableError:
+        raise
 
-    for fallback_url in list_fallback_rpc_urls_for_chain(BlockchainNetwork.SOLANA, rpc_url):
-        response_json = _rpc_post(fallback_url, payload)
-        if response_json is None:
-            continue
-        signature_entries = response_json.get("result")
-        if not isinstance(signature_entries, list) or not signature_entries:
-            continue
-        block_time_value = signature_entries[0].get("blockTime")
-        if block_time_value is None:
-            continue
-        logger.debug(
-            "[BLOCKCHAIN][SOL][RPC] getSignaturesForAddress recovered via fallback endpoint — "
-            "account_address_prefix=%s rpc_url=%s",
-            account_address[:12],
-            fallback_url,
-        )
-        return int(block_time_value)
+    signature_entries = response_json.get("result")
+    if not isinstance(signature_entries, list) or not signature_entries:
+        return None
 
-    logger.debug(
-        "[BLOCKCHAIN][SOL][RPC] getSignaturesForAddress returned no confirmed signatures — "
-        "account_address_prefix=%s",
-        account_address[:12],
-    )
-    return None
+    block_time_value = signature_entries[0].get("blockTime")
+    if block_time_value is None:
+        return None
+    return int(block_time_value)
 
 
 def fetch_token_account_last_activity_datetime(
@@ -396,32 +476,32 @@ def fetch_token_account_last_activity_datetime(
     return convert_epoch_to_local_datetime(latest_transaction_block_time)
 
 
-def fetch_solana_native_balance_lamports(rpc_url: str, wallet_address: str) -> Optional[int]:
+def fetch_solana_native_balance_lamports(rpc_url: str, wallet_address: str) -> int:
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "getBalance",
         "params": [wallet_address],
     }
-    response_json = _rpc_post(rpc_url, payload)
-    if response_json is None:
-        for fallback_url in list_fallback_rpc_urls_for_chain(BlockchainNetwork.SOLANA, rpc_url):
-            response_json = _rpc_post(fallback_url, payload)
-            if response_json is not None:
-                break
-    if response_json is None:
-        logger.warning(
-            "[BLOCKCHAIN][SOL][RPC] getBalance failed across all endpoints — "
-            "wallet_address=%s reason=rpc_endpoints_exhausted",
-            wallet_address,
-        )
-        return None
+    response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
     result_payload = response_json.get("result")
     if not isinstance(result_payload, dict):
-        return None
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][RPC] getBalance missing result payload",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getBalance",
+            failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+            rpc_url=rpc_url,
+        )
     lamports_value = result_payload.get("value")
     if lamports_value is None:
-        return None
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][RPC] getBalance missing lamports value",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getBalance",
+            failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+            rpc_url=rpc_url,
+        )
     return int(lamports_value)
 
 
@@ -440,22 +520,10 @@ def fetch_solana_native_balance_lamports_across_endpoints(
 
     highest_lamports: Optional[int] = None
     for candidate_rpc_url in candidate_rpc_urls:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getBalance",
-            "params": [wallet_address],
-        }
-        response_json = _rpc_post(candidate_rpc_url, payload)
-        if response_json is None:
+        try:
+            parsed_lamports = fetch_solana_native_balance_lamports(candidate_rpc_url, wallet_address)
+        except BlockchainRpcUnavailableError:
             continue
-        result_payload = response_json.get("result")
-        if not isinstance(result_payload, dict):
-            continue
-        lamports_value = result_payload.get("value")
-        if lamports_value is None:
-            continue
-        parsed_lamports = int(lamports_value)
         if highest_lamports is None or parsed_lamports > highest_lamports:
             highest_lamports = parsed_lamports
     return highest_lamports
@@ -471,7 +539,7 @@ def poll_solana_native_balance_after_increase(
     deadline_timestamp = time.monotonic() + timeout_seconds
     last_observed_lamports: Optional[int] = None
     poll_attempt_count = 0
-    invalidate_rpc_cache_for_chain(BlockchainNetwork.SOLANA)
+    _invalidate_solana_rpc_cache_after_endpoints_exhausted()
 
     while time.monotonic() < deadline_timestamp:
         poll_attempt_count += 1
@@ -501,18 +569,69 @@ def poll_solana_native_balance_after_increase(
     return last_observed_lamports
 
 
-def get_spl_token_decimals(rpc_url: str, mint_address: str) -> Optional[int]:
+def get_spl_token_decimals(rpc_url: str, mint_address: str) -> int:
     cached_value = _spl_decimals_cache.get(mint_address)
     if cached_value is not None:
         return cached_value
     account_info = rpc_get_account_info(rpc_url, mint_address)
-    if account_info is not None:
-        account_data = decode_account_data(account_info)
-        if account_data is not None and len(account_data) >= 45:
-            fetched_decimals = struct.unpack_from("<B", account_data, 44)[0]
-            _spl_decimals_cache[mint_address] = fetched_decimals
-            return fetched_decimals
-    return None
+    if account_info is None:
+        raise BlockchainRpcUnavailableError(
+            f"[BLOCKCHAIN][SOL][RPC] Mint account missing for getMintDecimals — mint_address_prefix={mint_address[:12]}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getAccountInfo",
+            failure_reason=SolanaRpcFailureReason.MISSING_ACCOUNT,
+            rpc_url=rpc_url,
+        )
+    account_data = decode_account_data(account_info)
+    if account_data is None or len(account_data) < 45:
+        raise BlockchainRpcUnavailableError(
+            f"[BLOCKCHAIN][SOL][RPC] Mint account data invalid for getMintDecimals — mint_address_prefix={mint_address[:12]}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getAccountInfo",
+            failure_reason=SolanaRpcFailureReason.INVALID_ACCOUNT_DATA,
+            rpc_url=rpc_url,
+        )
+    fetched_decimals = struct.unpack_from("<B", account_data, 44)[0]
+    _spl_decimals_cache[mint_address] = fetched_decimals
+    return fetched_decimals
+
+
+def prefetch_spl_token_balances_for_vault_addresses(
+        rpc_url: str,
+        vault_addresses: list[str],
+) -> dict[str, int]:
+    unique_vault_addresses = list(dict.fromkeys(vault_addresses))
+    if not unique_vault_addresses:
+        return {}
+
+    account_infos = rpc_get_multiple_accounts(rpc_url, unique_vault_addresses)
+    balances_by_vault_address: dict[str, int] = {}
+    for vault_address, account_info in zip(unique_vault_addresses, account_infos, strict=True):
+        if account_info is None:
+            continue
+        balance_raw = read_spl_token_balance_from_account_info(account_info)
+        if balance_raw is None:
+            continue
+        balances_by_vault_address[vault_address] = balance_raw
+    return balances_by_vault_address
+
+
+def prefetch_spl_token_decimals_for_mint_addresses(
+        rpc_url: str,
+        mint_addresses: list[str],
+) -> dict[str, int]:
+    decimals_by_mint_address: dict[str, int] = {}
+    for mint_address in dict.fromkeys(mint_addresses):
+        cached_value = _spl_decimals_cache.get(mint_address)
+        if cached_value is not None:
+            decimals_by_mint_address[mint_address] = cached_value
+            continue
+        try:
+            fetched_decimals = get_spl_token_decimals(rpc_url, mint_address)
+        except BlockchainRpcUnavailableError:
+            continue
+        decimals_by_mint_address[mint_address] = fetched_decimals
+    return decimals_by_mint_address
 
 
 def resolve_sol_usd_price(rpc_url: str) -> Optional[float]:
@@ -522,12 +641,17 @@ def resolve_sol_usd_price(rpc_url: str) -> Optional[float]:
     if _cached_sol_usd_price is not None and (now - _cached_sol_usd_timestamp) < SOLANA_SOL_USD_CACHE_TTL_SECONDS:
         return _cached_sol_usd_price
 
-    from src.integrations.blockchain.solana.solana_structures import SOLANA_DEX_PROGRAM_IDS
     from src.integrations.blockchain.solana.dex_parsers.raydium_pool_parser import RaydiumPoolParser
+    from src.integrations.blockchain.solana.solana_structures import SOLANA_DEX_PROGRAM_IDS
 
-    account_info = rpc_get_account_info(rpc_url, SOLANA_SOL_USDC_REFERENCE_POOL)
+    try:
+        account_info = rpc_get_account_info(rpc_url, SOLANA_SOL_USDC_REFERENCE_POOL)
+    except BlockchainRpcUnavailableError:
+        logger.debug("[BLOCKCHAIN][PRICE][SOL][REFERENCE] SOL/USDC reference pool RPC unavailable")
+        return _cached_sol_usd_price
+
     if account_info is None:
-        logger.warning("[BLOCKCHAIN][PRICE][SOL][REFERENCE] Failed to fetch SOL/USDC reference pool from all endpoints")
+        logger.debug("[BLOCKCHAIN][PRICE][SOL][REFERENCE] SOL/USDC reference pool account missing")
         return _cached_sol_usd_price
 
     account_data = decode_account_data(account_info)
@@ -542,7 +666,7 @@ def resolve_sol_usd_price(rpc_url: str) -> Optional[float]:
         price_result = raydium_parser.parse_pool_price(rpc_url, account_data, SOLANA_WRAPPED_SOL_MINT, owner_program)
 
     if price_result is None:
-        logger.warning("[BLOCKCHAIN][PRICE][SOL][REFERENCE] Cannot parse SOL/USDC reference pool")
+        logger.debug("[BLOCKCHAIN][PRICE][SOL][REFERENCE] Cannot parse SOL/USDC reference pool")
         return _cached_sol_usd_price
 
     sol_usd_price = price_result[0]

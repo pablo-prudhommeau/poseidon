@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Protocol
 
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.trading_structures import TradingCandidate
@@ -12,13 +12,13 @@ class TradingExecutionChainHandler(Protocol):
     def blockchain_network(self) -> BlockchainNetwork:
         ...
 
-    def build_buy_route(self, candidate: TradingCandidate, order_notional_usd: float) -> Optional[BlockchainExecutionRoute]:
+    def build_buy_route(self, candidate: TradingCandidate, order_notional_usd: float) -> BlockchainExecutionRoute:
         ...
 
-    def build_sell_route(self, token_mint: str, token_quantity: float, token_decimals: int) -> Optional[BlockchainExecutionRoute]:
+    def build_sell_route(self, token_mint: str, token_quantity: float, token_decimals: int) -> BlockchainExecutionRoute:
         ...
 
-    def resolve_sell_token_decimals(self, token_address: str) -> Optional[int]:
+    def resolve_sell_token_decimals(self, token_address: str) -> int:
         ...
 
     def cap_sell_quantity_to_wallet_balance(

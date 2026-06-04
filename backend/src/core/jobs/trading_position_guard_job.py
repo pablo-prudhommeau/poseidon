@@ -9,7 +9,9 @@ from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.execution.trading_execution_guard_service import check_thresholds_and_exit_for_token_address
 from src.core.utils.date_utils import get_current_local_datetime
+from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
+from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.database_session_manager import get_database_session
@@ -31,16 +33,27 @@ class TradingPositionGuardJob:
 
     async def _execute_guard_cycle(self) -> None:
         position_tokens = await asyncio.to_thread(self._read_position_tokens)
-
-        try:
-            prices_by_pair_address = await asyncio.to_thread(fetch_onchain_prices_for_tokens, position_tokens)
-        except Exception:
-            logger.exception("[TRADING][POSITION_GUARD][CYCLE] On-chain price fetch failed")
+        if not position_tokens:
             return
 
-        trading_cache.update_prices_by_pair_address(prices_by_pair_address)
+        try:
+            onchain_prices_by_pair_address = await asyncio.to_thread(
+                fetch_onchain_prices_for_tokens,
+                position_tokens,
+            )
+        except BlockchainPriceUnavailableError:
+            logger.debug(
+                "[TRADING][POSITION_GUARD][CYCLE] On-chain prices unavailable — skipping autosell cycle",
+            )
+            return
 
-        await asyncio.to_thread(self._run_autosell_evaluations_for_tokens, position_tokens, prices_by_pair_address)
+        trading_cache.update_onchain_prices_by_pair_address(onchain_prices_by_pair_address)
+
+        await asyncio.to_thread(
+            self._run_autosell_evaluations_for_tokens,
+            position_tokens,
+            onchain_prices_by_pair_address,
+        )
 
         cache_invalidator.mark_dirty(CacheRealm.AVAILABLE_CASH, CacheRealm.POSITION_PRICES, CacheRealm.PORTFOLIO)
 
@@ -84,7 +97,7 @@ class TradingPositionGuardJob:
     @staticmethod
     def _run_autosell_evaluations_for_tokens(
             position_tokens: list[Token],
-            prices_by_pair_address: dict[str, float],
+            onchain_prices_by_pair_address: OnchainPricesByPairAddress,
     ) -> None:
         with get_database_session() as database_session:
             database_session.expire_on_commit = False
@@ -106,11 +119,12 @@ class TradingPositionGuardJob:
                 pair_address_label = token.pair_address
                 if pair_address_label is None or pair_address_label == "":
                     continue
-                if pair_address_label not in prices_by_pair_address:
+                if token.chain is None:
                     continue
-                price_usd = prices_by_pair_address[pair_address_label]
-                if price_usd <= 0.0:
-                    continue
+                price_usd = onchain_prices_by_pair_address.resolve_price_usd_for_pair_address(
+                    pair_address_label,
+                    blockchain_network=token.chain,
+                )
                 try:
                     newly_created_trades = check_thresholds_and_exit_for_token_address(
                         database_session, token, price_usd,

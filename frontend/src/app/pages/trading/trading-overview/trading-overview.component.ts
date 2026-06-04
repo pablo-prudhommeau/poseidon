@@ -203,16 +203,17 @@ export class TradingOverviewComponent implements OnDestroy {
     }
 
     buildSolanaRentTooltip(balance: LiquidityBalanceCard): string {
+        if (!this.isSolanaBalanceCard(balance)) {
+            return '';
+        }
         const rentBreakdown = balance.solana_token_account_rent;
-        const rentTotalUsd = this.resolveSolanaRentTotalUsd(balance);
-        const rentLockedSol = this.resolveSolanaRentLockedSol(balance);
-        if (!rentBreakdown || rentTotalUsd === null || rentLockedSol === null) {
+        if (rentBreakdown === undefined) {
             return '';
         }
         return buildSolanaRentTooltipHtml({
             stablecoinSymbol: balance.stablecoin_symbol,
-            lockedSol: rentLockedSol,
-            totalUsd: rentTotalUsd,
+            lockedSol: rentBreakdown.locked_sol,
+            totalUsd: rentBreakdown.active_usd + rentBreakdown.closable_usd,
             activeAccountCount: rentBreakdown.active_account_count,
             activeUsd: rentBreakdown.active_usd,
             closableAccountCount: rentBreakdown.closable_account_count,
@@ -229,6 +230,10 @@ export class TradingOverviewComponent implements OnDestroy {
         );
     }
 
+    isSolanaBalanceCard(balance: LiquidityBalanceCard): boolean {
+        return balance.blockchain_network.trim().toLowerCase() === 'solana';
+    }
+
     pnlValueClass(value: number | null): string {
         if (value === null) {
             return '';
@@ -240,18 +245,14 @@ export class TradingOverviewComponent implements OnDestroy {
         return Array.from({ length }, (_, index) => index);
     }
 
-    resolveSolanaRentLockedSol(balance: LiquidityBalanceCard): number | null {
-        const rentBreakdown = balance.solana_token_account_rent;
-        if (!rentBreakdown) {
-            return null;
-        }
-        return rentBreakdown.locked_sol;
+    resolveSolanaRentLockedSol(balance: LiquidityBalanceCard): number {
+        return balance.solana_token_account_rent?.locked_sol ?? 0;
     }
 
-    resolveSolanaRentTotalUsd(balance: LiquidityBalanceCard): number | null {
+    resolveSolanaRentTotalUsd(balance: LiquidityBalanceCard): number {
         const rentBreakdown = balance.solana_token_account_rent;
-        if (!rentBreakdown) {
-            return null;
+        if (rentBreakdown === undefined) {
+            return 0;
         }
         return rentBreakdown.active_usd + rentBreakdown.closable_usd;
     }

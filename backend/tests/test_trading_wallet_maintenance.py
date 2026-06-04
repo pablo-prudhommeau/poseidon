@@ -92,7 +92,7 @@ def test_resolve_reclaimable_token_accounts_accepts_token_2022_accounts_with_old
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.get_current_local_datetime",
         return_value=now,
     ), patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.fetch_token_account_last_activity_datetime",
+        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.resolve_cached_token_account_last_activity_datetime",
         return_value=old_activity,
     ):
         mock_settings.TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS = 72.0
@@ -132,7 +132,7 @@ def test_resolve_reclaimable_token_accounts_skips_when_mint_has_non_zero_balance
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.get_current_local_datetime",
         return_value=now,
     ), patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.fetch_token_account_last_activity_datetime",
+        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.resolve_cached_token_account_last_activity_datetime",
     ) as mock_fetch_last_activity:
         mock_settings.TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS = 72.0
         reclaimable = _resolve_reclaimable_token_accounts(
@@ -164,7 +164,7 @@ def test_resolve_reclaimable_token_accounts_skips_recent_on_chain_activity() -> 
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.get_current_local_datetime",
         return_value=now,
     ), patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.fetch_token_account_last_activity_datetime",
+        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.resolve_cached_token_account_last_activity_datetime",
         return_value=recent_activity,
     ):
         mock_settings.TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS = 72.0
@@ -195,7 +195,7 @@ def test_resolve_reclaimable_token_accounts_skips_without_on_chain_transaction_h
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.get_current_local_datetime",
         return_value=now,
     ), patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.fetch_token_account_last_activity_datetime",
+        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.resolve_cached_token_account_last_activity_datetime",
         return_value=None,
     ):
         mock_settings.TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS = 72.0

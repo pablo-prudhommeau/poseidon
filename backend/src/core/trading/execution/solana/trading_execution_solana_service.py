@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Optional, TypeVar
+from concurrent.futures import ThreadPoolExecutor
+from typing import Awaitable, TypeVar, Optional
 
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
@@ -14,15 +15,27 @@ from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_
 from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
 from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionExecutionError
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
-from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
+from src.integrations.blockchain.blockchain_exceptions import (
+    BlockchainExecutionRouteBuildError,
+    BlockchainPriceUnavailableError,
+    BlockchainRpcUnavailableError,
+)
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.integrations.blockchain.blockchain_structures import (
     BlockchainExecutionRoute,
     BlockchainSolanaRoute,
 )
 from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
-from src.integrations.blockchain.solana.solana_rpc_client import resolve_wallet_token_account_transfer_blocked
+from src.integrations.blockchain.solana.solana_onchain_wallet_context_service import (
+    invalidate_solana_onchain_wallet_context_cache,
+)
+from src.integrations.blockchain.solana.solana_rpc_client import get_spl_token_decimals
+from src.integrations.blockchain.solana.solana_wallet_snapshot_service import (
+    invalidate_solana_wallet_snapshot_cache,
+    resolve_solana_wallet_snapshot,
+)
 from src.integrations.jupiter.jupiter_client import generate_jupiter_swap_transaction
+from src.integrations.jupiter.jupiter_structures import JupiterApiFailureReason, JupiterApiUnavailableError
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
@@ -34,34 +47,38 @@ logger = get_application_logger(__name__)
 T = TypeVar("T")
 
 
-def build_solana_buy_route(candidate: TradingCandidate, order_notional_usd: float) -> Optional[BlockchainExecutionRoute]:
+def build_solana_buy_route(candidate: TradingCandidate, order_notional_usd: float) -> BlockchainExecutionRoute:
     token_mint = (candidate.token.token_address or "").strip()
     if not token_mint:
-        logger.debug("[TRADING][EXECUTION][SOLANA][ROUTE] Missing SPL token mint for %s", candidate.token.symbol)
-        return None
+        raise BlockchainExecutionRouteBuildError(
+            f"Missing SPL token mint for {candidate.token.symbol}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+        )
 
     stablecoin_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
     if not stablecoin_address:
-        logger.debug("[TRADING][EXECUTION][SOLANA][ROUTE] Missing stablecoin address for Solana")
-        return None
+        raise BlockchainExecutionRouteBuildError(
+            "Missing stablecoin address for Solana",
+            blockchain_network=BlockchainNetwork.SOLANA,
+        )
 
     from_amount_raw = _compute_from_amount_stablecoin_raw(order_notional_usd)
     if from_amount_raw is None:
-        logger.debug(
-            "[TRADING][EXECUTION][SOLANA][ROUTE] Cannot compute stablecoin raw amount for %s",
-            candidate.token.symbol,
+        raise BlockchainExecutionRouteBuildError(
+            f"Cannot compute stablecoin raw amount for {candidate.token.symbol}",
+            blockchain_network=BlockchainNetwork.SOLANA,
         )
-        return None
 
     try:
-        from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
         from_address = build_default_solana_signer().address
     except Exception as exception:
-        logger.exception("[TRADING][EXECUTION][SOLANA][ROUTE] Solana signer unavailable: %s", exception)
-        return None
+        raise BlockchainExecutionRouteBuildError(
+            f"Solana signer unavailable for {candidate.token.symbol}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+        ) from exception
 
+    slippage_basis_points = int(settings.TRADING_SLIPPAGE_TOLERANCE * 10000)
     try:
-        slippage_basis_points = int(settings.TRADING_SLIPPAGE_TOLERANCE * 10000)
         base64_transaction = generate_jupiter_swap_transaction(
             source_address=from_address,
             input_mint=stablecoin_address,
@@ -69,39 +86,44 @@ def build_solana_buy_route(candidate: TradingCandidate, order_notional_usd: floa
             amount_in_lamports=from_amount_raw,
             slippage_basis_points=slippage_basis_points,
         )
-        solana_route = BlockchainSolanaRoute(serialized_transaction_base64=base64_transaction)
-        return BlockchainExecutionRoute(solana_route=solana_route)
-    except Exception as exception:
-        logger.exception(
-            "[TRADING][EXECUTION][SOLANA][ROUTE] Jupiter buy route build failed for %s: %s",
-            candidate.token.symbol,
-            exception,
-        )
-        return None
+    except JupiterApiUnavailableError as jupiter_unavailable_error:
+        raise _build_solana_route_error_from_jupiter_unavailable(jupiter_unavailable_error) from jupiter_unavailable_error
+
+    solana_route = BlockchainSolanaRoute(serialized_transaction_base64=base64_transaction)
+    return BlockchainExecutionRoute(solana_route=solana_route)
 
 
-def build_solana_sell_route(token_mint: str, token_quantity: float, token_decimals: int) -> Optional[BlockchainExecutionRoute]:
+def build_solana_sell_route(token_mint: str, token_quantity: float, token_decimals: int) -> BlockchainExecutionRoute:
     if not token_mint:
-        return None
+        raise BlockchainExecutionRouteBuildError(
+            "Missing SPL token mint for sell route",
+            blockchain_network=BlockchainNetwork.SOLANA,
+        )
 
     amount_lamports = int(token_quantity * (10 ** token_decimals))
     if amount_lamports <= 0:
-        return None
+        raise BlockchainExecutionRouteBuildError(
+            f"Non-positive sell amount for token mint {token_mint}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+        )
 
     stablecoin_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
     if not stablecoin_address:
-        logger.debug("[TRADING][EXECUTION][SOLANA][ROUTE] Missing stablecoin address for Solana (sell)")
-        return None
+        raise BlockchainExecutionRouteBuildError(
+            "Missing stablecoin address for Solana sell route",
+            blockchain_network=BlockchainNetwork.SOLANA,
+        )
 
     try:
-        from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
         from_address = build_default_solana_signer().address
     except Exception as exception:
-        logger.exception("[TRADING][EXECUTION][SOLANA][ROUTE] Solana signer unavailable: %s", exception)
-        return None
+        raise BlockchainExecutionRouteBuildError(
+            f"Solana signer unavailable for sell route token mint {token_mint}",
+            blockchain_network=BlockchainNetwork.SOLANA,
+        ) from exception
 
+    slippage_basis_points = int(settings.TRADING_SLIPPAGE_TOLERANCE * 10000)
     try:
-        slippage_basis_points = int(settings.TRADING_SLIPPAGE_TOLERANCE * 10000)
         base64_transaction = generate_jupiter_swap_transaction(
             source_address=from_address,
             input_mint=token_mint,
@@ -109,21 +131,38 @@ def build_solana_sell_route(token_mint: str, token_quantity: float, token_decima
             amount_in_lamports=amount_lamports,
             slippage_basis_points=slippage_basis_points,
         )
-        solana_route = BlockchainSolanaRoute(serialized_transaction_base64=base64_transaction)
-        return BlockchainExecutionRoute(solana_route=solana_route)
-    except Exception as exception:
-        logger.exception(
-            "[TRADING][EXECUTION][SOLANA][ROUTE] Jupiter sell route build failed for %s: %s",
-            token_mint,
-            exception,
+    except JupiterApiUnavailableError as jupiter_unavailable_error:
+        raise _build_solana_route_error_from_jupiter_unavailable(jupiter_unavailable_error) from jupiter_unavailable_error
+
+    solana_route = BlockchainSolanaRoute(serialized_transaction_base64=base64_transaction)
+    return BlockchainExecutionRoute(solana_route=solana_route)
+
+
+def _build_solana_route_error_from_jupiter_unavailable(
+        jupiter_unavailable_error: JupiterApiUnavailableError,
+) -> BlockchainExecutionRouteBuildError:
+    is_transient = jupiter_unavailable_error.failure_reason in {
+        JupiterApiFailureReason.RATE_LIMITED,
+        JupiterApiFailureReason.NETWORK_ERROR,
+    }
+    if is_transient:
+        logger.debug(
+            "[TRADING][EXECUTION][SOLANA][ROUTE] Jupiter unavailable — failure_reason=%s",
+            jupiter_unavailable_error.failure_reason.value,
         )
-        return None
+    else:
+        logger.warning(
+            "[TRADING][EXECUTION][SOLANA][ROUTE] Jupiter unavailable — failure_reason=%s",
+            jupiter_unavailable_error.failure_reason.value,
+        )
+    return BlockchainExecutionRouteBuildError(
+        str(jupiter_unavailable_error),
+        blockchain_network=BlockchainNetwork.SOLANA,
+        is_transient=is_transient,
+    )
 
 
-def resolve_solana_sell_token_decimals(token_address: str) -> Optional[int]:
-    from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
-    from src.integrations.blockchain.solana.solana_rpc_client import get_spl_token_decimals
-
+def resolve_solana_sell_token_decimals(token_address: str) -> int:
     rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA)
     return get_spl_token_decimals(rpc_url, token_address)
 
@@ -133,33 +172,22 @@ def cap_solana_sell_quantity_to_wallet_balance(
         sell_quantity: float,
         token_decimals: int,
 ) -> float:
-    from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
-    from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
-    from src.integrations.blockchain.solana.solana_rpc_client import fetch_spl_token_balance_for_wallet_and_mint
+    wallet_snapshot = resolve_solana_wallet_snapshot(force_refresh=True)
+    token_account_balance_raw = 0
+    for token_account in wallet_snapshot.token_accounts:
+        if token_account.token_mint_address != token_address:
+            continue
+        token_account_balance_raw = token_account.balance_raw
+        break
 
-    rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA)
-    try:
-        wallet_address = build_default_solana_signer().address
-        token_account_balance_raw = fetch_spl_token_balance_for_wallet_and_mint(
-            rpc_url,
-            wallet_address,
-            token_address,
-        )
-        if token_account_balance_raw is None:
-            raise ValueError("Missing SPL token account balance")
-        actual_balance = float(token_account_balance_raw) / float(10 ** token_decimals)
-        if actual_balance < sell_quantity:
-            logger.warning(
-                "[TRADING][EXECUTION][SOLANA][POSITION] Actual balance (%.6f) is less than theoretical (%.6f). Capping sell quantity.",
-                actual_balance,
-                sell_quantity,
-            )
-            return actual_balance
-    except Exception as exception:
+    actual_balance = float(token_account_balance_raw) / float(10 ** token_decimals)
+    if actual_balance < sell_quantity:
         logger.warning(
-            "[TRADING][EXECUTION][SOLANA][POSITION] Could not fetch actual balance for capping: %s",
-            exception,
+            "[TRADING][EXECUTION][SOLANA][POSITION] Actual balance (%.6f) is less than theoretical (%.6f). Capping sell quantity.",
+            actual_balance,
+            sell_quantity,
         )
+        return actual_balance
     return sell_quantity
 
 
@@ -189,13 +217,12 @@ def run_solana_live_buy_blocking(
 
 
 def resolve_solana_wallet_token_transfer_blocked_for_mint(token_mint_address: str) -> bool:
-    signer = build_default_solana_signer()
-    rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA)
-    return resolve_wallet_token_account_transfer_blocked(
-        rpc_url=rpc_url,
-        wallet_address=signer.address,
-        token_mint_address=token_mint_address,
-    )
+    wallet_snapshot = resolve_solana_wallet_snapshot(force_refresh=False)
+    for token_account in wallet_snapshot.token_accounts:
+        if token_account.token_mint_address != token_mint_address:
+            continue
+        return token_account.account_state.strip().lower() == "frozen"
+    return False
 
 
 def run_solana_live_sell_blocking(
@@ -255,7 +282,6 @@ def _run_awaitable_blocking(awaitable: Awaitable[T], debug_label: str) -> T:
         running_loop = None
 
     if running_loop and running_loop.is_running():
-        from concurrent.futures import ThreadPoolExecutor
         logger.debug("[TRADING][EXECUTION][SOLANA][SWAP] Blocking execution via worker thread (%s)", debug_label)
         with ThreadPoolExecutor(max_workers=1) as thread_executor:
             future = thread_executor.submit(asyncio.run, awaitable)
@@ -353,6 +379,8 @@ async def _execute_solana_live_buy(
             position_dao.save(trading_position)
 
             database_session.commit()
+        invalidate_solana_wallet_snapshot_cache()
+        invalidate_solana_onchain_wallet_context_cache()
         return True
     except Exception as exception:
         logger.exception(
@@ -427,6 +455,8 @@ async def _execute_solana_live_sell(
             execution_outcome.transaction_hash_or_signature,
             execution_outcome.transaction_fee_usd,
         )
+        invalidate_solana_wallet_snapshot_cache()
+        invalidate_solana_onchain_wallet_context_cache()
         return TradingLiveSellExecutionOutcome(execution_result=execution_outcome, failure_reason=None)
 
     except BlockchainTransactionExecutionError as execution_error:

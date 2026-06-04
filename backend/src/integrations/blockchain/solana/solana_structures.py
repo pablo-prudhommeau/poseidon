@@ -1,19 +1,48 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
-
+from pydantic import BaseModel, ConfigDict, Field
 from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
 
 
-@dataclass(frozen=True)
-class SolanaTransactionConfirmationResult:
+class SolanaRpcFailureReason(str, Enum):
+    RATE_LIMITED = "RATE_LIMITED"
+    HTTP_ERROR = "HTTP_ERROR"
+    TIMEOUT = "TIMEOUT"
+    JSON_RPC_ERROR = "JSON_RPC_ERROR"
+    ENDPOINTS_EXHAUSTED = "ENDPOINTS_EXHAUSTED"
+    NETWORK_ERROR = "NETWORK_ERROR"
+    MISSING_ACCOUNT = "MISSING_ACCOUNT"
+    INVALID_ACCOUNT_DATA = "INVALID_ACCOUNT_DATA"
+
+
+class SolanaPriceParseResources(BaseModel):
+    vault_balances_by_address: dict[str, int]
+    mint_decimals_by_address: dict[str, int]
+
+    def resolve_vault_balance_raw(self, vault_address: str) -> int | None:
+        return self.vault_balances_by_address.get(vault_address)
+
+    def resolve_mint_decimals(self, mint_address: str) -> int | None:
+        return self.mint_decimals_by_address.get(mint_address)
+
+
+class SolanaTransactionConfirmationResult(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
     is_confirmed: bool
     failure_reason: Optional[BlockchainTransactionFailureReason]
     raw_error_text: str
 
+
+class SolanaRpcEndpointRateLimitState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rpc_url: str
+    cooldown_until_monotonic: float = 0.0
+    request_timestamps_monotonic: list[float] = Field(default_factory=list)
 
 class SolanaTransactionFeeBreakdown(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -42,6 +71,16 @@ class SolanaWalletTokenAccountSnapshot(BaseModel):
     balance_raw: int
     owner_program_id: str
     account_state: str
+
+
+class SolanaWalletSnapshot(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    wallet_address: str
+    rpc_url: str
+    token_accounts: list[SolanaWalletTokenAccountSnapshot]
+    native_lamports: int
+    fetched_at_monotonic: float
 
 
 SOLANA_WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112"
@@ -73,3 +112,16 @@ SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS: frozenset[str] = frozenset(
         SOLANA_TOKEN_2022_PROGRAM_ID,
     },
 )
+
+
+from src.core.trading.portfolio.trading_portfolio_structures import SolanaTokenAccountRentBreakdown
+
+
+class SolanaOnchainWalletContext(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    wallet_snapshot: SolanaWalletSnapshot
+    rent_breakdown: SolanaTokenAccountRentBreakdown
+    stablecoin_balance_raw: float
+    native_token_balance_raw: float
+    native_token_balance_usd: float

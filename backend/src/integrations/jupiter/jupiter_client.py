@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import httpx
 
-from src.integrations.jupiter.jupiter_structures import JupiterQuoteResponse, JupiterSwapRequest, JupiterSwapResponse
+from src.integrations.jupiter.jupiter_structures import (
+    JupiterApiFailureReason,
+    JupiterApiUnavailableError,
+    JupiterQuoteResponse,
+    JupiterSwapRequest,
+    JupiterSwapResponse,
+)
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -45,21 +51,20 @@ def fetch_jupiter_quote(
             logger.info("[JUPITER][CLIENT][QUOTE][SUCCESS] Successfully retrieved quote from %s to %s", input_mint, output_mint)
             return JupiterQuoteResponse.model_validate(response_payload)
     except httpx.HTTPStatusError as status_exception:
-        response_status_code = status_exception.response.status_code if status_exception.response is not None else "Unknown Status"
-        response_body_text = status_exception.response.text if status_exception.response is not None else "No Response Body"
-        logger.exception(
-            "[JUPITER][CLIENT][QUOTE][FAILURE] HTTP status error occurred for endpoint %s with status %s and body: %s",
-            JUPITER_QUOTE_API_URL,
-            response_status_code,
-            response_body_text,
-        )
-        raise status_exception
+        raise _build_jupiter_http_unavailable_error(
+            api_endpoint=JUPITER_QUOTE_API_URL,
+            operation_label="quote",
+            status_exception=status_exception,
+        ) from status_exception
     except httpx.RequestError as request_exception:
-        logger.exception(
-            "[JUPITER][CLIENT][QUOTE][FAILURE] Network request error occurred for endpoint %s",
+        logger.debug(
+            "[JUPITER][CLIENT][QUOTE][UNAVAILABLE] Network request error for endpoint %s",
             JUPITER_QUOTE_API_URL,
         )
-        raise request_exception
+        raise JupiterApiUnavailableError(
+            f"[JUPITER][CLIENT][QUOTE] Network request error for endpoint {JUPITER_QUOTE_API_URL}",
+            failure_reason=JupiterApiFailureReason.NETWORK_ERROR,
+        ) from request_exception
 
 
 def fetch_jupiter_swap_transaction(
@@ -92,21 +97,20 @@ def fetch_jupiter_swap_transaction(
             logger.info("[JUPITER][CLIENT][SWAP][SUCCESS] Successfully retrieved swap transaction")
             return swap_response.swap_transaction
     except httpx.HTTPStatusError as status_exception:
-        response_status_code = status_exception.response.status_code if status_exception.response is not None else "Unknown Status"
-        response_body_text = status_exception.response.text if status_exception.response is not None else "No Response Body"
-        logger.exception(
-            "[JUPITER][CLIENT][SWAP][FAILURE] HTTP status error occurred for endpoint %s with status %s and body: %s",
-            JUPITER_SWAP_API_URL,
-            response_status_code,
-            response_body_text,
-        )
-        raise status_exception
+        raise _build_jupiter_http_unavailable_error(
+            api_endpoint=JUPITER_SWAP_API_URL,
+            operation_label="swap",
+            status_exception=status_exception,
+        ) from status_exception
     except httpx.RequestError as request_exception:
-        logger.exception(
-            "[JUPITER][CLIENT][SWAP][FAILURE] Network request error occurred for endpoint %s",
+        logger.debug(
+            "[JUPITER][CLIENT][SWAP][UNAVAILABLE] Network request error for endpoint %s",
             JUPITER_SWAP_API_URL,
         )
-        raise request_exception
+        raise JupiterApiUnavailableError(
+            f"[JUPITER][CLIENT][SWAP] Network request error for endpoint {JUPITER_SWAP_API_URL}",
+            failure_reason=JupiterApiFailureReason.NETWORK_ERROR,
+        ) from request_exception
 
 
 def generate_jupiter_swap_transaction(
@@ -125,4 +129,45 @@ def generate_jupiter_swap_transaction(
     return fetch_jupiter_swap_transaction(
         quote_response=quote_response,
         user_public_key=source_address
+    )
+
+
+def _build_jupiter_http_unavailable_error(
+        api_endpoint: str,
+        operation_label: str,
+        status_exception: httpx.HTTPStatusError,
+) -> JupiterApiUnavailableError:
+    response_status_code = (
+        status_exception.response.status_code
+        if status_exception.response is not None
+        else None
+    )
+    response_body_text = (
+        status_exception.response.text
+        if status_exception.response is not None
+        else "No Response Body"
+    )
+    if response_status_code == 429:
+        logger.debug(
+            "[JUPITER][CLIENT][%s][UNAVAILABLE] Rate-limited — endpoint=%s http_status=429",
+            operation_label.upper(),
+            api_endpoint,
+        )
+        return JupiterApiUnavailableError(
+            f"[JUPITER][CLIENT][{operation_label.upper()}] HTTP 429 for endpoint {api_endpoint}",
+            failure_reason=JupiterApiFailureReason.RATE_LIMITED,
+            http_status_code=response_status_code,
+        )
+
+    logger.warning(
+        "[JUPITER][CLIENT][%s][UNAVAILABLE] HTTP status error — endpoint=%s http_status=%s body=%s",
+        operation_label.upper(),
+        api_endpoint,
+        response_status_code,
+        response_body_text,
+    )
+    return JupiterApiUnavailableError(
+        f"[JUPITER][CLIENT][{operation_label.upper()}] HTTP {response_status_code} for endpoint {api_endpoint}",
+        failure_reason=JupiterApiFailureReason.HTTP_ERROR,
+        http_status_code=response_status_code,
     )

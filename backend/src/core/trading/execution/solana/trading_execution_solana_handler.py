@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.execution.solana.trading_execution_solana_service import (
     build_solana_buy_route,
@@ -20,13 +18,13 @@ class TradingExecutionSolanaHandler:
     def blockchain_network(self) -> BlockchainNetwork:
         return BlockchainNetwork.SOLANA
 
-    def build_buy_route(self, candidate: TradingCandidate, order_notional_usd: float) -> Optional[BlockchainExecutionRoute]:
+    def build_buy_route(self, candidate: TradingCandidate, order_notional_usd: float) -> BlockchainExecutionRoute:
         return build_solana_buy_route(candidate, order_notional_usd)
 
-    def build_sell_route(self, token_mint: str, token_quantity: float, token_decimals: int) -> Optional[BlockchainExecutionRoute]:
+    def build_sell_route(self, token_mint: str, token_quantity: float, token_decimals: int) -> BlockchainExecutionRoute:
         return build_solana_sell_route(token_mint, token_quantity, token_decimals)
 
-    def resolve_sell_token_decimals(self, token_address: str) -> Optional[int]:
+    def resolve_sell_token_decimals(self, token_address: str) -> int:
         return resolve_solana_sell_token_decimals(token_address)
 
     def cap_sell_quantity_to_wallet_balance(

@@ -88,7 +88,7 @@ def apply_trading_cortex_gate_filter(
 
     first_response = scoring_batch_response.responses[0]
     if not first_response.model_ready:
-        logger.warning(
+        logger.info(
             "[TRADING][PIPELINE][TRADING][CORTEX] Cortex model is not ready; %s %d candidates",
             "blocking execution for" if gate_enabled else "continuing without cortex inference for",
             len(candidates),

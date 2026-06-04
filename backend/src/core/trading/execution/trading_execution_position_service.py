@@ -25,7 +25,17 @@ from src.core.trading.execution.trading_execution_swap_service import run_live_s
 from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
 from src.core.trading.trading_structures import PositionExitTriggerReason
 from src.core.trading.trading_utils import convert_trading_position_to_token
+from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_guard_service import (
+    register_live_sell_stablecoin_settlement_pending,
+)
 from src.core.utils.date_utils import get_current_local_datetime
+from src.integrations.blockchain.blockchain_exceptions import (
+    BlockchainExecutionRouteBuildError,
+    BlockchainRpcUnavailableError,
+    BlockchainTradingNotSupportedError,
+    BlockchainPriceUnavailableError,
+)
+from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
@@ -213,20 +223,49 @@ def _execute_closing_sell(
             revert_position_closing(database_session, position, previous_phase)
             return None
 
-        token_decimals = chain_handler.resolve_sell_token_decimals(position.token_address)
-        if token_decimals is None:
+        try:
+            token_decimals = chain_handler.resolve_sell_token_decimals(position.token_address)
+        except BlockchainRpcUnavailableError:
+            logger.debug(
+                "[TRADING][EXECUTION][POSITION][LIVE] Token decimals unavailable for %s — reverting closing, will retry later",
+                position.token_symbol,
+            )
+            revert_position_closing(database_session, position, previous_phase)
+            return None
+        except BlockchainTradingNotSupportedError:
             logger.error(
-                "[TRADING][EXECUTION][POSITION][LIVE] Failed to fetch decimals for %s. Sell aborted.",
+                "[TRADING][EXECUTION][POSITION][LIVE] Live trading not supported for %s on %s — sell aborted",
+                position.token_symbol,
+                chain_enum.value,
+            )
+            revert_position_closing(database_session, position, previous_phase)
+            return None
+
+        try:
+            baseline_deployable_cash_usd = sum(
+                balance.balance_raw for balance in fetch_stablecoin_balances_for_allowed_chains()
+            )
+        except BlockchainRpcUnavailableError:
+            logger.debug(
+                "[TRADING][EXECUTION][POSITION][LIVE] Deployable baseline unavailable for %s — reverting closing, will retry later",
                 position.token_symbol,
             )
             revert_position_closing(database_session, position, previous_phase)
             return None
 
-        sell_quantity = chain_handler.cap_sell_quantity_to_wallet_balance(
-            position.token_address,
-            sell_quantity,
-            token_decimals,
-        )
+        try:
+            sell_quantity = chain_handler.cap_sell_quantity_to_wallet_balance(
+                position.token_address,
+                sell_quantity,
+                token_decimals,
+            )
+        except BlockchainRpcUnavailableError:
+            logger.debug(
+                "[TRADING][EXECUTION][POSITION][LIVE] Wallet balance unavailable for %s — reverting closing, will retry later",
+                position.token_symbol,
+            )
+            revert_position_closing(database_session, position, previous_phase)
+            return None
 
         if sell_quantity <= 0.0:
             logger.error(
@@ -246,17 +285,31 @@ def _execute_closing_sell(
                 mark_position_staled(database_session, position, PositionExitTriggerReason.FROZEN_ACCOUNT)
                 return None
 
-        execution_route = build_route_for_live_sell(
-            token_mint=position.token_address,
-            chain=chain_enum,
-            token_quantity=sell_quantity,
-            token_decimals=token_decimals,
-        )
-
-        if execution_route is None:
+        try:
+            execution_route = build_route_for_live_sell(
+                token_mint=position.token_address,
+                chain=chain_enum,
+                token_quantity=sell_quantity,
+                token_decimals=token_decimals,
+            )
+        except BlockchainExecutionRouteBuildError as route_build_error:
+            if route_build_error.is_transient:
+                logger.debug(
+                    "[TRADING][EXECUTION][POSITION][LIVE] Sell route unavailable for %s — reverting closing, will retry later",
+                    position.token_symbol,
+                )
+            else:
+                logger.warning(
+                    "[TRADING][EXECUTION][POSITION][LIVE] Sell route build failed for %s — reverting closing, will retry later",
+                    position.token_symbol,
+                )
+            revert_position_closing(database_session, position, previous_phase)
+            return None
+        except BlockchainTradingNotSupportedError:
             logger.error(
-                "[TRADING][EXECUTION][POSITION][LIVE] Failed to build sell route for %s. Sell aborted.",
+                "[TRADING][EXECUTION][POSITION][LIVE] Live sell route not supported for %s on %s — sell aborted",
                 position.token_symbol,
+                chain_enum.value,
             )
             revert_position_closing(database_session, position, previous_phase)
             return None
@@ -340,6 +393,11 @@ def _execute_closing_sell(
         sell_quantity=sell_quantity,
     )
     sell_swap_fee_usd = live_transaction_fee_usd
+    if not settings.PAPER_MODE and live_transaction_hash:
+        register_live_sell_stablecoin_settlement_pending(
+            confirmed_swap_transaction_signature=live_transaction_hash,
+            baseline_deployable_cash_usd=baseline_deployable_cash_usd,
+        )
     trade_pnl_usd = exit_notional - entry_notional - allocated_buy_swap_fee_usd - sell_swap_fee_usd
     sell_trade.realized_profit_and_loss = trade_pnl_usd
 
@@ -515,19 +573,25 @@ def infer_reopen_phase_after_failed_close(position: TradingPosition) -> Position
 
 def resolve_execution_price_for_position(position: TradingPosition) -> float:
     pair_address = position.pair_address
-    cached_prices = trading_cache.get_prices_by_pair_address()
-    if cached_prices and pair_address in cached_prices:
-        cached_price = cached_prices[pair_address]
-        if cached_price > 0.0:
-            return cached_price
+    blockchain_network = BlockchainNetwork(position.blockchain_network.lower())
+    cached_onchain_prices = trading_cache.get_onchain_prices_by_pair_address()
+    if cached_onchain_prices is not None and pair_address:
+        try:
+            return cached_onchain_prices.resolve_price_usd_for_pair_address(
+                pair_address,
+                blockchain_network=blockchain_network,
+            )
+        except BlockchainPriceUnavailableError:
+            pass
 
     token = convert_trading_position_to_token(position)
     try:
-        fetched_prices = fetch_onchain_prices_for_tokens([token])
-        fetched_price = fetched_prices.get(pair_address)
-        if fetched_price is not None and fetched_price > 0.0:
-            return fetched_price
-    except Exception:
+        fetched_onchain_prices = fetch_onchain_prices_for_tokens([token])
+        return fetched_onchain_prices.resolve_price_usd_for_pair_address(
+            pair_address,
+            blockchain_network=blockchain_network,
+        )
+    except BlockchainPriceUnavailableError:
         logger.exception(
             "[TRADING][EXECUTION][POSITION] On-chain price fetch failed for %s, falling back to entry price",
             position.token_symbol,

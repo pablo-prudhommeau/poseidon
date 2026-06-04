@@ -13,6 +13,11 @@ from src.api.http.api_schemas import (
 )
 from src.api.websocket.websocket_manager import websocket_manager
 from src.api.websocket.websocket_structures import WebsocketMessageType
+from src.cache.cache_protocols import CacheRealmRebuildSkipped
+from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_guard_service import (
+    PendingStablecoinSettlementIncompleteError,
+)
+from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError, BlockchainRpcUnavailableError
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.cache.trading_cache import trading_cache
@@ -24,6 +29,7 @@ from src.core.trading.cache.trading_cache_payload_builders import (
     build_trading_prices_payload,
     build_trading_portfolio_payload_with_snapshot_creation,
 )
+from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -33,11 +39,19 @@ class _PricesRebuilder:
     realm = CacheRealm.PRICES
     ttl_seconds = 30.0
 
-    def rebuild(self) -> dict[str, float]:
-        return build_trading_prices_payload()
+    def rebuild(self) -> OnchainPricesByPairAddress:
+        try:
+            return build_trading_prices_payload()
+        except BlockchainPriceUnavailableError:
+            cached_onchain_prices = trading_cache.get_onchain_prices_by_pair_address()
+            if cached_onchain_prices is not None:
+                raise CacheRealmRebuildSkipped(
+                    "Live on-chain prices unavailable — retaining cached price entries",
+                )
+            raise
 
-    def apply_to_cache(self, payload: dict[str, float]) -> None:
-        trading_cache.update_prices_by_pair_address(payload)
+    def apply_to_cache(self, payload: OnchainPricesByPairAddress) -> None:
+        trading_cache.update_onchain_prices_by_pair_address(payload)
 
     async def notify_websocket(self, _payload: object) -> None:
         pass
@@ -48,9 +62,11 @@ class _PositionsRebuilder:
     ttl_seconds = 30.0
 
     def rebuild(self) -> list[TradingPositionPayload]:
-        prices_candidate = trading_cache.get_prices_by_pair_address()
-        prices_lookup: dict[str, float] = prices_candidate if prices_candidate is not None else {}
-        return build_trading_positions_payloads(prices_lookup)
+        prices_candidate = trading_cache.get_onchain_prices_by_pair_address()
+        onchain_prices_lookup = (
+            prices_candidate if prices_candidate is not None else OnchainPricesByPairAddress.empty()
+        )
+        return build_trading_positions_payloads(onchain_prices_lookup)
 
     def apply_to_cache(self, payload: object) -> None:
         trading_cache.update_trading_positions_state(cast(list[TradingPositionPayload], payload))
@@ -68,9 +84,11 @@ class _PositionPricesRebuilder:
     ttl_seconds = 30.0
 
     def rebuild(self) -> list[TradingPositionPricePayload]:
-        prices_candidate = trading_cache.get_prices_by_pair_address()
-        prices_lookup: dict[str, float] = prices_candidate if prices_candidate is not None else {}
-        return build_trading_position_prices_payloads(prices_lookup)
+        prices_candidate = trading_cache.get_onchain_prices_by_pair_address()
+        onchain_prices_lookup = (
+            prices_candidate if prices_candidate is not None else OnchainPricesByPairAddress.empty()
+        )
+        return build_trading_position_prices_payloads(onchain_prices_lookup)
 
     def apply_to_cache(self, payload: object) -> None:
         trading_cache.update_trading_position_prices_state(cast(list[TradingPositionPricePayload], payload))
@@ -107,13 +125,11 @@ class _AvailableCashRebuilder:
     def rebuild(self) -> TradingLiquidityPayload:
         try:
             return build_trading_liquidity_payload()
-        except ConnectionError:
-            previous_liquidity = trading_cache.get_trading_liquidity_state()
-            if previous_liquidity is not None:
-                logger.warning(
-                    "[TRADING][CACHE][LIQUIDITY] Live balances unavailable; retaining cached liquidity payload"
+        except (BlockchainRpcUnavailableError, PendingStablecoinSettlementIncompleteError):
+            if trading_cache.get_trading_liquidity_state() is not None:
+                raise CacheRealmRebuildSkipped(
+                    "Live on-chain liquidity incomplete — retaining cached liquidity payload",
                 )
-                return previous_liquidity
             raise
 
     def apply_to_cache(self, payload: TradingLiquidityPayload) -> None:

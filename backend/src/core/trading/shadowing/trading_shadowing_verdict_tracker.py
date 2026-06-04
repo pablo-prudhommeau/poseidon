@@ -4,8 +4,11 @@ from datetime import datetime
 from typing import Optional
 
 from src.configuration.config import settings
-from src.core.structures.structures import BlockchainNetwork
+from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
+from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
+from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
+from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
 from src.persistence.database_session_manager import get_database_session
@@ -102,9 +105,6 @@ class TradingShadowingVerdictTracker:
                     lethargic_candidates.append((verdict, current_price))
 
         if resolving_candidates:
-            from src.core.structures.structures import Token
-            from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
-
             resolution_tokens = [
                 Token(
                     symbol=verdict.probe.token_symbol,
@@ -115,25 +115,30 @@ class TradingShadowingVerdictTracker:
                 ) for verdict, _ in resolving_candidates
             ]
 
-            onchain_prices = fetch_onchain_prices_for_tokens(resolution_tokens)
-            all_onchain_failed = len(resolving_candidates) > 0 and not onchain_prices
+            try:
+                onchain_prices = fetch_onchain_prices_for_tokens(resolution_tokens)
+            except BlockchainPriceUnavailableError:
+                logger.debug(
+                    "[TRADING][SHADOWING][VERDICT] On-chain prices unavailable — skipping resolution cycle",
+                )
+                return resolved_count
 
             maximum_slippage = settings.TRADING_MAX_SLIPPAGE
             aberrant_price_tolerance = settings.TRADING_SHADOWING_DEXSCREENER_ABERRANT_PRICE_TOLERANCE
 
             for verdict, dex_price in resolving_candidates:
                 probe = verdict.probe
-                onchain_price = onchain_prices.get(probe.pair_address)
-
-                if onchain_price is None or onchain_price <= 0.0:
-                    if all_onchain_failed:
-                        logger.debug(
-                            "[TRADING][SHADOWING][VERDICT] Skipping %s — all onchain prices unavailable (RPC failure), will retry next cycle",
-                            probe.token_symbol,
-                        )
-                        continue
-
-                    logger.info("[TRADING][SHADOWING][VERDICT] %s marked as STALED — onchain price unrecoverable", probe.token_symbol)
+                blockchain_network = BlockchainNetwork(probe.blockchain_network.lower())
+                try:
+                    onchain_price = onchain_prices.resolve_price_usd_for_pair_address(
+                        probe.pair_address,
+                        blockchain_network=blockchain_network,
+                    )
+                except BlockchainPriceUnavailableError:
+                    logger.info(
+                        "[TRADING][SHADOWING][VERDICT] %s marked as STALED — onchain price unrecoverable",
+                        probe.token_symbol,
+                    )
                     self._attach_stale_verdict(verdict, probe, current_time)
                     resolved_count += 1
                     continue
@@ -249,9 +254,6 @@ class TradingShadowingVerdictTracker:
         verdict.resolved_at = current_time
 
     def _fetch_dexscreener_prices(self, probes: list[TradingShadowingProbe]) -> Optional[dict[str, float]]:
-        from src.core.structures.structures import Token
-        from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
-
         unique_tokens: list[Token] = []
         processed_keys: set[str] = set()
 

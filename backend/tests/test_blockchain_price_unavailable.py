@@ -27,7 +27,7 @@ def test_read_solana_pool_prices_usd_batch_raises_when_rpc_unavailable(
 
 
 @patch("src.integrations.blockchain.solana.blockchain_solana_price_reader.read_solana_pool_prices_usd_batch")
-def test_fetch_onchain_prices_for_tokens_returns_empty_when_solana_unavailable(
+def test_fetch_onchain_prices_for_tokens_raises_when_solana_unavailable(
         read_solana_batch_mock: MagicMock,
 ) -> None:
     read_solana_batch_mock.side_effect = BlockchainPriceUnavailableError(
@@ -42,6 +42,5 @@ def test_fetch_onchain_prices_for_tokens_returns_empty_when_solana_unavailable(
         dex_id="raydium",
     )
 
-    prices_by_pair_address = fetch_onchain_prices_for_tokens([token])
-
-    assert prices_by_pair_address == {}
+    with pytest.raises(BlockchainPriceUnavailableError):
+        fetch_onchain_prices_for_tokens([token])
