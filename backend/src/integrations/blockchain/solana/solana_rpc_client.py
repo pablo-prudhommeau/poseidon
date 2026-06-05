@@ -215,6 +215,80 @@ def rpc_get_account_info(rpc_url: str, account_address: str) -> Optional[dict]:
     return result.get("value")
 
 
+def rpc_get_account_info_json_parsed(rpc_url: str, account_address: str) -> Optional[dict]:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getAccountInfo",
+        "params": [account_address, {"encoding": "jsonParsed"}],
+    }
+
+    try:
+        response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+    except BlockchainRpcUnavailableError:
+        logger.debug(
+            "[BLOCKCHAIN][SOL][RPC] getAccountInfo jsonParsed unavailable — account_address_prefix=%s",
+            account_address[:12],
+        )
+        _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+        raise
+
+    result = response_json.get("result")
+    if result is None:
+        return None
+    return result.get("value")
+
+
+def rpc_get_multiple_accounts_json_parsed(rpc_url: str, account_addresses: list[str]) -> list[Optional[dict]]:
+    if not account_addresses:
+        return []
+
+    all_results: list[Optional[dict]] = []
+
+    for chunk_start_index in range(0, len(account_addresses), SOLANA_MULTIPLE_ACCOUNTS_CHUNK_SIZE):
+        chunk = account_addresses[chunk_start_index:chunk_start_index + SOLANA_MULTIPLE_ACCOUNTS_CHUNK_SIZE]
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getMultipleAccounts",
+            "params": [chunk, {"encoding": "jsonParsed"}],
+        }
+
+        try:
+            response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+        except BlockchainRpcUnavailableError:
+            logger.debug(
+                "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts jsonParsed unavailable — chunk_account_count=%d",
+                len(chunk),
+            )
+            _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+            raise
+
+        result = response_json.get("result")
+        if result is None:
+            raise BlockchainRpcUnavailableError(
+                "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts jsonParsed missing result payload",
+                blockchain_network=BlockchainNetwork.SOLANA,
+                rpc_method="getMultipleAccounts",
+                failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+                rpc_url=rpc_url,
+            )
+
+        chunk_result = result.get("value")
+        if chunk_result is None:
+            raise BlockchainRpcUnavailableError(
+                "[BLOCKCHAIN][SOL][RPC] getMultipleAccounts jsonParsed missing value payload",
+                blockchain_network=BlockchainNetwork.SOLANA,
+                rpc_method="getMultipleAccounts",
+                failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+                rpc_url=rpc_url,
+            )
+
+        all_results.extend(chunk_result)
+
+    return all_results
+
+
 def rpc_get_multiple_accounts(rpc_url: str, account_addresses: list[str]) -> list[Optional[dict]]:
     if not account_addresses:
         return []

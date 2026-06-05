@@ -226,7 +226,7 @@
                                             {{ selectedPosition()?.position_phase || '—' }}
                                         </span>
                                     </div>
-                                    @if (selectedPosition()?.position_phase === 'CLOSING' && selectedPosition()?.exit_reason) {
+                                    @if ((selectedPosition()?.position_phase === 'CLOSING' || selectedPosition()?.position_phase === 'CLOSED') && selectedPosition()?.exit_reason) {
                                         <div class="position-modal-detail-row">
                                             <span class="position-modal-detail-label">Exit reason</span>
                                             <span class="position-modal-detail-value">{{ formatExitReasonLabel(selectedPosition()?.exit_reason) }}</span>

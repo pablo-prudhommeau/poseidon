@@ -39,10 +39,10 @@ def test_mark_position_staled_only_changes_phase_and_exit_reason() -> None:
     position.current_quantity = 55.0
     database_session = MagicMock()
 
-    mark_position_staled(database_session, position, PositionExitTriggerReason.FROZEN_ACCOUNT)
+    mark_position_staled(database_session, position, PositionExitTriggerReason.CIRCUIT_BREAKER)
 
     assert position.position_phase == PositionPhase.STALED
-    assert position.exit_reason == PositionExitTriggerReason.FROZEN_ACCOUNT.value
+    assert position.exit_reason == PositionExitTriggerReason.CIRCUIT_BREAKER.value
     assert position.current_quantity == 55.0
     database_session.commit.assert_called_once()
 

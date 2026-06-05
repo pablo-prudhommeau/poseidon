@@ -511,12 +511,15 @@ class TradingCortexTrainingService:
         take_profit_2_count: int = sum(1 for reason in exit_reasons if reason == "TAKE_PROFIT_2")
         stop_loss_count: int = sum(1 for reason in exit_reasons if reason == "STOP_LOSS")
         lethargic_count: int = sum(1 for reason in exit_reasons if reason == "LETHARGIC")
+        honeypot_count: int = sum(1 for reason in exit_reasons if reason == "HONEYPOT")
         safe_total: float = max(1.0, float(total_count))
         return TradingCortexTrainingExitReasonDistribution(
             take_profit_2_count=take_profit_2_count,
             stop_loss_count=stop_loss_count,
             lethargic_count=lethargic_count,
+            honeypot_count=honeypot_count,
             take_profit_2_ratio=take_profit_2_count / safe_total,
             stop_loss_ratio=stop_loss_count / safe_total,
             lethargic_ratio=lethargic_count / safe_total,
+            honeypot_ratio=honeypot_count / safe_total,
         )

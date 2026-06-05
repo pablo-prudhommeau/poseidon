@@ -63,7 +63,7 @@ class TradingCortexTrainingDatasetService:
             feature_vector_snapshot = self._feature_vector_builder.build_feature_vector(scoring_request)
             feature_matrix_rows.append(feature_vector_snapshot.extract_ordered_feature_values(ordered_feature_names))
             success_labels.append(1.0 if shadow_training_record.is_profitable else 0.0)
-            toxicity_labels.append(1.0 if shadow_training_record.exit_reason == "STOP_LOSS" else 0.0)
+            toxicity_labels.append(1.0 if shadow_training_record.exit_reason in ("STOP_LOSS", "HONEYPOT") else 0.0)
             expected_profit_and_loss_percentages.append(shadow_training_record.realized_profit_and_loss_percentage)
             holding_duration_minutes.append(shadow_training_record.holding_duration_minutes)
             exit_reasons.append(shadow_training_record.exit_reason)

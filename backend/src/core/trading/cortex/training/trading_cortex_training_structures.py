@@ -134,9 +134,11 @@ class TradingCortexTrainingExitReasonDistribution(BaseModel):
     take_profit_2_count: int
     stop_loss_count: int
     lethargic_count: int
+    honeypot_count: int
     take_profit_2_ratio: float
     stop_loss_ratio: float
     lethargic_ratio: float
+    honeypot_ratio: float
 
 
 class TradingCortexTrainingSummary(BaseModel):

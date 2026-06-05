@@ -6,7 +6,7 @@ const EXIT_REASON_LABELS: Partial<Record<PositionExitTriggerReason, string>> = {
     STOP_LOSS: 'Stop loss',
     MANUAL: 'Manual close',
     KILLED: 'Killed',
-    FROZEN_ACCOUNT: 'Frozen account',
+    HONEYPOT: 'Honeypot',
     CIRCUIT_BREAKER: 'Circuit breaker',
     WALLET_BALANCE_EMPTY: 'Wallet balance empty'
 };

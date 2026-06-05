@@ -5,7 +5,7 @@ export type PositionExitTriggerReason =
     | 'STOP_LOSS'
     | 'MANUAL'
     | 'KILLED'
-    | 'FROZEN_ACCOUNT'
+    | 'HONEYPOT'
     | 'CIRCUIT_BREAKER'
     | 'WALLET_BALANCE_EMPTY';
 export type TradingShadowingPhase = 'DISABLED' | 'SYNCING' | 'SHADOWING' | 'CORTEXING' | 'BEAR' | 'TRADABLE';

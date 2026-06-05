@@ -6,8 +6,13 @@ from typing import Optional
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
-from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
+from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError, BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
+from src.integrations.blockchain.solana.solana_mint_freeze_authority_service import (
+    is_solana_mint_blocked_by_active_freeze_authority_from_snapshots,
+    resolve_solana_mint_freeze_authority_snapshots_batch,
+)
+from src.integrations.blockchain.solana.solana_structures import SolanaMintFreezeAuthoritySnapshot
 from src.integrations.dexscreener.dexscreener_client import fetch_dexscreener_token_information_list_sync
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
@@ -104,7 +109,25 @@ class TradingShadowingVerdictTracker:
                 if age_hours >= lethargic_cutoff_hours:
                     lethargic_candidates.append((verdict, current_price))
 
+        freeze_authority_snapshots = self._resolve_solana_freeze_authority_snapshots_for_probes(
+            probes=[verdict.probe for verdict, _ in resolving_candidates]
+            + [verdict.probe for verdict, _ in lethargic_candidates],
+        )
+
         if resolving_candidates:
+            if freeze_authority_snapshots is None:
+                logger.debug(
+                    "[TRADING][SHADOWING][VERDICT] Skipping threshold resolution — Solana mint freeze authority lookup unavailable",
+                )
+            else:
+                resolving_candidates, honeypot_resolved_count = self._resolve_honeypot_shadowing_verdicts(
+                    candidate_verdicts=resolving_candidates,
+                    freeze_authority_snapshots=freeze_authority_snapshots,
+                    current_time=current_time,
+                )
+                resolved_count += honeypot_resolved_count
+
+        if resolving_candidates and freeze_authority_snapshots is not None:
             resolution_tokens = [
                 Token(
                     symbol=verdict.probe.token_symbol,
@@ -169,10 +192,36 @@ class TradingShadowingVerdictTracker:
                         probe.token_symbol, verdict.exit_reason, verdict.realized_pnl_percentage, probe.id, verdict.id
                     )
 
-        for verdict, dex_price in lethargic_candidates:
-            self._attach_lethargic_verdict(verdict, verdict.probe, current_time, dex_price)
-            resolved_count += 1
-            logger.info("[TRADING][SHADOWING][VERDICT] %s marked as LETHARGIC after %d hours", verdict.probe.token_symbol, lethargic_cutoff_hours)
+        if freeze_authority_snapshots is None:
+            logger.debug(
+                "[TRADING][SHADOWING][VERDICT] Skipping lethargic resolution — Solana mint freeze authority lookup unavailable",
+            )
+        else:
+            for verdict, dex_price in lethargic_candidates:
+                probe = verdict.probe
+                if self._is_probe_blocked_by_active_solana_freeze_authority(
+                        probe=probe,
+                        freeze_authority_snapshots=freeze_authority_snapshots,
+                ):
+                    self.attach_honeypot_shadowing_verdict(
+                        verdict=verdict,
+                        probe=probe,
+                        current_time=current_time,
+                    )
+                    resolved_count += 1
+                    logger.info(
+                        "[TRADING][SHADOWING][VERDICT][HONEYPOT] %s marked as HONEYPOT — active mint freeze authority",
+                        probe.token_symbol,
+                    )
+                    continue
+
+                self._attach_lethargic_verdict(verdict, probe, current_time, dex_price)
+                resolved_count += 1
+                logger.info(
+                    "[TRADING][SHADOWING][VERDICT] %s marked as LETHARGIC after %d hours",
+                    probe.token_symbol,
+                    lethargic_cutoff_hours,
+                )
 
         return resolved_count
 
@@ -236,6 +285,103 @@ class TradingShadowingVerdictTracker:
         verdict.holding_duration_minutes = holding_duration_minutes
         verdict.is_profitable = False
         verdict.resolved_at = current_time
+
+    def attach_honeypot_shadowing_verdict(
+            self,
+            verdict: TradingShadowingVerdict,
+            probe: TradingShadowingProbe,
+            current_time: datetime,
+    ) -> None:
+        notional = probe.order_notional_value_usd
+        aware_probed_at = ensure_timezone_aware(probe.probed_at) or current_time
+        holding_duration_minutes = (current_time - aware_probed_at).total_seconds() / 60.0
+        verdict.exit_reason = "HONEYPOT"
+        verdict.realized_pnl_percentage = -100.0
+        verdict.realized_pnl_usd = -notional
+        verdict.holding_duration_minutes = holding_duration_minutes
+        verdict.is_profitable = False
+        verdict.resolved_at = current_time
+        verdict.take_profit_tier_2_hit_at = None
+
+    def _resolve_honeypot_shadowing_verdicts(
+            self,
+            candidate_verdicts: list[tuple[TradingShadowingVerdict, float]],
+            freeze_authority_snapshots: list[SolanaMintFreezeAuthoritySnapshot],
+            current_time: datetime,
+    ) -> tuple[list[tuple[TradingShadowingVerdict, float]], int]:
+        remaining_candidates: list[tuple[TradingShadowingVerdict, float]] = []
+        honeypot_resolved_count = 0
+
+        for verdict, dex_price in candidate_verdicts:
+            probe = verdict.probe
+            if self._is_probe_blocked_by_active_solana_freeze_authority(
+                    probe=probe,
+                    freeze_authority_snapshots=freeze_authority_snapshots,
+            ):
+                self.attach_honeypot_shadowing_verdict(
+                    verdict=verdict,
+                    probe=probe,
+                    current_time=current_time,
+                )
+                honeypot_resolved_count += 1
+                logger.info(
+                    "[TRADING][SHADOWING][VERDICT][HONEYPOT] %s marked as HONEYPOT — active mint freeze authority",
+                    probe.token_symbol,
+                )
+                continue
+
+            remaining_candidates.append((verdict, dex_price))
+
+        return remaining_candidates, honeypot_resolved_count
+
+    def _resolve_solana_freeze_authority_snapshots_for_probes(
+            self,
+            probes: list[TradingShadowingProbe],
+    ) -> Optional[list[SolanaMintFreezeAuthoritySnapshot]]:
+        mint_addresses = self._collect_unique_solana_mint_addresses_from_probes(probes=probes)
+        if not mint_addresses:
+            return []
+
+        try:
+            return resolve_solana_mint_freeze_authority_snapshots_batch(mint_addresses=mint_addresses)
+        except BlockchainRpcUnavailableError:
+            logger.debug(
+                "[TRADING][SHADOWING][VERDICT][HONEYPOT] Solana mint freeze authority batch lookup unavailable",
+            )
+            return None
+
+    def _collect_unique_solana_mint_addresses_from_probes(
+            self,
+            probes: list[TradingShadowingProbe],
+    ) -> list[str]:
+        mint_addresses: list[str] = []
+        seen_mint_addresses: set[str] = set()
+
+        for probe in probes:
+            if probe.blockchain_network.lower() != BlockchainNetwork.SOLANA.value:
+                continue
+
+            normalized_mint_address = probe.token_address.strip()
+            if not normalized_mint_address or normalized_mint_address in seen_mint_addresses:
+                continue
+
+            seen_mint_addresses.add(normalized_mint_address)
+            mint_addresses.append(normalized_mint_address)
+
+        return mint_addresses
+
+    def _is_probe_blocked_by_active_solana_freeze_authority(
+            self,
+            probe: TradingShadowingProbe,
+            freeze_authority_snapshots: list[SolanaMintFreezeAuthoritySnapshot],
+    ) -> bool:
+        if probe.blockchain_network.lower() != BlockchainNetwork.SOLANA.value:
+            return False
+
+        return is_solana_mint_blocked_by_active_freeze_authority_from_snapshots(
+            snapshots=freeze_authority_snapshots,
+            mint_address=probe.token_address,
+        )
 
     def _attach_lethargic_verdict(self, verdict: TradingShadowingVerdict, probe: TradingShadowingProbe, current_time: datetime, current_price: float) -> None:
         entry_price = probe.entry_price_usd

@@ -16,6 +16,9 @@ from src.core.trading.evaluators.trading_momentum_filter import apply_momentum_f
 from src.core.trading.evaluators.trading_price_deviation_filter import apply_price_deviation_filter
 from src.core.trading.evaluators.trading_quality_scorer import compute_quality_scores, apply_quality_gate
 from src.core.trading.evaluators.trading_risk_filter import apply_risk_filter
+from src.core.trading.evaluators.trading_solana_mint_freeze_authority_filter import (
+    evaluate_solana_mint_freeze_authority_for_buy,
+)
 from src.core.trading.evaluators.trading_shadowing_notional_booster import apply_shadowing_notional_boost
 from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
@@ -425,6 +428,18 @@ class TradingPipeline:
             if not is_gas_reserve_sufficient_for_buy(candidate.token.chain):
                 record_skipped_trading_evaluation(candidate, rank, "INSUFFICIENT_GAS_RESERVE")
                 continue
+
+            if not settings.PAPER_MODE and candidate.token.chain == BlockchainNetwork.SOLANA:
+                freeze_authority_decision = evaluate_solana_mint_freeze_authority_for_buy(
+                    token_mint_address=candidate.token.token_address,
+                )
+                if not freeze_authority_decision.is_valid_for_entry:
+                    record_skipped_trading_evaluation(
+                        candidate,
+                        rank,
+                        freeze_authority_decision.decision_reason,
+                    )
+                    continue
 
             dex_price = candidate.market_snapshot.price_usd
 

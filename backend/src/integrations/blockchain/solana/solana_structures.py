@@ -63,6 +63,19 @@ class SolanaPoolPriceResult(BaseModel):
     dex_identifier: str
 
 
+class SolanaMintFreezeAuthoritySnapshot(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    mint_address: str
+    freeze_authority_address: Optional[str]
+
+
+class SolanaParsedMintAccountInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    freeze_authority_address: Optional[str]
+
+
 class SolanaWalletTokenAccountSnapshot(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
