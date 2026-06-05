@@ -14,9 +14,7 @@ from src.api.http.api_schemas import (
 from src.api.websocket.websocket_manager import websocket_manager
 from src.api.websocket.websocket_structures import WebsocketMessageType
 from src.cache.cache_protocols import CacheRealmRebuildSkipped
-from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_guard_service import (
-    PendingStablecoinSettlementIncompleteError,
-)
+from src.core.trading.portfolio.trading_portfolio_structures import LiveLiquiditySnapshotUnavailableError
 from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError, BlockchainRpcUnavailableError
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
@@ -125,7 +123,7 @@ class _AvailableCashRebuilder:
     def rebuild(self) -> TradingLiquidityPayload:
         try:
             return build_trading_liquidity_payload()
-        except (BlockchainRpcUnavailableError, PendingStablecoinSettlementIncompleteError):
+        except (BlockchainRpcUnavailableError, LiveLiquiditySnapshotUnavailableError):
             if trading_cache.get_trading_liquidity_state() is not None:
                 raise CacheRealmRebuildSkipped(
                     "Live on-chain liquidity incomplete — retaining cached liquidity payload",

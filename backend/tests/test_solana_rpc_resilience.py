@@ -63,7 +63,7 @@ def test_execute_closing_sell_reverts_when_wallet_balance_rpc_unavailable(
         previous_phase=PositionPhase.PARTIAL,
     )
 
-    assert trade is None
+    assert trade.trading_trade is None
     assert position.position_phase == PositionPhase.PARTIAL
     assert position.exit_reason is None
 
@@ -83,3 +83,31 @@ def test_list_wallet_spl_token_accounts_raises_when_all_programs_fail(
 
     with pytest.raises(BlockchainRpcUnavailableError):
         list_wallet_spl_token_accounts("https://api.mainnet-beta.solana.com", "wallet-address")
+
+
+@patch("src.integrations.blockchain.solana.solana_rpc_client.execute_solana_rpc_with_endpoint_fallbacks")
+def test_rpc_send_transaction_returns_signature(execute_rpc_mock: MagicMock) -> None:
+    from src.integrations.blockchain.solana.solana_rpc_client import rpc_send_transaction
+
+    execute_rpc_mock.return_value = {"result": "confirmed-signature"}
+
+    signature = rpc_send_transaction("https://api.mainnet-beta.solana.com", b"signed-tx-bytes")
+
+    assert signature == "confirmed-signature"
+    payload = execute_rpc_mock.call_args[0][1]
+    assert payload["method"] == "sendTransaction"
+
+
+@patch("src.integrations.blockchain.solana.solana_rpc_client.execute_solana_rpc_with_endpoint_fallbacks")
+def test_rpc_send_transaction_propagates_rate_limit(execute_rpc_mock: MagicMock) -> None:
+    from src.integrations.blockchain.solana.solana_rpc_client import rpc_send_transaction
+
+    execute_rpc_mock.side_effect = BlockchainRpcUnavailableError(
+        "rate limited",
+        blockchain_network=BlockchainNetwork.SOLANA,
+        rpc_method="sendTransaction",
+        failure_reason=SolanaRpcFailureReason.RATE_LIMITED,
+    )
+
+    with pytest.raises(BlockchainRpcUnavailableError):
+        rpc_send_transaction("https://api.mainnet-beta.solana.com", b"signed-tx-bytes")

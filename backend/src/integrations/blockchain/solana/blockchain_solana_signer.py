@@ -5,13 +5,13 @@ from typing import Optional
 
 from bip_utils import Bip39SeedGenerator, Bip32Slip10Ed25519
 from solana.rpc.api import Client
-from solana.rpc.types import TxOpts
 from solders.keypair import Keypair
 from solders.presigner import Presigner
 from solders.signature import Signature
 from solders.transaction import VersionedTransaction
 
 from src.core.structures.structures import BlockchainNetwork
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 
 try:
     from solders.rpc.responses import SendTransactionResp
@@ -26,7 +26,11 @@ from src.integrations.blockchain.solana.solana_structures import (
 from src.integrations.blockchain.solana.solana_utils import (
     resolve_blockchain_transaction_failure_reason_from_confirmation_error,
 )
-from src.integrations.blockchain.solana.solana_rpc_client import resolve_sol_usd_price
+from src.integrations.blockchain.solana.solana_rpc_client import (
+    resolve_sol_usd_price,
+    rpc_get_signature_statuses,
+    rpc_send_transaction,
+)
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -290,11 +294,7 @@ class SolanaSigner:
 
         signed_payload = self._sign_versioned_bytes(raw_bytes)
 
-        response = self.client.send_raw_transaction(
-            signed_payload,
-            opts=TxOpts(skip_preflight=True, max_retries=5, preflight_commitment="processed"),
-        )
-        signature = self._extract_signature(response)
+        signature = rpc_send_transaction(self._rpc_url, signed_payload)
         logger.info(
             "[BLOCKCHAIN][SOLANA][SIGNER] Transaction broadcasted — "
             "blockchain_network=%s transaction_signature=%s",
@@ -323,38 +323,43 @@ class SolanaSigner:
         start_time = time.time()
         while time.time() - start_time < timeout_seconds:
             try:
-                response = self.client.get_signature_statuses([signature_obj])
-                if response and hasattr(response, "value"):
-                    statuses = response.value
-                    if statuses and len(statuses) > 0 and statuses[0] is not None:
-                        status = statuses[0]
-                        if hasattr(status, "err") and status.err is not None:
-                            raw_error_text = str(status.err)
-                            failure_reason = resolve_blockchain_transaction_failure_reason_from_confirmation_error(
-                                raw_error_text=raw_error_text,
-                                confirmation_timed_out=False,
-                            )
-                            logger.error(
-                                "[BLOCKCHAIN][SOLANA][SIGNER] Transaction confirmation failed — "
-                                "transaction_signature=%s failure_reason=%s error=%s",
-                                signature_str,
-                                failure_reason.value,
-                                raw_error_text,
-                            )
-                            return SolanaTransactionConfirmationResult(
-                                is_confirmed=False,
-                                failure_reason=failure_reason,
-                                raw_error_text=raw_error_text,
-                            )
+                statuses = rpc_get_signature_statuses(self._rpc_url, [signature_str])
+                if statuses and len(statuses) > 0 and statuses[0] is not None:
+                    status = statuses[0]
+                    status_error = status.get("err")
+                    if status_error is not None:
+                        raw_error_text = str(status_error)
+                        failure_reason = resolve_blockchain_transaction_failure_reason_from_confirmation_error(
+                            raw_error_text=raw_error_text,
+                            confirmation_timed_out=False,
+                        )
+                        logger.warning(
+                            "[BLOCKCHAIN][SOLANA][SIGNER] Transaction confirmation failed — "
+                            "transaction_signature=%s failure_reason=%s error=%s",
+                            signature_str,
+                            failure_reason.value,
+                            raw_error_text,
+                        )
+                        return SolanaTransactionConfirmationResult(
+                            is_confirmed=False,
+                            failure_reason=failure_reason,
+                            raw_error_text=raw_error_text,
+                        )
 
-                        if hasattr(status, "confirmation_status"):
-                            conf_status = str(status.confirmation_status)
-                            if "confirmed" in conf_status.lower() or "finalized" in conf_status.lower():
-                                return SolanaTransactionConfirmationResult(
-                                    is_confirmed=True,
-                                    failure_reason=None,
-                                    raw_error_text="",
-                                )
+                    confirmation_status = str(status.get("confirmationStatus", ""))
+                    if "confirmed" in confirmation_status.lower() or "finalized" in confirmation_status.lower():
+                        return SolanaTransactionConfirmationResult(
+                            is_confirmed=True,
+                            failure_reason=None,
+                            raw_error_text="",
+                        )
+            except BlockchainRpcUnavailableError as rpc_unavailable_error:
+                logger.debug(
+                    "[BLOCKCHAIN][SOLANA][SIGNER] RPC unavailable while checking transaction confirmation status — "
+                    "transaction_signature=%s failure_reason=%s",
+                    signature_str,
+                    rpc_unavailable_error.failure_reason.value,
+                )
             except Exception as exception:
                 logger.debug(
                     "[BLOCKCHAIN][SOLANA][SIGNER] Error while checking transaction confirmation status — "
@@ -385,11 +390,7 @@ class SolanaSigner:
         if len(signed_raw_bytes) == 0:
             raise ValueError("Signed transaction payload is empty")
 
-        response = self.client.send_raw_transaction(
-            signed_raw_bytes,
-            opts=TxOpts(skip_preflight=True, max_retries=5, preflight_commitment="processed"),
-        )
-        signature = self._extract_signature(response)
+        signature = rpc_send_transaction(self._rpc_url, signed_raw_bytes)
         logger.info(
             "[BLOCKCHAIN][SOLANA][SIGNER] Presigned transaction broadcasted — "
             "blockchain_network=%s transaction_signature=%s",

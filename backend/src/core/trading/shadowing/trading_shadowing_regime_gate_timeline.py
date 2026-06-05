@@ -7,10 +7,8 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
-    chronicle_display_lag_timedelta,
     compute_profit_factor,
     floor_datetime_to_granularity,
-    series_end_datetime,
     simple_moving_average_like_trading_shadowing_verdict_chronicle_chart,
     to_epoch_milliseconds,
     winsorize_series_like_trading_shadowing_verdict_chronicle_chart,
@@ -24,13 +22,13 @@ from src.core.utils.date_utils import ensure_timezone_aware
 
 def build_regime_gate_timeline_for_metric_timestamps(
         verdicts: list[TradingShadowingVerdictChronicleVerdict],
-        series_end_datetime: datetime,
+        as_of_datetime: datetime,
         metric_timestamps_milliseconds: list[int],
 ) -> list[TradingShadowingVerdictChronicleRegimeGatePoint]:
     if not metric_timestamps_milliseconds:
         return []
 
-    current_time = ensure_timezone_aware(series_end_datetime)
+    current_time = ensure_timezone_aware(as_of_datetime)
     assert current_time is not None
 
     pf_timeline = _build_regime_sma_timeline(
@@ -117,13 +115,11 @@ def _build_timestamped_sparse_bucket_values(
         granularity_seconds: int,
         value_selector: str,
 ) -> list[tuple[int, float]]:
-    chronicle_lag_td = chronicle_display_lag_timedelta()
     trailing = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
 
-    series_end = series_end_datetime(current_time)
-    global_from_datetime = series_end - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
-    bucket_from_datetime = max(global_from_datetime, series_end - lookback - chronicle_lag_td)
-    bucket_to_datetime = series_end + timedelta(seconds=granularity_seconds * max(0, trailing))
+    global_from_datetime = current_time - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
+    bucket_from_datetime = max(global_from_datetime, current_time - lookback)
+    bucket_to_datetime = current_time + timedelta(seconds=granularity_seconds * max(0, trailing))
 
     grouped_verdicts: defaultdict = defaultdict(list)
     for verdict in verdicts:

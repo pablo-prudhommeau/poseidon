@@ -12,10 +12,8 @@ from src.core.trading.analytics.trading_analytics_metric_bucket_statistics_engin
 from src.core.trading.analytics.trading_analytics_service import compute_kpis
 from src.core.trading.analytics.trading_analytics_structures import MetricBucketProfile, MetaStatistics
 from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
-    chronicle_display_lag_timedelta,
     compute_profit_factor,
     floor_datetime_to_granularity,
-    series_end_datetime,
     simple_moving_average_like_trading_shadowing_verdict_chronicle_chart,
     winsorize_series_like_trading_shadowing_verdict_chronicle_chart,
 )
@@ -229,13 +227,11 @@ def _build_chronicle_sparse_profit_factor_and_mean_pnl_usd_series(
         lookback: timedelta,
         granularity_seconds: int,
 ) -> tuple[list[float], list[float], int]:
-    chronicle_lag_td = chronicle_display_lag_timedelta()
     trailing = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
 
-    series_end = series_end_datetime(current_time)
-    global_from_datetime = series_end - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
-    bucket_from_datetime = max(global_from_datetime, series_end - lookback - chronicle_lag_td)
-    bucket_to_datetime = series_end + timedelta(seconds=granularity_seconds * max(0, trailing))
+    global_from_datetime = current_time - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
+    bucket_from_datetime = max(global_from_datetime, current_time - lookback)
+    bucket_to_datetime = current_time + timedelta(seconds=granularity_seconds * max(0, trailing))
 
     grouped_verdicts: defaultdict = defaultdict(list)
     for verdict in resolved_verdicts:

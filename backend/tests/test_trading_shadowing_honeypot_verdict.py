@@ -34,7 +34,7 @@ def _build_verdict(probe: TradingShadowingProbe) -> TradingShadowingVerdict:
     )
 
 
-@patch("src.core.trading.shadowing.trading_shadowing_verdict_tracker.fetch_onchain_prices_for_tokens")
+@patch("src.core.trading.shadowing.trading_shadowing_verdict_tracker.fetch_onchain_prices_for_tokens_with_metadata")
 @patch("src.core.trading.shadowing.trading_shadowing_verdict_tracker.fetch_dexscreener_token_information_list_sync")
 @patch(
     "src.core.trading.shadowing.trading_shadowing_verdict_tracker.resolve_solana_mint_freeze_authority_snapshots_batch",
@@ -63,12 +63,16 @@ def test_shadowing_verdict_marks_honeypot_when_freeze_authority_active(
         ),
     ]
     fetch_onchain_prices_mock.return_value = MagicMock(
-        resolve_price_usd_for_pair_address=MagicMock(return_value=1.5),
+        onchain_prices=MagicMock(
+            try_resolve_price_usd_for_pair_address=MagicMock(return_value=1.5),
+        ),
+        had_infrastructure_failure=False,
     )
 
-    resolved_count = tracker._process_pending_verdict_batch([verdict])
+    batch_statistics = tracker._process_pending_verdict_batch([verdict])
 
-    assert resolved_count == 1
+    assert batch_statistics.resolved_verdict_count == 1
+    assert batch_statistics.resolved_honeypot_count == 1
     assert verdict.exit_reason == "HONEYPOT"
     assert verdict.realized_pnl_percentage == -100.0
     assert verdict.realized_pnl_usd == -50.0

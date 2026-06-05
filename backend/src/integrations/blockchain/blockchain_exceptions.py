@@ -26,6 +26,15 @@ class BlockchainRpcUnavailableError(Exception):
         self.rpc_url = rpc_url
 
 
+def is_transient_solana_rpc_failure(error: BlockchainRpcUnavailableError) -> bool:
+    return error.failure_reason in {
+        SolanaRpcFailureReason.RATE_LIMITED,
+        SolanaRpcFailureReason.TIMEOUT,
+        SolanaRpcFailureReason.NETWORK_ERROR,
+        SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
+    }
+
+
 class BlockchainTradingNotSupportedError(Exception):
     def __init__(self, message: str, blockchain_network: BlockchainNetwork) -> None:
         super().__init__(message)

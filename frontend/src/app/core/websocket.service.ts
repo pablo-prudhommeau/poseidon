@@ -1,5 +1,4 @@
 import { Injectable, signal } from '@angular/core';
-import { TradingShadowingVerdictChronicleMergeService } from '../pages/trading/trading-shadowing-verdict-chronicle/services/trading-shadowing-verdict-chronicle-merge.service';
 import {
     DcaStrategyPayload,
     TradingLiquidityPayload,
@@ -7,7 +6,6 @@ import {
     TradingPositionPayload,
     TradingPositionPricePayload,
     TradingShadowingRegimePayload,
-    TradingShadowingVerdictChronicleDeltaPayload,
     TradingShadowingVerdictChroniclePayload,
     TradingTradePayload,
     WebsocketMessageType,
@@ -29,8 +27,6 @@ export class WebSocketService {
 
     private pendingTradingPositionPriceUpdates: TradingPositionPricePayload[] = [];
     private socket?: WebSocket;
-
-    constructor(private readonly shadowingVerdictChronicleMerge: TradingShadowingVerdictChronicleMergeService) {}
 
     public connect(url = this.defaultWebsocketUrl()): void {
         if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)) {
@@ -89,16 +85,6 @@ export class WebSocketService {
             }
             case WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE: {
                 this.tradingShadowingVerdictChronicle.set(message.payload);
-                break;
-            }
-            case WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE_DELTA: {
-                const baseline = this.tradingShadowingVerdictChronicle();
-                const patch = message.payload as TradingShadowingVerdictChronicleDeltaPayload;
-                if (!baseline) {
-                    this.requestCachedStateRefresh();
-                    break;
-                }
-                this.tradingShadowingVerdictChronicle.set(this.shadowingVerdictChronicleMerge.mergeTradingShadowingVerdictChronicleDelta(baseline, patch));
                 break;
             }
             case WebsocketMessageType.TRADING_POSITIONS: {

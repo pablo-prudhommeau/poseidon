@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Iterable, List, Dict, Deque, Optional
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import TradingTradePayload
@@ -27,6 +28,13 @@ from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import PositionPhase, TradingPosition, TradingTrade
+
+POSITION_PHASES_CONSUMING_MAX_OPEN_SLOT = (
+    PositionPhase.OPEN,
+    PositionPhase.PARTIAL,
+    PositionPhase.CLOSING,
+    PositionPhase.STALED,
+)
 
 logger = get_application_logger(__name__)
 
@@ -248,6 +256,14 @@ def compute_cumulative_swap_fees_from_trade_payloads(trades: Iterable[TradingTra
 def has_any_closing_positions(database_session: Session) -> bool:
     closing_positions = TradingPositionDao(database_session).retrieve_by_phase(PositionPhase.CLOSING)
     return len(closing_positions) > 0
+
+
+def count_positions_consuming_max_open_slots(database_session: Session) -> int:
+    return database_session.execute(
+        select(func.count(TradingPosition.id)).where(
+            TradingPosition.position_phase.in_(POSITION_PHASES_CONSUMING_MAX_OPEN_SLOT)
+        )
+    ).scalar_one_or_none() or 0
 
 
 def compute_available_cash_from_trades(start_cash_usd: float, trades: Iterable[TradingTrade]) -> float:

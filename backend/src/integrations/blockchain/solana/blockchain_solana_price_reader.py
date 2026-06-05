@@ -232,7 +232,7 @@ def read_solana_pool_prices_usd_batch(
                 if price_usd is not None and price_usd > 0:
                     results[token_address] = price_usd
             except Exception as parse_exception:
-                logger.warning(
+                logger.debug(
                     "[BLOCKCHAIN][PRICE][SOL] Batch parse error for %s (%s) — %s",
                     token_address[:8],
                     dex_id,

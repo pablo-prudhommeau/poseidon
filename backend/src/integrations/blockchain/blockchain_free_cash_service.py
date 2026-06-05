@@ -179,7 +179,10 @@ def _get_wallet_address_for_blockchain(blockchain: BlockchainNetwork) -> str:
         return ""
 
 
-def fetch_stablecoin_balance_for_blockchain(blockchain: BlockchainNetwork) -> BlockchainCashBalance:
+def fetch_stablecoin_balance_for_blockchain(
+        blockchain: BlockchainNetwork,
+        force_refresh: bool = False,
+) -> BlockchainCashBalance:
     stablecoin_address = _get_stablecoin_address_for_blockchain(blockchain)
     native_token_symbol = _get_native_token_symbol_for_blockchain(blockchain)
 
@@ -231,7 +234,7 @@ def fetch_stablecoin_balance_for_blockchain(blockchain: BlockchainNetwork) -> Bl
                     resolve_solana_onchain_wallet_context,
                 )
 
-                wallet_context = resolve_solana_onchain_wallet_context(force_refresh=attempt > 0)
+                wallet_context = resolve_solana_onchain_wallet_context(force_refresh=force_refresh or attempt > 0)
                 balance_raw = wallet_context.stablecoin_balance_raw
                 native_token_balance_raw = wallet_context.native_token_balance_raw
                 native_token_balance_usd = wallet_context.native_token_balance_usd
@@ -285,7 +288,7 @@ def fetch_stablecoin_balance_for_blockchain(blockchain: BlockchainNetwork) -> Bl
     )
 
 
-def fetch_stablecoin_balances_for_allowed_chains() -> list[BlockchainCashBalance]:
+def fetch_stablecoin_balances_for_allowed_chains(force_refresh: bool = False) -> list[BlockchainCashBalance]:
     if settings.PAPER_MODE:
         logger.debug("[BLOCKCHAIN][FREE_CASH] Paper mode active — skipping on-chain balance fetch")
         return []
@@ -299,7 +302,7 @@ def fetch_stablecoin_balances_for_allowed_chains() -> list[BlockchainCashBalance
         blockchain = _resolve_blockchain_network(chain)
         if not blockchain:
             continue
-        balance = fetch_stablecoin_balance_for_blockchain(blockchain)
+        balance = fetch_stablecoin_balance_for_blockchain(blockchain, force_refresh=force_refresh)
         balances.append(balance)
 
     return balances

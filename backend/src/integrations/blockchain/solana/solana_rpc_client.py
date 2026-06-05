@@ -4,7 +4,7 @@ import base64
 import struct
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -189,6 +189,90 @@ def execute_solana_rpc_with_endpoint_fallbacks(rpc_url: str, payload: dict) -> d
 
 def _invalidate_solana_rpc_cache_after_endpoints_exhausted() -> None:
     invalidate_rpc_cache_for_chain(BlockchainNetwork.SOLANA)
+
+
+def rpc_send_transaction(rpc_url: str, signed_transaction_bytes: bytes) -> str:
+    if len(signed_transaction_bytes) == 0:
+        raise ValueError("Signed transaction payload is empty")
+
+    encoded_transaction = base64.b64encode(signed_transaction_bytes).decode("ascii")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "sendTransaction",
+        "params": [
+            encoded_transaction,
+            {
+                "encoding": "base64",
+                "skipPreflight": True,
+                "preflightCommitment": "processed",
+                "maxRetries": 5,
+            },
+        ],
+    }
+
+    try:
+        response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+    except BlockchainRpcUnavailableError:
+        logger.debug("[BLOCKCHAIN][SOL][RPC] sendTransaction unavailable")
+        _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+        raise
+
+    result = response_json.get("result")
+    if not isinstance(result, str) or len(result) == 0:
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][RPC] sendTransaction missing signature result",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="sendTransaction",
+            failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+            rpc_url=rpc_url,
+        )
+
+    return result
+
+
+def rpc_get_signature_statuses(rpc_url: str, signature_texts: list[str]) -> list[Optional[dict[str, Any]]]:
+    if not signature_texts:
+        return []
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getSignatureStatuses",
+        "params": [signature_texts, {"searchTransactionHistory": True}],
+    }
+
+    try:
+        response_json = execute_solana_rpc_with_endpoint_fallbacks(rpc_url, payload)
+    except BlockchainRpcUnavailableError:
+        logger.debug(
+            "[BLOCKCHAIN][SOL][RPC] getSignatureStatuses unavailable — signature_count=%d",
+            len(signature_texts),
+        )
+        _invalidate_solana_rpc_cache_after_endpoints_exhausted()
+        raise
+
+    result = response_json.get("result")
+    if result is None:
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][RPC] getSignatureStatuses missing result payload",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getSignatureStatuses",
+            failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+            rpc_url=rpc_url,
+        )
+
+    statuses = result.get("value")
+    if statuses is None:
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][RPC] getSignatureStatuses missing value payload",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="getSignatureStatuses",
+            failure_reason=SolanaRpcFailureReason.JSON_RPC_ERROR,
+            rpc_url=rpc_url,
+        )
+
+    return statuses
 
 
 def rpc_get_account_info(rpc_url: str, account_address: str) -> Optional[dict]:

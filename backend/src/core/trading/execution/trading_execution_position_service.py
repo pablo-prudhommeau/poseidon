@@ -25,9 +25,12 @@ from src.core.trading.execution.trading_execution_swap_service import run_live_s
 from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
 from src.core.trading.trading_structures import PositionExitTriggerReason
 from src.core.trading.trading_utils import convert_trading_position_to_token
-from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_guard_service import (
-    register_live_sell_stablecoin_settlement_pending,
+from src.core.trading.execution.trading_execution_structures import TradingPositionClosingSellResult
+from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_service import (
+    poll_deployable_stablecoin_until_swap_settled,
+    resolve_total_deployable_stablecoin_cash_usd,
 )
+from src.core.trading.portfolio.trading_portfolio_structures import StablecoinSwapSettlementDirection
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainExecutionRouteBuildError,
@@ -35,7 +38,6 @@ from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainTradingNotSupportedError,
     BlockchainPriceUnavailableError,
 )
-from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
@@ -108,7 +110,7 @@ def execute_manual_close_sell(position_id: int) -> None:
         previous_phase = infer_reopen_phase_after_failed_close(position)
         execution_price = resolve_execution_price_for_position(position)
 
-        trade = execute_closing_sell(
+        trade_outcome = execute_closing_sell(
             database_session,
             position,
             execution_price,
@@ -117,13 +119,10 @@ def execute_manual_close_sell(position_id: int) -> None:
             previous_phase,
         )
 
-        if trade is not None:
+        if trade_outcome.trading_trade is not None:
             database_session.commit()
-            cache_invalidator.mark_dirty(
-                CacheRealm.POSITIONS,
-                CacheRealm.TRADES,
-                CacheRealm.AVAILABLE_CASH,
-                CacheRealm.PORTFOLIO,
+            _invalidate_trading_realms_after_closing_sell(
+                stablecoin_swap_settled_on_chain=trade_outcome.stablecoin_swap_settled_on_chain,
             )
             logger.info(
                 "[TRADING][EXECUTION][POSITION] Manual close completed for position %s (%s)",
@@ -153,7 +152,7 @@ def execute_position_exit_sell(
         execution_price: float,
         sell_quantity: float,
         reason: PositionExitTriggerReason,
-) -> Optional[TradingTrade]:
+) -> TradingPositionClosingSellResult:
     previous_phase = mark_position_closing(database_session, position, reason)
     return execute_closing_sell(
         database_session,
@@ -172,7 +171,7 @@ def execute_closing_sell(
         sell_quantity: float,
         reason: PositionExitTriggerReason,
         previous_phase: PositionPhase,
-) -> Optional[TradingTrade]:
+) -> TradingPositionClosingSellResult:
     try:
         return _execute_closing_sell(
             database_session=database_session,
@@ -192,7 +191,26 @@ def execute_closing_sell(
         )
         if position.position_phase == PositionPhase.CLOSING:
             revert_position_closing(database_session, position, previous_phase)
-        return None
+        return TradingPositionClosingSellResult(
+            trading_trade=None,
+            stablecoin_swap_settled_on_chain=False,
+        )
+
+
+def _invalidate_trading_realms_after_closing_sell(stablecoin_swap_settled_on_chain: bool) -> None:
+    if stablecoin_swap_settled_on_chain:
+        cache_invalidator.mark_dirty(
+            CacheRealm.POSITIONS,
+            CacheRealm.TRADES,
+            CacheRealm.AVAILABLE_CASH,
+            CacheRealm.PORTFOLIO,
+        )
+        return
+
+    cache_invalidator.mark_dirty(
+        CacheRealm.POSITIONS,
+        CacheRealm.TRADES,
+    )
 
 
 def _execute_closing_sell(
@@ -202,8 +220,10 @@ def _execute_closing_sell(
         sell_quantity: float,
         reason: PositionExitTriggerReason,
         previous_phase: PositionPhase,
-) -> Optional[TradingTrade]:
+) -> TradingPositionClosingSellResult:
+    stablecoin_swap_settled_on_chain = True
     execution_outcome = None
+    deployable_cash_before_swap_usd = 0.0
 
     if not settings.PAPER_MODE:
         chain_lower = position.blockchain_network.strip().lower()
@@ -212,7 +232,7 @@ def _execute_closing_sell(
         except ValueError:
             logger.error("[TRADING][EXECUTION][POSITION] Unknown chain in DB: %s", chain_lower)
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
 
         chain_handler = resolve_execution_chain_handler_for_blockchain(chain_enum)
         if chain_handler is None:
@@ -221,7 +241,7 @@ def _execute_closing_sell(
                 position.token_symbol,
             )
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
 
         try:
             token_decimals = chain_handler.resolve_sell_token_decimals(position.token_address)
@@ -231,7 +251,7 @@ def _execute_closing_sell(
                 position.token_symbol,
             )
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
         except BlockchainTradingNotSupportedError:
             logger.error(
                 "[TRADING][EXECUTION][POSITION][LIVE] Live trading not supported for %s on %s — sell aborted",
@@ -239,19 +259,17 @@ def _execute_closing_sell(
                 chain_enum.value,
             )
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
 
         try:
-            baseline_deployable_cash_usd = sum(
-                balance.balance_raw for balance in fetch_stablecoin_balances_for_allowed_chains()
-            )
+            deployable_cash_before_swap_usd = resolve_total_deployable_stablecoin_cash_usd()
         except BlockchainRpcUnavailableError:
             logger.debug(
                 "[TRADING][EXECUTION][POSITION][LIVE] Deployable baseline unavailable for %s — reverting closing, will retry later",
                 position.token_symbol,
             )
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
 
         try:
             sell_quantity = chain_handler.cap_sell_quantity_to_wallet_balance(
@@ -265,7 +283,7 @@ def _execute_closing_sell(
                 position.token_symbol,
             )
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
 
         if sell_quantity <= 0.0:
             logger.error(
@@ -273,7 +291,7 @@ def _execute_closing_sell(
                 position.token_symbol,
             )
             mark_position_staled(database_session, position, PositionExitTriggerReason.WALLET_BALANCE_EMPTY)
-            return None
+            return TradingPositionClosingSellResult()
 
         if chain_enum == BlockchainNetwork.SOLANA:
             wallet_token_transfer_blocked = resolve_solana_wallet_token_transfer_blocked_for_mint(position.token_address)
@@ -283,7 +301,7 @@ def _execute_closing_sell(
                     position.token_symbol,
                 )
                 close_position_as_honeypot(database_session=database_session, position=position)
-                return None
+                return TradingPositionClosingSellResult()
 
         try:
             execution_route = build_route_for_live_sell(
@@ -304,7 +322,7 @@ def _execute_closing_sell(
                     position.token_symbol,
                 )
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
         except BlockchainTradingNotSupportedError:
             logger.error(
                 "[TRADING][EXECUTION][POSITION][LIVE] Live sell route not supported for %s on %s — sell aborted",
@@ -312,7 +330,7 @@ def _execute_closing_sell(
                 chain_enum.value,
             )
             revert_position_closing(database_session, position, previous_phase)
-            return None
+            return TradingPositionClosingSellResult()
 
         sell_execution_outcome = run_live_sell_blocking(
             token_symbol=position.token_symbol,
@@ -337,11 +355,18 @@ def _execute_closing_sell(
                 previous_phase=previous_phase,
                 failure_reason=sell_execution_outcome.failure_reason,
             )
-            return None
+            return TradingPositionClosingSellResult()
 
         execution_outcome = sell_execution_outcome.execution_result
         if position.id is not None:
             reset_retryable_exit_failure_count(position.id)
+
+        settlement_poll_result = poll_deployable_stablecoin_until_swap_settled(
+            deployable_cash_before_swap_usd=deployable_cash_before_swap_usd,
+            settlement_direction=StablecoinSwapSettlementDirection.SELL_CREDIT,
+            transaction_signature=execution_outcome.transaction_hash_or_signature,
+        )
+        stablecoin_swap_settled_on_chain = settlement_poll_result.swap_settled_on_chain
 
     trade_dao = TradingTradeDao(database_session)
     execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
@@ -393,11 +418,6 @@ def _execute_closing_sell(
         sell_quantity=sell_quantity,
     )
     sell_swap_fee_usd = live_transaction_fee_usd
-    if not settings.PAPER_MODE and live_transaction_hash:
-        register_live_sell_stablecoin_settlement_pending(
-            confirmed_swap_transaction_signature=live_transaction_hash,
-            baseline_deployable_cash_usd=baseline_deployable_cash_usd,
-        )
     trade_pnl_usd = exit_notional - entry_notional - allocated_buy_swap_fee_usd - sell_swap_fee_usd
     sell_trade.realized_profit_and_loss = trade_pnl_usd
 
@@ -419,7 +439,10 @@ def _execute_closing_sell(
         was_profitable=(trade_pnl_usd > 0),
     )
 
-    return sell_trade
+    return TradingPositionClosingSellResult(
+        trading_trade=sell_trade,
+        stablecoin_swap_settled_on_chain=stablecoin_swap_settled_on_chain,
+    )
 
 
 def revert_position_closing(

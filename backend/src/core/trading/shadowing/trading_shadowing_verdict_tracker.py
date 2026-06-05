@@ -5,9 +5,10 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork, Token
+from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingVerdictCycleStatistics
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
-from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError, BlockchainRpcUnavailableError
-from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
+from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens_with_metadata
 from src.integrations.blockchain.solana.solana_mint_freeze_authority_service import (
     is_solana_mint_blocked_by_active_freeze_authority_from_snapshots,
     resolve_solana_mint_freeze_authority_snapshots_batch,
@@ -33,12 +34,11 @@ class TradingShadowingVerdictTracker:
             configured_batch_size = settings.TRADING_SHADOWING_PENDING_VERDICTS_BATCH_SIZE
             pending_batch_size = max(1, min(configured_batch_size, max_pending_per_cycle))
 
-            total_loaded = 0
-            total_resolved = 0
+            cycle_statistics = TradingShadowingVerdictCycleStatistics()
             last_seen_id = 0
 
-            while total_loaded < max_pending_per_cycle:
-                remaining_budget = max_pending_per_cycle - total_loaded
+            while cycle_statistics.pending_verdict_count < max_pending_per_cycle:
+                remaining_budget = max_pending_per_cycle - cycle_statistics.pending_verdict_count
                 batch_limit = min(pending_batch_size, remaining_budget)
 
                 pending_verdicts = verdict_dao.retrieve_pending_verdicts_after_id(
@@ -49,39 +49,49 @@ class TradingShadowingVerdictTracker:
                     break
 
                 last_batch_seen_id = pending_verdicts[-1].id
-                batch_resolved = self._process_pending_verdict_batch(pending_verdicts)
+                batch_statistics = self._process_pending_verdict_batch(pending_verdicts)
                 database_session.commit()
                 database_session.expunge_all()
 
-                total_loaded += len(pending_verdicts)
-                total_resolved += batch_resolved
+                cycle_statistics.merge(batch_statistics)
                 last_seen_id = last_batch_seen_id
 
-            if total_loaded == 0:
+            if cycle_statistics.pending_verdict_count == 0:
                 logger.debug("[TRADING][SHADOWING][VERDICT] No pending shadowing verdicts to check")
                 return
 
             logger.info(
-                "[TRADING][SHADOWING][VERDICT] Resolved %d / %d pending shadowing verdicts (batch_size=%d cap=%d)",
-                total_resolved,
-                total_loaded,
+                "[TRADING][SHADOWING][VERDICT] Cycle complete — resolved=%d/%d pending (%s) batch_size=%d cap=%d",
+                cycle_statistics.resolved_verdict_count,
+                cycle_statistics.pending_verdict_count,
+                cycle_statistics.format_non_zero_breakdown(),
                 pending_batch_size,
                 max_pending_per_cycle,
             )
 
-    def _process_pending_verdict_batch(self, pending_verdicts: list[TradingShadowingVerdict]) -> int:
+    def _process_pending_verdict_batch(
+            self,
+            pending_verdicts: list[TradingShadowingVerdict],
+    ) -> TradingShadowingVerdictCycleStatistics:
+        batch_statistics = TradingShadowingVerdictCycleStatistics(
+            pending_verdict_count=len(pending_verdicts),
+        )
         logger.info("[TRADING][SHADOWING][VERDICT] Processing pending batch of %d verdicts", len(pending_verdicts))
 
         probes = [verdict.probe for verdict in pending_verdicts]
         dexscreener_prices = self._fetch_dexscreener_prices(probes)
 
         if dexscreener_prices is None:
-            logger.warning("[TRADING][SHADOWING][VERDICT] Skipping pending batch — DexScreener price fetch failed entirely")
-            return 0
+            batch_statistics.skipped_batch_dexscreener_unavailable_verdict_count = len(pending_verdicts)
+            logger.warning(
+                "[TRADING][SHADOWING][VERDICT] Skipping pending batch — DexScreener price fetch failed entirely "
+                "(skipped_verdict_count=%d)",
+                batch_statistics.skipped_batch_dexscreener_unavailable_verdict_count,
+            )
+            return batch_statistics
 
         current_time = get_current_local_datetime()
         lethargic_cutoff_hours = settings.TRADING_SHADOWING_LETHARGIC_HOURS
-        resolved_count = 0
 
         resolving_candidates: list[tuple[TradingShadowingVerdict, float]] = []
         lethargic_candidates: list[tuple[TradingShadowingVerdict, float]] = []
@@ -92,8 +102,12 @@ class TradingShadowingVerdictTracker:
 
             if current_price is None:
                 self._attach_stale_verdict(verdict, probe, current_time)
-                resolved_count += 1
-                logger.info("[TRADING][SHADOWING][VERDICT] %s marked as STALED — no DexScreener price (token delisted or dead)", probe.token_symbol)
+                batch_statistics.resolved_verdict_count += 1
+                batch_statistics.resolved_staled_missing_dex_price_count += 1
+                logger.info(
+                    "[TRADING][SHADOWING][VERDICT] %s marked as STALED — no DexScreener price (token delisted or dead)",
+                    probe.token_symbol,
+                )
                 continue
 
             if current_price >= verdict.take_profit_tier_1_price and verdict.take_profit_tier_1_hit_at is None:
@@ -116,8 +130,11 @@ class TradingShadowingVerdictTracker:
 
         if resolving_candidates:
             if freeze_authority_snapshots is None:
+                batch_statistics.deferred_threshold_resolution_freeze_authority_unavailable_count = len(resolving_candidates)
                 logger.debug(
-                    "[TRADING][SHADOWING][VERDICT] Skipping threshold resolution — Solana mint freeze authority lookup unavailable",
+                    "[TRADING][SHADOWING][VERDICT] Skipping threshold resolution — Solana mint freeze authority lookup unavailable "
+                    "(deferred_threshold_count=%d)",
+                    batch_statistics.deferred_threshold_resolution_freeze_authority_unavailable_count,
                 )
             else:
                 resolving_candidates, honeypot_resolved_count = self._resolve_honeypot_shadowing_verdicts(
@@ -125,76 +142,118 @@ class TradingShadowingVerdictTracker:
                     freeze_authority_snapshots=freeze_authority_snapshots,
                     current_time=current_time,
                 )
-                resolved_count += honeypot_resolved_count
+                batch_statistics.resolved_verdict_count += honeypot_resolved_count
+                batch_statistics.resolved_honeypot_count += honeypot_resolved_count
 
         if resolving_candidates and freeze_authority_snapshots is not None:
-            resolution_tokens = [
-                Token(
-                    symbol=verdict.probe.token_symbol,
-                    chain=BlockchainNetwork(verdict.probe.blockchain_network.lower()),
-                    token_address=verdict.probe.token_address,
-                    pair_address=verdict.probe.pair_address,
-                    dex_id=verdict.probe.dex_id,
-                ) for verdict, _ in resolving_candidates
-            ]
-
-            try:
-                onchain_prices = fetch_onchain_prices_for_tokens(resolution_tokens)
-            except BlockchainPriceUnavailableError:
-                logger.debug(
-                    "[TRADING][SHADOWING][VERDICT] On-chain prices unavailable — skipping resolution cycle",
-                )
-                return resolved_count
-
-            maximum_slippage = settings.TRADING_MAX_SLIPPAGE
-            aberrant_price_tolerance = settings.TRADING_SHADOWING_DEXSCREENER_ABERRANT_PRICE_TOLERANCE
+            supported_solana_dex_ids = settings.TRADING_SOLANA_SUPPORTED_DEX_IDS
+            onchain_resolvable_candidates: list[tuple[TradingShadowingVerdict, float]] = []
+            staled_unrecoverable_symbols_logged: set[str] = set()
+            deferred_onchain_symbols_logged: set[str] = set()
 
             for verdict, dex_price in resolving_candidates:
                 probe = verdict.probe
                 blockchain_network = BlockchainNetwork(probe.blockchain_network.lower())
-                try:
-                    onchain_price = onchain_prices.resolve_price_usd_for_pair_address(
-                        probe.pair_address,
-                        blockchain_network=blockchain_network,
-                    )
-                except BlockchainPriceUnavailableError:
-                    logger.info(
-                        "[TRADING][SHADOWING][VERDICT] %s marked as STALED — onchain price unrecoverable",
-                        probe.token_symbol,
-                    )
+                if (
+                        blockchain_network == BlockchainNetwork.SOLANA
+                        and probe.dex_id.lower().strip() not in supported_solana_dex_ids
+                ):
                     self._attach_stale_verdict(verdict, probe, current_time)
-                    resolved_count += 1
+                    batch_statistics.resolved_verdict_count += 1
+                    batch_statistics.resolved_staled_unrecoverable_onchain_price_count += 1
+                    if probe.token_symbol not in staled_unrecoverable_symbols_logged:
+                        staled_unrecoverable_symbols_logged.add(probe.token_symbol)
+                        logger.info(
+                            "[TRADING][SHADOWING][VERDICT] %s marked as STALED — dex %s unsupported for on-chain pricing, stopping retries",
+                            probe.token_symbol,
+                            probe.dex_id,
+                        )
                     continue
+                onchain_resolvable_candidates.append((verdict, dex_price))
 
-                low_price, high_price = sorted([onchain_price, dex_price])
-                relative_deviation = (high_price / low_price) - 1.0
+            if onchain_resolvable_candidates:
+                resolution_tokens = [
+                    Token(
+                        symbol=verdict.probe.token_symbol,
+                        chain=BlockchainNetwork(verdict.probe.blockchain_network.lower()),
+                        token_address=verdict.probe.token_address,
+                        pair_address=verdict.probe.pair_address,
+                        dex_id=verdict.probe.dex_id,
+                    ) for verdict, _ in onchain_resolvable_candidates
+                ]
 
-                if relative_deviation > aberrant_price_tolerance:
-                    logger.info(
-                        "[TRADING][SHADOWING][VERDICT] %s marked as STALED — aberrant DexScreener price deviation %.1f%% (onchain=%.12f dex=%.12f, tolerance=%.0f%%)",
-                        probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price, aberrant_price_tolerance * 100.0,
-                    )
-                    self._attach_stale_verdict(verdict, probe, current_time)
-                    resolved_count += 1
-                    continue
+                onchain_fetch_result = fetch_onchain_prices_for_tokens_with_metadata(
+                    resolution_tokens,
+                    require_all_prices=False,
+                )
+                onchain_prices = onchain_fetch_result.onchain_prices
 
-                if relative_deviation > maximum_slippage:
-                    logger.debug(
-                        "[TRADING][SHADOWING][VERDICT] Skipping %s — transient slippage %.1f%% (onchain=%.12f dex=%.12f), will retry next cycle",
-                        probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price,
-                    )
-                    continue
+                maximum_slippage = settings.TRADING_MAX_SLIPPAGE
+                aberrant_price_tolerance = settings.TRADING_SHADOWING_DEXSCREENER_ABERRANT_PRICE_TOLERANCE
 
-                if self._evaluate_price_against_thresholds(verdict, probe, onchain_price, current_time):
-                    resolved_count += 1
-                    logger.debug(
-                        "[TRADING][SHADOWING][VERDICT] %s resolved — exit=%s pnl=%.2f%% probe_id=%s verdict_id=%s (onchain verified)",
-                        probe.token_symbol, verdict.exit_reason, verdict.realized_pnl_percentage, probe.id, verdict.id
-                    )
+                for verdict, dex_price in onchain_resolvable_candidates:
+                    probe = verdict.probe
+                    onchain_price = onchain_prices.try_resolve_price_usd_for_pair_address(probe.pair_address)
+                    if onchain_price is None:
+                        if onchain_fetch_result.had_infrastructure_failure:
+                            batch_statistics.deferred_onchain_price_unavailable_count += 1
+                            if probe.token_symbol not in deferred_onchain_symbols_logged:
+                                deferred_onchain_symbols_logged.add(probe.token_symbol)
+                                logger.debug(
+                                    "[TRADING][SHADOWING][VERDICT] Deferring %s — Solana RPC unavailable for on-chain price, retry next cycle",
+                                    probe.token_symbol,
+                                )
+                        else:
+                            self._attach_stale_verdict(verdict, probe, current_time)
+                            batch_statistics.resolved_verdict_count += 1
+                            batch_statistics.resolved_staled_unrecoverable_onchain_price_count += 1
+                            if probe.token_symbol not in staled_unrecoverable_symbols_logged:
+                                staled_unrecoverable_symbols_logged.add(probe.token_symbol)
+                                logger.info(
+                                    "[TRADING][SHADOWING][VERDICT] %s marked as STALED — on-chain price unrecoverable (dead pool / drained liquidity), stopping retries",
+                                    probe.token_symbol,
+                                )
+                        continue
+
+                    low_price, high_price = sorted([onchain_price, dex_price])
+                    relative_deviation = (high_price / low_price) - 1.0
+
+                    if relative_deviation > aberrant_price_tolerance:
+                        logger.info(
+                            "[TRADING][SHADOWING][VERDICT] %s marked as STALED — aberrant DexScreener price deviation %.1f%% (onchain=%.12f dex=%.12f, tolerance=%.0f%%)",
+                            probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price, aberrant_price_tolerance * 100.0,
+                        )
+                        self._attach_stale_verdict(verdict, probe, current_time)
+                        batch_statistics.resolved_verdict_count += 1
+                        batch_statistics.resolved_staled_aberrant_onchain_dex_price_count += 1
+                        continue
+
+                    if relative_deviation > maximum_slippage:
+                        batch_statistics.deferred_transient_slippage_count += 1
+                        logger.debug(
+                            "[TRADING][SHADOWING][VERDICT] Skipping %s — transient slippage %.1f%% (onchain=%.12f dex=%.12f), will retry next cycle",
+                            probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price,
+                        )
+                        continue
+
+                    if self._evaluate_price_against_thresholds(verdict, probe, onchain_price, current_time):
+                        batch_statistics.resolved_verdict_count += 1
+                        if verdict.exit_reason == "TAKE_PROFIT_2":
+                            batch_statistics.resolved_take_profit_2_count += 1
+                        elif verdict.exit_reason == "STOP_LOSS":
+                            batch_statistics.resolved_stop_loss_count += 1
+                        logger.debug(
+                            "[TRADING][SHADOWING][VERDICT] %s resolved — exit=%s pnl=%.2f%% probe_id=%s verdict_id=%s (onchain verified)",
+                            probe.token_symbol, verdict.exit_reason, verdict.realized_pnl_percentage, probe.id, verdict.id
+                        )
 
         if freeze_authority_snapshots is None:
+            if lethargic_candidates:
+                batch_statistics.deferred_lethargic_resolution_freeze_authority_unavailable_count = len(lethargic_candidates)
             logger.debug(
-                "[TRADING][SHADOWING][VERDICT] Skipping lethargic resolution — Solana mint freeze authority lookup unavailable",
+                "[TRADING][SHADOWING][VERDICT] Skipping lethargic resolution — Solana mint freeze authority lookup unavailable "
+                "(deferred_lethargic_count=%d)",
+                batch_statistics.deferred_lethargic_resolution_freeze_authority_unavailable_count,
             )
         else:
             for verdict, dex_price in lethargic_candidates:
@@ -208,7 +267,8 @@ class TradingShadowingVerdictTracker:
                         probe=probe,
                         current_time=current_time,
                     )
-                    resolved_count += 1
+                    batch_statistics.resolved_verdict_count += 1
+                    batch_statistics.resolved_honeypot_count += 1
                     logger.info(
                         "[TRADING][SHADOWING][VERDICT][HONEYPOT] %s marked as HONEYPOT — active mint freeze authority",
                         probe.token_symbol,
@@ -216,14 +276,15 @@ class TradingShadowingVerdictTracker:
                     continue
 
                 self._attach_lethargic_verdict(verdict, probe, current_time, dex_price)
-                resolved_count += 1
+                batch_statistics.resolved_verdict_count += 1
+                batch_statistics.resolved_lethargic_count += 1
                 logger.info(
                     "[TRADING][SHADOWING][VERDICT] %s marked as LETHARGIC after %d hours",
                     probe.token_symbol,
                     lethargic_cutoff_hours,
                 )
 
-        return resolved_count
+        return batch_statistics
 
     def _evaluate_price_against_thresholds(
             self,

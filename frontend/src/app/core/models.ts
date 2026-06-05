@@ -432,7 +432,6 @@ export enum WebsocketMessageType {
     TRADING_LIQUIDITY = 'trading_liquidity',
     TRADING_SHADOWING_REGIME = 'trading_shadowing_regime',
     TRADING_SHADOWING_VERDICT_CHRONICLE = 'trading_shadowing_verdict_chronicle',
-    TRADING_SHADOWING_VERDICT_CHRONICLE_DELTA = 'trading_shadowing_verdict_chronicle_delta',
     TRADING_POSITIONS = 'trading_positions',
     TRADING_POSITION_PRICES = 'trading_position_prices',
     TRADING_TRADES = 'trading_trades',
@@ -466,10 +465,6 @@ export interface WebsocketTradingShadowingRegimeMessage extends BaseWebsocketMes
 
 export interface WebsocketTradingShadowingVerdictChronicleMessage extends BaseWebsocketMessage<TradingShadowingVerdictChroniclePayload> {
     type: WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE;
-}
-
-export interface WebsocketTradingShadowingVerdictChronicleDeltaMessage extends BaseWebsocketMessage<TradingShadowingVerdictChronicleDeltaPayload> {
-    type: WebsocketMessageType.TRADING_SHADOWING_VERDICT_CHRONICLE_DELTA;
 }
 
 export interface WebsocketTradingPositionsMessage extends BaseWebsocketMessage<TradingPositionPayload[]> {
@@ -510,7 +505,6 @@ export type WebsocketMessageUnion =
     | WebsocketTradingLiquidityMessage
     | WebsocketTradingShadowingRegimeMessage
     | WebsocketTradingShadowingVerdictChronicleMessage
-    | WebsocketTradingShadowingVerdictChronicleDeltaMessage
     | WebsocketTradingPositionsMessage
     | WebsocketTradingPositionPricesMessage
     | WebsocketTradingTradesMessage
@@ -712,31 +706,6 @@ export interface TradingShadowingVerdictChroniclePayload {
     to_iso: string;
     total_verdicts_considered: number;
     source: string;
-    series_end_lag_seconds: number;
     buckets: TradingShadowingVerdictChronicleBucketPayload[];
     cortex_model_rollouts?: TradingShadowingVerdictChronicleCortexModelRolloutPayload[];
-}
-
-export interface TradingShadowingVerdictChronicleBucketDeltaPayload {
-    bucket_label: string;
-    drop_metrics_before_ms?: number | null;
-    drop_volumes_before_ms?: number | null;
-    metrics_remove_timestamps_ms?: number[];
-    volumes_remove_timestamps_ms?: number[];
-    metrics_upsert: TradingShadowingVerdictChronicleMetricPointPayload[];
-    volumes_upsert: TradingShadowingVerdictChronicleVolumePointPayload[];
-    regime_gate_upsert?: TradingShadowingVerdictChronicleRegimeGatePointPayload[];
-    verdict_cloud_replace?: TradingShadowingVerdictChronicleVerdictPointPayload[] | null;
-    cortex_reliability_diagram_replace?: TradingShadowingVerdictChronicleCortexReliabilityBinPayload[] | null;
-}
-
-export interface TradingShadowingVerdictChronicleDeltaPayload {
-    generated_at_iso: string;
-    as_of_iso: string;
-    from_iso: string;
-    to_iso: string;
-    total_verdicts_considered: number;
-    source: string;
-    series_end_lag_seconds: number;
-    buckets: TradingShadowingVerdictChronicleBucketDeltaPayload[];
 }

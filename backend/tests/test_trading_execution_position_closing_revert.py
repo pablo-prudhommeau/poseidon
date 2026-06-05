@@ -62,7 +62,7 @@ def test_execute_closing_sell_reverts_on_rpc_unavailable(
         previous_phase=PositionPhase.OPEN,
     )
 
-    assert trade is None
+    assert trade.trading_trade is None
     assert position.position_phase == PositionPhase.OPEN
     assert position.exit_reason is None
 
@@ -89,7 +89,7 @@ def test_execute_closing_sell_reverts_on_unexpected_exception(
         previous_phase=PositionPhase.OPEN,
     )
 
-    assert trade is None
+    assert trade.trading_trade is None
     assert position.position_phase == PositionPhase.OPEN
     assert position.exit_reason is None
 
@@ -118,7 +118,7 @@ def test_execute_closing_sell_paper_mode_completes_partial_take_profit(
         previous_phase=PositionPhase.OPEN,
     )
 
-    assert trade is not None
+    assert trade.trading_trade is not None
     assert position.position_phase == PositionPhase.PARTIAL
     assert position.exit_reason == PositionExitTriggerReason.TAKE_PROFIT_1.value
     assert position.current_quantity == 50.0
@@ -161,6 +161,6 @@ def test_execute_position_exit_sell_reverts_when_mark_closing_then_rpc_fails(
         reason=PositionExitTriggerReason.TAKE_PROFIT_1,
     )
 
-    assert trade is None
+    assert trade.trading_trade is None
     assert position.position_phase == PositionPhase.OPEN
     assert position.exit_reason is None

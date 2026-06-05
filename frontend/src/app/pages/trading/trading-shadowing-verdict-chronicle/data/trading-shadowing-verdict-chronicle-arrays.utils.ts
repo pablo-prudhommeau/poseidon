@@ -9,7 +9,6 @@ import type { ChronicleArrays, ChronicleBucketMeta, ChronicleCartesianPoint, Sci
 
 export type { SciChartModule };
 
-export const CHRONICLE_STREAM_LAG_MS_FALLBACK = 240_000;
 export const CHRONICLE_SNAPSHOT_BLEND_MS = 1400;
 
 const CHRONICLE_MAX_METRIC_POINTS = 500;
@@ -32,13 +31,6 @@ function buildDownsampledIndices(length: number, maxPoints: number): number[] {
         indices.push(lastIndex);
     }
     return indices;
-}
-
-export function resolveChronicleStreamLagMilliseconds(seriesEndLagSeconds: number | undefined): number {
-    if (seriesEndLagSeconds != null && seriesEndLagSeconds > 0) {
-        return seriesEndLagSeconds * 1000;
-    }
-    return CHRONICLE_STREAM_LAG_MS_FALLBACK;
 }
 
 export function computeSimpleMovingAverage(values: number[], windowSize: number): number[] {
@@ -452,13 +444,7 @@ export function buildChronicleSnapshotFingerprint(historySnapshot: TradingShadow
     ].join('|');
 }
 
-export function buildChronicleArraysFromBucket(
-    meta: ChronicleBucketMeta,
-    streamLagMilliseconds: number = CHRONICLE_STREAM_LAG_MS_FALLBACK,
-    smaWindowBuckets: number = 0
-): ChronicleArrays {
-    const displayTimeMilliseconds = (timestampMilliseconds: number): number => timestampMilliseconds - streamLagMilliseconds;
-
+export function buildChronicleArraysFromBucket(meta: ChronicleBucketMeta, smaWindowBuckets: number = 0): ChronicleArrays {
     const metrics = (() => {
         const metricByTimestamp = new Map<number, TradingShadowingVerdictChronicleBucketPayload['metrics'][number]>();
         for (const metric of meta.bucket.metrics) {
@@ -473,7 +459,7 @@ export function buildChronicleArraysFromBucket(
         }
         return [...volumeByTimestamp.values()].sort((left, right) => left.timestamp_milliseconds - right.timestamp_milliseconds);
     })();
-    const metricTimestampsMilliseconds = metrics.map((metric) => displayTimeMilliseconds(metric.timestamp_milliseconds));
+    const metricTimestampsMilliseconds = metrics.map((metric) => metric.timestamp_milliseconds);
     let averagePnlPercentageSeries = winsorizeSeries(metrics.map((metric) => metric.average_pnl_percentage));
     let averageWinRatePercentageSeries = winsorizeSeries(metrics.map((metric) => metric.average_win_rate_percentage));
     let expectedValuePerTradeUsdSeries = winsorizeSeries(metrics.map((metric) => metric.expected_value_per_trade_usd));
@@ -549,7 +535,7 @@ export function buildChronicleArraysFromBucket(
     sparseExpectedValueGateOpenSeries = downsampleBooleanSeriesByMetricIndices(sparseExpectedValueGateOpenSeries);
     hardGateOpenSeries = downsampleBooleanSeriesByMetricIndices(hardGateOpenSeries);
 
-    const volumeBucketTimestampsMilliseconds = volumes.map((volume) => displayTimeMilliseconds(volume.timestamp_milliseconds));
+    const volumeBucketTimestampsMilliseconds = volumes.map((volume) => volume.timestamp_milliseconds);
     const volumeBucketVerdictCounts = winsorizeSeries(
         volumes.map((volume) => volume.verdict_count),
         0,
@@ -606,7 +592,7 @@ export function buildChronicleArraysFromBucket(
             xServerMilliseconds = bucketStartServerMilliseconds - usableHalfMilliseconds + indexWithinBucket * stepMilliseconds;
         }
         const row: ChronicleCartesianPoint = {
-            x: displayTimeMilliseconds(xServerMilliseconds),
+            x: xServerMilliseconds,
             y: point.pnl_percentage,
             cortexProbability: point.cortex_probability,
             orderNotionalUsd: point.order_notional_usd
@@ -658,78 +644,8 @@ export function buildChronicleArraysFromBucket(
     };
 }
 
-export function extendChronicleArraysToTapeRight(source: ChronicleArrays, tapeRightEdgeMilliseconds: number): ChronicleArrays {
-    const epsilonMilliseconds = 1;
-    const baseMetricX = source.metricTimestampsMilliseconds;
-    const extendMetric = baseMetricX.length > 0 && tapeRightEdgeMilliseconds > baseMetricX[baseMetricX.length - 1] + epsilonMilliseconds;
-    const metricTimestampsMilliseconds = extendMetric ? [...baseMetricX, tapeRightEdgeMilliseconds] : baseMetricX.slice();
-    const appendMetricTail = (values: number[]): number[] => {
-        const copy = values.slice();
-        if (extendMetric) {
-            copy.push(values[values.length - 1] ?? 0);
-        }
-        return copy;
-    };
-    const appendBooleanMetricTail = (values: boolean[]): boolean[] => {
-        const copy = values.slice();
-        if (extendMetric) {
-            copy.push(values[values.length - 1] ?? false);
-        }
-        return copy;
-    };
-
-    const baseVolumeX = source.volumeBucketTimestampsMilliseconds;
-    const extendVolume = baseVolumeX.length > 0 && tapeRightEdgeMilliseconds > baseVolumeX[baseVolumeX.length - 1] + epsilonMilliseconds;
-    const volumeBucketTimestampsMilliseconds = extendVolume ? [...baseVolumeX, tapeRightEdgeMilliseconds] : baseVolumeX.slice();
-    const volumeBucketVerdictCounts = (() => {
-        const copy = source.volumeBucketVerdictCounts.slice();
-        if (extendVolume) {
-            copy.push(source.volumeBucketVerdictCounts[source.volumeBucketVerdictCounts.length - 1] ?? 0);
-        }
-        return copy;
-    })();
-
-    return {
-        metricTimestampsMilliseconds,
-        averagePnlPercentageSeries: appendMetricTail(source.averagePnlPercentageSeries),
-        averageWinRatePercentageSeries: appendMetricTail(source.averageWinRatePercentageSeries),
-        expectedValuePerTradeUsdSeries: appendMetricTail(source.expectedValuePerTradeUsdSeries),
-        portfolioWalletValueUsdSeries: appendMetricTail(source.portfolioWalletValueUsdSeries),
-        profitFactorSeries: appendMetricTail(source.profitFactorSeries),
-        closedVerdictsPerHourSeries: appendMetricTail(source.closedVerdictsPerHourSeries),
-        averageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.averageCortexPredictionWinRatePercentageSeries),
-        cortexSkillScorePercentageSeries: appendMetricTail(source.cortexSkillScorePercentageSeries),
-        cortexCalibrationGapPercentagePointsSeries: appendMetricTail(source.cortexCalibrationGapPercentagePointsSeries),
-        cortexHighConvictionAccuracyPercentageSeries: appendMetricTail(source.cortexHighConvictionAccuracyPercentageSeries),
-        cortexHighConvictionSharePercentageSeries: appendMetricTail(source.cortexHighConvictionSharePercentageSeries),
-        cortexGatePrecisionPercentageSeries: appendMetricTail(source.cortexGatePrecisionPercentageSeries),
-        cortexGatePassRatePercentageSeries: appendMetricTail(source.cortexGatePassRatePercentageSeries),
-        movingAveragePnlSeries: appendMetricTail(source.movingAveragePnlSeries),
-        movingAverageWinRateSeries: appendMetricTail(source.movingAverageWinRateSeries),
-        movingAverageExpectedValueSeries: appendMetricTail(source.movingAverageExpectedValueSeries),
-        movingAveragePortfolioWalletValueUsdSeries: appendMetricTail(source.movingAveragePortfolioWalletValueUsdSeries),
-        movingAverageProfitFactorSeries: appendMetricTail(source.movingAverageProfitFactorSeries),
-        movingAverageTradesPerHourSeries: appendMetricTail(source.movingAverageTradesPerHourSeries),
-        movingAverageCortexPredictionWinRatePercentageSeries: appendMetricTail(source.movingAverageCortexPredictionWinRatePercentageSeries),
-        movingAverageCortexSkillScorePercentageSeries: appendMetricTail(source.movingAverageCortexSkillScorePercentageSeries),
-        movingAverageCortexCalibrationGapPercentagePointsSeries: appendMetricTail(source.movingAverageCortexCalibrationGapPercentagePointsSeries),
-        movingAverageCortexHighConvictionAccuracyPercentageSeries: appendMetricTail(source.movingAverageCortexHighConvictionAccuracyPercentageSeries),
-        movingAverageCortexHighConvictionSharePercentageSeries: appendMetricTail(source.movingAverageCortexHighConvictionSharePercentageSeries),
-        movingAverageCortexGatePrecisionPercentageSeries: appendMetricTail(source.movingAverageCortexGatePrecisionPercentageSeries),
-        movingAverageCortexGatePassRatePercentageSeries: appendMetricTail(source.movingAverageCortexGatePassRatePercentageSeries),
-        regimeProfitFactorSmaSeries: appendMetricTail(source.regimeProfitFactorSmaSeries),
-        regimeSparseExpectedValueUsdSmaSeries: appendMetricTail(source.regimeSparseExpectedValueUsdSmaSeries),
-        profitFactorGateOpenSeries: appendBooleanMetricTail(source.profitFactorGateOpenSeries),
-        sparseExpectedValueGateOpenSeries: appendBooleanMetricTail(source.sparseExpectedValueGateOpenSeries),
-        hardGateOpenSeries: appendBooleanMetricTail(source.hardGateOpenSeries),
-        volumeBucketTimestampsMilliseconds,
-        volumeBucketVerdictCounts,
-        verdictCloudProfitablePoints: source.verdictCloudProfitablePoints,
-        verdictCloudLossPoints: source.verdictCloudLossPoints
-    };
-}
-
-export function computeChronicleViewportWidthMilliseconds(arrays: ChronicleArrays): number {
+export function computeChronicleViewportWidthMilliseconds(arrays: ChronicleArrays, bucketLabel?: ChronicleBucketLabel): number {
+    const configuredLookbackMilliseconds = bucketLabel != null ? shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel) : 0;
     const allXValues: number[] = [...arrays.volumeBucketTimestampsMilliseconds, ...arrays.metricTimestampsMilliseconds];
     for (const point of arrays.verdictCloudProfitablePoints) {
         allXValues.push(point.x);
@@ -737,12 +653,17 @@ export function computeChronicleViewportWidthMilliseconds(arrays: ChronicleArray
     for (const point of arrays.verdictCloudLossPoints) {
         allXValues.push(point.x);
     }
-    if (allXValues.length === 0) {
-        return 86_400_000;
+
+    let dataSpanMilliseconds = 60_000;
+    if (allXValues.length > 0) {
+        const minimumX = Math.min(...allXValues);
+        const maximumX = Math.max(...allXValues);
+        dataSpanMilliseconds = Math.max(maximumX - minimumX, 60_000);
+    } else if (configuredLookbackMilliseconds <= 0) {
+        dataSpanMilliseconds = 86_400_000;
     }
-    const minimumX = Math.min(...allXValues);
-    const maximumX = Math.max(...allXValues);
-    const spanMilliseconds = Math.max(maximumX - minimumX, 60_000);
+
+    const spanMilliseconds = Math.max(dataSpanMilliseconds, configuredLookbackMilliseconds);
     return spanMilliseconds * 1.08;
 }
 

@@ -35,7 +35,12 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingSnapshot,
     TradingShadowingPhase,
 )
-from src.core.trading.trading_service import fetch_trading_candidates_sync, record_skipped_trading_evaluation, record_trading_evaluation
+from src.core.trading.trading_service import (
+    count_positions_consuming_max_open_slots,
+    fetch_trading_candidates_sync,
+    record_skipped_trading_evaluation,
+    record_trading_evaluation,
+)
 from src.core.trading.trading_utils import is_buy_notional_executable, resolve_spendable_cash_usd
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload
 from src.core.trading.trading_utils import refresh_candidates_from_screener
@@ -352,16 +357,11 @@ class TradingPipeline:
         return apply_trading_cortex_gate_filter(candidates, shadow_snapshot, gate_enabled)
 
     def _step_execute(self, candidates: list[TradingCandidate]) -> None:
-        from sqlalchemy import select, func
         from src.persistence.database_session_manager import get_database_session
-        from src.persistence.models import TradingPosition, PositionPhase
         from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 
         with get_database_session() as database_session:
-            current_open_count = database_session.execute(
-                select(func.count(TradingPosition.id))
-                .where(TradingPosition.position_phase.in_([PositionPhase.OPEN, PositionPhase.PARTIAL]))
-            ).scalar_one_or_none() or 0
+            current_open_count = count_positions_consuming_max_open_slots(database_session)
 
             portfolio_dao = TradingPortfolioSnapshotDao(database_session)
             latest_snapshot = portfolio_dao.retrieve_latest_snapshot()

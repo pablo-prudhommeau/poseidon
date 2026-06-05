@@ -31,6 +31,7 @@ from src.integrations.blockchain.solana.solana_rpc_client import (
     resolve_sol_usd_price,
 )
 from src.integrations.blockchain.solana.solana_structures import SOLANA_WRAPPED_SOL_MINT
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.jupiter.jupiter_client import generate_jupiter_swap_transaction
 from src.integrations.jupiter.jupiter_structures import JupiterApiUnavailableError
 from src.logging.logger import get_application_logger
@@ -230,6 +231,23 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
             blockchain_network=blockchain_network,
             status=TradingWalletMaintenanceOperationStatus.FAILED,
             reason="jupiter_unavailable",
+            native_balance_before_lamports=native_balance_before_lamports,
+            stablecoin_spent_raw=stablecoin_spend_raw,
+        )
+    except BlockchainRpcUnavailableError as rpc_unavailable_error:
+        logger.debug(
+            "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] RPC unavailable — "
+            "blockchain_network=%s wallet_address=%s stablecoin_spend_usd=%s failure_reason=%s rpc_method=%s",
+            blockchain_network.value,
+            wallet_address,
+            _format_stablecoin_raw_as_usd_text(stablecoin_spend_raw),
+            rpc_unavailable_error.failure_reason.value,
+            rpc_unavailable_error.rpc_method,
+        )
+        return TradingWalletMaintenanceChainGasResult(
+            blockchain_network=blockchain_network,
+            status=TradingWalletMaintenanceOperationStatus.FAILED,
+            reason="rpc_unavailable",
             native_balance_before_lamports=native_balance_before_lamports,
             stablecoin_spent_raw=stablecoin_spend_raw,
         )

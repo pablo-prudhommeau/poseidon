@@ -9,7 +9,10 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token
-from src.core.trading.execution.trading_execution_position_service import execute_position_exit_sell
+from src.core.trading.execution.trading_execution_position_service import (
+    _invalidate_trading_realms_after_closing_sell,
+    execute_position_exit_sell,
+)
 from src.core.trading.trading_structures import PositionExitTriggerReason
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingPosition, TradingTrade, PositionPhase
@@ -41,12 +44,6 @@ def check_thresholds_and_exit_for_token_address(
 
     if created_trades:
         database_session.commit()
-        cache_invalidator.mark_dirty(
-            CacheRealm.POSITIONS,
-            CacheRealm.TRADES,
-            CacheRealm.AVAILABLE_CASH,
-            CacheRealm.PORTFOLIO,
-        )
 
     return created_trades
 
@@ -73,15 +70,18 @@ def _evaluate_position_thresholds(
             last_price_value,
             stop_loss_price,
         )
-        trade = execute_position_exit_sell(
+        closing_sell_result = execute_position_exit_sell(
             database_session,
             position,
             last_price_value,
             position_quantity,
             PositionExitTriggerReason.STOP_LOSS,
         )
-        if trade:
-            created_trades.append(trade)
+        if closing_sell_result.trading_trade is not None:
+            created_trades.append(closing_sell_result.trading_trade)
+            _invalidate_trading_realms_after_closing_sell(
+                stablecoin_swap_settled_on_chain=closing_sell_result.stablecoin_swap_settled_on_chain,
+            )
         return created_trades
 
     if take_profit_2_price > 0.0 and last_price_value >= take_profit_2_price:
@@ -91,15 +91,18 @@ def _evaluate_position_thresholds(
             last_price_value,
             take_profit_2_price,
         )
-        trade = execute_position_exit_sell(
+        closing_sell_result = execute_position_exit_sell(
             database_session,
             position,
             last_price_value,
             position_quantity,
             PositionExitTriggerReason.TAKE_PROFIT_2,
         )
-        if trade:
-            created_trades.append(trade)
+        if closing_sell_result.trading_trade is not None:
+            created_trades.append(closing_sell_result.trading_trade)
+            _invalidate_trading_realms_after_closing_sell(
+                stablecoin_swap_settled_on_chain=closing_sell_result.stablecoin_swap_settled_on_chain,
+            )
         return created_trades
 
     if take_profit_1_price > 0.0 and last_price_value >= take_profit_1_price and position.position_phase == PositionPhase.OPEN:
@@ -112,14 +115,17 @@ def _evaluate_position_thresholds(
                 last_price_value,
                 take_profit_1_price,
             )
-            trade = execute_position_exit_sell(
+            closing_sell_result = execute_position_exit_sell(
                 database_session,
                 position,
                 last_price_value,
                 partial_quantity,
                 PositionExitTriggerReason.TAKE_PROFIT_1,
             )
-            if trade:
-                created_trades.append(trade)
+            if closing_sell_result.trading_trade is not None:
+                created_trades.append(closing_sell_result.trading_trade)
+                _invalidate_trading_realms_after_closing_sell(
+                    stablecoin_swap_settled_on_chain=closing_sell_result.stablecoin_swap_settled_on_chain,
+                )
 
     return created_trades

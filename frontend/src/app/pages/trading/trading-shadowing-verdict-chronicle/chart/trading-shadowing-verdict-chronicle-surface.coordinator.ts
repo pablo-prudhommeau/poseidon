@@ -9,14 +9,12 @@ import {
     blendChronicleArrays,
     buildChronicleArraysFromBucket,
     CHRONICLE_SNAPSHOT_BLEND_MS,
-    CHRONICLE_STREAM_LAG_MS_FALLBACK,
     chronicleMinimumDisplayXMilliseconds,
     chronicleShouldShowTargetVerdictCloud,
     cloneChronicleArrays,
     computeChronicleViewportWidthMilliseconds,
-    extendChronicleArraysToTapeRight,
     parseIsoTimestampToEpochMilliseconds,
-    resolveChronicleStreamLagMilliseconds
+    type ChronicleBucketLabel
 } from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
 import type { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/trading-shadowing-verdict-chronicle-scichart-loader.service';
 import { synchronizeCortexModelRolloutAnnotations } from './trading-shadowing-verdict-chronicle-cortex-rollout.utils';
@@ -135,8 +133,7 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
         this.chartModel = await this.surfaceBuilder.buildFullChartSurface(host, meta, this.sciChartLoader, smaWindowBuckets);
         this.sciChartSurface = this.chartModel.sciChartSurface;
 
-        const streamLagMilliseconds = resolveChronicleStreamLagMilliseconds(meta.response.series_end_lag_seconds);
-        const chronicleArrays = buildChronicleArraysFromBucket(meta, streamLagMilliseconds, smaWindowBuckets);
+        const chronicleArrays = buildChronicleArraysFromBucket(meta, smaWindowBuckets);
         this.displayArrays = cloneChronicleArrays(chronicleArrays);
         this.blendFromArrays = null;
         this.blendToArrays = null;
@@ -170,7 +167,7 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
     private startPlaybackLoop(resetTapeAnchors: boolean): void {
         this.stopPlaybackLoop();
         if (resetTapeAnchors || this.tapeAnchorPerformanceMs == null) {
-            this.tapeAnchorWallClockMs = this.pendingTapeAnchorWallClockMs ?? Date.now() - CHRONICLE_STREAM_LAG_MS_FALLBACK;
+            this.tapeAnchorWallClockMs = this.pendingTapeAnchorWallClockMs ?? Date.now();
             this.pendingTapeAnchorWallClockMs = undefined;
             this.tapeAnchorPerformanceMs = performance.now();
         }
@@ -201,16 +198,15 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
             const performanceBase = this.tapeAnchorPerformanceMs ?? performance.now();
             const rightEdgeMs = this.tapeAnchorWallClockMs + (performance.now() - performanceBase);
             if (this.displayArrays) {
-                const tapeArrays = extendChronicleArraysToTapeRight(this.displayArrays, rightEdgeMs);
-                synchronizeChronicleTapeBoundSeries(model, tapeArrays, this.goldenZoneThresholds);
+                synchronizeChronicleTapeBoundSeries(model, this.displayArrays, this.goldenZoneThresholds);
                 this.applyGoldenZoneVisualState();
                 harmonizeChronicleRightAxes(
                     model,
-                    tapeArrays,
+                    this.displayArrays,
                     TradingShadowingVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT,
                     this.goldenZoneThresholds
                 );
-                const earliestDisplayXMilliseconds = chronicleMinimumDisplayXMilliseconds(tapeArrays);
+                const earliestDisplayXMilliseconds = chronicleMinimumDisplayXMilliseconds(this.displayArrays);
                 const naturalLeftEdgeMilliseconds = rightEdgeMs - model.viewportWidthMilliseconds;
                 const leftEdgeClampMilliseconds = earliestDisplayXMilliseconds - 45_000;
                 const leftEdgeMs = Math.max(naturalLeftEdgeMilliseconds, leftEdgeClampMilliseconds);
@@ -256,9 +252,8 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
         }
         this.synchronizeGoldenZones(meta);
         this.synchronizeCortexModelRollouts(meta);
-        const streamLagMilliseconds = resolveChronicleStreamLagMilliseconds(meta.response.series_end_lag_seconds);
-        const nextArrays = buildChronicleArraysFromBucket(meta, streamLagMilliseconds, smaWindowBuckets);
-        const computedViewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(nextArrays);
+        const nextArrays = buildChronicleArraysFromBucket(meta, smaWindowBuckets);
+        const computedViewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(nextArrays, meta.bucket.bucket_label as ChronicleBucketLabel);
         if (snapBucketData) {
             model.viewportWidthMilliseconds = computedViewportWidthMilliseconds;
         } else {

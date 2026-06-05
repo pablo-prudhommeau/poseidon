@@ -211,3 +211,66 @@ class TradingShadowingVerdictChronicle(BaseModel):
 class TradingShadowingVerdictChronicleComputationResult(BaseModel):
     chronicle: TradingShadowingVerdictChronicle
     verdicts: list[TradingShadowingVerdictChronicleVerdict]
+
+
+class TradingShadowingVerdictCycleStatistics(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    pending_verdict_count: int = 0
+    resolved_verdict_count: int = 0
+    resolved_staled_missing_dex_price_count: int = 0
+    resolved_staled_aberrant_onchain_dex_price_count: int = 0
+    resolved_staled_unrecoverable_onchain_price_count: int = 0
+    resolved_honeypot_count: int = 0
+    resolved_lethargic_count: int = 0
+    resolved_take_profit_2_count: int = 0
+    resolved_stop_loss_count: int = 0
+    deferred_onchain_price_unavailable_count: int = 0
+    deferred_transient_slippage_count: int = 0
+    deferred_threshold_resolution_freeze_authority_unavailable_count: int = 0
+    deferred_lethargic_resolution_freeze_authority_unavailable_count: int = 0
+    skipped_batch_dexscreener_unavailable_verdict_count: int = 0
+
+    def merge(self, other: TradingShadowingVerdictCycleStatistics) -> None:
+        self.pending_verdict_count += other.pending_verdict_count
+        self.resolved_verdict_count += other.resolved_verdict_count
+        self.resolved_staled_missing_dex_price_count += other.resolved_staled_missing_dex_price_count
+        self.resolved_staled_aberrant_onchain_dex_price_count += other.resolved_staled_aberrant_onchain_dex_price_count
+        self.resolved_staled_unrecoverable_onchain_price_count += other.resolved_staled_unrecoverable_onchain_price_count
+        self.resolved_honeypot_count += other.resolved_honeypot_count
+        self.resolved_lethargic_count += other.resolved_lethargic_count
+        self.resolved_take_profit_2_count += other.resolved_take_profit_2_count
+        self.resolved_stop_loss_count += other.resolved_stop_loss_count
+        self.deferred_onchain_price_unavailable_count += other.deferred_onchain_price_unavailable_count
+        self.deferred_transient_slippage_count += other.deferred_transient_slippage_count
+        self.deferred_threshold_resolution_freeze_authority_unavailable_count += (
+            other.deferred_threshold_resolution_freeze_authority_unavailable_count
+        )
+        self.deferred_lethargic_resolution_freeze_authority_unavailable_count += (
+            other.deferred_lethargic_resolution_freeze_authority_unavailable_count
+        )
+        self.skipped_batch_dexscreener_unavailable_verdict_count += other.skipped_batch_dexscreener_unavailable_verdict_count
+
+    def format_non_zero_breakdown(self) -> str:
+        breakdown_labels: list[tuple[str, int]] = [
+            ("staled_missing_dex", self.resolved_staled_missing_dex_price_count),
+            ("staled_aberrant_onchain_dex", self.resolved_staled_aberrant_onchain_dex_price_count),
+            ("staled_unrecoverable_onchain", self.resolved_staled_unrecoverable_onchain_price_count),
+            ("honeypot", self.resolved_honeypot_count),
+            ("lethargic", self.resolved_lethargic_count),
+            ("take_profit_2", self.resolved_take_profit_2_count),
+            ("stop_loss", self.resolved_stop_loss_count),
+            ("deferred_onchain", self.deferred_onchain_price_unavailable_count),
+            ("deferred_slippage", self.deferred_transient_slippage_count),
+            ("deferred_threshold_freeze_lookup", self.deferred_threshold_resolution_freeze_authority_unavailable_count),
+            ("deferred_lethargic_freeze_lookup", self.deferred_lethargic_resolution_freeze_authority_unavailable_count),
+            ("skipped_dex_batch", self.skipped_batch_dexscreener_unavailable_verdict_count),
+        ]
+        non_zero_parts = [
+            f"{label}={count}"
+            for label, count in breakdown_labels
+            if count > 0
+        ]
+        if not non_zero_parts:
+            return "no breakdown counters"
+        return ", ".join(non_zero_parts)

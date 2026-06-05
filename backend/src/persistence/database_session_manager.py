@@ -9,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, DeclarativeBase, sessionmaker
 
+from src.cache.cache_protocols import CacheRealmRebuildSkipped
 from src.core.utils.date_utils import ensure_timezone_aware
 from src.logging.logger import get_application_logger
 from src.persistence.database_engine_builder import build_database_engine
@@ -58,6 +59,9 @@ def get_database_session() -> Generator[Session, None, None]:
     try:
         yield database_session
         database_session.commit()
+    except CacheRealmRebuildSkipped:
+        database_session.rollback()
+        raise
     except Exception as transaction_exception:
         database_session.rollback()
         logger.exception("[DATABASE][TRANSACTION][ROLLBACK] Rolled back transaction after error: %s", transaction_exception)
@@ -71,6 +75,9 @@ def get_fastapi_database_session() -> Generator[Session, None, None]:
     try:
         yield database_session
         database_session.commit()
+    except CacheRealmRebuildSkipped:
+        database_session.rollback()
+        raise
     except Exception as transaction_exception:
         database_session.rollback()
         logger.exception("[DATABASE][TRANSACTION][ROLLBACK] Rolled back FastAPI session after error: %s", transaction_exception)

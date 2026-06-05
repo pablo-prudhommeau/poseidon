@@ -7,7 +7,6 @@ from typing import Optional
 from src.api.http.api_schemas import (
     TradingShadowingRegimePayload,
     TradingShadowingVerdictChroniclePayload,
-    TradingShadowingVerdictChronicleDeltaPayload,
 )
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.shadowing.cache.trading_shadowing_cache_structures import TradingShadowingState
@@ -29,7 +28,6 @@ class TradingShadowingCache:
         self._cached_shadowing_regime: Optional[TradingShadowingRegimePayload] = None
         self._cached_shadowing_snapshot: Optional[TradingShadowingSnapshot] = None
         self._cached_shadowing_verdict_chronicle: Optional[TradingShadowingVerdictChroniclePayload] = None
-        self._cached_shadowing_verdict_chronicle_delta: Optional[TradingShadowingVerdictChronicleDeltaPayload] = None
         self._last_successful_update_timestamp: datetime = get_current_local_datetime()
 
     def update_shadowing_snapshot(
@@ -51,13 +49,6 @@ class TradingShadowingCache:
             logger.debug("[TRADING][CACHE] Shadowing verdict chronicle updated")
         _touch_realm(CacheRealm.SHADOWING_VERDICT_CHRONICLE)
 
-    def update_shadowing_verdict_chronicle_delta(self, verdict_chronicle_delta: TradingShadowingVerdictChronicleDeltaPayload) -> None:
-        with self._lock:
-            self._cached_shadowing_verdict_chronicle_delta = verdict_chronicle_delta
-            self._last_successful_update_timestamp = get_current_local_datetime()
-            logger.debug("[TRADING][CACHE] Shadowing verdict chronicle delta updated")
-        _touch_realm(CacheRealm.SHADOWING_VERDICT_CHRONICLE_DELTA)
-
     def get_trading_shadowing_regime_state(self) -> Optional[TradingShadowingRegimePayload]:
         with self._lock:
             return self._cached_shadowing_regime
@@ -70,17 +61,12 @@ class TradingShadowingCache:
         with self._lock:
             return self._cached_shadowing_verdict_chronicle
 
-    def get_shadowing_verdict_chronicle_delta(self) -> Optional[TradingShadowingVerdictChronicleDeltaPayload]:
-        with self._lock:
-            return self._cached_shadowing_verdict_chronicle_delta
-
     def get_shadowing_trading_state(self) -> TradingShadowingState:
         with self._lock:
             return TradingShadowingState(
                 shadowing_regime=self._cached_shadowing_regime,
                 shadowing_snapshot=self._cached_shadowing_snapshot,
                 shadowing_verdict_chronicle=self._cached_shadowing_verdict_chronicle,
-                shadowing_verdict_chronicle_delta=self._cached_shadowing_verdict_chronicle_delta
             )
 
     def get_last_update_timestamp(self) -> Optional[datetime]:

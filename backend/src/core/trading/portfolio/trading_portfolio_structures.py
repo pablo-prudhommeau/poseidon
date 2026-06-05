@@ -1,6 +1,25 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict
+
+
+class StablecoinSwapSettlementDirection(str, Enum):
+    BUY_DEBIT = "BUY_DEBIT"
+    SELL_CREDIT = "SELL_CREDIT"
+
+
+class StablecoinSwapSettlementPollResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    swap_settled_on_chain: bool
+    deployable_cash_usd: float
+    transaction_signature: str
+
+
+class LiveLiquiditySnapshotUnavailableError(Exception):
+    pass
 
 
 class SolanaTokenAccountRentBreakdown(BaseModel):

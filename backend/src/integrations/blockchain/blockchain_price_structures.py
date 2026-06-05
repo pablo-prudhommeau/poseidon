@@ -58,3 +58,8 @@ class OnchainPricesByPairAddress(BaseModel):
                     return None
                 return pair_address_price.price_usd
         return None
+
+
+class OnchainPricesFetchResult(BaseModel):
+    onchain_prices: OnchainPricesByPairAddress
+    had_infrastructure_failure: bool

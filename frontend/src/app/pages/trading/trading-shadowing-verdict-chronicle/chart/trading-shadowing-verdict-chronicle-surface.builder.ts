@@ -2,11 +2,11 @@ import type { LabelProvider } from 'scichart';
 import type { ChronicleBucketMeta, ChronicleChartModel } from '../data/trading-shadowing-verdict-chronicle.models';
 import {
     buildChronicleArraysFromBucket,
-    CHRONICLE_STREAM_LAG_MS_FALLBACK,
     computeChronicleViewportWidthMilliseconds,
     formatChronicleAxisLocalDateTimeMilliseconds,
     formatChronicleAxisTickLabelMilliseconds,
-    resolveChronicleStreamLagMilliseconds
+    parseIsoTimestampToEpochMilliseconds,
+    type ChronicleBucketLabel
 } from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
 import { CHRONICLE_AXIS_TITLES, CHRONICLE_DEFAULT_VISIBLE_SERIES, CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
 import { CHRONICLE_SERIES } from '../data/trading-shadowing-verdict-chronicle-series-names';
@@ -40,10 +40,9 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             padding: new Thickness(6, 6, 6, 6)
         });
 
-        const streamLagMilliseconds = resolveChronicleStreamLagMilliseconds(meta.response.series_end_lag_seconds);
-        const chronicleArrays = buildChronicleArraysFromBucket(meta, streamLagMilliseconds, smaWindowBuckets);
-        const viewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(chronicleArrays);
-        const initialRightEdgeMilliseconds = Date.now() - CHRONICLE_STREAM_LAG_MS_FALLBACK;
+        const chronicleArrays = buildChronicleArraysFromBucket(meta, smaWindowBuckets);
+        const viewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(chronicleArrays, meta.bucket.bucket_label as ChronicleBucketLabel);
+        const initialRightEdgeMilliseconds = parseIsoTimestampToEpochMilliseconds(meta.response.as_of_iso) ?? Date.now();
 
         const xAxis = new DateTimeNumericAxis(wasmContext, {
             id: 'xTime',

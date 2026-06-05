@@ -8,10 +8,9 @@ from pydantic import ValidationError
 
 from src.configuration.config import settings
 from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
-    chronicle_display_lag_timedelta as _chronicle_display_lag_timedelta,
     compute_profit_factor as _compute_profit_factor,
     floor_datetime_to_granularity as _floor_datetime_to_granularity,
-    series_end_datetime as _series_end_datetime,
+    iter_chronicle_display_bucket_epoch_milliseconds as _iter_chronicle_display_bucket_epoch_milliseconds,
     to_epoch_milliseconds as _to_epoch_milliseconds,
 )
 from src.core.trading.shadowing.trading_shadowing_cortex_rollout_timeline import load_cortex_model_rollouts_for_chronicle
@@ -172,9 +171,8 @@ def _build_cortex_reliability_diagram(
 def compute_trading_shadowing_verdict_chronicle() -> TradingShadowingVerdictChronicleComputationResult:
     now_local = get_current_local_datetime()
     bucket_configurations = _trading_shadowing_verdict_chronicle_bucket_configurations()
-    series_end_datetime = _series_end_datetime(now_local)
-    fetch_end_datetime = _verdict_fetch_end_datetime(series_end_datetime, bucket_configurations)
-    global_from_datetime = series_end_datetime - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
+    fetch_end_datetime = _verdict_fetch_end_datetime(now_local, bucket_configurations)
+    global_from_datetime = now_local - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
 
     with get_database_session() as database_session:
         verdict_dao = TradingShadowingVerdictDao(database_session)
@@ -202,80 +200,10 @@ def compute_trading_shadowing_verdict_chronicle() -> TradingShadowingVerdictChro
             portfolio_snapshots,
             now_local,
             bucket_configurations,
-            series_end_datetime,
             fetch_end_datetime,
             global_from_datetime,
         ),
         verdicts=verdicts,
-    )
-
-
-def compute_trading_shadowing_verdict_chronicle_incremental(
-        previous_verdicts: list[TradingShadowingVerdictChronicleVerdict],
-) -> TradingShadowingVerdictChronicleComputationResult:
-    now_local = get_current_local_datetime()
-    bucket_configurations = _trading_shadowing_verdict_chronicle_bucket_configurations()
-    series_end_datetime = _series_end_datetime(now_local)
-    fetch_end_datetime = _verdict_fetch_end_datetime(series_end_datetime, bucket_configurations)
-    global_from_datetime = series_end_datetime - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
-
-    working_verdicts = _trim_verdicts_for_window(
-        previous_verdicts,
-        global_from_datetime=global_from_datetime,
-        fetch_end_datetime=fetch_end_datetime,
-        max_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
-    )
-    if not working_verdicts:
-        return compute_trading_shadowing_verdict_chronicle()
-
-    max_id = max(chronicle_verdict.id for chronicle_verdict in working_verdicts)
-    new_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
-    portfolio_snapshots: list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint] = []
-    with get_database_session() as database_session:
-        verdict_dao = TradingShadowingVerdictDao(database_session)
-        portfolio_snapshot_dao = TradingPortfolioSnapshotDao(database_session)
-        new_orms = verdict_dao.retrieve_resolved_in_window_after_id(
-            after_id_exclusive=max_id,
-            start_datetime=global_from_datetime,
-            end_datetime=fetch_end_datetime,
-            limit_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
-        )
-        new_verdicts = _convert_verdicts(new_orms)
-        portfolio_snapshots = _load_portfolio_snapshots_for_chronicle(
-            portfolio_snapshot_dao=portfolio_snapshot_dao,
-            global_from_datetime=global_from_datetime,
-            fetch_end_datetime=fetch_end_datetime,
-        )
-
-    if new_verdicts:
-        merged_by_id = {chronicle_verdict.id: chronicle_verdict for chronicle_verdict in working_verdicts}
-        for chronicle_verdict in new_verdicts:
-            merged_by_id[chronicle_verdict.id] = chronicle_verdict
-        working_verdicts = sorted(merged_by_id.values(), key=lambda chronicle_verdict: chronicle_verdict.resolved_at)
-        working_verdicts = _trim_verdicts_for_window(
-            working_verdicts,
-            global_from_datetime=global_from_datetime,
-            fetch_end_datetime=fetch_end_datetime,
-            max_count=settings.TRADING_SHADOWING_HISTORY_MAX_VERDICTS_FETCH,
-        )
-
-    new_chronicle = _build_trading_shadowing_verdict_chronicle(
-        working_verdicts,
-        portfolio_snapshots,
-        now_local,
-        bucket_configurations,
-        series_end_datetime,
-        fetch_end_datetime,
-        global_from_datetime,
-    )
-    logger.debug(
-        "[TRADING][SHADOWING][HISTORY] Incremental chronicle — verdict_count=%d new_verdict_count_from_database=%d",
-        len(working_verdicts),
-        len(new_verdicts),
-    )
-    return TradingShadowingVerdictChronicleComputationResult(
-        chronicle=new_chronicle,
-        verdicts=working_verdicts,
     )
 
 
@@ -284,19 +212,17 @@ def _build_trading_shadowing_verdict_chronicle(
         portfolio_wallet_value_points: list[TradingShadowingVerdictChroniclePortfolioWalletValuePoint],
         now_local: datetime,
         bucket_configurations: list[TradingShadowingVerdictChronicleBucketConfiguration],
-        series_end_datetime: datetime,
         fetch_end_datetime: datetime,
         global_from_datetime: datetime,
 ) -> TradingShadowingVerdictChronicle:
     buckets: list[TradingShadowingVerdictChronicleBucket] = []
     trailing = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
-    chronicle_lag_td = _chronicle_display_lag_timedelta()
     for bucket_configuration in bucket_configurations:
         bucket_from_datetime = max(
             global_from_datetime,
-            series_end_datetime - bucket_configuration.lookback - chronicle_lag_td,
+            now_local - bucket_configuration.lookback,
         )
-        bucket_to_datetime = series_end_datetime + timedelta(
+        bucket_to_datetime = now_local + timedelta(
             seconds=bucket_configuration.granularity_seconds * max(0, trailing),
         )
         buckets.append(_build_bucket(
@@ -305,12 +231,12 @@ def _build_trading_shadowing_verdict_chronicle(
             bucket_configuration=bucket_configuration,
             from_datetime=bucket_from_datetime,
             to_datetime=bucket_to_datetime,
-            series_end_datetime=series_end_datetime,
+            as_of_datetime=now_local,
         ))
 
     return TradingShadowingVerdictChronicle(
         generated_at=now_local,
-        as_of=series_end_datetime,
+        as_of=now_local,
         from_datetime=global_from_datetime,
         to_datetime=fetch_end_datetime,
         total_verdicts_considered=len(verdicts),
@@ -326,24 +252,33 @@ def _build_bucket(
         bucket_configuration: TradingShadowingVerdictChronicleBucketConfiguration,
         from_datetime: datetime,
         to_datetime: datetime,
-        series_end_datetime: datetime,
+        as_of_datetime: datetime,
 ) -> TradingShadowingVerdictChronicleBucket:
     window_from = ensure_timezone_aware(from_datetime)
     window_to = ensure_timezone_aware(to_datetime)
-    assert window_from is not None and window_to is not None
+    as_of_aware = ensure_timezone_aware(as_of_datetime)
+    assert window_from is not None and window_to is not None and as_of_aware is not None
 
+    all_verdicts = list(verdicts)
     grouped_verdicts: dict[int, list[TradingShadowingVerdictChronicleVerdict]] = defaultdict(list)
     bounded_verdicts: list[TradingShadowingVerdictChronicleVerdict] = []
 
-    for verdict in verdicts:
+    for verdict in all_verdicts:
         resolved_at = ensure_timezone_aware(verdict.resolved_at)
         if resolved_at is None:
             continue
         if resolved_at < window_from or resolved_at > window_to:
             continue
-        bounded_verdicts.append(verdict)
         bucket_start = _floor_datetime_to_granularity(resolved_at, bucket_configuration.granularity_seconds)
         grouped_verdicts[_to_epoch_milliseconds(bucket_start)].append(verdict)
+        if resolved_at <= as_of_aware:
+            bounded_verdicts.append(verdict)
+
+    display_bucket_timestamps = _iter_chronicle_display_bucket_epoch_milliseconds(
+        window_from,
+        as_of_aware,
+        bucket_configuration.granularity_seconds,
+    )
 
     metric_points: list[TradingShadowingVerdictChronicleMetricPoint] = []
     volume_points: list[TradingShadowingVerdictChronicleVolumePoint] = []
@@ -358,7 +293,7 @@ def _build_bucket(
         else 0.0
     )
 
-    for bucket_timestamp in sorted(grouped_verdicts.keys()):
+    for bucket_timestamp in display_bucket_timestamps:
         while portfolio_wallet_value_point_index < len(sorted_portfolio_wallet_value_points):
             portfolio_wallet_value_point = sorted_portfolio_wallet_value_points[portfolio_wallet_value_point_index]
             if portfolio_wallet_value_point.timestamp_milliseconds > bucket_timestamp:
@@ -366,67 +301,29 @@ def _build_bucket(
             latest_known_portfolio_wallet_value = portfolio_wallet_value_point.total_wallet_value_usd
             portfolio_wallet_value_point_index += 1
 
-        items = grouped_verdicts[bucket_timestamp]
+        items = grouped_verdicts.get(bucket_timestamp, [])
         verdict_count = len(items)
-        if verdict_count == 0:
-            continue
-
-        pnl_usd_values = [item.realized_pnl_usd for item in items]
-        pnl_percentage_values = [item.realized_pnl_percentage for item in items]
-        complete_cortex_items = [item for item in items if _has_complete_cortex_inference(item)]
-        cortex_probabilities = [
-            item.cortex_probability
-            for item in complete_cortex_items
-            if item.cortex_probability is not None
-        ]
-        cortex_predicted_holding_times_minutes = [
-            item.cortex_predicted_holding_time_minutes
-            for item in complete_cortex_items
-            if item.cortex_predicted_holding_time_minutes is not None
-        ]
-        win_count = sum(1 for item in items if item.is_profitable)
-        gross_profit_usd = sum(value for value in pnl_usd_values if value > 0.0)
-        gross_loss_usd = abs(sum(value for value in pnl_usd_values if value < 0.0))
-
-        average_cortex_prediction_win_rate_percentage = None
-        if len(cortex_probabilities) > 0:
-            average_cortex_prediction_win_rate_percentage = (sum(cortex_probabilities) / len(cortex_probabilities)) * 100.0
-        average_cortex_predicted_holding_time_minutes = None
-        if cortex_predicted_holding_times_minutes:
-            average_cortex_predicted_holding_time_minutes = (
-                    sum(cortex_predicted_holding_times_minutes) / len(cortex_predicted_holding_times_minutes)
-            )
-        cortex_skill_score_percentage = _compute_cortex_skill_score_percentage(items)
-        (
-            cortex_calibration_gap_percentage_points,
-            cortex_high_conviction_accuracy_percentage,
-            cortex_high_conviction_share_percentage,
-        ) = _compute_cortex_actionability_metrics(items)
-        (
-            cortex_gate_precision_percentage,
-            cortex_gate_pass_rate_percentage,
-        ) = _compute_cortex_gate_quality_metrics(items)
-
-        metric_points.append(TradingShadowingVerdictChronicleMetricPoint(
-            timestamp_milliseconds=bucket_timestamp,
-            average_pnl_percentage=sum(pnl_percentage_values) / verdict_count,
-            average_win_rate_percentage=(win_count / verdict_count) * 100.0,
-            expected_value_per_trade_usd=sum(pnl_usd_values) / verdict_count,
-            total_wallet_value_usd=latest_known_portfolio_wallet_value,
-            closed_verdicts_per_hour=_compute_closed_verdicts_per_hour(verdict_count, bucket_configuration.granularity_seconds),
-            profit_factor=_compute_profit_factor(gross_profit_usd, gross_loss_usd),
-            average_cortex_prediction_win_rate_percentage=average_cortex_prediction_win_rate_percentage,
-            average_cortex_predicted_holding_time_minutes=average_cortex_predicted_holding_time_minutes,
-            cortex_skill_score_percentage=cortex_skill_score_percentage,
-            cortex_calibration_gap_percentage_points=cortex_calibration_gap_percentage_points,
-            cortex_high_conviction_accuracy_percentage=cortex_high_conviction_accuracy_percentage,
-            cortex_high_conviction_share_percentage=cortex_high_conviction_share_percentage,
-            cortex_gate_precision_percentage=cortex_gate_precision_percentage,
-            cortex_gate_pass_rate_percentage=cortex_gate_pass_rate_percentage,
-        ))
         volume_points.append(TradingShadowingVerdictChronicleVolumePoint(
             timestamp_milliseconds=bucket_timestamp,
             verdict_count=verdict_count,
+        ))
+        if verdict_count == 0:
+            metric_points.append(TradingShadowingVerdictChronicleMetricPoint(
+                timestamp_milliseconds=bucket_timestamp,
+                average_pnl_percentage=0.0,
+                average_win_rate_percentage=0.0,
+                expected_value_per_trade_usd=0.0,
+                total_wallet_value_usd=latest_known_portfolio_wallet_value,
+                closed_verdicts_per_hour=0.0,
+                profit_factor=0.0,
+            ))
+            continue
+
+        metric_points.append(_build_chronicle_metric_point_for_verdict_items(
+            bucket_timestamp=bucket_timestamp,
+            items=items,
+            latest_known_portfolio_wallet_value=latest_known_portfolio_wallet_value,
+            granularity_seconds=bucket_configuration.granularity_seconds,
         ))
 
     cloud_source = _sample_cloud_points(
@@ -452,9 +349,9 @@ def _build_bucket(
     )
 
     regime_gate = build_regime_gate_timeline_for_metric_timestamps(
-        verdicts=bounded_verdicts,
-        series_end_datetime=series_end_datetime,
-        metric_timestamps_milliseconds=[metric_point.timestamp_milliseconds for metric_point in metric_points],
+        verdicts=all_verdicts,
+        as_of_datetime=as_of_datetime,
+        metric_timestamps_milliseconds=display_bucket_timestamps,
     )
     cortex_reliability_diagram = _build_cortex_reliability_diagram(bounded_verdicts)
 
@@ -524,14 +421,14 @@ def _trading_shadowing_verdict_chronicle_bucket_configurations() -> list[Trading
 
 
 def _verdict_fetch_end_datetime(
-        series_end_datetime: datetime,
+        as_of_datetime: datetime,
         bucket_configurations: list[TradingShadowingVerdictChronicleBucketConfiguration],
 ) -> datetime:
     trailing = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
     if trailing <= 0 or not bucket_configurations:
-        return series_end_datetime
+        return as_of_datetime
     max_granularity_seconds = max(configuration.granularity_seconds for configuration in bucket_configurations)
-    return series_end_datetime + timedelta(seconds=max_granularity_seconds * trailing)
+    return as_of_datetime + timedelta(seconds=max_granularity_seconds * trailing)
 
 
 def _convert_verdicts(verdicts: list[TradingShadowingVerdict]) -> list[TradingShadowingVerdictChronicleVerdict]:
@@ -565,6 +462,68 @@ def _trim_verdicts_for_window(
     if len(filtered) <= max_count:
         return filtered
     return filtered[-max_count:]
+
+
+def _build_chronicle_metric_point_for_verdict_items(
+        bucket_timestamp: int,
+        items: list[TradingShadowingVerdictChronicleVerdict],
+        latest_known_portfolio_wallet_value: float,
+        granularity_seconds: int,
+) -> TradingShadowingVerdictChronicleMetricPoint:
+    verdict_count = len(items)
+    pnl_usd_values = [item.realized_pnl_usd for item in items]
+    pnl_percentage_values = [item.realized_pnl_percentage for item in items]
+    complete_cortex_items = [item for item in items if _has_complete_cortex_inference(item)]
+    cortex_probabilities = [
+        item.cortex_probability
+        for item in complete_cortex_items
+        if item.cortex_probability is not None
+    ]
+    cortex_predicted_holding_times_minutes = [
+        item.cortex_predicted_holding_time_minutes
+        for item in complete_cortex_items
+        if item.cortex_predicted_holding_time_minutes is not None
+    ]
+    win_count = sum(1 for item in items if item.is_profitable)
+    gross_profit_usd = sum(value for value in pnl_usd_values if value > 0.0)
+    gross_loss_usd = abs(sum(value for value in pnl_usd_values if value < 0.0))
+
+    average_cortex_prediction_win_rate_percentage = None
+    if len(cortex_probabilities) > 0:
+        average_cortex_prediction_win_rate_percentage = (sum(cortex_probabilities) / len(cortex_probabilities)) * 100.0
+    average_cortex_predicted_holding_time_minutes = None
+    if cortex_predicted_holding_times_minutes:
+        average_cortex_predicted_holding_time_minutes = (
+                sum(cortex_predicted_holding_times_minutes) / len(cortex_predicted_holding_times_minutes)
+        )
+
+    (
+        cortex_calibration_gap_percentage_points,
+        cortex_high_conviction_accuracy_percentage,
+        cortex_high_conviction_share_percentage,
+    ) = _compute_cortex_actionability_metrics(items)
+    (
+        cortex_gate_precision_percentage,
+        cortex_gate_pass_rate_percentage,
+    ) = _compute_cortex_gate_quality_metrics(items)
+
+    return TradingShadowingVerdictChronicleMetricPoint(
+        timestamp_milliseconds=bucket_timestamp,
+        average_pnl_percentage=sum(pnl_percentage_values) / verdict_count,
+        average_win_rate_percentage=(win_count / verdict_count) * 100.0,
+        expected_value_per_trade_usd=sum(pnl_usd_values) / verdict_count,
+        total_wallet_value_usd=latest_known_portfolio_wallet_value,
+        closed_verdicts_per_hour=_compute_closed_verdicts_per_hour(verdict_count, granularity_seconds),
+        profit_factor=_compute_profit_factor(gross_profit_usd, gross_loss_usd),
+        average_cortex_prediction_win_rate_percentage=average_cortex_prediction_win_rate_percentage,
+        average_cortex_predicted_holding_time_minutes=average_cortex_predicted_holding_time_minutes,
+        cortex_skill_score_percentage=_compute_cortex_skill_score_percentage(items),
+        cortex_calibration_gap_percentage_points=cortex_calibration_gap_percentage_points,
+        cortex_high_conviction_accuracy_percentage=cortex_high_conviction_accuracy_percentage,
+        cortex_high_conviction_share_percentage=cortex_high_conviction_share_percentage,
+        cortex_gate_precision_percentage=cortex_gate_precision_percentage,
+        cortex_gate_pass_rate_percentage=cortex_gate_pass_rate_percentage,
+    )
 
 
 def _compute_closed_verdicts_per_hour(verdict_count: int, granularity_seconds: int) -> float:

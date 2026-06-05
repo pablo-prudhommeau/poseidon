@@ -520,45 +520,8 @@ class TradingShadowingVerdictChroniclePayload(BaseModel):
     to_iso: str
     total_verdicts_considered: int
     source: str
-    series_end_lag_seconds: int
     buckets: List[TradingShadowingVerdictChronicleBucketPayload] = Field(default_factory=list)
     cortex_model_rollouts: List[TradingShadowingVerdictChronicleCortexModelRolloutPayload] = Field(default_factory=list)
-
-
-class TradingShadowingVerdictChronicleDeltaBucketPayload(BaseModel):
-    bucket_label: str
-    drop_metrics_before_ms: Optional[int] = None
-    drop_volumes_before_ms: Optional[int] = None
-    metrics_remove_timestamps_ms: List[int] = Field(default_factory=list)
-    volumes_remove_timestamps_ms: List[int] = Field(default_factory=list)
-    metrics_upsert: List[TradingShadowingVerdictChronicleMetricPointPayload] = Field(default_factory=list)
-    volumes_upsert: List[TradingShadowingVerdictChronicleVolumePointPayload] = Field(default_factory=list)
-    regime_gate_upsert: List[TradingShadowingVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
-    verdict_cloud_replace: Optional[List[TradingShadowingVerdictChronicleVerdictPointPayload]] = None
-    cortex_reliability_diagram_replace: Optional[List[TradingShadowingVerdictChronicleCortexReliabilityBinPayload]] = None
-
-
-class TradingShadowingVerdictChronicleDeltaVerdictPayload(BaseModel):
-    id: int
-    resolved_at: datetime
-    realized_pnl_percentage: float
-    realized_pnl_usd: float
-    is_profitable: bool
-    exit_reason: str
-    order_notional_value_usd: float
-    cortex_probability: Optional[float] = None
-
-
-class TradingShadowingVerdictChronicleDeltaPayload(BaseModel):
-    generated_at_iso: str
-    as_of_iso: str
-    from_iso: str
-    to_iso: str
-    total_verdicts_considered: int
-    source: str
-    series_end_lag_seconds: int
-    buckets: List[TradingShadowingVerdictChronicleDeltaBucketPayload]
-    verdicts: List[TradingShadowingVerdictChronicleDeltaVerdictPayload]
 
 
 class TradingShadowingRegimePayload(BaseModel):

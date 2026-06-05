@@ -254,6 +254,11 @@ def read_evm_pair_price_usd(
         )
         return None
 
-    except Exception:
-        logger.exception("[BLOCKCHAIN][PRICE][EVM] Failed to read price for pair %s on %s", pair_address[:10], chain.value)
+    except Exception as read_exception:
+        logger.debug(
+            "[BLOCKCHAIN][PRICE][EVM] Failed to read price for pair %s on %s — %s",
+            pair_address[:10],
+            chain.value,
+            read_exception,
+        )
         return None

@@ -91,7 +91,7 @@ def test_execute_closing_sell_marks_staled_when_wallet_balance_is_zero(
     resolve_execution_chain_handler_mock.return_value = chain_handler
     database_session = MagicMock()
 
-    trade = execute_closing_sell(
+    closing_sell_result = execute_closing_sell(
         database_session=database_session,
         position=position,
         execution_price=0.000088141787,
@@ -100,7 +100,8 @@ def test_execute_closing_sell_marks_staled_when_wallet_balance_is_zero(
         previous_phase=PositionPhase.PARTIAL,
     )
 
-    assert trade is None
+    assert closing_sell_result.trading_trade is None
+    assert closing_sell_result.stablecoin_swap_settled_on_chain is False
     assert position.position_phase == PositionPhase.STALED
     assert position.exit_reason == PositionExitTriggerReason.WALLET_BALANCE_EMPTY.value
     assert position.current_quantity == 689.303435

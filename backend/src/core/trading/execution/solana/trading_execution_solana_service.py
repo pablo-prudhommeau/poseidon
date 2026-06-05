@@ -13,12 +13,16 @@ from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
 from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
-from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionExecutionError
+from src.integrations.blockchain.blockchain_execution_structures import (
+    BlockchainTransactionExecutionError,
+    BlockchainTransactionFailureReason,
+)
 from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
 from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainExecutionRouteBuildError,
     BlockchainPriceUnavailableError,
     BlockchainRpcUnavailableError,
+    is_transient_solana_rpc_failure,
 )
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.integrations.blockchain.blockchain_structures import (
@@ -36,6 +40,12 @@ from src.integrations.blockchain.solana.solana_wallet_snapshot_service import (
 )
 from src.integrations.jupiter.jupiter_client import generate_jupiter_swap_transaction
 from src.integrations.jupiter.jupiter_structures import JupiterApiFailureReason, JupiterApiUnavailableError
+from src.core.trading.execution.trading_execution_structures import TradingPositionClosingSellResult
+from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_service import (
+    poll_deployable_stablecoin_until_swap_settled,
+    resolve_total_deployable_stablecoin_cash_usd,
+)
+from src.core.trading.portfolio.trading_portfolio_structures import StablecoinSwapSettlementDirection
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
@@ -302,6 +312,7 @@ async def _execute_solana_live_buy(
         origin_evaluation_id: int,
 ) -> bool:
     execution_service = LiveExecutionService()
+    buy_committed = False
     try:
         logger.info(
             "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Executing route for %s on Solana",
@@ -329,6 +340,16 @@ async def _execute_solana_live_buy(
             logger.error("[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Missing Solana route payload for %s", token.symbol)
             return False
 
+        try:
+            deployable_cash_before_swap_usd = await asyncio.to_thread(resolve_total_deployable_stablecoin_cash_usd)
+        except BlockchainRpcUnavailableError as rpc_unavailable_error:
+            logger.debug(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Deployable baseline unavailable for %s — failure_reason=%s",
+                token.symbol,
+                rpc_unavailable_error.failure_reason.value,
+            )
+            return False
+
         execution_outcome = await execution_service.solana_execute_route(execution_route.solana_route)
         logger.info(
             "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Broadcast successful for %s — sig=%s fee_usd=%.6f",
@@ -336,6 +357,23 @@ async def _execute_solana_live_buy(
             execution_outcome.transaction_hash_or_signature,
             execution_outcome.transaction_fee_usd,
         )
+
+        settlement_poll_result = await asyncio.to_thread(
+            poll_deployable_stablecoin_until_swap_settled,
+            deployable_cash_before_swap_usd,
+            StablecoinSwapSettlementDirection.BUY_DEBIT,
+            execution_outcome.transaction_hash_or_signature,
+        )
+        if not settlement_poll_result.swap_settled_on_chain:
+            logger.warning(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Stablecoin debit not reflected on-chain before ledger update — "
+                "token=%s transaction_signature=%s deployable_before=%.2f last_observed_deployable=%.2f",
+                token.symbol,
+                execution_outcome.transaction_hash_or_signature,
+                deployable_cash_before_swap_usd,
+                settlement_poll_result.deployable_cash_usd,
+            )
+            return False
 
         with get_database_session() as database_session:
             trade_dao = TradingTradeDao(database_session)
@@ -381,7 +419,25 @@ async def _execute_solana_live_buy(
             database_session.commit()
         invalidate_solana_wallet_snapshot_cache()
         invalidate_solana_onchain_wallet_context_cache()
+        buy_committed = True
         return True
+    except BlockchainRpcUnavailableError as rpc_unavailable_error:
+        if is_transient_solana_rpc_failure(rpc_unavailable_error):
+            logger.debug(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Transient RPC unavailable for %s (%s) — failure_reason=%s rpc_method=%s",
+                token.symbol,
+                token.token_address,
+                rpc_unavailable_error.failure_reason.value,
+                rpc_unavailable_error.rpc_method,
+            )
+        else:
+            logger.warning(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] RPC unavailable for %s (%s) — failure_reason=%s",
+                token.symbol,
+                token.token_address,
+                rpc_unavailable_error.failure_reason.value,
+            )
+        return False
     except Exception as exception:
         logger.exception(
             "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Execution failed for %s (%s) — %s",
@@ -395,12 +451,13 @@ async def _execute_solana_live_buy(
             await execution_service.close()
         except Exception as close_exception:
             logger.exception("[TRADING][EXECUTION][SOLANA][SWAP][LIVE] Execution service close suppressed — %s", close_exception)
-        cache_invalidator.mark_dirty(
-            CacheRealm.POSITIONS,
-            CacheRealm.TRADES,
-            CacheRealm.AVAILABLE_CASH,
-            CacheRealm.PORTFOLIO,
-        )
+        if buy_committed:
+            cache_invalidator.mark_dirty(
+                CacheRealm.POSITIONS,
+                CacheRealm.TRADES,
+                CacheRealm.AVAILABLE_CASH,
+                CacheRealm.PORTFOLIO,
+            )
 
 
 async def _execute_solana_live_sell(
@@ -460,17 +517,45 @@ async def _execute_solana_live_sell(
         return TradingLiveSellExecutionOutcome(execution_result=execution_outcome, failure_reason=None)
 
     except BlockchainTransactionExecutionError as execution_error:
-        logger.error(
-            "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Execution failed for %s (%s) — failure_reason=%s signature=%s",
-            token_symbol,
-            token_address,
-            execution_error.failure_reason.value,
-            execution_error.transaction_signature,
-        )
+        if execution_error.failure_reason == BlockchainTransactionFailureReason.UNKNOWN:
+            logger.warning(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Execution failed for %s (%s) — failure_reason=%s signature=%s error=%s",
+                token_symbol,
+                token_address,
+                execution_error.failure_reason.value,
+                execution_error.transaction_signature,
+                execution_error.raw_error_text,
+            )
+        else:
+            logger.error(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Execution failed for %s (%s) — failure_reason=%s signature=%s error=%s",
+                token_symbol,
+                token_address,
+                execution_error.failure_reason.value,
+                execution_error.transaction_signature,
+                execution_error.raw_error_text,
+            )
         return TradingLiveSellExecutionOutcome(
             execution_result=None,
             failure_reason=execution_error.failure_reason,
         )
+    except BlockchainRpcUnavailableError as rpc_unavailable_error:
+        if is_transient_solana_rpc_failure(rpc_unavailable_error):
+            logger.debug(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Transient RPC unavailable for %s (%s) — failure_reason=%s rpc_method=%s",
+                token_symbol,
+                token_address,
+                rpc_unavailable_error.failure_reason.value,
+                rpc_unavailable_error.rpc_method,
+            )
+        else:
+            logger.warning(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] RPC unavailable for %s (%s) — failure_reason=%s",
+                token_symbol,
+                token_address,
+                rpc_unavailable_error.failure_reason.value,
+            )
+        return TradingLiveSellExecutionOutcome(execution_result=None, failure_reason=None)
     except Exception as exception:
         logger.exception(
             "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Execution failed for %s (%s) — %s",

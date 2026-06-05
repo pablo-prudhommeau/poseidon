@@ -5,9 +5,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.cache.cache_protocols import CacheRealmRebuildSkipped
-from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_guard_service import (
-    clear_pending_stablecoin_settlement,
-)
 from src.core.trading.cache.trading_cache_payload_builders import (
     _skip_live_portfolio_rebuild_when_cache_warm,
     build_trading_liquidity_payload,
@@ -36,6 +33,7 @@ def test_skip_live_portfolio_rebuild_returns_none_when_cache_cold(trading_cache_
 
 
 @patch("src.core.trading.cache.trading_cache_payload_builders.settings")
+@patch("src.core.trading.cache.trading_cache_payload_builders.has_any_closing_positions")
 @patch("src.core.trading.cache.trading_cache_payload_builders.fetch_stablecoin_balances_for_allowed_chains")
 @patch(
     "src.core.trading.cache.trading_cache_payload_builders.resolve_required_solana_onchain_wallet_context_for_live_portfolio",
@@ -45,10 +43,11 @@ def test_build_trading_liquidity_payload_raises_when_solana_context_missing(
         is_solana_enabled_mock: MagicMock,
         resolve_required_context_mock: MagicMock,
         fetch_balances_mock: MagicMock,
+        has_any_closing_positions_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
     settings_mock.PAPER_MODE = False
-    clear_pending_stablecoin_settlement()
+    has_any_closing_positions_mock.return_value = False
     is_solana_enabled_mock.return_value = True
     fetch_balances_mock.return_value = []
     resolve_required_context_mock.side_effect = BlockchainRpcUnavailableError(

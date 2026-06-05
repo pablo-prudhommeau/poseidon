@@ -4,17 +4,13 @@ from src.api.http.api_schemas import (
     TradingShadowingRegimePayload,
     TradingShadowingVerdictChroniclePayload,
     TradingShadowingVerdictChronicleBucketPayload,
-    TradingShadowingVerdictChronicleDeltaPayload,
-    TradingShadowingVerdictChronicleDeltaBucketPayload,
     TradingShadowingVerdictChronicleMetricPointPayload,
     TradingShadowingVerdictChronicleVolumePointPayload,
     TradingShadowingVerdictChronicleVerdictPointPayload,
     TradingShadowingVerdictChronicleCortexReliabilityBinPayload,
     TradingShadowingVerdictChronicleRegimeGatePointPayload,
     TradingShadowingVerdictChronicleCortexModelRolloutPayload,
-    TradingShadowingVerdictChronicleDeltaVerdictPayload,
 )
-from src.configuration.config import settings
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingSnapshot,
     TradingShadowingVerdictChronicle,
@@ -23,7 +19,6 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleCortexReliabilityBin,
     TradingShadowingVerdictChronicleMetricPoint,
     TradingShadowingVerdictChronicleRegimeGatePoint,
-    TradingShadowingVerdictChronicleVerdict,
     TradingShadowingVerdictChronicleVerdictPoint,
     TradingShadowingVerdictChronicleVolumePoint,
 )
@@ -189,89 +184,6 @@ def build_trading_shadowing_verdict_chronicle_payload(chronicle: TradingShadowin
         to_iso=format_datetime_to_local_iso(chronicle.to_datetime) or "",
         total_verdicts_considered=chronicle.total_verdicts_considered,
         source=chronicle.source,
-        series_end_lag_seconds=settings.TRADING_SHADOWING_HISTORY_SERIES_END_LAG_SECONDS,
         buckets=buckets,
         cortex_model_rollouts=cortex_model_rollouts,
-    )
-
-
-def _build_delta_verdict_payload(verdict: TradingShadowingVerdictChronicleVerdict) -> TradingShadowingVerdictChronicleDeltaVerdictPayload:
-    return TradingShadowingVerdictChronicleDeltaVerdictPayload(
-        id=verdict.id,
-        resolved_at=verdict.resolved_at,
-        realized_pnl_percentage=verdict.realized_pnl_percentage,
-        realized_pnl_usd=verdict.realized_pnl_usd,
-        is_profitable=verdict.is_profitable,
-        exit_reason=verdict.exit_reason,
-        order_notional_value_usd=verdict.order_notional_value_usd,
-        cortex_probability=verdict.cortex_probability,
-    )
-
-
-def build_trading_shadowing_verdict_chronicle_incremental_delta_payload(
-        new_chronicle: TradingShadowingVerdictChronicle,
-        new_verdicts: list[TradingShadowingVerdictChronicleVerdict],
-        previous_as_of_timestamp_milliseconds: int,
-        generated_at_iso: str,
-        as_of_iso: str,
-        from_iso: str,
-        to_iso: str,
-) -> TradingShadowingVerdictChronicleDeltaPayload:
-    buckets_payload: list[TradingShadowingVerdictChronicleDeltaBucketPayload] = []
-    global_from_timestamp_milliseconds = int(new_chronicle.from_datetime.timestamp() * 1000)
-
-    for chronicle_bucket in new_chronicle.buckets:
-        new_metrics = [
-            metric_point
-            for metric_point in chronicle_bucket.metrics
-            if metric_point.timestamp_milliseconds >= previous_as_of_timestamp_milliseconds
-        ]
-        new_volumes = [
-            volume_point
-            for volume_point in chronicle_bucket.volumes
-            if volume_point.timestamp_milliseconds >= previous_as_of_timestamp_milliseconds
-        ]
-
-        bucket_payload = TradingShadowingVerdictChronicleDeltaBucketPayload(
-            bucket_label=chronicle_bucket.bucket_label,
-            drop_metrics_before_ms=global_from_timestamp_milliseconds,
-            drop_volumes_before_ms=global_from_timestamp_milliseconds,
-            metrics_remove_timestamps_ms=[],
-            volumes_remove_timestamps_ms=[],
-            metrics_upsert=[
-                _build_metric_point_payload(metric_point)
-                for metric_point in new_metrics
-            ],
-            volumes_upsert=[
-                _build_volume_point_payload(volume_point)
-                for volume_point in new_volumes
-            ],
-            regime_gate_upsert=[
-                _build_regime_gate_point_payload(regime_gate_point)
-                for regime_gate_point in chronicle_bucket.regime_gate
-                if regime_gate_point.timestamp_milliseconds >= previous_as_of_timestamp_milliseconds
-            ],
-            verdict_cloud_replace=None,
-            cortex_reliability_diagram_replace=[
-                _build_cortex_reliability_bin_payload(cortex_reliability_bin)
-                for cortex_reliability_bin in chronicle_bucket.cortex_reliability_diagram
-            ],
-        )
-        buckets_payload.append(bucket_payload)
-
-    verdicts_payload = [
-        _build_delta_verdict_payload(verdict)
-        for verdict in new_verdicts
-    ]
-
-    return TradingShadowingVerdictChronicleDeltaPayload(
-        generated_at_iso=generated_at_iso,
-        as_of_iso=as_of_iso,
-        from_iso=from_iso,
-        to_iso=to_iso,
-        total_verdicts_considered=new_chronicle.total_verdicts_considered,
-        source="computed_incremental",
-        series_end_lag_seconds=settings.TRADING_SHADOWING_HISTORY_SERIES_END_LAG_SECONDS,
-        buckets=buckets_payload,
-        verdicts=verdicts_payload,
     )

@@ -73,10 +73,8 @@ class ProfitFactorSweepMatrixRow(BaseModel):
 
 from src.configuration.config import settings
 from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
-    chronicle_display_lag_timedelta as _chronicle_display_lag_timedelta,
     compute_profit_factor as _compute_profit_factor,
     floor_datetime_to_granularity as _floor_datetime_to_granularity,
-    series_end_datetime as _series_end_datetime,
     simple_moving_average_like_trading_shadowing_verdict_chronicle_chart as _simple_moving_average_like_trading_shadowing_verdict_chronicle_chart,
     winsorize_series_like_trading_shadowing_verdict_chronicle_chart as _winsorize_series_like_trading_shadowing_verdict_chronicle_chart,
 )
@@ -169,11 +167,10 @@ def build_sparse_profit_factor_series_for_chronicle_window(
         trailing_bucket_count: int,
         retention_days: int,
 ) -> tuple[list[float], list[datetime]]:
-    chronicle_lag_timedelta = _chronicle_display_lag_timedelta()
     global_lower_bound_datetime = series_end - timedelta(days=retention_days)
     bucket_lower_bound_datetime = max(
         global_lower_bound_datetime,
-        series_end - lookback - chronicle_lag_timedelta,
+        series_end - lookback,
     )
     bucket_upper_bound_datetime = series_end + timedelta(
         seconds=granularity_seconds * max(0, trailing_bucket_count)
@@ -433,20 +430,18 @@ def run_profit_factor_parameter_sweep(
         csv_output_path: Path | None,
 ) -> None:
     current_time = get_current_local_datetime()
-    series_end = _series_end_datetime(current_time)
-    chronicle_lag_timedelta = _chronicle_display_lag_timedelta()
     trailing_bucket_count = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
     retention_days = settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS
 
     maximum_lookback_timedelta = timedelta(days=max(lookbacks_days))
     maximum_granularity_seconds = max(granularities_seconds)
-    fetch_upper_bound = series_end + timedelta(
+    fetch_upper_bound = current_time + timedelta(
         seconds=maximum_granularity_seconds * max(0, trailing_bucket_count)
     )
-    fetch_lower_bound = series_end - maximum_lookback_timedelta - chronicle_lag_timedelta - timedelta(
+    fetch_lower_bound = current_time - maximum_lookback_timedelta - timedelta(
         minutes=5
     )
-    retention_lower_floor = series_end - timedelta(days=retention_days)
+    retention_lower_floor = current_time - timedelta(days=retention_days)
     fetch_lower_bound = min(fetch_lower_bound, retention_lower_floor)
 
     with get_database_session() as database_session:
@@ -459,8 +454,8 @@ def run_profit_factor_parameter_sweep(
         verdict_rows = materialize_trading_shadowing_verdict_rows(orm_verdicts)
 
     logger.info(
-        "[SCRIPT][SHADOWING][PF_SWEEP] Loaded verdict materialized snapshots — series_end=%s count=%d",
-        series_end.isoformat(),
+        "[SCRIPT][SHADOWING][PF_SWEEP] Loaded verdict materialized snapshots — as_of=%s count=%d",
+        current_time.isoformat(),
         len(verdict_rows),
     )
 
@@ -472,7 +467,7 @@ def run_profit_factor_parameter_sweep(
             sparse_profit_factors, ordered_bucket_starts = (
                 build_sparse_profit_factor_series_for_chronicle_window(
                     verdict_rows,
-                    series_end=series_end,
+                    series_end=current_time,
                     lookback=lookback_timedelta,
                     granularity_seconds=granularity_seconds,
                     trailing_bucket_count=trailing_bucket_count,

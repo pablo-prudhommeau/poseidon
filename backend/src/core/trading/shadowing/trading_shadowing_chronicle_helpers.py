@@ -3,18 +3,6 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta
 
-from src.configuration.config import settings
-
-
-def series_end_datetime(now_local: datetime) -> datetime:
-    delay_cutoff = now_local - timedelta(minutes=settings.TRADING_SHADOWING_HISTORY_DELAY_MINUTES)
-    lag_cutoff = now_local - timedelta(seconds=settings.TRADING_SHADOWING_HISTORY_SERIES_END_LAG_SECONDS)
-    return max(delay_cutoff, lag_cutoff)
-
-
-def chronicle_display_lag_timedelta() -> timedelta:
-    return timedelta(seconds=settings.TRADING_SHADOWING_HISTORY_SERIES_END_LAG_SECONDS)
-
 
 def to_epoch_milliseconds(target_datetime: datetime) -> int:
     return int(target_datetime.timestamp() * 1000)
@@ -24,6 +12,23 @@ def floor_datetime_to_granularity(target_datetime: datetime, granularity_seconds
     epoch_seconds = int(target_datetime.timestamp())
     floored_epoch_seconds = (epoch_seconds // granularity_seconds) * granularity_seconds
     return datetime.fromtimestamp(floored_epoch_seconds, tz=target_datetime.tzinfo)
+
+
+def iter_chronicle_display_bucket_epoch_milliseconds(
+        from_datetime: datetime,
+        as_of_datetime: datetime,
+        granularity_seconds: int,
+) -> list[int]:
+    bucket_start = floor_datetime_to_granularity(from_datetime, max(1, granularity_seconds))
+    display_end = floor_datetime_to_granularity(as_of_datetime, max(1, granularity_seconds))
+    step = timedelta(seconds=max(1, granularity_seconds))
+
+    timestamps: list[int] = []
+    cursor = bucket_start
+    while cursor <= display_end:
+        timestamps.append(to_epoch_milliseconds(cursor))
+        cursor += step
+    return timestamps
 
 
 def compute_profit_factor(gross_profit_usd: float, gross_loss_usd: float) -> float:

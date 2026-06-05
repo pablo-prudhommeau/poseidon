@@ -29,10 +29,6 @@ from src.integrations.blockchain.blockchain_free_cash_service import (
     BlockchainCashBalance,
     fetch_stablecoin_balances_for_allowed_chains,
 )
-from src.core.trading.portfolio.trading_portfolio_stablecoin_settlement_guard_service import (
-    PendingStablecoinSettlementIncompleteError,
-    should_skip_live_portfolio_for_pending_stablecoin_settlement,
-)
 from src.core.trading.portfolio.trading_portfolio_valuation_service import build_trading_portfolio_valuation
 from src.core.trading.trading_service import (
     compute_available_cash_usd,
@@ -142,13 +138,6 @@ def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[Trading
                         )
 
         if cache_rebuild_skip_reason is None:
-            live_deployable_cash_usd = _resolve_live_deployable_cash_usd_from_on_chain_balances()
-            if should_skip_live_portfolio_for_pending_stablecoin_settlement(live_deployable_cash_usd):
-                cache_rebuild_skip_reason = (
-                    "Pending stablecoin settlement after live sell — skipping equity snapshot to avoid transient spikes"
-                )
-
-        if cache_rebuild_skip_reason is None:
             portfolio_valuation = build_trading_portfolio_valuation(
                 database_session=database_session,
                 open_positions=open_positions,
@@ -223,14 +212,14 @@ def build_trading_liquidity_payload() -> TradingLiquidityPayload:
 
     blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
     live_deployable_cash_usd = sum(balance.balance_raw for balance in blockchain_balances_raw)
-    if should_skip_live_portfolio_for_pending_stablecoin_settlement(live_deployable_cash_usd):
-        if trading_cache.get_trading_liquidity_state() is not None:
-            raise CacheRealmRebuildSkipped(
-                "Pending stablecoin settlement after live sell — retaining cached liquidity payload",
-            )
-        raise PendingStablecoinSettlementIncompleteError(
-            "Pending stablecoin settlement after live sell — liquidity unavailable on cold cache",
-        )
+
+    position_is_closing = False
+    with get_database_session() as database_session:
+        position_is_closing = has_any_closing_positions(database_session)
+
+    if position_is_closing:
+        _defer_live_liquidity_rebuild_during_closing()
+
     solana_rent_breakdown = _resolve_solana_rent_breakdown_for_live_liquidity_payload()
     blockchain_balance_payloads = [
         _convert_blockchain_cash_balance_to_payload(balance, solana_rent_breakdown)
@@ -398,6 +387,25 @@ def _skip_live_portfolio_rebuild_when_cache_warm(reason: str) -> Optional[Tradin
         raise CacheRealmRebuildSkipped(reason)
     logger.warning("[TRADING][CACHE][PORTFOLIO][LIVE_GUARD] %s — no cached portfolio to retain", reason)
     return None
+
+
+def _defer_live_liquidity_rebuild_during_closing() -> None:
+    cached_liquidity = trading_cache.get_trading_liquidity_state()
+    if cached_liquidity is not None:
+        logger.debug(
+            "[TRADING][CACHE][LIQUIDITY][LIVE_GUARD] Position is currently CLOSING — "
+            "retaining cached liquidity payload to avoid transient spikes",
+        )
+        raise CacheRealmRebuildSkipped(
+            "Position is currently CLOSING — retaining cached liquidity payload to avoid transient spikes",
+        )
+    logger.debug(
+        "[TRADING][CACHE][LIQUIDITY][LIVE_GUARD] Position is currently CLOSING — "
+        "deferring liquidity rebuild until closing settles",
+    )
+    raise CacheRealmRebuildSkipped(
+        "Position is currently CLOSING — deferring liquidity rebuild until closing settles",
+    )
 
 
 def _resolve_solana_rent_breakdown_for_live_liquidity_payload() -> Optional[SolanaTokenAccountRentBreakdown]:
