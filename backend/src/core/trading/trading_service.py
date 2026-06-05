@@ -38,6 +38,21 @@ class _FifoInventoryLot:
     buy_fee_per_unit_usd: float
 
 
+def _consume_fifo_inventory_lots(
+        lots_by_token: Dict[Token, Deque[_FifoInventoryLot]],
+        token: Token,
+        quantity_to_match: float,
+) -> None:
+    remaining_quantity_to_match: float = quantity_to_match
+    while remaining_quantity_to_match > 1e-12 and lots_by_token[token]:
+        lot = lots_by_token[token][0]
+        matched_quantity = min(remaining_quantity_to_match, lot.quantity)
+        lot.quantity -= matched_quantity
+        remaining_quantity_to_match -= matched_quantity
+        if lot.quantity <= 1e-12:
+            lots_by_token[token].popleft()
+
+
 def compute_realized_profit_and_loss_totals(
         trades: Iterable[TradingTradePayload],
 ) -> tuple[float, float, float, float]:
@@ -85,6 +100,24 @@ def compute_realized_profit_and_loss_totals(
             logger.debug("[PNL][REALIZED][SKIP] token=%s reason=invalid_numeric_fields", token)
             continue
 
+        if side == "SELL" and trade.realized_profit_and_loss is not None:
+            trade_time = trade_timestamp(trade)
+            usd_contribution = decimal_from_primitive(trade.realized_profit_and_loss)
+            accumulate_realized(trade_time, usd_contribution)
+            if quantity <= 0.0:
+                logger.debug(
+                    "[PNL][REALIZED][SYNTHETIC] token=%s ledger write-off cleared fifo inventory lots",
+                    token,
+                )
+                lots_by_token[token].clear()
+            else:
+                _consume_fifo_inventory_lots(
+                    lots_by_token=lots_by_token,
+                    token=token,
+                    quantity_to_match=quantity,
+                )
+            continue
+
         if quantity <= 0.0 or unit_price_usd <= 0.0:
             logger.debug("[PNL][REALIZED][SKIP] token=%s reason=non_positive_qty_or_price", token)
             continue
@@ -100,36 +133,26 @@ def compute_realized_profit_and_loss_totals(
             )
             continue
 
-        if side == "SELL" and trade.realized_profit_and_loss is not None:
-            trade_time = trade_timestamp(trade)
-            usd_contribution = decimal_from_primitive(trade.realized_profit_and_loss)
-            accumulate_realized(trade_time, usd_contribution)
-            remaining_to_match = quantity
-            while remaining_to_match > 1e-12 and lots_by_token[token]:
-                lot = lots_by_token[token][0]
-                matched_quantity = min(remaining_to_match, lot.quantity)
-                lot.quantity -= matched_quantity
-                remaining_to_match -= matched_quantity
-                if lot.quantity <= 1e-12:
-                    lots_by_token[token].popleft()
-            continue
-
         if side == "SELL":
             sell_fee_per_unit_usd = fee_usd / quantity if quantity > 0.0 else 0.0
-            remaining_to_match = quantity
             trade_time = trade_timestamp(trade)
 
-            while remaining_to_match > 1e-12 and lots_by_token[token]:
+            remaining_quantity_to_match: float = quantity
+            while remaining_quantity_to_match > 1e-12 and lots_by_token[token]:
                 lot = lots_by_token[token][0]
-                matched_quantity = min(remaining_to_match, lot.quantity)
+                matched_quantity = min(remaining_quantity_to_match, lot.quantity)
 
-                pnl_per_unit = unit_price_usd - lot.unit_price_usd - lot.buy_fee_per_unit_usd - sell_fee_per_unit_usd
-                pnl_contribution = decimal_from_primitive(matched_quantity) * decimal_from_primitive(pnl_per_unit)
+                profit_and_loss_per_unit = (
+                    unit_price_usd - lot.unit_price_usd - lot.buy_fee_per_unit_usd - sell_fee_per_unit_usd
+                )
+                profit_and_loss_contribution = (
+                    decimal_from_primitive(matched_quantity) * decimal_from_primitive(profit_and_loss_per_unit)
+                )
 
-                accumulate_realized(trade_time, pnl_contribution)
+                accumulate_realized(trade_time, profit_and_loss_contribution)
 
                 lot.quantity -= matched_quantity
-                remaining_to_match -= matched_quantity
+                remaining_quantity_to_match -= matched_quantity
                 if lot.quantity <= 1e-12:
                     lots_by_token[token].popleft()
 
