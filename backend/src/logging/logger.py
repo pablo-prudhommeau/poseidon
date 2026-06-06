@@ -4,10 +4,10 @@ import logging
 import os
 import sys
 import time
-from logging.handlers import TimedRotatingFileHandler
 from typing import Optional
 
 from src.configuration.config import settings
+from src.logging.logging_gzip_timed_rotating_handler import PoseidonGzipTimedRotatingFileHandler
 
 console_color_codes = {
     "RESET": "\033[0m",
@@ -165,14 +165,14 @@ def install_timed_rotating_file_handler(application_logger: logging.Logger) -> N
         return
 
     for handler in application_logger.handlers:
-        if isinstance(handler, TimedRotatingFileHandler):
+        if isinstance(handler, PoseidonGzipTimedRotatingFileHandler):
             return
 
     log_directory_path = settings.LOG_DIRECTORY
     os.makedirs(log_directory_path, exist_ok=True)
     log_file_path = os.path.join(log_directory_path, application_log_file_name)
 
-    file_handler = TimedRotatingFileHandler(
+    file_handler = PoseidonGzipTimedRotatingFileHandler(
         filename=log_file_path,
         when=settings.LOG_FILE_ROTATION_WHEN,
         backupCount=settings.LOG_FILE_BACKUP_COUNT,

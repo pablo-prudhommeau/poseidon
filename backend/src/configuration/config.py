@@ -57,7 +57,7 @@ class Settings:
     LOG_LEVEL_CONSOLE: str = os.getenv("LOG_LEVEL_CONSOLE", "INFO").upper()
     LOG_LEVEL_FILE: str = os.getenv("LOG_LEVEL_FILE", "DEBUG").upper()
     LOG_FILE_ROTATION_WHEN: str = os.getenv("LOG_FILE_ROTATION_WHEN", "midnight")
-    LOG_FILE_BACKUP_COUNT: int = int(os.getenv("LOG_FILE_BACKUP_COUNT", "90"))
+    LOG_FILE_BACKUP_COUNT: int = int(os.getenv("LOG_FILE_BACKUP_COUNT", "30"))
     LOG_TO_FILE_ENABLED: bool = _as_bool(os.getenv("LOG_TO_FILE_ENABLED"), True)
     LOG_LEVEL_LIB_REQUESTS: str = os.getenv("LOG_LEVEL_LIB_REQUESTS", "WARNING").upper()
     LOG_LEVEL_LIB_URLLIB3: str = os.getenv("LOG_LEVEL_LIB_URLLIB3", "WARNING").upper()
