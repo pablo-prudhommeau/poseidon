@@ -5,8 +5,15 @@
 venv
 **/__pycache__
 **/*.pyc
+**/.mypy_cache
+**/.mypy_cache/**
+**/.pytest_cache
+**/.pytest_cache/**
 frontend/node_modules
-frontend/dist
 backend/data
+backend/tests
+optional-dependencies
 examples
 *.log
+.mypy_cache
+.pytest_cache

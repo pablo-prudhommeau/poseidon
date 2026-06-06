@@ -3,20 +3,16 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import Optional, cast
-
-from playwright.sync_api import (
-    sync_playwright,
-    TimeoutError as PlaywrightTimeoutError,
-    ViewportSize,
-    Page,
-)
+from typing import TYPE_CHECKING, Optional, cast
 
 from src.configuration.config import settings
 from src.core.ai.chart_structures import ChartCaptureResult, ChartCacheEntry
 from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page, ViewportSize
 
 logger = get_application_logger(__name__)
 
@@ -183,6 +179,8 @@ class ChartCaptureService:
             time_interval: Optional[str],
             timeout_in_seconds: int,
     ) -> bytes:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
+
         logger.debug("[AI][CHART][CAPTURE][BROWSER] Initiating headless browser navigation to %s", target_url)
 
         with sync_playwright() as playwright_context_manager:
@@ -202,7 +200,7 @@ class ChartCaptureService:
             try:
                 browser_context = headless_browser.new_context(
                     viewport=cast(
-                        ViewportSize,
+                        "ViewportSize",
                         {
                             "width": int(settings.CHART_CAPTURE_VIEWPORT_WIDTH),
                             "height": int(settings.CHART_CAPTURE_VIEWPORT_HEIGHT),
@@ -276,7 +274,7 @@ class ChartCaptureService:
         current_timestamp = time.time()
         cached_capture_entry = self._screenshots_cache.get(chart_cache_key)
 
-        if cached_capture_entry and (current_timestamp - cached_capture_entry.timestamp) < settings.CHART_AI_MIN_CACHE_SECONDS:
+        if cached_capture_entry and (current_timestamp - cached_capture_entry.timestamp) < settings.CHART_AI_VISION_MIN_CACHE_SECONDS:
             logger.info("[AI][CHART][CAPTURE][CACHE] Returning cached chart image hit for cache key %s", chart_cache_key)
             return ChartCaptureResult(
                 png_bytes=cached_capture_entry.png_bytes,
@@ -301,7 +299,7 @@ class ChartCaptureService:
                 timeout_in_seconds=capture_timeout_in_seconds,
             )
 
-            if settings.CHART_AI_SAVE_SCREENSHOTS:
+            if settings.CHART_AI_VISION_SAVE_SCREENSHOTS:
                 persisted_file_path = self._persist_screenshot_to_disk(
                     captured_png_payload,
                     sanitized_identifier=sanitized_token_identifier,

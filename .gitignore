@@ -7,8 +7,15 @@ __pycache__/
 !.idea/prettier.xml
 !.idea/biome.xml
 *.iws
-backend/data
-logs/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+backend/data
+
+db/
+logs/
+models/
+memray/
+screenshots/
+optional-dependencies/

@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime-optional-bootstrap
     image: poseidon:local
     container_name: poseidon
     restart: unless-stopped
@@ -16,12 +17,13 @@ services:
       - ./models:/app/backend/data/models
       - ./memray:/app/backend/data/memray
       - ./screenshots:/app/data/screenshots
+      - ./optional-dependencies:/app/backend/data/optional-dependencies
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1/api/health"]
       interval: 20s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 600s
     logging:
       driver: json-file
       options:

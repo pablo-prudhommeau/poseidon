@@ -133,6 +133,7 @@ TRADING_ENABLED=true
 ### 2. Launch with docker
 
 ```bash
+cd frontend && npm ci && npm run build:prod && cd ..
 docker compose up --build
 ```
 
@@ -143,26 +144,19 @@ The local Docker stack now starts:
 - automatic Alembic migration during container startup
 - an internal FastAPI backend proxied by nginx and supervised by `supervisord`
 
-### 3. Production-style single image
+### 3. Docker image variants
 
-For integration / production-style deployments, the repository now ships a single multi-stage `Dockerfile` at the root.
-
-It builds the Angular frontend, packages the FastAPI backend, serves static assets through nginx, launches nginx and the backend through `supervisord`, and expects PostgreSQL to be provided externally.
-
-The generic single-image compose file for remote hosts lives at:
-
-```bash
-deploy/docker-compose.integration.yml
-```
-
-This file is intentionally generic: the same image can be deployed multiple times with different `.env` files, secrets, flags, and database URLs.
+| Docker target | CI trigger | Purpose |
+| :------------ | :--------- | :------ |
+| `runtime-optional-bootstrap` | `develop` branch | Core runtime (~570 MB). Optional packs install at startup via strict bootstrap when enabled in `.env`. Auto-deployed to integration. |
+| `runtime-optional-baked` | semver tag on `main` (e.g. `0.1.0`) | Optional dependencies pre-installed in image layers. No bootstrap, no external apt/pip at runtime. Manual production deploy. |
 
 ### 4. Temporary memory profiling with Memray
 
 The production image can temporarily run the backend under `memray` by enabling:
 
 ```bash
-POSEIDON_MEMRAY_ENABLED=true
+MEMRAY_ENABLED=true
 ```
 
 Mount `/app/backend/data/memray` as a volume to keep the generated profile outside the container, then generate a flamegraph with:
@@ -171,7 +165,7 @@ Mount `/app/backend/data/memray` as a volume to keep the generated profile outsi
 docker exec poseidon memray flamegraph /app/backend/data/memray/memory_profile.bin -o /app/backend/data/memray/memory_profile.html
 ```
 
-Disable `POSEIDON_MEMRAY_ENABLED` after the investigation; it is intended for temporary diagnostics only.
+Disable `MEMRAY_ENABLED` after the investigation; it is intended for temporary diagnostics only.
 
 ---
 

@@ -4,7 +4,7 @@ import time
 from typing import Optional
 
 from src.configuration.config import settings
-from src.core.ai.chart_capture import ChartCaptureService, ChartCaptureError
+from src.core.ai.chart_capture import ChartCaptureError, ChartCaptureService
 from src.core.ai.chart_openai_client import ChartOpenAiClient
 from src.core.ai.chart_structures import (
     ChartAiSignal,
@@ -20,10 +20,20 @@ logger = get_application_logger(__name__)
 
 class ChartAiSignalProvider:
     def __init__(self) -> None:
-        self._capture_service = ChartCaptureService()
-        self._openai_client = ChartOpenAiClient()
+        self._capture_service: Optional[ChartCaptureService] = None
+        self._openai_client: Optional[ChartOpenAiClient] = None
         self._request_window_timestamps: list[float] = []
         self._signal_cache: dict[str, ChartSignalCacheEntry] = {}
+
+    def _get_capture_service(self) -> ChartCaptureService:
+        if self._capture_service is None:
+            self._capture_service = ChartCaptureService()
+        return self._capture_service
+
+    def _get_openai_client(self) -> ChartOpenAiClient:
+        if self._openai_client is None:
+            self._openai_client = ChartOpenAiClient()
+        return self._openai_client
 
     def _is_rate_limit_exceeded(self) -> bool:
         current_time = time.time()
@@ -32,7 +42,7 @@ class ChartAiSignalProvider:
             if current_time - request_timestamp < 60.0
         ]
 
-        if len(self._request_window_timestamps) >= int(settings.CHART_AI_MAX_REQUESTS_PER_MINUTE):
+        if len(self._request_window_timestamps) >= int(settings.CHART_AI_VISION_MAX_REQUESTS_PER_MINUTE):
             return True
 
         self._request_window_timestamps.append(current_time)
@@ -52,7 +62,7 @@ class ChartAiSignalProvider:
         current_timestamp = time.time()
 
         cached_entry = self._signal_cache.get(cache_lookup_key)
-        if cached_entry and (current_timestamp - cached_entry.timestamp) < float(settings.CHART_AI_MIN_CACHE_SECONDS):
+        if cached_entry and (current_timestamp - cached_entry.timestamp) < float(settings.CHART_AI_VISION_MIN_CACHE_SECONDS):
             logger.debug("[AI][SIGNAL][PROVIDER][CACHE] Cache hit for %s", cache_lookup_key)
             return cached_entry.signal
 
@@ -61,7 +71,7 @@ class ChartAiSignalProvider:
             return None
 
         try:
-            capture_result: ChartCaptureResult = self._capture_service.capture_chart_png(
+            capture_result: ChartCaptureResult = self._get_capture_service().capture_chart_png(
                 symbol=symbol,
                 chain=chain,
                 pair_address=pair_address,
@@ -73,7 +83,7 @@ class ChartAiSignalProvider:
             logger.exception("[AI][SIGNAL][PROVIDER][CAPTURE] Market chart capture failed for %s", cache_lookup_key, exception)
             return None
 
-        ai_analysis: Optional[ChartAiOutput] = self._openai_client.analyze_chart_vision(
+        ai_analysis: Optional[ChartAiOutput] = self._get_openai_client().analyze_chart_ai_vision(
             screenshot_bytes=capture_result.png_bytes,
             symbol=symbol,
             chain=chain,

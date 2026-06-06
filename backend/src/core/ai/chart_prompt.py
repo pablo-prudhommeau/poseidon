@@ -39,7 +39,7 @@ def build_chartist_user_prompt(
 
 def chartist_json_schema() -> Dict[str, Any]:
     return {
-        "name": "chart_ai_signal",
+        "name": "chart_ai_vision_signal",
         "schema": {
             "type": "object",
             "additionalProperties": False,

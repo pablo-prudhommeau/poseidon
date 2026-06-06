@@ -1,25 +1,3 @@
-python-dotenv==1.2.2
-requests==2.33.0
-websockets==15.0.1
-colorama==0.4.6
-pytz==2025.2
-certifi==2025.8.3
-beautifulsoup4==4.12.3
-fastapi==0.128.3
-starlette==0.49.1
-uvicorn==0.30.6
-SQLAlchemy==2.0.35
-alembic==1.18.4
-psycopg[binary]==3.3.4
-Jinja2==3.1.6
-pydantic==2.9.2
-httpx==0.28.1
-playwright==1.55.0
-openai==2.0.0
-web3==7.13.0
-eth-account==0.13.7
-solana==0.36.9
-base58==2.1.1
-bip_utils==2.12.1
-numpy==2.4.4
-xgboost==3.2.0
+-r requirements-core.txt
+-r requirements-chart-ai-vision.txt
+-r requirements-cortex.txt

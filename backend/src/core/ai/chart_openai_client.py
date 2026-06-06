@@ -26,7 +26,7 @@ class ChartOpenAiClient:
 
         self._openai_internal_client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    def analyze_chart_vision(
+    def analyze_chart_ai_vision(
             self,
             screenshot_bytes: bytes,
             symbol: Optional[str],

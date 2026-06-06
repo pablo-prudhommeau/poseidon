@@ -1,0 +1,4 @@
+CHART_AI_VISION_PACK_NAME="chart-ai-vision"
+CHART_AI_VISION_PACK_VERSION="playwright-1.55.0"
+CORTEX_PACK_NAME="cortex"
+CORTEX_PACK_VERSION="xgboost-3.2.0-cpu"

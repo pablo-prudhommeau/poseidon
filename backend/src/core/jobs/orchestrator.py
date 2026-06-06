@@ -7,7 +7,6 @@ from src.configuration.config import settings
 from src.core.jobs.aave_sentinel_job import AaveSentinelJob
 from src.core.jobs.dca_job import DcaJob
 from src.core.jobs.job_structures import BackgroundJobsRuntimeStatus
-from src.core.jobs.trading_cortex_training_job import TradingCortexTrainingJob
 from src.core.jobs.trading_cycle_job import TradingCycleJob
 from src.core.jobs.trading_position_guard_job import TradingPositionGuardJob
 from src.core.jobs.trading_shadowing_job import TradingShadowingJob
@@ -80,6 +79,7 @@ def start_background_jobs() -> None:
         logger.info("[ORCHESTRATOR][DCA_JOB] DCA disabled in settings, task not scheduled")
 
     if settings.TRADING_CORTEX_ENABLED:
+        from src.core.jobs.trading_cortex_training_job import TradingCortexTrainingJob
         _trading_cortex_training_task = event_loop.create_task(TradingCortexTrainingJob().run_loop())
         logger.info(
             "[ORCHESTRATOR][TRADING][CORTEX][TRAINING] Scheduled task started (interval=%ss)",
