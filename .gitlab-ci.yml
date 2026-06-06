@@ -17,84 +17,81 @@ stages:
   - container_scan
   - deploy
 
-cache:
-  paths:
-    - .cache/pip
-    - .cache/npm
-
 workflow:
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_REF_NAME
 
-frontend:prepare:
+.frontend_npm_cache: &frontend_npm_cache
+  key:
+    files:
+      - frontend/package-lock.json
+  paths:
+    - frontend/node_modules/
+    - .cache/npm
+
+.backend_pip_cache: &backend_pip_cache
+  key:
+    files:
+      - backend/requirements-core.txt
+  paths:
+    - .cache/pip
+
+.backend_test_pip_cache: &backend_test_pip_cache
+  key:
+    files:
+      - backend/requirements-core.txt
+      - backend/requirements-cortex.txt
+  paths:
+    - .cache/pip
+
+frontend:lint:
   image: node:24-bullseye
   stage: validate
+  cache:
+    <<: *frontend_npm_cache
+    policy: pull-push
   script:
     - cd frontend
     - npm ci
-  artifacts:
-    paths:
-      - frontend/node_modules/
-    expire_in: 1 hour
-  cache:
-    key:
-      files:
-        - frontend/package-lock.json
-    paths:
-      - .cache/npm
+    - npm run lint
 
-frontend:lint-and-build:
+frontend:build:
   image: node:24-bullseye
   stage: validate
   needs:
-    - frontend:prepare
+    - frontend:lint
+  cache:
+    <<: *frontend_npm_cache
+    policy: pull-push
   script:
     - cd frontend
-    - npm run lint
+    - npm ci
     - npm run build:prod
   artifacts:
     paths:
       - frontend/dist/
     expire_in: 1 hour
 
-backend:prepare:
-  image: python:3.11-slim
-  stage: validate
-  script:
-    - python -m pip install --upgrade pip
-    - python -m venv .venv
-    - .venv/bin/pip install -r backend/requirements-core.txt ruff pytest pip-audit
-  artifacts:
-    paths:
-      - .venv/
-    expire_in: 1 hour
-  cache:
-    key:
-      files:
-        - backend/requirements-core.txt
-    paths:
-      - .cache/pip
-
 backend:lint:
   image: python:3.11-slim
   stage: validate
-  needs:
-    - backend:prepare
-  before_script:
-    - export PATH="$CI_PROJECT_DIR/.venv/bin:$PATH"
+  cache:
+    <<: *backend_pip_cache
   script:
+    - python -m pip install --upgrade pip
+    - pip install -r backend/requirements-core.txt ruff
     - ruff check backend/src backend/tests
 
 backend:test:
   image: python:3.11-slim
   stage: validate
-  needs:
-    - backend:prepare
-  before_script:
-    - export PATH="$CI_PROJECT_DIR/.venv/bin:$PATH"
+  cache:
+    <<: *backend_test_pip_cache
   script:
+    - python -m pip install --upgrade pip
+    - pip install -r backend/requirements-core.txt -r backend/requirements-cortex.txt pytest
     - export PYTHONPATH="$CI_PROJECT_DIR/backend"
     - pytest backend/tests
 
@@ -119,20 +116,24 @@ frontend:dependency-audit:
   image: node:24-bullseye
   stage: scan
   needs:
-    - frontend:prepare
+    - frontend:build
+  cache:
+    <<: *frontend_npm_cache
+    policy: pull
   script:
     - cd frontend
+    - npm ci
     - npm audit --audit-level=high --omit=dev
   allow_failure: true
 
 backend:dependency-audit:
   image: python:3.11-slim
   stage: scan
-  needs:
-    - backend:prepare
-  before_script:
-    - export PATH="$CI_PROJECT_DIR/.venv/bin:$PATH"
+  cache:
+    <<: *backend_pip_cache
   script:
+    - python -m pip install --upgrade pip
+    - pip install -r backend/requirements-core.txt pip-audit
     - pip-audit -r backend/requirements-core.txt
   allow_failure: true
 
@@ -148,16 +149,15 @@ backend:dependency-audit:
         - "--tls=false"
   stage: build
   needs:
-    - frontend:lint-and-build
+    - frontend:build
     - backend:lint
     - backend:test
   before_script:
     - until docker info >/dev/null 2>&1; do echo "Waiting for Docker daemon..."; sleep 2; done
     - docker login -u "$DOCKER_REPOSITORY_USERNAME" -p "$DOCKER_REPOSITORY_PASSWORD" "$DOCKER_REPOSITORY_HOSTNAME"
     - docker pull "$POSEIDON_IMAGE:develop" || true
-    - docker pull "$POSEIDON_IMAGE:buildcache" || true
 
-docker:build:runtime-optional-bootstrap:
+docker:build:slim:
   extends: .docker_build_template
   rules:
     - if: '$CI_COMMIT_REF_NAME == "develop" || $CI_COMMIT_BRANCH == "develop"'
@@ -165,11 +165,9 @@ docker:build:runtime-optional-bootstrap:
     - export IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
     - |
       docker build \
-        --target runtime-optional-bootstrap \
+        --target slim \
         --build-arg BUILDKIT_INLINE_CACHE=1 \
         --cache-from "$POSEIDON_IMAGE:develop" \
-        --cache-from "$POSEIDON_IMAGE:buildcache" \
-        --cache-to type=registry,ref=$POSEIDON_IMAGE:buildcache,mode=max \
         -t "$POSEIDON_IMAGE:$IMAGE_TAG" \
         -t "$POSEIDON_IMAGE:develop" \
         .
@@ -177,7 +175,7 @@ docker:build:runtime-optional-bootstrap:
     - docker push "$POSEIDON_IMAGE:$IMAGE_TAG"
     - docker push "$POSEIDON_IMAGE:develop"
 
-docker:build:runtime-optional-baked:
+docker:build:full:
   extends: .docker_build_template
   rules:
     - if: '$CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+$/'
@@ -185,11 +183,9 @@ docker:build:runtime-optional-baked:
     - export RELEASE_TAG="$CI_COMMIT_TAG"
     - |
       docker build \
-        --target runtime-optional-baked \
+        --target full \
         --build-arg BUILDKIT_INLINE_CACHE=1 \
         --cache-from "$POSEIDON_IMAGE:develop" \
-        --cache-from "$POSEIDON_IMAGE:buildcache" \
-        --cache-to type=registry,ref=$POSEIDON_IMAGE:buildcache,mode=max \
         -t "$POSEIDON_IMAGE:$RELEASE_TAG" \
         -t "$POSEIDON_IMAGE:$CI_COMMIT_SHORT_SHA" \
         .
@@ -197,26 +193,26 @@ docker:build:runtime-optional-baked:
     - docker push "$POSEIDON_IMAGE:$RELEASE_TAG"
     - docker push "$POSEIDON_IMAGE:$CI_COMMIT_SHORT_SHA"
 
-container:scan:runtime-optional-bootstrap:
+container:scan:slim:
   image:
     name: aquasec/trivy:latest
     entrypoint: [""]
   stage: container_scan
   needs:
-    - docker:build:runtime-optional-bootstrap
+    - docker:build:slim
   rules:
     - if: '$CI_COMMIT_REF_NAME == "develop" || $CI_COMMIT_BRANCH == "develop"'
   script:
     - trivy image --username "$DOCKER_REPOSITORY_USERNAME" --password "$DOCKER_REPOSITORY_PASSWORD" --severity HIGH,CRITICAL --ignore-unfixed "$POSEIDON_IMAGE:$CI_COMMIT_SHORT_SHA"
   allow_failure: true
 
-container:scan:runtime-optional-baked:
+container:scan:full:
   image:
     name: aquasec/trivy:latest
     entrypoint: [""]
   stage: container_scan
   needs:
-    - docker:build:runtime-optional-baked
+    - docker:build:full
   rules:
     - if: '$CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+$/'
   script:
@@ -227,7 +223,7 @@ continuous-delivery:integration:
   image: alpine:3.21
   stage: deploy
   needs:
-    - docker:build:runtime-optional-bootstrap
+    - docker:build:slim
   environment:
     name: integration
   rules:

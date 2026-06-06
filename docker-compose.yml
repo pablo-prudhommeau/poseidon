@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime-optional-bootstrap
+      target: slim
     image: poseidon:local
     container_name: poseidon
     restart: unless-stopped

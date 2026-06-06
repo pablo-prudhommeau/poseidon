@@ -148,8 +148,8 @@ The local Docker stack now starts:
 
 | Docker target | CI trigger | Purpose |
 | :------------ | :--------- | :------ |
-| `runtime-optional-bootstrap` | `develop` branch | Core runtime (~570 MB). Optional packs install at startup via strict bootstrap when enabled in `.env`. Auto-deployed to integration. |
-| `runtime-optional-baked` | semver tag on `main` (e.g. `0.1.0`) | Optional dependencies pre-installed in image layers. No bootstrap, no external apt/pip at runtime. Manual production deploy. |
+| `slim` | `develop` branch | Core runtime (~570 MB). Optional packs install at startup via strict bootstrap when enabled in `.env`. Auto-deployed to integration. |
+| `full` | semver tag on `main` (e.g. `0.1.0`) | Optional dependencies pre-installed in image layers. No bootstrap, no external apt/pip at runtime. Manual production deploy. |
 
 ### 4. Temporary memory profiling with Memray
 

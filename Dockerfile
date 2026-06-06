@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS runtime-optional-bootstrap
+FROM python:3.11-slim AS slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -56,7 +56,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=5 CMD curl
 ENTRYPOINT ["/app/deploy/entrypoint.sh"]
 
 
-FROM runtime-optional-bootstrap AS runtime-optional-baked
+FROM slim AS full
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 CMD curl -fsS http://127.0.0.1/api/health || exit 1
 
