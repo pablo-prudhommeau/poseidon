@@ -14,9 +14,9 @@ from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures im
     TradingWalletMaintenanceChainGasResult,
     TradingWalletMaintenanceOperationStatus,
 )
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_free_cash_service import (
     _fetch_solana_stablecoin_balance,
-    _get_stablecoin_address_for_blockchain,
 )
 from src.integrations.blockchain.blockchain_rpc_registry import (
     resolve_rpc_url_for_chain,
@@ -24,11 +24,11 @@ from src.integrations.blockchain.blockchain_rpc_registry import (
 from src.integrations.blockchain.solana.blockchain_solana_signer import (
     build_default_solana_signer,
 )
+from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.integrations.blockchain.solana.solana_rpc_client import (
     fetch_solana_native_balance_lamports,
     format_lamports_as_sol_text,
     poll_solana_native_balance_after_increase,
-    resolve_sol_usd_price,
 )
 from src.integrations.blockchain.solana.solana_structures import SOLANA_WRAPPED_SOL_MINT
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
@@ -125,7 +125,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
             native_balance_after_lamports=native_balance_before_lamports,
         )
 
-    sol_usd_price = resolve_sol_usd_price(rpc_url)
+    sol_usd_price = resolve_sol_usd_price()
     if sol_usd_price is None or sol_usd_price <= 0.0:
         logger.warning(
             "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] SOL/USD price unavailable — "
@@ -140,23 +140,18 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
             native_balance_before_lamports=native_balance_before_lamports,
         )
 
-    stablecoin_address = _get_stablecoin_address_for_blockchain(blockchain_network)
+    stablecoin_address = resolve_stablecoin_address_for_blockchain(blockchain_network)
     stablecoin_balance = _fetch_solana_stablecoin_balance(
         rpc_url, wallet_address, stablecoin_address
     )
-    available_stablecoin_usd = max(
-        0.0, stablecoin_balance - settings.TRADING_MIN_FREE_CASH_USD
-    )
-    if available_stablecoin_usd <= 0.0:
+    if stablecoin_balance <= 0.0:
         logger.warning(
             "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill blocked — "
             "blockchain_network=%s wallet_address=%s stablecoin_balance_usd=%s "
-            "min_free_cash_buffer_usd=%s available_stablecoin_usd=%s reason=insufficient_stablecoin_for_refill",
+            "reason=insufficient_stablecoin_for_refill",
             blockchain_network.value,
             wallet_address,
             _format_stablecoin_usd_text(stablecoin_balance),
-            _format_stablecoin_usd_text(settings.TRADING_MIN_FREE_CASH_USD),
-            _format_stablecoin_usd_text(available_stablecoin_usd),
         )
         return TradingWalletMaintenanceChainGasResult(
             blockchain_network=blockchain_network,
@@ -168,7 +163,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     required_stablecoin_usd = (
         float(refill_delta_lamports) / 1_000_000_000.0
     ) * sol_usd_price
-    stablecoin_spend_usd = min(required_stablecoin_usd, available_stablecoin_usd)
+    stablecoin_spend_usd = min(required_stablecoin_usd, stablecoin_balance)
     stablecoin_spend_raw = int(stablecoin_spend_usd * (10**SOLANA_STABLECOIN_DECIMALS))
     if stablecoin_spend_raw <= 0:
         logger.warning(
@@ -188,16 +183,14 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
     logger.info(
         "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Starting native SOL refill via stablecoin swap for %d cycles "
         "of 4 operations per position (ATA + entry + TP1 + TP2/SL) — blockchain_network=%s wallet_address=%s max_open_positions=%d "
-        "native_balance_before=%s refill_target=%s stablecoin_spend_usd=%s "
-        "min_free_cash_buffer_usd=%s",
-        settings.TRADING_SOLANA_GAS_MINIMUM_CYCLE_NUMBER,
+        "native_balance_before=%s refill_target=%s stablecoin_spend_usd=%s",
+        settings.TRADING_GAS_MINIMUM_CYCLE_NUMBER,
         blockchain_network.value,
         wallet_address,
         budget_snapshot.max_open_positions,
         format_lamports_as_sol_text(native_balance_before_lamports),
         format_lamports_as_sol_text(budget_snapshot.refill_target_lamports),
         _format_stablecoin_raw_as_usd_text(stablecoin_spend_raw),
-        _format_stablecoin_usd_text(settings.TRADING_MIN_FREE_CASH_USD),
     )
 
     slippage_basis_points = int(settings.TRADING_SLIPPAGE_TOLERANCE * 10000)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -111,6 +111,7 @@ class TradingPortfolio(BaseModel):
     deployable_cash_usd: float
     holdings_mark_to_market_usd: float
     wallet_auxiliary_assets_usd: float
+    total_gas_refill_locked_stablecoin_usd: float
     sizing_capital_usd: float
     cumulative_swap_fees_usd: float
     created_at: datetime
@@ -120,3 +121,25 @@ class TradingPortfolio(BaseModel):
     realized_profit_and_loss_7d: float = 0.0
     realized_profit_and_loss_30d: float = 0.0
     realized_profit_and_loss_total: float = 0.0
+
+
+class TradingConfigurationError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class GasRefillBudgetDetailScope(str, enum.Enum):
+    SOLANA_WITH_TOKEN_ACCOUNT_RENT = "solana_with_token_account_rent"
+    EVM_SWAP_FEES_ONLY = "evm_swap_fees_only"
+
+
+class TradingApplicationBootConfigurationSettings(Protocol):
+    TRADING_ALLOWED_CHAINS: list[str]
+    TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str]
+    PAPER_MODE: bool
+    WALLET_MNEMONIC: str
+    WALLET_DERIVATION_INDEX: int
+    TRADING_STABLECOIN_ADDRESS_SOLANA: str
+    TRADING_STABLECOIN_ADDRESS_BSC: str
+    TRADING_STABLECOIN_ADDRESS_BASE: str
+    TRADING_STABLECOIN_ADDRESS_AVALANCHE: str

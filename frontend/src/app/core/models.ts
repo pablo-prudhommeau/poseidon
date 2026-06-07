@@ -254,16 +254,39 @@ export interface SolanaTokenAccountRentPayload {
     pending_reclaim_account_count: number;
 }
 
+export type GasRefillBudgetDetailScope = 'solana_with_token_account_rent' | 'evm_swap_fees_only';
+
+export interface GasRefillLockedBreakdownPayload {
+    per_position_cycle_cost_usd: number;
+    per_position_cycle_cost_native_raw: number;
+    max_open_positions: number;
+    portfolio_cycle_cost_usd: number;
+    portfolio_cycle_cost_native_raw: number;
+    refill_target_cycle_count: number;
+    refill_target_budget_usd: number;
+    refill_target_budget_native_raw: number;
+    native_gas_balance_usd: number;
+    native_gas_balance_raw: number;
+    refill_trigger_cycle_count: number;
+    refill_trigger_threshold_usd: number;
+    refill_trigger_threshold_native_raw: number;
+    locked_stablecoin_usd: number;
+}
+
 export interface BlockchainCashBalancePayload {
     blockchain_network: string;
     stablecoin_symbol: string;
     stablecoin_address: string;
+    wallet_address: string;
     stablecoin_currency_symbol: string;
     balance_raw: number;
     native_token_symbol: string;
     native_token_balance_raw: number;
     native_token_balance_usd: number;
     solana_token_account_rent?: SolanaTokenAccountRentPayload;
+    gas_refill_locked_stablecoin_usd: number;
+    gas_refill_locked_breakdown?: GasRefillLockedBreakdownPayload;
+    gas_refill_budget_detail_scope?: GasRefillBudgetDetailScope;
 }
 
 export interface TradingLiquidityPayload {
@@ -280,6 +303,7 @@ export interface TradingPortfolioPayload {
     deployable_cash_usd: number;
     holdings_mark_to_market_usd: number;
     wallet_auxiliary_assets_usd: number;
+    total_gas_refill_locked_stablecoin_usd: number;
     sizing_capital_usd: number;
     cumulative_swap_fees_usd: number;
     created_at: string;

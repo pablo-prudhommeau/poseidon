@@ -273,7 +273,7 @@ def _build_onchain_prices_for_tokens(
             price_usd,
         )
 
-    logger.info(
+    logger.debug(
         "[BLOCKCHAIN][PRICE][SERVICE] Resolved %d / %d token prices",
         len(resolved_pair_address_prices),
         len(tokens_requiring_price),

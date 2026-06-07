@@ -36,15 +36,23 @@
                             <span class="trading-overview-label">wallet reserve</span>
                             <span class="trading-overview-footer-value">—</span>
                         } @else {
-                            <span class="trading-overview-label cursor-help" [pTooltip]="walletReserveTooltipHtml()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact">wallet reserve</span>
-                            <span class="trading-overview-footer-value cursor-help" [pTooltip]="walletReserveTooltipHtml()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact">{{ walletReserve() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                            <span class="trading-overview-label cursor-help" [pTooltip]="walletReserveTooltipHtml" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact">wallet reserve</span>
+                            <span class="trading-overview-footer-value cursor-help" [pTooltip]="walletReserveTooltipHtml" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact">{{ walletReserve() | optionalNumber: '1.2-2' : '$ ' }}</span>
                         }
                     </div>
                     <div class="trading-overview-footer-cell trading-overview-footer-cell-divider">
-                        <span class="trading-overview-label">positions</span>
-                        <span class="trading-overview-footer-value">{{ openPositionCount() }}</span>
+                        @if (isPaperMode()) {
+                            <span class="trading-overview-label">locked</span>
+                            <span class="trading-overview-footer-value">—</span>
+                        } @else {
+                            <span class="trading-overview-label cursor-help" [pTooltip]="portfolioLockedTooltipHtml()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact">locked</span>
+                            <span class="trading-overview-footer-value cursor-help" [pTooltip]="portfolioLockedTooltipHtml()" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact">{{ totalGasRefillLockedStablecoin() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                        }
                     </div>
-                    <div class="trading-overview-footer-cell trading-overview-footer-cell-divider trading-overview-footer-cell-edge-end trading-overview-footer-cell-empty" aria-hidden="true"></div>
+                    <div class="trading-overview-footer-cell trading-overview-footer-cell-divider trading-overview-footer-cell-edge-end">
+                        <span class="trading-overview-label">positions</span>
+                        <span class="trading-overview-footer-value">{{ displayOpenPositionCount() }}</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -65,12 +73,12 @@
                 {{ realizedTotal() | optionalNumber: '1.2-2' : '$ ' }}
             </div>
             <div class="trading-overview-subtitle mt-1">realized cumulative</div>
-            <div class="mt-2 h-10 flex items-center">
-                <div class="trading-overview-swap-fees-inline cursor-help" [pTooltip]="swapFeesTooltipHtml" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-compact">
-                    <i class="fa fa-right-left trading-overview-swap-fees-icon" aria-hidden="true"></i>
-                    <span class="trading-overview-label">swap fees</span>
-                    <span class="trading-overview-footer-value">{{ cumulativeSwapFees() | optionalNumber: '1.2-2' : '$ ' }}</span>
+            <div class="mt-2 h-10 flex items-center justify-between gap-2 cursor-help" [pTooltip]="swapFeesTooltipHtml" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
+                <div class="trading-overview-subtitle flex items-center gap-1.5 leading-none">
+                    <i class="fa fa-right-left" aria-hidden="true"></i>
+                    <span>incl. swap fees</span>
                 </div>
+                <span class="trading-overview-footer-value">{{ cumulativeSwapFees() | optionalNumber: '1.2-2' : '- $ ' }}</span>
             </div>
 
             <div class="trading-overview-card-footer">
@@ -100,12 +108,7 @@
 
         <div class="sm:col-span-2 xl:col-span-2 p-4 rounded-2xl bg-black/20 border border-cyan-500/20 backdrop-blur-2xl shadow-xl flex flex-col transition-all hover:border-cyan-500/30">
             <div class="flex justify-between items-center h-7 mb-3">
-                <div class="flex items-center gap-2">
-                    <span class="trading-overview-title text-cyan-300/80">{{ liquidityTitle() }}</span>
-                    @if (blockchainBalances().length > 0) {
-                        <span class="px-2 py-1 rounded-lg border text-[8px] uppercase font-black tracking-widest bg-cyan-500/10 text-cyan-300 border-cyan-500/20">live</span>
-                    }
-                </div>
+                <span class="trading-overview-title text-cyan-300/80">{{ liquidityTitle() }}</span>
                 <i class="fa fa-coins text-cyan-300/80 text-lg"></i>
             </div>
 
@@ -132,72 +135,90 @@
                         <div class="trading-overview-footer-grid">
                             <div class="trading-overview-footer-cell trading-overview-footer-cell-edge-start">
                                 <span class="trading-overview-label">chains</span>
-                                <span class="trading-overview-footer-value !text-cyan-200">{{ liveChainCount() }}</span>
+                                <span class="trading-overview-footer-value" [class.!text-cyan-200]="!isLiquiditySyncing()">{{ isLiquiditySyncing() ? '—' : displayChainCount() }}</span>
                             </div>
                             <div class="trading-overview-footer-cell trading-overview-footer-cell-divider">
                                 <span class="trading-overview-label">slots</span>
-                                <span class="trading-overview-footer-value !text-cyan-200">{{ liveChainCount() }}/{{ liveSlotCount() }}</span>
+                                <span class="trading-overview-footer-value" [class.!text-cyan-200]="!isLiquiditySyncing()">{{ isLiquiditySyncing() ? '—' : displayChainCount() + '/' + displaySlotCount() }}</span>
                             </div>
                             <div class="trading-overview-footer-cell trading-overview-footer-cell-divider trading-overview-footer-cell-edge-end">
                                 <span class="trading-overview-label">updated</span>
-                                <span class="trading-overview-footer-value font-mono !text-cyan-100/80">{{ liquidityUpdatedAgo() }}</span>
+                                <span class="trading-overview-footer-value" [class.font-mono]="!isLiquiditySyncing()" [class.!text-cyan-100/80]="!isLiquiditySyncing()">{{ liquidityUpdatedAgo() }}</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 @if (hasLiveBalances()) {
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 auto-rows-fr h-full content-end">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 h-full content-start items-stretch">
                         @for (balance of blockchainBalanceCards(); track $index) {
                             @if (!balance.isPlaceholder) {
-                                <div class="px-2 py-2 rounded-xl bg-black/20 border border-cyan-500/15 flex flex-col justify-between gap-1.5 hover:border-cyan-400/30 transition-all h-full min-h-[66px]">
-                                    <div class="flex items-center justify-between">
-                                        <div class="flex items-center gap-1.5">
-                                            <i class="fa {{ chainIcons[balance.blockchain_network] || 'fa-circle' }} text-cyan-400/70 text-[9px]"></i>
-                                            <span class="text-[10px] font-bold text-slate-200 uppercase tracking-tight leading-none">{{ balance.blockchain_network }}</span>
-                                        </div>
-                                        <span class="text-[10px] font-mono text-slate-500 truncate max-w-[84px] cursor-help" [pTooltip]="buildStablecoinAddressTooltip(balance.stablecoin_address)" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact"> {{ balance.stablecoin_address.slice(0, 6) }}...{{ balance.stablecoin_address.slice(-4) }} </span>
-                                    </div>
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-sm font-black text-cyan-300 leading-none"> {{ balance.stablecoin_currency_symbol }} {{ balance.balance_raw | number: '1.2-2' }} </span>
-                                        <span class="text-[9px] text-cyan-200/70 uppercase font-bold">{{ balance.stablecoin_symbol }}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between pt-0.5">
-                                        <span class="text-[10px] font-bold text-cyan-100/70 leading-none">
-                                            {{ balance.native_token_balance_raw | number: '1.2-4' }}
-                                            <span class="text-cyan-200/70"> SOL</span>
-                                            <span class="text-[10px] pl-1 font-medium text-cyan-200/45">($ {{ balance.native_token_balance_usd | number: '1.2-2' }})</span>
-                                        </span>
-                                        <span class="text-[10px] text-cyan-200/50 uppercase font-bold">gas</span>
-                                    </div>
-                                    @if (isSolanaBalanceCard(balance)) {
-                                        <div class="flex items-center justify-between pt-0.5 cursor-help" [pTooltip]="buildSolanaRentTooltip(balance)" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
-                                            <span class="text-[10px] font-bold text-cyan-100/60 leading-none">
-                                                {{ resolveSolanaRentLockedSol(balance) | number: '1.4-4' }}
-                                                <span class="text-cyan-200/70"> SOL</span>
-                                                <span class="text-[10px] pl-1 font-medium text-cyan-200/45">($ {{ resolveSolanaRentTotalUsd(balance) | number: '1.2-2' }})</span>
+                                <div class="trading-overview-blockchain-card trading-overview-blockchain-card--live transition-all self-start w-full">
+                                    <div class="trading-overview-blockchain-card__row-header">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <span class="trading-overview-blockchain-card__chain-icon-wrap">
+                                                @if (isPaperBalanceCard(balance)) {
+                                                    <i class="fa fa-layer-group trading-overview-blockchain-card__chain-icon-fallback"></i>
+                                                } @else if (resolveChainIconUrl(balance.blockchain_network); as chainIconUrl) {
+                                                    <img [src]="chainIconUrl" (error)="handleChainIconError(balance.blockchain_network, $event)" alt="" class="trading-overview-blockchain-card__chain-icon-image" />
+                                                } @else {
+                                                    <i class="fa fa-circle trading-overview-blockchain-card__chain-icon-fallback" aria-hidden="true"></i>
+                                                }
                                             </span>
-                                            <span class="text-[10px] text-cyan-200/45 uppercase font-bold">rent</span>
+                                            <span class="trading-overview-blockchain-card__chain-name">{{ balance.blockchain_network }}</span>
                                         </div>
-                                    }
+                                        <span class="trading-overview-blockchain-card__wallet-address cursor-help" [pTooltip]="buildWalletAddressTooltip(balance)" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-compact">{{ resolveWalletAddressDisplay(balance).slice(0, 6) }}...{{ resolveWalletAddressDisplay(balance).slice(-4) }}</span>
+                                    </div>
+                                    <div class="trading-overview-blockchain-card__row-balance">
+                                        <span class="text-sm font-black text-cyan-300 leading-none">{{ balance.stablecoin_currency_symbol }} {{ balance.balance_raw | number: '1.2-2' }}</span>
+                                        <span class="text-[9px] text-cyan-200/70 uppercase font-bold leading-none shrink-0">total</span>
+                                    </div>
+                                    <div class="trading-overview-blockchain-card__metrics">
+                                        <div class="trading-overview-blockchain-card__row-metric">
+                                            @if (shouldShowGasMetricEmDash(balance)) {
+                                                <span class="trading-overview-blockchain-card__metric-placeholder">—</span>
+                                            } @else {
+                                                <span class="text-[10px] font-bold text-cyan-100/70 leading-none">
+                                                    {{ balance.native_token_balance_raw | number: '1.2-4' }}
+                                                    <span class="text-cyan-200/70"> {{ balance.native_token_symbol }}</span>
+                                                    <span class="text-[10px] pl-1 font-medium text-cyan-200/45">($ {{ balance.native_token_balance_usd | number: '1.2-2' }})</span>
+                                                </span>
+                                            }
+                                            <span class="text-[10px] text-cyan-200/50 uppercase font-bold shrink-0 pl-2 leading-none">gas</span>
+                                        </div>
+                                        <div class="trading-overview-blockchain-card__row-metric" [class.cursor-help]="isSolanaBalanceCard(balance) && !shouldShowRentMetricEmDash(balance)" [pTooltip]="isSolanaBalanceCard(balance) && !shouldShowRentMetricEmDash(balance) ? buildSolanaRentTooltip(balance) : ''" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
+                                            @if (shouldShowRentMetricEmDash(balance)) {
+                                                <span class="trading-overview-blockchain-card__metric-placeholder">—</span>
+                                            } @else {
+                                                <span class="text-[10px] font-bold text-cyan-100/60 leading-none">
+                                                    {{ resolveSolanaRentLockedSol(balance) | number: '1.4-4' }}
+                                                    <span class="text-cyan-200/70"> SOL</span>
+                                                    <span class="text-[10px] pl-1 font-medium text-cyan-200/45">($ {{ resolveSolanaRentTotalUsd(balance) | number: '1.2-2' }})</span>
+                                                </span>
+                                            }
+                                            <span class="text-[10px] text-cyan-200/45 uppercase font-bold shrink-0 pl-2 leading-none">rent</span>
+                                        </div>
+                                        <div class="trading-overview-blockchain-card__row-metric" [class.cursor-help]="!shouldShowLockedMetricEmDash(balance)" [pTooltip]="shouldShowLockedMetricEmDash(balance) ? '' : buildGasRefillLockedTooltip(balance)" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
+                                            @if (shouldShowLockedMetricEmDash(balance)) {
+                                                <span class="trading-overview-blockchain-card__metric-placeholder">—</span>
+                                            } @else {
+                                                <span class="text-[10px] font-bold text-cyan-100/60 leading-none">$ {{ balance.gas_refill_locked_stablecoin_usd | number: '1.2-2' }}</span>
+                                            }
+                                            <span class="text-[10px] text-cyan-200/45 uppercase font-bold shrink-0 pl-2 leading-none">locked</span>
+                                        </div>
+                                    </div>
                                 </div>
                             } @else {
-                                <div class="px-2 py-2 rounded-xl bg-black/10 border border-cyan-500/10 border-dashed flex flex-col justify-center gap-1.5 h-full min-h-[66px]">
-                                    <div class="flex items-center gap-1.5 text-cyan-200/25">
-                                        @for (_slot of rangeArray(3); track $index) {
-                                            <i class="fa fa-circle text-[7px]"></i>
-                                        }
-                                    </div>
-                                    <div class="h-px bg-cyan-400/15"></div>
-                                    <div class="w-1/2 h-1.5 rounded bg-cyan-200/10"></div>
-                                </div>
+                                <ng-container [ngTemplateOutlet]="blockchainBalancePlaceholderCard" [ngTemplateOutletContext]="{ variant: 'empty' }"></ng-container>
                             }
                         }
                     </div>
-                } @else if (shouldShowReserveModeCard()) {
-                    <ng-container [ngTemplateOutlet]="paperReserveTemplate"></ng-container>
-                } @else if (shouldShowLiquiditySyncCard()) {
-                    <ng-container [ngTemplateOutlet]="liquiditySyncTemplate"></ng-container>
+                } @else if (isLiquiditySyncing()) {
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 h-full content-start items-stretch">
+                        @for (_slot of liquiditySkeletonSlotIndices(); track $index) {
+                            <ng-container [ngTemplateOutlet]="blockchainBalancePlaceholderCard" [ngTemplateOutletContext]="{ variant: 'sync' }"></ng-container>
+                        }
+                    </div>
                 }
             </div>
         </div>
@@ -220,57 +241,32 @@
     </div>
 </div>
 
-<ng-template #paperReserveTemplate>
-    <div class="paper-reserve-panel relative rounded-xl border border-cyan-500/20 p-3 h-full flex flex-col justify-between overflow-hidden">
-        <div class="relative flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2">
-                <span class="inline-flex h-5 w-5 items-center justify-center rounded-md border border-cyan-300/20 bg-cyan-300/5 text-cyan-200/80">
-                    <i class="fa fa-layer-group text-[9px]"></i>
-                </span>
-                <span class="trading-overview-title text-cyan-200/80">paper reserve</span>
+<ng-template #blockchainBalancePlaceholderCard let-variant="variant">
+    <div class="trading-overview-blockchain-card trading-overview-blockchain-card--placeholder self-start w-full" [class.trading-overview-blockchain-card--skeleton]="variant === 'sync'" [class.trading-overview-blockchain-card--empty]="variant === 'empty'" [class.trading-overview-blockchain-card--placeholder-pulsing]="variant === 'sync'">
+        <div class="trading-overview-blockchain-card__row-header">
+            <div class="flex items-center gap-1.5 min-w-0">
+                <span class="trading-overview-blockchain-card__placeholder-dot" aria-hidden="true"></span>
+                <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--chain-name"></span>
+            </div>
+            <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--wallet-address"></span>
+        </div>
+        <div class="trading-overview-blockchain-card__row-balance">
+            <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--balance-main"></span>
+            <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--balance-label"></span>
+        </div>
+        <div class="trading-overview-blockchain-card__metrics">
+            <div class="trading-overview-blockchain-card__row-metric">
+                <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--metric-value"></span>
+                <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--metric-label-gas"></span>
+            </div>
+            <div class="trading-overview-blockchain-card__row-metric">
+                <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--metric-value"></span>
+                <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--metric-label-rent"></span>
+            </div>
+            <div class="trading-overview-blockchain-card__row-metric">
+                <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--metric-value"></span>
+                <span class="trading-overview-blockchain-card__placeholder-bar trading-overview-blockchain-card__placeholder-bar--metric-label-locked"></span>
             </div>
         </div>
-
-        <div class="relative my-2 flex flex-1 items-center justify-center">
-            <div class="relative flex h-22 w-28 items-center justify-center">
-                <div class="absolute inset-x-0 top-1/2 h-px bg-cyan-300/20"></div>
-                <div class="absolute left-2 top-3 h-px w-6 bg-cyan-300/15"></div>
-                <div class="absolute right-2 bottom-3 h-px w-6 bg-cyan-300/15"></div>
-                <div class="absolute h-14 w-14 rounded-full border border-cyan-300/25 bg-cyan-300/[0.03]"></div>
-                <div class="absolute h-9 w-9 rounded-full border border-cyan-300/20"></div>
-                <div class="absolute h-2.5 w-2.5 rounded-full bg-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.45)]"></div>
-                <div class="absolute -bottom-1 text-[9px] uppercase tracking-[0.24em] text-slate-400 font-black">simulated</div>
-            </div>
-        </div>
-
-        <div class="relative text-[11px] leading-snug text-cyan-100/75 font-black uppercase tracking-wide">Virtual off-chain reserve for paper trading only.</div>
-    </div>
-</ng-template>
-
-<ng-template #liquiditySyncTemplate>
-    <div class="rounded-xl border border-dashed border-cyan-400/35 bg-cyan-500/5 p-3 h-full flex flex-col justify-between">
-        <div class="flex items-center justify-between gap-2 text-cyan-300/80">
-            <div class="flex items-center gap-2">
-                <i class="fa fa-wave-square text-[11px]"></i>
-                <span class="text-[10px] uppercase tracking-widest font-black">liquidity syncing</span>
-            </div>
-            <span class="text-[8px] uppercase tracking-widest text-cyan-200/70 font-black">pending</span>
-        </div>
-        <div class="mt-2 flex items-center gap-2.5">
-            <div class="relative h-7 w-7 shrink-0">
-                <div class="absolute inset-0 rounded-full border border-cyan-300/40"></div>
-                <div class="absolute inset-[3px] rounded-full border border-cyan-300/30 animate-spin"></div>
-                <div class="absolute inset-[10px] rounded-full bg-cyan-300/80 animate-pulse"></div>
-            </div>
-            <div class="flex-1 space-y-1.5">
-                <div class="h-1.5 rounded-full bg-cyan-300/20 overflow-hidden">
-                    <div class="h-full w-1/2 bg-cyan-300/70 animate-pulse"></div>
-                </div>
-                <div class="h-1.5 rounded-full bg-cyan-300/15 overflow-hidden">
-                    <div class="h-full w-1/3 bg-cyan-300/60 animate-pulse"></div>
-                </div>
-            </div>
-        </div>
-        <div class="mt-2 text-[10px] text-cyan-100/75 leading-relaxed">waiting for liquidity snapshot classification.</div>
     </div>
 </ng-template>

@@ -20,6 +20,7 @@ from src.core.trading.trading_utils import convert_trading_position_to_token, no
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime, parse_iso_datetime_to_local
 from src.core.utils.math_utils import quantize_2dp, decimal_from_primitive
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
+from src.core.trading.gasreserve.trading_gas_reserve_service import compute_net_deployable_cash_usd
 from src.integrations.blockchain.blockchain_free_cash_service import fetch_stablecoin_balances_for_allowed_chains
 from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.logging.logger import get_application_logger
@@ -172,12 +173,34 @@ def compute_realized_profit_and_loss_totals(
     )
 
 
+def resolve_allocated_buy_swap_fee_usd_for_quantity(
+        evaluation_id: int,
+        quantity: float,
+        trades: Iterable[TradingTradePayload],
+) -> float:
+    if quantity <= 0.0:
+        return 0.0
+    for trade in trades:
+        if trade.evaluation_id != evaluation_id:
+            continue
+        if normalize_side_to_upper(trade.trade_side) != "BUY":
+            continue
+        buy_quantity = trade.execution_quantity if trade.execution_quantity is not None else 0.0
+        if buy_quantity <= 0.0:
+            return 0.0
+        buy_swap_fee_usd = trade.transaction_fee if trade.transaction_fee is not None else 0.0
+        return buy_swap_fee_usd * (quantity / buy_quantity)
+    return 0.0
+
+
 def compute_holdings_and_unrealized_totals(
         positions: Iterable[TradingPosition],
         onchain_prices_by_pair_address: OnchainPricesByPairAddress,
+        trades: Iterable[TradingTradePayload] | None = None,
 ) -> tuple[float, float]:
     holdings_value_dec = Decimal("0")
     unrealized_dec = Decimal("0")
+    trade_payloads = list(trades) if trades is not None else []
 
     for position in positions:
         token = convert_trading_position_to_token(position)
@@ -200,7 +223,15 @@ def compute_holdings_and_unrealized_totals(
             continue
 
         holdings_value_dec += decimal_from_primitive(quantity * price_usd)
-        unrealized_dec += decimal_from_primitive((price_usd - entry_price) * quantity)
+        gross_unrealized_usd = (price_usd - entry_price) * quantity
+        allocated_buy_swap_fee_usd = resolve_allocated_buy_swap_fee_usd_for_quantity(
+            evaluation_id=position.evaluation_id,
+            quantity=quantity,
+            trades=trade_payloads,
+        )
+        unrealized_dec += decimal_from_primitive(
+            gross_unrealized_usd - allocated_buy_swap_fee_usd,
+        )
 
     return (
         float(quantize_2dp(holdings_value_dec)),
@@ -364,4 +395,5 @@ def _compute_live_deployable_cash_usd() -> float:
             )
             return cached_cash
         raise
-    return sum(balance.balance_raw for balance in balances)
+    total_stablecoin_usd = sum(balance.balance_raw for balance in balances)
+    return compute_net_deployable_cash_usd(total_stablecoin_usd)

@@ -4,6 +4,10 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
 from src.core.trading.evaluators.trading_age_filter import apply_age_filter
 from src.core.trading.evaluators.trading_ai_scorer import apply_ai_scorer
 from src.core.trading.evaluators.trading_contradictions_filter import apply_contradictions_filter
@@ -24,6 +28,7 @@ from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import 
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
 from src.core.trading.execution.trading_execution_swap_service import execute_buy
 from src.core.trading.execution.trading_execution_blockchain_route_service import build_route_for_live_execution
+from src.core.trading.cache.trading_cache import trading_cache
 from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainExecutionRouteBuildError,
     BlockchainTradingNotSupportedError,
@@ -47,6 +52,8 @@ from src.core.trading.trading_utils import refresh_candidates_from_screener
 from src.core.trading.gasreserve.trading_gas_reserve_service import is_gas_reserve_sufficient_for_buy
 from src.core.utils.format_utils import tail
 from src.logging.logger import get_application_logger
+from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 
@@ -221,13 +228,10 @@ class TradingPipeline:
         return candidates
 
     def _step_filter_allowed_chains(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-        allowed_chains = set(settings.TRADING_ALLOWED_CHAINS)
-        if not settings.PAPER_MODE:
-            allowed_chains = {BlockchainNetwork.SOLANA.value}
-            logger.info(
-                "[TRADING][PIPELINE][CHAIN_FILTER] Live execution guard active: restricting candidate universe to %s",
-                BlockchainNetwork.SOLANA.value,
-            )
+        allowed_chains = {
+            blockchain_network.value
+            for blockchain_network in resolve_trading_allowed_blockchain_networks()
+        }
         retained: list[TradingCandidate] = []
         rejected_counts: dict[str, int] = {}
         rejected_examples: dict[str, list[str]] = {}
@@ -254,7 +258,7 @@ class TradingPipeline:
         return retained
 
     def _step_filter_supported_dexes(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-        allowed_solana_dexes = set(settings.TRADING_SOLANA_SUPPORTED_DEX_IDS)
+        allowed_solana_dexes = set(resolve_supported_trading_solana_dex_ids())
         retained: list[TradingCandidate] = []
         rejected_counts: dict[str, int] = {}
         rejected_examples: dict[str, list[str]] = {}
@@ -280,8 +284,8 @@ class TradingPipeline:
 
         if len(retained) < len(candidates):
             logger.info(
-                "[TRADING][PIPELINE][DEX_FILTER] Retained %d / %d candidates (filtered by DEX)",
-                len(retained), len(candidates),
+                "[TRADING][PIPELINE][DEX_FILTER] Retained %d / %d candidates (allowed dexes: %s)",
+                len(retained), len(candidates), ", ".join(sorted(allowed_solana_dexes)),
             )
         return retained
 
@@ -357,9 +361,6 @@ class TradingPipeline:
         return apply_trading_cortex_gate_filter(candidates, shadow_snapshot, gate_enabled)
 
     def _step_execute(self, candidates: list[TradingCandidate]) -> None:
-        from src.persistence.database_session_manager import get_database_session
-        from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
-
         with get_database_session() as database_session:
             current_open_count = count_positions_consuming_max_open_slots(database_session)
 
@@ -370,7 +371,6 @@ class TradingPipeline:
                 for rank, candidate in enumerate(candidates, start=1):
                     record_skipped_trading_evaluation(candidate, rank, "NO_PORTFOLIO_SNAPSHOT")
                 return
-        from src.core.trading.cache.trading_cache import trading_cache
         available_cash_usd = trading_cache.get_available_cash_usd()
         sizing_capital_usd = trading_cache.get_sizing_capital_usd()
         if available_cash_usd is None or sizing_capital_usd is None:
@@ -381,11 +381,10 @@ class TradingPipeline:
                 record_skipped_trading_evaluation(candidate, rank, "CACHE_NOT_READY")
             return
         per_buy_capital_fraction = settings.TRADING_PER_BUY_CAPITAL_FRACTION
-        min_free_cash = settings.TRADING_MIN_FREE_CASH_USD
         max_positions = settings.TRADING_MAX_OPEN_POSITIONS
 
-        if available_cash_usd < min_free_cash:
-            logger.info("[TRADING][PIPELINE][EXECUTE] Insufficient free cash: %.2f < %.2f", available_cash_usd, min_free_cash)
+        if available_cash_usd <= 0.0:
+            logger.info("[TRADING][PIPELINE][EXECUTE] Insufficient deployable cash: %.2f", available_cash_usd)
             for rank, candidate in enumerate(candidates, start=1):
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
             return
@@ -401,7 +400,7 @@ class TradingPipeline:
                 record_skipped_trading_evaluation(candidate, rank, "MAX_POSITIONS")
                 continue
 
-            if available_cash_usd < min_free_cash:
+            if available_cash_usd <= 0.0:
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
                 continue
 
@@ -410,17 +409,14 @@ class TradingPipeline:
                 * per_buy_capital_fraction
                 * candidate.shadowing_diagnostics.notional_boost_factor
             )
-            spendable_cash_usd = resolve_spendable_cash_usd(available_cash_usd, min_free_cash)
+            spendable_cash_usd = resolve_spendable_cash_usd(available_cash_usd)
 
-            if not is_buy_notional_executable(order_notional, available_cash_usd, min_free_cash):
+            if not is_buy_notional_executable(order_notional, available_cash_usd):
                 logger.info(
-                    "[TRADING][PIPELINE][EXECUTE] Skip %s — order notional %.4f exceeds spendable cash %.4f "
-                    "(available=%.4f buffer=%.4f)",
+                    "[TRADING][PIPELINE][EXECUTE] Skip %s — order notional %.4f exceeds deployable cash %.4f",
                     candidate.token.symbol,
                     order_notional,
                     spendable_cash_usd,
-                    available_cash_usd,
-                    min_free_cash,
                 )
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
                 continue

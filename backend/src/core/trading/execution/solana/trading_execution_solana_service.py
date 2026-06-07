@@ -10,7 +10,7 @@ from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.trading_structures import TradingCandidate
 from src.core.utils.date_utils import get_current_local_datetime
-from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
 from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
 from src.integrations.blockchain.blockchain_execution_structures import (
@@ -65,7 +65,7 @@ def build_solana_buy_route(candidate: TradingCandidate, order_notional_usd: floa
             blockchain_network=BlockchainNetwork.SOLANA,
         )
 
-    stablecoin_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
+    stablecoin_address = resolve_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
     if not stablecoin_address:
         raise BlockchainExecutionRouteBuildError(
             "Missing stablecoin address for Solana",
@@ -117,7 +117,7 @@ def build_solana_sell_route(token_mint: str, token_quantity: float, token_decima
             blockchain_network=BlockchainNetwork.SOLANA,
         )
 
-    stablecoin_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
+    stablecoin_address = resolve_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
     if not stablecoin_address:
         raise BlockchainExecutionRouteBuildError(
             "Missing stablecoin address for Solana sell route",

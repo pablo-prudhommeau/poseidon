@@ -6,6 +6,7 @@ from src.core.utils.format_utils import tail
 
 
 class BlockchainNetwork(str, Enum):
+    PAPER = "paper"
     SOLANA = "solana"
     BSC = "bsc"
     BASE = "base"

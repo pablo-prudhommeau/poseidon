@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from bip_utils import Bip39SeedGenerator, Bip32Slip10Ed25519
+from src.integrations.blockchain.solana.blockchain_solana_wallet_derivation import (
+    derive_solana_keypair_from_mnemonic,
+)
 from solana.rpc.api import Client
-from solders.keypair import Keypair
 from solders.presigner import Presigner
 from solders.signature import Signature
 from solders.transaction import VersionedTransaction
@@ -26,8 +27,8 @@ from src.integrations.blockchain.solana.solana_structures import (
 from src.integrations.blockchain.solana.solana_utils import (
     resolve_blockchain_transaction_failure_reason_from_confirmation_error,
 )
+from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.integrations.blockchain.solana.solana_rpc_client import (
-    resolve_sol_usd_price,
     rpc_get_signature_statuses,
     rpc_send_transaction,
 )
@@ -49,16 +50,13 @@ class SolanaSigner:
             raise ValueError("Solana signer requires RPC URL and mnemonic")
 
         self.client = Client(configuration.rpc_url, timeout=30)
-
-        seed = Bip39SeedGenerator(configuration.mnemonic).Generate("")
-        bip32_node = Bip32Slip10Ed25519.FromSeed(seed)
-        derivation_path = f"m/44'/501'/{configuration.wallet_derivation_index}'/0'"
-        derived_node = bip32_node.DerivePath(derivation_path)
-        raw_private_key = derived_node.PrivateKey().Raw().ToBytes()
-        self.keypair = Keypair.from_seed(raw_private_key)
+        self.keypair = derive_solana_keypair_from_mnemonic(
+            mnemonic=configuration.mnemonic,
+            wallet_derivation_index=configuration.wallet_derivation_index,
+        )
         self._rpc_url = configuration.rpc_url
 
-        logger.info(
+        logger.debug(
             "[BLOCKCHAIN][SOLANA][SIGNER] Signer initialized — blockchain_network=%s wallet_address=%s",
             BlockchainNetwork.SOLANA.value,
             self.keypair.pubkey(),
@@ -132,7 +130,7 @@ class SolanaSigner:
 
         total_lamports = base_fee_lamports + account_rent_lamports
         total_sol = total_lamports / 1_000_000_000.0
-        sol_usd = resolve_sol_usd_price(self._rpc_url)
+        sol_usd = resolve_sol_usd_price()
         if sol_usd is None or sol_usd <= 0.0:
             logger.warning("[BLOCKCHAIN][SOLANA][SIGNER][FEE] SOL/USD unavailable; fee USD set to 0 for signature=%s", signature_text)
             total_usd = 0.0

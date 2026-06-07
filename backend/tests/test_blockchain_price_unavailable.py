@@ -7,7 +7,10 @@ import pytest
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
-from src.integrations.blockchain.solana.blockchain_solana_price_reader import read_solana_pool_prices_usd_batch
+from src.integrations.blockchain.solana.blockchain_solana_price_reader import (
+    read_solana_pool_price_usd,
+    read_solana_pool_prices_usd_batch,
+)
 
 
 @patch("src.integrations.blockchain.solana.blockchain_solana_price_reader.get_solana_rpc_url")
@@ -20,10 +23,20 @@ def test_read_solana_pool_prices_usd_batch_raises_when_rpc_unavailable(
 
     with pytest.raises(BlockchainPriceUnavailableError) as raised_error:
         read_solana_pool_prices_usd_batch([
-            ("token-address", "pair-address", "raydium"),
+            ("token-address", "pair-address", "pumpswap"),
         ])
 
     assert raised_error.value.blockchain_network == BlockchainNetwork.SOLANA
+
+
+def test_read_solana_pool_price_usd_skips_unsupported_dex_without_rpc() -> None:
+    price_usd = read_solana_pool_price_usd(
+        pool_address="pair-address",
+        target_token_address="token-address",
+        dex_id="raydium",
+    )
+
+    assert price_usd is None
 
 
 @patch("src.integrations.blockchain.blockchain_price_service.read_solana_pool_price_usd")

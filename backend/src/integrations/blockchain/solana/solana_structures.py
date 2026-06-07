@@ -96,20 +96,19 @@ class SolanaWalletSnapshot(BaseModel):
     fetched_at_monotonic: float
 
 
+class SolanaTokenAccountRentBreakdown(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    active_usd: float
+    closable_usd: float
+    pending_reclaim_usd: float
+    locked_sol: float
+    active_account_count: int
+    closable_account_count: int
+    pending_reclaim_account_count: int
+
+
 SOLANA_WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112"
-
-SOLANA_KNOWN_STABLECOIN_MINTS: set[str] = {
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-}
-
-SOLANA_DEX_PROGRAM_IDS: dict[str, str] = {
-    "pumpfun": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
-    "raydium_amm_v4": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
-    "raydium_clmm": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
-    "meteora": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
-    "orca": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
-}
 
 SOLANA_SOL_DECIMALS = 9
 SOLANA_PUMPFUN_TOKEN_DECIMALS = 6
@@ -125,9 +124,6 @@ SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS: frozenset[str] = frozenset(
         SOLANA_TOKEN_2022_PROGRAM_ID,
     },
 )
-
-
-from src.core.trading.portfolio.trading_portfolio_structures import SolanaTokenAccountRentBreakdown
 
 
 class SolanaOnchainWalletContext(BaseModel):

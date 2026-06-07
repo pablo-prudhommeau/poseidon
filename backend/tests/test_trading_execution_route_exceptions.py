@@ -20,6 +20,7 @@ from src.core.trading.screener.trading_screener_structures import TradingScreene
 from src.core.trading.trading_structures import (
     TradingCandidate,
     TradingCandidateAiAnalysis,
+    TradingConfigurationError,
     TradingDexMarketSnapshot,
 )
 from src.integrations.blockchain.blockchain_exceptions import (
@@ -96,10 +97,12 @@ def test_evm_resolve_sell_token_decimals_raises_not_supported() -> None:
 def test_build_route_for_live_execution_raises_when_handler_missing(
         resolve_handler_mock: MagicMock,
 ) -> None:
-    resolve_handler_mock.return_value = None
+    resolve_handler_mock.side_effect = TradingConfigurationError(
+        "No execution chain handler registered for configured blockchain 'solana'",
+    )
     candidate = _build_candidate()
 
-    with pytest.raises(BlockchainTradingNotSupportedError):
+    with pytest.raises(TradingConfigurationError):
         build_route_for_live_execution(candidate, 10.0)
 
 
@@ -107,9 +110,11 @@ def test_build_route_for_live_execution_raises_when_handler_missing(
 def test_build_route_for_live_sell_raises_when_handler_missing(
         resolve_handler_mock: MagicMock,
 ) -> None:
-    resolve_handler_mock.return_value = None
+    resolve_handler_mock.side_effect = TradingConfigurationError(
+        "No execution chain handler registered for configured blockchain 'bsc'",
+    )
 
-    with pytest.raises(BlockchainTradingNotSupportedError):
+    with pytest.raises(TradingConfigurationError):
         build_route_for_live_sell("token-mint", BlockchainNetwork.BSC, 1.0, 6)
 
 
@@ -126,7 +131,7 @@ def test_build_solana_sell_route_raises_when_token_mint_missing() -> None:
         build_solana_sell_route("", 1.0, 6)
 
 
-@patch("src.core.trading.execution.solana.trading_execution_solana_service._get_stablecoin_address_for_blockchain")
+@patch("src.core.trading.trading_configuration_service.resolve_stablecoin_address_for_blockchain")
 @patch("src.core.trading.execution.solana.trading_execution_solana_service.build_default_solana_signer")
 @patch("src.core.trading.execution.solana.trading_execution_solana_service.generate_jupiter_swap_transaction")
 def test_build_solana_sell_route_maps_jupiter_rate_limit_without_error_log(

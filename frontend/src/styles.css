@@ -753,41 +753,6 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
     margin-top: 0.75rem;
 }
 
-.trading-overview-swap-fees-inline {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.65rem;
-    max-width: 100%;
-    padding-bottom: 0.25rem;
-    border-bottom: 1px dashed rgb(100 116 139 / 0.4);
-    font-size: 0.75rem;
-    font-weight: 800;
-    line-height: 1;
-}
-
-.trading-overview-swap-fees-icon {
-    flex-shrink: 0;
-    font-size: inherit;
-    font-weight: inherit;
-    color: rgb(100 116 139);
-}
-
-.trading-overview-swap-fees-inline .trading-overview-label {
-    font-size: inherit;
-    font-weight: 500;
-    color: rgb(100 116 139);
-    letter-spacing: 0.025em;
-}
-
-.trading-overview-swap-fees-inline .trading-overview-footer-value {
-    margin-top: 0;
-    font-size: inherit;
-    font-weight: inherit;
-    line-height: inherit;
-    color: rgb(255 255 255);
-    text-shadow: none;
-}
-
 .poseidon-tooltip {
     --p-tooltip-background: rgba(18, 20, 23, 0.98);
     --p-tooltip-text-color: #e5e7eb;

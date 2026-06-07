@@ -12,10 +12,12 @@ from src.core.trading.cortex.trading_cortex_feature_catalog import (
     candidate_categorical_feature_name,
     metric_feature_name,
     trading_cortex_per_metric_feature_suffixes,
-    trading_cortex_supported_dex_identifiers,
     trading_cortex_supported_metric_keys,
-    trading_cortex_supported_network_identifiers,
 )
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_network_identifiers,
+)
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_dex_identifiers
 from src.core.trading.cortex.trading_cortex_numerical_utils import (
     bounded_hyperbolic_signal,
     clamp,
@@ -109,13 +111,13 @@ class TradingCortexFeatureVectorBuilder:
             named_feature_values,
             TradingCortexCandidateFeatures.NETWORK_PREFIX,
             candidate_features.blockchain_network,
-            trading_cortex_supported_network_identifiers,
+            resolve_trading_allowed_blockchain_network_identifiers(),
         )
         self._append_categorical_indicator_features(
             named_feature_values,
             TradingCortexCandidateFeatures.DEX_PREFIX,
             candidate_features.dex_identifier,
-            trading_cortex_supported_dex_identifiers,
+            resolve_supported_trading_dex_identifiers(),
         )
 
         regime_features = scoring_request.regime_features

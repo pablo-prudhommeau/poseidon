@@ -36,21 +36,18 @@ def test_skip_live_portfolio_rebuild_returns_none_when_cache_cold(trading_cache_
 @patch("src.core.trading.cache.trading_cache_payload_builders.has_any_closing_positions")
 @patch("src.core.trading.cache.trading_cache_payload_builders.fetch_stablecoin_balances_for_allowed_chains")
 @patch(
-    "src.core.trading.cache.trading_cache_payload_builders.resolve_required_solana_onchain_wallet_context_for_live_portfolio",
+    "src.core.trading.cache.trading_cache_payload_builders.resolve_gas_reserve_chain_handlers_for_liquidity_payload",
 )
-@patch("src.core.trading.cache.trading_cache_payload_builders.is_solana_live_portfolio_chain_enabled")
 def test_build_trading_liquidity_payload_raises_when_solana_context_missing(
-        is_solana_enabled_mock: MagicMock,
-        resolve_required_context_mock: MagicMock,
+        resolve_chain_handlers_mock: MagicMock,
         fetch_balances_mock: MagicMock,
         has_any_closing_positions_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
     settings_mock.PAPER_MODE = False
     has_any_closing_positions_mock.return_value = False
-    is_solana_enabled_mock.return_value = True
     fetch_balances_mock.return_value = []
-    resolve_required_context_mock.side_effect = BlockchainRpcUnavailableError(
+    resolve_chain_handlers_mock.side_effect = BlockchainRpcUnavailableError(
         "wallet context unavailable",
         blockchain_network=BlockchainNetwork.SOLANA,
         rpc_method="wallet_context",

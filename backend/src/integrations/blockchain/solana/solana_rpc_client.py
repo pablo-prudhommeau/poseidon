@@ -22,11 +22,9 @@ from src.integrations.blockchain.solana.solana_rpc_rate_limiter_service import (
 )
 from src.integrations.blockchain.solana.solana_structures import SolanaRpcFailureReason
 from src.integrations.blockchain.solana.solana_structures import (
-    SOLANA_KNOWN_STABLECOIN_MINTS,
     SOLANA_SPL_TOKEN_BALANCE_OFFSET,
     SOLANA_SPL_TOKEN_PROGRAM_ID,
     SOLANA_TOKEN_2022_PROGRAM_ID,
-    SOLANA_WRAPPED_SOL_MINT,
     SolanaWalletTokenAccountSnapshot,
 )
 from src.logging.logger import get_application_logger
@@ -34,15 +32,9 @@ from src.logging.logger import get_application_logger
 logger = get_application_logger(__name__)
 
 SOLANA_RPC_TIMEOUT_SECONDS = 8
-SOLANA_SOL_USD_CACHE_TTL_SECONDS = 30
 SOLANA_NATIVE_BALANCE_POLL_INTERVAL_SECONDS = 2.0
 SOLANA_NATIVE_BALANCE_POLL_TIMEOUT_SECONDS = 30.0
 SOLANA_MULTIPLE_ACCOUNTS_CHUNK_SIZE = 10
-
-SOLANA_SOL_USDC_REFERENCE_POOL = "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2"
-
-_cached_sol_usd_price: Optional[float] = None
-_cached_sol_usd_timestamp: float = 0.0
 
 _spl_decimals_cache: dict[str, int] = {}
 
@@ -790,66 +782,3 @@ def prefetch_spl_token_decimals_for_mint_addresses(
             continue
         decimals_by_mint_address[mint_address] = fetched_decimals
     return decimals_by_mint_address
-
-
-def resolve_sol_usd_price(rpc_url: str) -> Optional[float]:
-    global _cached_sol_usd_price, _cached_sol_usd_timestamp
-
-    now = time.monotonic()
-    if _cached_sol_usd_price is not None and (now - _cached_sol_usd_timestamp) < SOLANA_SOL_USD_CACHE_TTL_SECONDS:
-        return _cached_sol_usd_price
-
-    from src.integrations.blockchain.solana.dex_parsers.raydium_pool_parser import RaydiumPoolParser
-    from src.integrations.blockchain.solana.solana_structures import SOLANA_DEX_PROGRAM_IDS
-
-    try:
-        account_info = rpc_get_account_info(rpc_url, SOLANA_SOL_USDC_REFERENCE_POOL)
-    except BlockchainRpcUnavailableError:
-        logger.debug("[BLOCKCHAIN][PRICE][SOL][REFERENCE] SOL/USDC reference pool RPC unavailable")
-        return _cached_sol_usd_price
-
-    if account_info is None:
-        logger.debug("[BLOCKCHAIN][PRICE][SOL][REFERENCE] SOL/USDC reference pool account missing")
-        return _cached_sol_usd_price
-
-    account_data = decode_account_data(account_info)
-    if account_data is None:
-        return _cached_sol_usd_price
-
-    owner_program = extract_owner_program(account_info)
-    raydium_parser = RaydiumPoolParser()
-
-    price_result = None
-    if owner_program in {SOLANA_DEX_PROGRAM_IDS["raydium_amm_v4"], SOLANA_DEX_PROGRAM_IDS["raydium_clmm"]}:
-        price_result = raydium_parser.parse_pool_price(rpc_url, account_data, SOLANA_WRAPPED_SOL_MINT, owner_program)
-
-    if price_result is None:
-        logger.debug("[BLOCKCHAIN][PRICE][SOL][REFERENCE] Cannot parse SOL/USDC reference pool")
-        return _cached_sol_usd_price
-
-    sol_usd_price = price_result[0]
-    if sol_usd_price <= 0:
-        return _cached_sol_usd_price
-
-    _cached_sol_usd_price = sol_usd_price
-    _cached_sol_usd_timestamp = now
-    logger.debug("[BLOCKCHAIN][PRICE][SOL][REFERENCE] SOL/USD = %.4f", sol_usd_price)
-    return sol_usd_price
-
-
-def convert_price_to_usd(
-        rpc_url: str,
-        price_in_quote: float,
-        quote_token_mint: str,
-) -> Optional[float]:
-    if quote_token_mint in SOLANA_KNOWN_STABLECOIN_MINTS:
-        return price_in_quote
-
-    if quote_token_mint == SOLANA_WRAPPED_SOL_MINT:
-        sol_usd = resolve_sol_usd_price(rpc_url)
-        if sol_usd is None or sol_usd <= 0:
-            return None
-        return price_in_quote * sol_usd
-
-    logger.debug("[BLOCKCHAIN][PRICE][SOL] Unknown quote mint %s, cannot convert to USD", quote_token_mint[:12])
-    return None

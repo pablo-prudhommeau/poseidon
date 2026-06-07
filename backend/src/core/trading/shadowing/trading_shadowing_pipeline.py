@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.trading.analytics.trading_analytics_helpers import MINIMUM_POINTS_PER_BUCKET
 from src.core.trading.cortex.trading_cortex_inference_provider import get_trading_cortex_inference_service
 from src.core.trading.cortex.trading_cortex_request_builder import TradingCortexRequestBuilder
@@ -23,6 +28,7 @@ from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot, TradingFilterVerdict
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
+from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
@@ -60,15 +66,16 @@ class TradingShadowingPipeline:
         if not candidates:
             return
 
+        candidates = self._filter_supported_dexes(candidates)
+        if not candidates:
+            return
+
         current_time = get_current_local_datetime()
 
         fixed_notional = settings.TRADING_SHADOWING_FIXED_NOTIONAL_USD
         cooldown_minutes = settings.TRADING_SHADOWING_TOKEN_COOLDOWN_MINUTES
         shadow_probe_count = 0
         cooldown_skip_count = 0
-
-        from datetime import timedelta
-        from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 
         cooldown_threshold = current_time - timedelta(minutes=cooldown_minutes)
         token_addresses = [candidate.token.token_address for candidate in candidates]
@@ -193,13 +200,54 @@ class TradingShadowingPipeline:
         )
 
     def _filter_allowed_chains(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
-        allowed_chains = set(settings.TRADING_ALLOWED_CHAINS)
+        allowed_chains = {
+            blockchain_network.value
+            for blockchain_network in resolve_trading_allowed_blockchain_networks()
+        }
         retained = [
             candidate for candidate in candidates
             if candidate.token.chain.value in allowed_chains
         ]
         if len(retained) < len(candidates):
             logger.debug("[TRADING][SHADOWING][PIPELINE] Chain filter retained %d / %d", len(retained), len(candidates))
+        return retained
+
+    def _filter_supported_dexes(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        allowed_solana_dexes = set(resolve_supported_trading_solana_dex_ids())
+        retained: list[TradingCandidate] = []
+        rejected_counts: dict[str, int] = {}
+        rejected_examples: dict[str, list[str]] = {}
+        for candidate in candidates:
+            chain_identifier = candidate.token.chain.value if candidate.token.chain else ""
+            dex_identifier = (candidate.token.dex_id or "").strip().lower()
+
+            if chain_identifier == BlockchainNetwork.SOLANA.value:
+                if dex_identifier in allowed_solana_dexes:
+                    retained.append(candidate)
+                else:
+                    rejected_counts[dex_identifier] = rejected_counts.get(dex_identifier, 0) + 1
+                    examples = rejected_examples.setdefault(dex_identifier, [])
+                    if len(examples) < 5:
+                        examples.append(candidate.token.symbol)
+            else:
+                retained.append(candidate)
+
+        if rejected_counts:
+            dex_summary = ", ".join([f"{dex}({count})" for dex, count in sorted(rejected_counts.items())])
+            examples_summary = "; ".join([f"{dex}:[{', '.join(examples)}]" for dex, examples in rejected_examples.items()])
+            logger.debug(
+                "[TRADING][SHADOWING][PIPELINE][DEX_FILTER] Rejected dexes summary: %s — examples: %s",
+                dex_summary,
+                examples_summary,
+            )
+
+        if len(retained) < len(candidates):
+            logger.info(
+                "[TRADING][SHADOWING][PIPELINE][DEX_FILTER] Retained %d / %d candidates (allowed dexes: %s)",
+                len(retained),
+                len(candidates),
+                ", ".join(sorted(allowed_solana_dexes)),
+            )
         return retained
 
     def _persist_shadow_probe(
@@ -214,7 +262,6 @@ class TradingShadowingPipeline:
             shadow_can_simulate: bool,
             cached_snapshot: TradingShadowingSnapshot,
     ) -> bool:
-        from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
         probe = build_trading_shadowing_probe_with_verdict(
             candidate=candidate,
             rank=rank,

@@ -2,23 +2,10 @@ from __future__ import annotations
 
 from typing import Final
 
-trading_cortex_supported_network_identifiers: Final[tuple[str, ...]] = (
-    "solana",
-    "bsc",
-    "base",
-    "ethereum",
-    "avalanche",
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_network_identifiers,
 )
-
-trading_cortex_supported_dex_identifiers: Final[tuple[str, ...]] = (
-    "pumpfun",
-    "pumpswap",
-    "raydium",
-    "meteora",
-    "orca",
-    "uniswap",
-    "pancakeswap",
-)
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_dex_identifiers
 
 trading_cortex_supported_metric_keys: Final[tuple[str, ...]] = (
     "quality_score",
@@ -209,14 +196,14 @@ def _build_candidate_xgboost_ordered_feature_names() -> tuple[str, ...]:
         TradingCortexCandidateFeatures.IS_MICRO_CAP_TOKEN,
         TradingCortexCandidateFeatures.IS_HIGH_PROMOTION_TOKEN,
     ]
-    for supported_identifier in trading_cortex_supported_network_identifiers:
+    for supported_identifier in resolve_trading_allowed_blockchain_network_identifiers():
         ordered_feature_names.append(
             candidate_categorical_feature_name(
                 TradingCortexCandidateFeatures.NETWORK_PREFIX,
                 supported_identifier,
             )
         )
-    for supported_identifier in trading_cortex_supported_dex_identifiers:
+    for supported_identifier in resolve_supported_trading_dex_identifiers():
         ordered_feature_names.append(
             candidate_categorical_feature_name(
                 TradingCortexCandidateFeatures.DEX_PREFIX,

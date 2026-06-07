@@ -7,7 +7,12 @@ from pydantic import BaseModel
 from web3 import Web3
 
 from src.configuration.config import settings
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.trading_structures import TradingConfigurationError
+from src.core.trading.trading_configuration_service import require_stablecoin_address_for_blockchain
 from src.core.trading.trading_utils import get_currency_symbol
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_rpc_registry import (
@@ -27,6 +32,7 @@ class BlockchainCashBalance(BaseModel):
     blockchain_network: BlockchainNetwork
     stablecoin_symbol: str
     stablecoin_address: str
+    wallet_address: str
     stablecoin_currency_symbol: str
     balance_raw: float
     native_token_symbol: str
@@ -44,11 +50,6 @@ def _get_native_token_symbol_for_blockchain(blockchain: BlockchainNetwork) -> st
     if blockchain not in mapping:
         raise ValueError(f"No native token symbol configured for blockchain {blockchain.value}")
     return mapping[blockchain]
-
-
-def _get_stablecoin_address_for_blockchain(blockchain: BlockchainNetwork) -> str:
-    setting_name = f"TRADING_STABLECOIN_ADDRESS_{blockchain.name}"
-    return getattr(settings, setting_name, "")
 
 
 def _fetch_solana_stablecoin_balance(rpc_url: str, wallet_address: str, token_mint: str) -> float:
@@ -160,57 +161,24 @@ def _resolve_blockchain_network(chain: str) -> Optional[BlockchainNetwork]:
 
 def _get_wallet_address_for_blockchain(blockchain: BlockchainNetwork) -> str:
     if blockchain == BlockchainNetwork.SOLANA:
-        try:
-            solana_signer = build_default_solana_signer()
-            return solana_signer.address
-        except ConnectionError:
-            raise
-        except Exception as exception:
-            logger.exception("[BLOCKCHAIN][FREE_CASH] Solana signer unavailable — %s", exception)
-            return ""
+        solana_signer = build_default_solana_signer()
+        return solana_signer.address
 
-    try:
-        evm_signer = build_default_evm_signer(chain=blockchain)
-        return evm_signer.wallet_address
-    except ConnectionError:
-        raise
-    except Exception as exception:
-        logger.exception("[BLOCKCHAIN][FREE_CASH] EVM signer unavailable for %s — %s", blockchain, exception)
-        return ""
+    evm_signer = build_default_evm_signer(chain=blockchain)
+    return evm_signer.wallet_address
 
 
 def fetch_stablecoin_balance_for_blockchain(
         blockchain: BlockchainNetwork,
         force_refresh: bool = False,
 ) -> BlockchainCashBalance:
-    stablecoin_address = _get_stablecoin_address_for_blockchain(blockchain)
+    stablecoin_address = require_stablecoin_address_for_blockchain(blockchain)
     native_token_symbol = _get_native_token_symbol_for_blockchain(blockchain)
-
-    if not stablecoin_address:
-        logger.debug("[BLOCKCHAIN][FREE_CASH] No stablecoin address configured for %s", blockchain.value)
-        return BlockchainCashBalance(
-            blockchain_network=blockchain,
-            stablecoin_symbol=settings.TRADING_STABLECOIN_SYMBOL,
-            stablecoin_address="",
-            stablecoin_currency_symbol=get_currency_symbol(settings.TRADING_STABLECOIN_SYMBOL),
-            balance_raw=0.0,
-            native_token_symbol=native_token_symbol,
-            native_token_balance_raw=0.0,
-            native_token_balance_usd=0.0,
-        )
-
     wallet_address = _get_wallet_address_for_blockchain(blockchain)
     if not wallet_address:
-        logger.debug("[BLOCKCHAIN][FREE_CASH] Wallet unavailable for %s", blockchain.value)
-        return BlockchainCashBalance(
-            blockchain_network=blockchain,
-            stablecoin_symbol=settings.TRADING_STABLECOIN_SYMBOL,
-            stablecoin_address=stablecoin_address,
-            stablecoin_currency_symbol=get_currency_symbol(settings.TRADING_STABLECOIN_SYMBOL),
-            balance_raw=0.0,
-            native_token_symbol=native_token_symbol,
-            native_token_balance_raw=0.0,
-            native_token_balance_usd=0.0,
+        raise TradingConfigurationError(
+            f"Wallet address is required for blockchain '{blockchain.value}' — "
+            f"live wallet configuration must be validated at application startup",
         )
 
     balance_raw = 0.0
@@ -280,6 +248,7 @@ def fetch_stablecoin_balance_for_blockchain(
         blockchain_network=blockchain,
         stablecoin_symbol=settings.TRADING_STABLECOIN_SYMBOL,
         stablecoin_address=stablecoin_address,
+        wallet_address=wallet_address,
         stablecoin_currency_symbol=get_currency_symbol(settings.TRADING_STABLECOIN_SYMBOL),
         balance_raw=round(balance_raw, 6),
         native_token_symbol=native_token_symbol,
@@ -293,15 +262,12 @@ def fetch_stablecoin_balances_for_allowed_chains(force_refresh: bool = False) ->
         logger.debug("[BLOCKCHAIN][FREE_CASH] Paper mode active — skipping on-chain balance fetch")
         return []
 
-    allowed_chains = settings.TRADING_ALLOWED_CHAINS
-    if not allowed_chains:
+    allowed_blockchain_networks = resolve_trading_allowed_blockchain_networks()
+    if not allowed_blockchain_networks:
         return []
 
     balances: list[BlockchainCashBalance] = []
-    for chain in allowed_chains:
-        blockchain = _resolve_blockchain_network(chain)
-        if not blockchain:
-            continue
+    for blockchain in allowed_blockchain_networks:
         balance = fetch_stablecoin_balance_for_blockchain(blockchain, force_refresh=force_refresh)
         balances.append(balance)
 

@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import time
+from typing import Optional
+
 import httpx
 
+from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
+from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
+from src.integrations.blockchain.solana.solana_rpc_client import get_spl_token_decimals
+from src.integrations.blockchain.solana.solana_structures import SOLANA_WRAPPED_SOL_MINT
 from src.integrations.jupiter.jupiter_structures import (
     JupiterApiFailureReason,
     JupiterApiUnavailableError,
@@ -15,6 +23,13 @@ logger = get_application_logger(__name__)
 
 JUPITER_QUOTE_API_URL = "https://api.jup.ag/swap/v1/quote"
 JUPITER_SWAP_API_URL = "https://api.jup.ag/swap/v1/swap"
+
+JUPITER_SOL_USD_REFERENCE_CACHE_TTL_SECONDS = 30
+JUPITER_SOL_USD_REFERENCE_AMOUNT_LAMPORTS = 1_000_000_000
+JUPITER_SOL_USD_REFERENCE_SLIPPAGE_BASIS_POINTS = 50
+
+_cached_sol_usd_reference_price: Optional[float] = None
+_cached_sol_usd_reference_timestamp: float = 0.0
 
 
 def fetch_jupiter_quote(
@@ -111,6 +126,58 @@ def fetch_jupiter_swap_transaction(
             f"[JUPITER][CLIENT][SWAP] Network request error for endpoint {JUPITER_SWAP_API_URL}",
             failure_reason=JupiterApiFailureReason.NETWORK_ERROR,
         ) from request_exception
+
+
+def resolve_sol_usd_price() -> Optional[float]:
+    global _cached_sol_usd_reference_price, _cached_sol_usd_reference_timestamp
+
+    now = time.monotonic()
+    if (
+            _cached_sol_usd_reference_price is not None
+            and (now - _cached_sol_usd_reference_timestamp) < JUPITER_SOL_USD_REFERENCE_CACHE_TTL_SECONDS
+    ):
+        return _cached_sol_usd_reference_price
+
+    try:
+        stablecoin_mint = resolve_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
+    except Exception:
+        logger.debug("[JUPITER][CLIENT][REFERENCE][SOL_USD] Solana stablecoin mint unavailable")
+        return _cached_sol_usd_reference_price
+
+    if not stablecoin_mint:
+        logger.debug("[JUPITER][CLIENT][REFERENCE][SOL_USD] Solana stablecoin mint unavailable")
+        return _cached_sol_usd_reference_price
+
+    try:
+        quote_response = fetch_jupiter_quote(
+            input_mint=SOLANA_WRAPPED_SOL_MINT,
+            output_mint=stablecoin_mint,
+            amount_in_lamports=JUPITER_SOL_USD_REFERENCE_AMOUNT_LAMPORTS,
+            slippage_basis_points=JUPITER_SOL_USD_REFERENCE_SLIPPAGE_BASIS_POINTS,
+        )
+    except (JupiterApiUnavailableError, ValueError):
+        logger.debug("[JUPITER][CLIENT][REFERENCE][SOL_USD] Quote unavailable")
+        return _cached_sol_usd_reference_price
+
+    output_amount_raw = int(quote_response.out_amount)
+    if output_amount_raw <= 0:
+        return _cached_sol_usd_reference_price
+
+    try:
+        rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA)
+        stablecoin_decimals = get_spl_token_decimals(rpc_url, stablecoin_mint)
+    except Exception:
+        logger.debug("[JUPITER][CLIENT][REFERENCE][SOL_USD] Stablecoin decimals unavailable for mint %s", stablecoin_mint[:12])
+        return _cached_sol_usd_reference_price
+
+    sol_usd_price = output_amount_raw / (10 ** stablecoin_decimals)
+    if sol_usd_price <= 0:
+        return _cached_sol_usd_reference_price
+
+    _cached_sol_usd_reference_price = sol_usd_price
+    _cached_sol_usd_reference_timestamp = now
+    logger.debug("[JUPITER][CLIENT][REFERENCE][SOL_USD] SOL/USD = %.4f", sol_usd_price)
+    return sol_usd_price
 
 
 def generate_jupiter_swap_transaction(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_structures import (
@@ -18,6 +20,9 @@ logger = get_application_logger(__name__)
 DEFAULT_TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280
 POSITION_LIFECYCLE_TRADE_COUNT = 3
 BUY_GUARD_RESERVE_CYCLE_COUNT = 1
+
+_cached_solana_gas_reserve_cost_snapshot: TradingGasReserveSolanaCostSnapshot | None = None
+_cost_snapshot_cache_lock = threading.Lock()
 
 
 def compute_per_position_cost_lamports(
@@ -62,37 +67,54 @@ def resolve_token_account_rent_lamports() -> int:
     return DEFAULT_TOKEN_ACCOUNT_RENT_LAMPORTS
 
 
-def build_solana_gas_reserve_cost_snapshot() -> TradingGasReserveSolanaCostSnapshot:
-    max_open_positions = settings.TRADING_MAX_OPEN_POSITIONS
-    average_swap_fee_lamports = settings.TRADING_SOLANA_GAS_AVERAGE_SWAP_FEE_LAMPORTS
-    token_account_rent_lamports = resolve_token_account_rent_lamports()
-    per_position_cost_lamports = compute_per_position_cost_lamports(
-        token_account_rent_lamports=token_account_rent_lamports,
-        average_swap_fee_lamports=average_swap_fee_lamports,
-    )
-    cycle_cost_lamports = compute_cycle_cost_lamports(
-        max_open_positions=max_open_positions,
-        token_account_rent_lamports=token_account_rent_lamports,
-        average_swap_fee_lamports=average_swap_fee_lamports,
-    )
+def clear_solana_gas_reserve_cost_snapshot_cache() -> None:
+    global _cached_solana_gas_reserve_cost_snapshot
+    _cached_solana_gas_reserve_cost_snapshot = None
 
-    logger.info(
-        "[TRADING][GASRESERVE][SOLANA][BUDGET] Computed native SOL cycle cost for %d operations per position "
-        "(ATA + entry + TP1 + TP2/SL) — blockchain_network=%s max_open_positions=%d "
-        "per_position_cost_lamports=%d per_position_cost=%s cycle_cost_lamports=%d cycle_cost=%s",
-        POSITION_LIFECYCLE_TRADE_COUNT + 1,
-        BlockchainNetwork.SOLANA.value,
-        max_open_positions,
-        per_position_cost_lamports,
-        format_lamports_as_sol_text(per_position_cost_lamports),
-        cycle_cost_lamports,
-        format_lamports_as_sol_text(cycle_cost_lamports),
-    )
 
-    return TradingGasReserveSolanaCostSnapshot(
-        max_open_positions=max_open_positions,
-        token_account_rent_lamports=token_account_rent_lamports,
-        average_swap_fee_lamports=average_swap_fee_lamports,
-        per_position_cost_lamports=per_position_cost_lamports,
-        cycle_cost_lamports=cycle_cost_lamports,
-    )
+def build_solana_gas_reserve_cost_snapshot(
+        *,
+        force_refresh: bool = False,
+) -> TradingGasReserveSolanaCostSnapshot:
+    global _cached_solana_gas_reserve_cost_snapshot
+    if not force_refresh and _cached_solana_gas_reserve_cost_snapshot is not None:
+        return _cached_solana_gas_reserve_cost_snapshot
+
+    with _cost_snapshot_cache_lock:
+        if not force_refresh and _cached_solana_gas_reserve_cost_snapshot is not None:
+            return _cached_solana_gas_reserve_cost_snapshot
+
+        max_open_positions = settings.TRADING_MAX_OPEN_POSITIONS
+        average_swap_fee_lamports = settings.TRADING_SOLANA_GAS_AVERAGE_SWAP_FEE_LAMPORTS
+        token_account_rent_lamports = resolve_token_account_rent_lamports()
+        per_position_cost_lamports = compute_per_position_cost_lamports(
+            token_account_rent_lamports=token_account_rent_lamports,
+            average_swap_fee_lamports=average_swap_fee_lamports,
+        )
+        cycle_cost_lamports = compute_cycle_cost_lamports(
+            max_open_positions=max_open_positions,
+            token_account_rent_lamports=token_account_rent_lamports,
+            average_swap_fee_lamports=average_swap_fee_lamports,
+        )
+
+        logger.info(
+            "[TRADING][GASRESERVE][SOLANA][BUDGET] Computed native SOL cycle cost for %d operations per position "
+            "(ATA + entry + TP1 + TP2/SL) — blockchain_network=%s max_open_positions=%d "
+            "per_position_cost_lamports=%d per_position_cost=%s cycle_cost_lamports=%d cycle_cost=%s",
+            POSITION_LIFECYCLE_TRADE_COUNT + 1,
+            BlockchainNetwork.SOLANA.value,
+            max_open_positions,
+            per_position_cost_lamports,
+            format_lamports_as_sol_text(per_position_cost_lamports),
+            cycle_cost_lamports,
+            format_lamports_as_sol_text(cycle_cost_lamports),
+        )
+
+        _cached_solana_gas_reserve_cost_snapshot = TradingGasReserveSolanaCostSnapshot(
+            max_open_positions=max_open_positions,
+            token_account_rent_lamports=token_account_rent_lamports,
+            average_swap_fee_lamports=average_swap_fee_lamports,
+            per_position_cost_lamports=per_position_cost_lamports,
+            cycle_cost_lamports=cycle_cost_lamports,
+        )
+        return _cached_solana_gas_reserve_cost_snapshot

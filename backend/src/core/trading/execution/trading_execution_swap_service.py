@@ -37,13 +37,6 @@ def run_live_sell_blocking(
         origin_evaluation_id: int,
 ) -> TradingLiveSellExecutionOutcome:
     chain_handler = resolve_execution_chain_handler_for_blockchain(chain)
-    if chain_handler is None:
-        logger.warning(
-            "[TRADING][EXECUTION][SWAP] Live sell blocked — no handler for blockchain_network=%s token=%s",
-            chain.value,
-            token_symbol,
-        )
-        return TradingLiveSellExecutionOutcome(execution_result=None, failure_reason=None)
 
     with SWAP_EXECUTION_LOCK:
         logger.debug("[TRADING][EXECUTION][SWAP][LIVE][SELL] Acquired global execution lock")
@@ -185,10 +178,6 @@ def execute_buy(payload: TradingOrderPayload) -> bool:
     with SWAP_EXECUTION_LOCK:
         logger.debug("[TRADING][EXECUTION][SWAP][LIVE][BUY] Acquired global execution lock")
         chain_handler = resolve_execution_chain_handler_for_blockchain(payload.target_token.chain)
-        if chain_handler is None:
-            raise ValueError(
-                f"No live execution handler for blockchain_network={payload.target_token.chain.value}",
-            )
         return chain_handler.run_live_buy_blocking(
             token=payload.target_token,
             quantity=quantity,

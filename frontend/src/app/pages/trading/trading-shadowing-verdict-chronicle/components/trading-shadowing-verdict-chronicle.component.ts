@@ -33,7 +33,10 @@ const CHRONICLE_CORTEX_METRIC_SERIES_NAMES: string[] = [
     CHRONICLE_SERIES.cortexHighConvictionAccuracyLine,
     CHRONICLE_SERIES.cortexHighConvictionShareLine,
     CHRONICLE_SERIES.cortexGatePrecisionLine,
-    CHRONICLE_SERIES.cortexGatePassRateLine,
+    CHRONICLE_SERIES.cortexGatePassRateLine
+];
+
+const CHRONICLE_SMA_CORTEX_METRIC_SERIES_NAMES: string[] = [
     CHRONICLE_SERIES.smaCortexPredictionWinRateLine,
     CHRONICLE_SERIES.smaCortexSkillScoreLine,
     CHRONICLE_SERIES.smaCortexCalibrationGapLine,
@@ -52,20 +55,23 @@ const CHRONICLE_CORTEX_METRIC_SERIES_NAMES: string[] = [
 })
 export class TradingShadowingVerdictChronicleComponent {
     readonly legendItems = signal<ChronicleLegendSeriesItem[]>([]);
-
     readonly allMetricsAvailable = computed<boolean>(() => this.legendItems().length > 0);
 
     readonly allMetricsChecked = computed<boolean>(() => {
         const items = this.legendItems();
         return items.length > 0 && items.every((item) => item.visible);
     });
+
     readonly allMetricsMixed = computed<boolean>(() => {
         const items = this.legendItems();
         return items.some((item) => item.visible) && !items.every((item) => item.visible);
     });
+
     readonly payload = signal<TradingShadowingVerdictChroniclePayload | null>(null);
-    selectedBucket = signal<ChronicleBucketLabel>('last_7d_15m');
+    readonly selectedBucket = signal<ChronicleBucketLabel>('last_7d_15m');
+
     private readonly webSocketService: WebSocketService = inject(WebSocketService);
+
     readonly bucketMeta = computed<ChronicleBucketMeta | null>(() => {
         const response: TradingShadowingVerdictChroniclePayload | null = this.payload();
         const shadowingRegime = this.webSocketService.tradingShadowingRegime();
@@ -83,14 +89,17 @@ export class TradingShadowingVerdictChronicleComponent {
               }
             : null;
     });
+
     readonly bucketOptions: ChronicleBucketOption[] = [
         { label: '30m · 1m', value: 'last_30m_1m' satisfies ChronicleBucketLabel },
         { label: '24h · 1h', value: 'last_24h_1h' satisfies ChronicleBucketLabel },
         { label: '7d · 15m', value: 'last_7d_15m' satisfies ChronicleBucketLabel },
         { label: '30d · 30m', value: 'last_30d_30m' satisfies ChronicleBucketLabel }
     ];
+
     readonly chartReady = signal<boolean>(false);
     readonly cortexMetricsAvailable = computed<boolean>(() => this.legendItems().some((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name)));
+
     readonly cortexMetricsChecked = computed<boolean>(() => {
         const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name));
         return cortexItems.length > 0 && cortexItems.every((item) => item.visible);
@@ -99,14 +108,25 @@ export class TradingShadowingVerdictChronicleComponent {
         const cortexItems = this.legendItems().filter((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name));
         return cortexItems.some((item) => item.visible) && !cortexItems.every((item) => item.visible);
     });
+
     readonly error = signal<string | null>(null);
-    selectedSmaWindow = signal<number>(50);
-
+    readonly selectedSmaWindow = signal<number>(50);
     readonly visible = signal<boolean>(false);
-
     readonly showChronicleLoader = computed<boolean>(() => this.visible() && !this.error() && (!this.payload() || !this.chartReady()));
-
     readonly showLegendPanel = signal<boolean>(true);
+    readonly smaCortexMetricsAvailable = computed<boolean>(() =>
+        this.legendItems().some((item) => CHRONICLE_SMA_CORTEX_METRIC_SERIES_NAMES.includes(item.name))
+    );
+
+    readonly smaCortexMetricsChecked = computed<boolean>(() => {
+        const smaCortexItems = this.legendItems().filter((item) => CHRONICLE_SMA_CORTEX_METRIC_SERIES_NAMES.includes(item.name));
+        return smaCortexItems.length > 0 && smaCortexItems.every((item) => item.visible);
+    });
+
+    readonly smaCortexMetricsMixed = computed<boolean>(() => {
+        const smaCortexItems = this.legendItems().filter((item) => CHRONICLE_SMA_CORTEX_METRIC_SERIES_NAMES.includes(item.name));
+        return smaCortexItems.some((item) => item.visible) && !smaCortexItems.every((item) => item.visible);
+    });
 
     readonly smaWindowOptions: ChronicleSmaWindowOption[] = [
         { label: 'SMA (Range)', value: 0 },
@@ -194,6 +214,15 @@ export class TradingShadowingVerdictChronicleComponent {
 
     onLegendItemToggle(seriesName: string, nextVisible: boolean): void {
         this.surfaceCoordinator.setSeriesVisibility(seriesName, nextVisible);
+        this.syncLegendFromChart();
+    }
+
+    onSmaCortexMetricsToggle(nextVisible: boolean): void {
+        for (const item of this.legendItems()) {
+            if (CHRONICLE_SMA_CORTEX_METRIC_SERIES_NAMES.includes(item.name)) {
+                this.surfaceCoordinator.setSeriesVisibility(item.name, nextVisible);
+            }
+        }
         this.syncLegendFromChart();
     }
 

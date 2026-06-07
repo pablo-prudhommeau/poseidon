@@ -40,6 +40,7 @@ class Settings:
 
     PAPER_MODE: bool = _as_bool(os.getenv("PAPER_MODE"), True)
     PAPER_STARTING_CASH: float = float(os.getenv("PAPER_STARTING_CASH", "10000"))
+    PAPER_MODE_VIRTUAL_WALLET_ADDRESS: str = "PaperMode1111111111111111111111111111111111"
     BASE_CURRENCY: str = os.getenv("BASE_CURRENCY", "EUR")
 
     DATABASE_MODE: str = os.getenv("DATABASE_MODE", "sqlite")
@@ -108,7 +109,6 @@ class Settings:
 
     CACHE_WATCHER_DEBOUNCE_SECONDS: float = float(os.getenv("CACHE_WATCHER_DEBOUNCE_SECONDS", "0.1"))
     TRADING_PER_BUY_CAPITAL_FRACTION: float = float(os.getenv("TRADING_PER_BUY_CAPITAL_FRACTION", "0.05"))
-    TRADING_MIN_FREE_CASH_USD: float = float(os.getenv("TRADING_MIN_FREE_CASH_USD", "200"))
     TRADING_MAX_SLIPPAGE: float = float(os.getenv("TRADING_MAX_SLIPPAGE", "0.03"))
     TRADING_SLIPPAGE_TOLERANCE: float = float(os.getenv("TRADING_SLIPPAGE_TOLERANCE", "0.03"))
     TRADING_STOP_LOSS_FRACTION: float = float(os.getenv("TRADING_STOP_LOSS_FRACTION", "0.20"))
@@ -123,13 +123,13 @@ class Settings:
     TRADING_MAX_ABSOLUTE_PERCENT_6H: float = float(os.getenv("TRADING_MAX_ABSOLUTE_PERCENT_6H", "100"))
     TRADING_MAX_ABSOLUTE_PERCENT_24H: float = float(os.getenv("TRADING_MAX_ABSOLUTE_PERCENT_24H", "150"))
     TRADING_REBUY_COOLDOWN_MINUTES: int = int(os.getenv("TRADING_REBUY_COOLDOWN_MINUTES", "45"))
-    TRADING_ALLOWED_CHAINS: list[str] = _parse_csv_values(os.getenv("TRADING_ALLOWED_CHAINS", "solana,bsc,base"))
-    TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str] = os.getenv("TRADING_SOLANA_SUPPORTED_DEX_IDS", "pumpfun,pumpswap,raydium,meteora,orca").lower().split(",")
+    TRADING_ALLOWED_CHAINS: list[str] = _parse_csv_values(os.getenv("TRADING_ALLOWED_CHAINS", "solana"))
+    TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str] = _parse_csv_values(os.getenv("TRADING_SOLANA_SUPPORTED_DEX_IDS", "pumpfun,pumpswap"))
 
     TRADING_WALLET_MAINTENANCE_ENABLED: bool = _as_bool(os.getenv("TRADING_WALLET_MAINTENANCE_ENABLED"), False)
     TRADING_WALLET_MAINTENANCE_INTERVAL_SECONDS: int = int(os.getenv("TRADING_WALLET_MAINTENANCE_INTERVAL_SECONDS", "300"))
-    TRADING_SOLANA_GAS_MINIMUM_CYCLE_NUMBER: int = int(os.getenv("TRADING_SOLANA_GAS_MINIMUM_CYCLE_NUMBER", "4"))
-    TRADING_SOLANA_GAS_REFILL_TARGET_CYCLE_NUMBER: int = int(os.getenv("TRADING_SOLANA_GAS_REFILL_TARGET_CYCLE_NUMBER", "16"))
+    TRADING_GAS_MINIMUM_CYCLE_NUMBER: int = int(os.getenv("TRADING_GAS_MINIMUM_CYCLE_NUMBER", "2"))
+    TRADING_GAS_REFILL_TARGET_CYCLE_NUMBER: int = int(os.getenv("TRADING_GAS_REFILL_TARGET_CYCLE_NUMBER", "4"))
     TRADING_SOLANA_GAS_AVERAGE_SWAP_FEE_LAMPORTS: int = int(os.getenv("TRADING_SOLANA_GAS_AVERAGE_SWAP_FEE_LAMPORTS", "500000"))
     TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS: float = float(os.getenv("TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS", "72"))
     TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_BATCH_SIZE: int = int(os.getenv("TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_BATCH_SIZE", "8"))
@@ -316,6 +316,14 @@ class Settings:
                 MAX_TRADING_ALLOWED_CHAIN_COUNT,
                 ", ".join(ignored_chains),
             )
+
+        from src.core.trading.trading_configuration_service import (
+            validate_and_apply_trading_application_configuration,
+            validate_live_wallet_configuration,
+        )
+
+        validate_and_apply_trading_application_configuration(self)
+        validate_live_wallet_configuration(self)
 
 
 settings: Settings = Settings()

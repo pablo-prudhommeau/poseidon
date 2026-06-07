@@ -5,6 +5,7 @@ from typing import Iterable, Optional
 from src.api.http.api_schemas import (
     TradingPortfolioPayload,
     BlockchainCashBalancePayload,
+    GasRefillLockedBreakdownPayload,
     SolanaTokenAccountRentPayload,
     TradingLiquidityPayload,
     TradingTradePayload,
@@ -19,11 +20,20 @@ from src.api.serializers import (
 from src.cache.cache_protocols import CacheRealmRebuildSkipped
 from src.configuration.config import MAX_TRADING_ALLOWED_CHAIN_COUNT, settings
 from src.core.structures.structures import BlockchainNetwork, Token
+from src.core.trading.trading_chain_capability_service import resolve_gas_refill_budget_detail_scope
+from src.core.trading.gasreserve.trading_gas_reserve_structures import (
+    BlockchainCashBalanceGasReserveEnrichment,
+    GasRefillLockedBreakdownSnapshot,
+)
+from src.core.trading.gasreserve.trading_gas_reserve_service import (
+    compute_net_deployable_cash_usd,
+    resolve_gas_reserve_chain_handlers_for_liquidity_payload,
+)
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import compute_shadowing_snapshot
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingSnapshot
 from src.core.trading.trading_helpers import build_trading_portfolio
-from src.core.trading.portfolio.trading_portfolio_structures import SolanaTokenAccountRentBreakdown
+from src.integrations.blockchain.solana.solana_structures import SolanaTokenAccountRentBreakdown
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError, BlockchainPriceUnavailableError
 from src.integrations.blockchain.blockchain_free_cash_service import (
     BlockchainCashBalance,
@@ -155,15 +165,17 @@ def build_trading_portfolio_payload_with_snapshot_creation() -> Optional[Trading
                 deployable_cash_usd=portfolio_valuation.deployable_cash_usd,
                 holdings_mark_to_market_usd=portfolio_valuation.holdings_mark_to_market_usd,
                 wallet_auxiliary_assets_usd=portfolio_valuation.wallet_auxiliary_assets_usd,
+                total_gas_refill_locked_stablecoin_usd=portfolio_valuation.total_gas_refill_locked_stablecoin_usd,
                 sizing_capital_usd=portfolio_valuation.sizing_capital_usd,
             )
-            logger.debug(
+            logger.info(
                 "[TRADING][CACHE][PORTFOLIO] Equity snapshot created — equity=%.2f deployable=%.2f holdings=%.2f "
-                "wallet_auxiliary=%.2f sizing_capital=%.2f",
+                "wallet_auxiliary=%.2f locked=%.2f sizing_capital=%.2f",
                 portfolio_valuation.total_equity_value,
                 portfolio_valuation.deployable_cash_usd,
                 portfolio_valuation.holdings_mark_to_market_usd,
                 portfolio_valuation.wallet_auxiliary_assets_usd,
+                portfolio_valuation.total_gas_refill_locked_stablecoin_usd,
                 portfolio_valuation.sizing_capital_usd,
             )
 
@@ -206,12 +218,11 @@ def build_trading_liquidity_payload() -> TradingLiquidityPayload:
             available_cash_balance=available_cash_usd,
             stablecoin_currency_symbol="$",
             maximum_chain_count=MAX_TRADING_ALLOWED_CHAIN_COUNT,
-            blockchain_balances=[],
+            blockchain_balances=[_build_paper_mode_blockchain_balance_payload()],
             updated_at=updated_at,
         )
 
     blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
-    live_deployable_cash_usd = sum(balance.balance_raw for balance in blockchain_balances_raw)
 
     position_is_closing = False
     with get_database_session() as database_session:
@@ -220,12 +231,9 @@ def build_trading_liquidity_payload() -> TradingLiquidityPayload:
     if position_is_closing:
         _defer_live_liquidity_rebuild_during_closing()
 
-    solana_rent_breakdown = _resolve_solana_rent_breakdown_for_live_liquidity_payload()
-    blockchain_balance_payloads = [
-        _convert_blockchain_cash_balance_to_payload(balance, solana_rent_breakdown)
-        for balance in blockchain_balances_raw
-    ]
-    available_cash_usd = sum(balance.balance_raw for balance in blockchain_balance_payloads)
+    blockchain_balance_payloads = _build_live_blockchain_balance_payloads(blockchain_balances_raw)
+    total_stablecoin_usd = sum(balance.balance_raw for balance in blockchain_balance_payloads)
+    available_cash_usd = compute_net_deployable_cash_usd(total_stablecoin_usd)
     stablecoin_currency_symbol = "$"
     if blockchain_balance_payloads:
         stablecoin_currency_symbol = blockchain_balance_payloads[0].stablecoin_currency_symbol
@@ -312,14 +320,10 @@ def build_trading_portfolio_payload(
 
         if blockchain_balances_override_payload is None:
             if settings.PAPER_MODE:
-                blockchain_balance_payloads: list[BlockchainCashBalancePayload] = []
+                blockchain_balance_payloads = [_build_paper_mode_blockchain_balance_payload()]
             else:
                 blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
-                solana_rent_breakdown = _resolve_solana_rent_breakdown_for_live_liquidity_payload()
-                blockchain_balance_payloads = [
-                    _convert_blockchain_cash_balance_to_payload(balance, solana_rent_breakdown)
-                    for balance in blockchain_balances_raw
-                ]
+                blockchain_balance_payloads = _build_live_blockchain_balance_payloads(blockchain_balances_raw)
         else:
             blockchain_balance_payloads = list(blockchain_balances_override_payload)
 
@@ -377,7 +381,8 @@ def build_shadowing_snapshot() -> TradingShadowingSnapshot:
 
 def _resolve_live_deployable_cash_usd_from_on_chain_balances() -> float:
     blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
-    return sum(balance.balance_raw for balance in blockchain_balances_raw)
+    total_stablecoin_usd = sum(balance.balance_raw for balance in blockchain_balances_raw)
+    return compute_net_deployable_cash_usd(total_stablecoin_usd)
 
 
 def _skip_live_portfolio_rebuild_when_cache_warm(reason: str) -> Optional[TradingPortfolioPayload]:
@@ -408,11 +413,21 @@ def _defer_live_liquidity_rebuild_during_closing() -> None:
     )
 
 
-def _resolve_solana_rent_breakdown_for_live_liquidity_payload() -> Optional[SolanaTokenAccountRentBreakdown]:
-    if not is_solana_live_portfolio_chain_enabled():
-        return None
-    wallet_context = resolve_required_solana_onchain_wallet_context_for_live_portfolio()
-    return wallet_context.rent_breakdown
+def _build_live_blockchain_balance_payloads(
+        blockchain_balances_raw: list[BlockchainCashBalance],
+) -> list[BlockchainCashBalancePayload]:
+    chain_handler_by_blockchain_network = resolve_gas_reserve_chain_handlers_for_liquidity_payload()
+    blockchain_balance_payloads: list[BlockchainCashBalancePayload] = []
+    for balance in blockchain_balances_raw:
+        chain_handler = chain_handler_by_blockchain_network[balance.blockchain_network]
+        gas_reserve_enrichment = chain_handler.build_blockchain_cash_balance_gas_reserve_enrichment()
+        blockchain_balance_payloads.append(
+            _convert_blockchain_cash_balance_to_payload(
+                balance,
+                gas_reserve_enrichment,
+            ),
+        )
+    return blockchain_balance_payloads
 
 
 def _build_solana_rent_payload(
@@ -429,27 +444,80 @@ def _build_solana_rent_payload(
     )
 
 
+def _build_gas_refill_locked_breakdown_payload(
+        breakdown: GasRefillLockedBreakdownSnapshot,
+) -> GasRefillLockedBreakdownPayload:
+    return GasRefillLockedBreakdownPayload(
+        per_position_cycle_cost_usd=breakdown.per_position_cycle_cost_usd,
+        per_position_cycle_cost_native_raw=breakdown.per_position_cycle_cost_native_raw,
+        max_open_positions=breakdown.max_open_positions,
+        portfolio_cycle_cost_usd=breakdown.portfolio_cycle_cost_usd,
+        portfolio_cycle_cost_native_raw=breakdown.portfolio_cycle_cost_native_raw,
+        refill_target_cycle_count=breakdown.refill_target_cycle_count,
+        refill_target_budget_usd=breakdown.refill_target_budget_usd,
+        refill_target_budget_native_raw=breakdown.refill_target_budget_native_raw,
+        native_gas_balance_usd=breakdown.native_gas_balance_usd,
+        native_gas_balance_raw=breakdown.native_gas_balance_raw,
+        refill_trigger_cycle_count=breakdown.refill_trigger_cycle_count,
+        refill_trigger_threshold_usd=breakdown.refill_trigger_threshold_usd,
+        refill_trigger_threshold_native_raw=breakdown.refill_trigger_threshold_native_raw,
+        locked_stablecoin_usd=breakdown.locked_stablecoin_usd,
+    )
+
+
 def _convert_blockchain_cash_balance_to_payload(
         balance: BlockchainCashBalance,
-        solana_rent_breakdown: Optional[SolanaTokenAccountRentBreakdown],
+        gas_reserve_enrichment: BlockchainCashBalanceGasReserveEnrichment,
 ) -> BlockchainCashBalancePayload:
     solana_rent_payload: Optional[SolanaTokenAccountRentPayload] = None
+    gas_refill_locked_breakdown_payload: Optional[GasRefillLockedBreakdownPayload] = None
     if balance.blockchain_network == BlockchainNetwork.SOLANA:
-        if solana_rent_breakdown is None:
+        if gas_reserve_enrichment.solana_token_account_rent is None:
             raise ValueError(
                 f"Solana rent breakdown required for Solana balance payload — network={balance.blockchain_network.value}",
             )
-        solana_rent_payload = _build_solana_rent_payload(solana_rent_breakdown)
+        if gas_reserve_enrichment.gas_refill_locked_breakdown is None:
+            raise ValueError(
+                "Gas refill locked breakdown required for Solana balance payload",
+            )
+        solana_rent_payload = _build_solana_rent_payload(
+            gas_reserve_enrichment.solana_token_account_rent,
+        )
+        gas_refill_locked_breakdown_payload = _build_gas_refill_locked_breakdown_payload(
+            gas_reserve_enrichment.gas_refill_locked_breakdown,
+        )
     return BlockchainCashBalancePayload(
         blockchain_network=balance.blockchain_network,
         stablecoin_symbol=balance.stablecoin_symbol,
         stablecoin_address=balance.stablecoin_address,
+        wallet_address=balance.wallet_address,
         stablecoin_currency_symbol=balance.stablecoin_currency_symbol,
         balance_raw=balance.balance_raw,
         native_token_symbol=balance.native_token_symbol,
         native_token_balance_raw=balance.native_token_balance_raw,
         native_token_balance_usd=balance.native_token_balance_usd,
         solana_token_account_rent=solana_rent_payload,
+        gas_refill_locked_stablecoin_usd=gas_reserve_enrichment.gas_refill_locked_stablecoin_usd,
+        gas_refill_locked_breakdown=gas_refill_locked_breakdown_payload,
+        gas_refill_budget_detail_scope=resolve_gas_refill_budget_detail_scope(balance.blockchain_network),
+    )
+
+
+def _build_paper_mode_blockchain_balance_payload() -> BlockchainCashBalancePayload:
+    available_cash_usd = compute_available_cash_usd()
+    paper_wallet_address = settings.PAPER_MODE_VIRTUAL_WALLET_ADDRESS
+    return BlockchainCashBalancePayload(
+        blockchain_network=BlockchainNetwork.PAPER,
+        stablecoin_symbol="Paper USD",
+        stablecoin_address=paper_wallet_address,
+        wallet_address=paper_wallet_address,
+        stablecoin_currency_symbol="$",
+        balance_raw=available_cash_usd,
+        native_token_symbol="SOL",
+        native_token_balance_raw=0.0,
+        native_token_balance_usd=0.0,
+        gas_refill_locked_stablecoin_usd=0.0,
+        gas_refill_budget_detail_scope=resolve_gas_refill_budget_detail_scope(BlockchainNetwork.PAPER),
     )
 
 

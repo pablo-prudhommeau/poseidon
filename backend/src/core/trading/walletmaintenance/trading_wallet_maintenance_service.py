@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.walletmaintenance.evm.trading_wallet_maintenance_evm_handler import (
-    TradingWalletMaintenanceEvmHandler,
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
 )
 from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_handler import (
     TradingWalletMaintenanceSolanaHandler,
@@ -23,12 +23,6 @@ from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
-EVM_BLOCKCHAIN_NETWORKS = {
-    BlockchainNetwork.BSC,
-    BlockchainNetwork.BASE,
-    BlockchainNetwork.AVALANCHE,
-}
-
 
 def resolve_wallet_maintenance_chain_handlers() -> list[
     TradingWalletMaintenanceChainHandler
@@ -37,29 +31,9 @@ def resolve_wallet_maintenance_chain_handlers() -> list[
         return []
 
     handlers: list[TradingWalletMaintenanceChainHandler] = []
-    for chain_name in settings.TRADING_ALLOWED_CHAINS:
-        normalized_chain_name = chain_name.strip().lower()
-        try:
-            blockchain_network = BlockchainNetwork(normalized_chain_name)
-        except ValueError:
-            logger.warning(
-                "[TRADING][WALLETMAINTENANCE][SERVICE] Unknown allowed chain ignored — "
-                "configured_chain_name=%s reason=unknown_allowed_chain",
-                normalized_chain_name,
-            )
-            continue
-
+    for blockchain_network in resolve_trading_allowed_blockchain_networks():
         if blockchain_network == BlockchainNetwork.SOLANA:
             handlers.append(TradingWalletMaintenanceSolanaHandler())
-            continue
-
-        if blockchain_network in EVM_BLOCKCHAIN_NETWORKS:
-            handlers.append(
-                TradingWalletMaintenanceEvmHandler(
-                    blockchain_network=blockchain_network
-                )
-            )
-
     return handlers
 
 

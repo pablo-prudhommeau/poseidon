@@ -95,6 +95,7 @@ def serialize_trading_portfolio(
         deployable_cash_usd=portfolio.deployable_cash_usd,
         holdings_mark_to_market_usd=portfolio.holdings_mark_to_market_usd,
         wallet_auxiliary_assets_usd=portfolio.wallet_auxiliary_assets_usd,
+        total_gas_refill_locked_stablecoin_usd=portfolio.total_gas_refill_locked_stablecoin_usd,
         sizing_capital_usd=portfolio.sizing_capital_usd,
         cumulative_swap_fees_usd=portfolio.cumulative_swap_fees_usd,
         created_at=format_datetime_to_local_iso(portfolio.created_at),

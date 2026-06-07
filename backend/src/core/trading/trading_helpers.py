@@ -136,6 +136,7 @@ def build_trading_portfolio(
     _, unrealized_profit_and_loss = compute_holdings_and_unrealized_totals(
         open_positions,
         onchain_prices_by_pair_address,
+        trades=trades,
     )
     (
         realized_profit_and_loss_total,
@@ -151,6 +152,7 @@ def build_trading_portfolio(
         deployable_cash_usd=portfolio_snapshot.deployable_cash_usd,
         holdings_mark_to_market_usd=portfolio_snapshot.holdings_mark_to_market_usd,
         wallet_auxiliary_assets_usd=portfolio_snapshot.wallet_auxiliary_assets_usd,
+        total_gas_refill_locked_stablecoin_usd=portfolio_snapshot.total_gas_refill_locked_stablecoin_usd,
         sizing_capital_usd=portfolio_snapshot.sizing_capital_usd,
         cumulative_swap_fees_usd=cumulative_swap_fees_usd,
         created_at=portfolio_snapshot.created_at,

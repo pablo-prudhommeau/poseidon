@@ -62,6 +62,7 @@ class TradingPortfolioSnapshotDao:
             deployable_cash_usd: float,
             holdings_mark_to_market_usd: float,
             wallet_auxiliary_assets_usd: float,
+            total_gas_refill_locked_stablecoin_usd: float,
             sizing_capital_usd: float,
     ) -> TradingPortfolioSnapshot:
         new_snapshot = TradingPortfolioSnapshot(
@@ -69,6 +70,7 @@ class TradingPortfolioSnapshotDao:
             deployable_cash_usd=deployable_cash_usd,
             holdings_mark_to_market_usd=holdings_mark_to_market_usd,
             wallet_auxiliary_assets_usd=wallet_auxiliary_assets_usd,
+            total_gas_refill_locked_stablecoin_usd=total_gas_refill_locked_stablecoin_usd,
             sizing_capital_usd=sizing_capital_usd,
             created_at=get_current_local_datetime(),
         )

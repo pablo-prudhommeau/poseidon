@@ -142,16 +142,15 @@ def get_currency_symbol(asset_symbol: str) -> str:
     return asset_symbol
 
 
-def resolve_spendable_cash_usd(available_cash_usd: float, min_free_cash_usd: float) -> float:
-    return max(0.0, available_cash_usd - min_free_cash_usd)
+def resolve_spendable_cash_usd(available_cash_usd: float) -> float:
+    return max(0.0, available_cash_usd)
 
 
 def is_buy_notional_executable(
         order_notional_usd: float,
         available_cash_usd: float,
-        min_free_cash_usd: float,
 ) -> bool:
     if order_notional_usd <= 0.0:
         return False
-    return order_notional_usd <= resolve_spendable_cash_usd(available_cash_usd, min_free_cash_usd)
+    return order_notional_usd <= resolve_spendable_cash_usd(available_cash_usd)
 

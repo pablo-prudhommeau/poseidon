@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from src.configuration.config import settings
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingVerdictCycleStatistics
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
@@ -146,7 +147,7 @@ class TradingShadowingVerdictTracker:
                 batch_statistics.resolved_honeypot_count += honeypot_resolved_count
 
         if resolving_candidates and freeze_authority_snapshots is not None:
-            supported_solana_dex_ids = settings.TRADING_SOLANA_SUPPORTED_DEX_IDS
+            supported_solana_dex_ids = resolve_supported_trading_solana_dex_ids()
             onchain_resolvable_candidates: list[tuple[TradingShadowingVerdict, float]] = []
             staled_unrecoverable_symbols_logged: set[str] = set()
             deferred_onchain_symbols_logged: set[str] = set()

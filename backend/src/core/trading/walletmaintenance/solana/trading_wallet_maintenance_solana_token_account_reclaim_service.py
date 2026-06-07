@@ -20,7 +20,7 @@ from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures im
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso, get_current_local_datetime
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
-from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
 from src.integrations.blockchain.solana.blockchain_solana_signer import SolanaSigner, build_default_solana_signer
 from src.integrations.blockchain.solana.solana_rpc_client import fetch_solana_native_balance_lamports
@@ -165,7 +165,7 @@ def _resolve_reclaimable_token_accounts(
         rpc_url: str,
         token_accounts: list[SolanaWalletTokenAccountSnapshot],
 ) -> list[TradingWalletMaintenanceSolanaReclaimableTokenAccount]:
-    stablecoin_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
+    stablecoin_address = resolve_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
     inactive_cutoff = get_current_local_datetime() - timedelta(hours=settings.TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS)
     mint_addresses_with_non_zero_balance = _resolve_mint_addresses_with_non_zero_balance(token_accounts)
 

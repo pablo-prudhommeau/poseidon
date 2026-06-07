@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from src.core.structures.structures import BlockchainNetwork
+
 from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_structures import TradingGasReserveSolanaCostSnapshot
 from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_gas_budget_service import (
     build_solana_gas_budget_snapshot,
@@ -31,8 +33,8 @@ def test_build_solana_gas_budget_snapshot_with_cycle_numbers() -> None:
     with patch(
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_gas_budget_service.settings"
     ) as mock_settings:
-        mock_settings.TRADING_SOLANA_GAS_MINIMUM_CYCLE_NUMBER = 4
-        mock_settings.TRADING_SOLANA_GAS_REFILL_TARGET_CYCLE_NUMBER = 40
+        mock_settings.TRADING_GAS_MINIMUM_CYCLE_NUMBER = 4
+        mock_settings.TRADING_GAS_REFILL_TARGET_CYCLE_NUMBER = 40
         with patch(
             "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_gas_budget_service.build_solana_gas_reserve_cost_snapshot",
             return_value=cost_snapshot,
@@ -51,25 +53,26 @@ def test_resolve_wallet_maintenance_chain_handlers_disabled() -> None:
     ) as mock_settings:
         mock_settings.PAPER_MODE = True
         mock_settings.TRADING_WALLET_MAINTENANCE_ENABLED = True
-        mock_settings.TRADING_ALLOWED_CHAINS = ["solana", "bsc"]
 
         handlers = resolve_wallet_maintenance_chain_handlers()
 
     assert handlers == []
 
 
-def test_resolve_wallet_maintenance_chain_handlers_solana_and_evm_stub() -> None:
+def test_resolve_wallet_maintenance_chain_handlers_solana_only() -> None:
     with patch(
         "src.core.trading.walletmaintenance.trading_wallet_maintenance_service.settings"
-    ) as mock_settings:
+    ) as mock_settings, patch(
+        "src.core.trading.walletmaintenance.trading_wallet_maintenance_service.resolve_trading_allowed_blockchain_networks",
+        return_value=[BlockchainNetwork.SOLANA],
+    ):
         mock_settings.PAPER_MODE = False
         mock_settings.TRADING_WALLET_MAINTENANCE_ENABLED = True
-        mock_settings.TRADING_ALLOWED_CHAINS = ["solana", "bsc"]
 
         handlers = resolve_wallet_maintenance_chain_handlers()
 
     handler_networks = [handler.blockchain_network().value for handler in handlers]
-    assert handler_networks == ["solana", "bsc"]
+    assert handler_networks == ["solana"]
 
 
 def test_resolve_reclaimable_token_accounts_accepts_token_2022_accounts_with_old_on_chain_activity() -> None:
@@ -84,7 +87,7 @@ def test_resolve_reclaimable_token_accounts_accepts_token_2022_accounts_with_old
     old_activity = now - timedelta(hours=100)
 
     with patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service._get_stablecoin_address_for_blockchain",
+        "src.core.trading.trading_configuration_service.resolve_stablecoin_address_for_blockchain",
         return_value="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     ), patch(
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.settings"
@@ -124,7 +127,7 @@ def test_resolve_reclaimable_token_accounts_skips_when_mint_has_non_zero_balance
     now = datetime(2026, 5, 30, 12, 0, 0).astimezone()
 
     with patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service._get_stablecoin_address_for_blockchain",
+        "src.core.trading.trading_configuration_service.resolve_stablecoin_address_for_blockchain",
         return_value="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     ), patch(
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.settings"
@@ -156,7 +159,7 @@ def test_resolve_reclaimable_token_accounts_skips_recent_on_chain_activity() -> 
     recent_activity = now - timedelta(hours=24)
 
     with patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service._get_stablecoin_address_for_blockchain",
+        "src.core.trading.trading_configuration_service.resolve_stablecoin_address_for_blockchain",
         return_value="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     ), patch(
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.settings"
@@ -187,7 +190,7 @@ def test_resolve_reclaimable_token_accounts_skips_without_on_chain_transaction_h
     now = datetime(2026, 5, 30, 12, 0, 0).astimezone()
 
     with patch(
-        "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service._get_stablecoin_address_for_blockchain",
+        "src.core.trading.trading_configuration_service.resolve_stablecoin_address_for_blockchain",
         return_value="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     ), patch(
         "src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_token_account_reclaim_service.settings"

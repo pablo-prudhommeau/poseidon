@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic import Field
 
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.trading_structures import GasRefillBudgetDetailScope
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 
 
@@ -222,16 +223,37 @@ class SolanaTokenAccountRentPayload(BaseModel):
     pending_reclaim_account_count: int
 
 
+class GasRefillLockedBreakdownPayload(BaseModel):
+    per_position_cycle_cost_usd: float
+    per_position_cycle_cost_native_raw: float
+    max_open_positions: int
+    portfolio_cycle_cost_usd: float
+    portfolio_cycle_cost_native_raw: float
+    refill_target_cycle_count: int
+    refill_target_budget_usd: float
+    refill_target_budget_native_raw: float
+    native_gas_balance_usd: float
+    native_gas_balance_raw: float
+    refill_trigger_cycle_count: int
+    refill_trigger_threshold_usd: float
+    refill_trigger_threshold_native_raw: float
+    locked_stablecoin_usd: float
+
+
 class BlockchainCashBalancePayload(BaseModel):
     blockchain_network: BlockchainNetwork
     stablecoin_symbol: str
     stablecoin_address: str
+    wallet_address: str
     stablecoin_currency_symbol: str
     balance_raw: float
     native_token_symbol: str
     native_token_balance_raw: float
     native_token_balance_usd: float = 0.0
     solana_token_account_rent: Optional[SolanaTokenAccountRentPayload] = None
+    gas_refill_locked_stablecoin_usd: float
+    gas_refill_locked_breakdown: Optional[GasRefillLockedBreakdownPayload] = None
+    gas_refill_budget_detail_scope: Optional[GasRefillBudgetDetailScope] = None
 
 
 class TradingLiquidityPayload(BaseModel):
@@ -248,6 +270,7 @@ class TradingPortfolioPayload(BaseModel):
     deployable_cash_usd: float
     holdings_mark_to_market_usd: float
     wallet_auxiliary_assets_usd: float
+    total_gas_refill_locked_stablecoin_usd: float
     sizing_capital_usd: float
     cumulative_swap_fees_usd: float
     created_at: str

@@ -58,8 +58,8 @@ function escapeSvgText(value: string): string {
 
 function buildCortexRolloutLabelSvg(rollout: TradingShadowingVerdictChronicleCortexModelRolloutPayload, isActive: boolean): string {
     const [title, model, details] = buildCortexRolloutAnnotationLines(rollout).split('\n');
-    const width = 178;
-    const height = 34;
+    const width = 170;
+    const height = 36;
     const originX = 0;
     const fill = isActive ? CHRONICLE_METRIC_COLORS.cortexRolloutActiveFill : CHRONICLE_METRIC_COLORS.cortexRolloutInactiveFill;
     const stroke = isActive ? CHRONICLE_METRIC_COLORS.cortexRolloutActiveStroke : CHRONICLE_METRIC_COLORS.cortexRolloutInactiveStroke;
@@ -68,9 +68,9 @@ function buildCortexRolloutLabelSvg(rollout: TradingShadowingVerdictChronicleCor
         <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" style="overflow:visible;pointer-events:none">
             <g transform="rotate(45 ${originX} ${height})">
                 <rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1" />
-                <text x="6" y="9" fill="${textColor}" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="8" font-weight="900">${escapeSvgText(title ?? '')}</text>
-                <text x="6" y="20" fill="${textColor}" opacity="0.92" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="8" font-weight="700">${escapeSvgText(model ?? '')}</text>
-                <text x="6" y="30" fill="${textColor}" opacity="0.82" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="7" font-weight="700">${escapeSvgText(details ?? '')}</text>
+                <text x="6" y="10" fill="${textColor}" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="9" font-weight="900">${escapeSvgText(title ?? '')}</text>
+                <text x="6" y="22" fill="${textColor}" opacity="0.92" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="9" font-weight="700">${escapeSvgText(model ?? '')}</text>
+                <text x="6" y="32" fill="${textColor}" opacity="0.82" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="8" font-weight="700">${escapeSvgText(details ?? '')}</text>
             </g>
         </svg>
     `;

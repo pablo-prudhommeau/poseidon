@@ -235,13 +235,6 @@ def _execute_closing_sell(
             return TradingPositionClosingSellResult()
 
         chain_handler = resolve_execution_chain_handler_for_blockchain(chain_enum)
-        if chain_handler is None:
-            logger.error(
-                "[TRADING][EXECUTION][POSITION] No execution handler for %s. Sell aborted.",
-                position.token_symbol,
-            )
-            revert_position_closing(database_session, position, previous_phase)
-            return TradingPositionClosingSellResult()
 
         try:
             token_decimals = chain_handler.resolve_sell_token_decimals(position.token_address)

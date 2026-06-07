@@ -8,6 +8,7 @@ from src.api.http.api_schemas import (
     TradingShadowingRegimePayload,
     TradingShadowingVerdictChroniclePayload,
 )
+from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.shadowing.cache.trading_shadowing_cache_structures import TradingShadowingState
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingSnapshot
@@ -18,7 +19,6 @@ logger = get_application_logger(__name__)
 
 
 def _touch_realm(realm: CacheRealm) -> None:
-    from src.cache.cache_invalidator import cache_invalidator
     cache_invalidator.touch(realm)
 
 

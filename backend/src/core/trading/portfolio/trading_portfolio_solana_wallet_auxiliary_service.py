@@ -6,11 +6,12 @@ from datetime import timedelta
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_helpers import resolve_token_account_rent_lamports
-from src.core.trading.portfolio.trading_portfolio_structures import SolanaTokenAccountRentBreakdown
+from src.core.trading.portfolio.trading_portfolio_structures import LiveLiquiditySnapshotUnavailableError
 from src.core.utils.date_utils import get_current_local_datetime
-from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS,
+    SolanaTokenAccountRentBreakdown,
     SolanaWalletSnapshot,
     SolanaWalletTokenAccountSnapshot,
 )
@@ -18,7 +19,7 @@ from src.integrations.blockchain.solana.solana_wallet_snapshot_service import (
     resolve_cached_token_account_last_activity_datetime,
     resolve_solana_wallet_snapshot,
 )
-from src.integrations.blockchain.solana.solana_rpc_client import resolve_sol_usd_price
+from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -41,7 +42,7 @@ def resolve_solana_token_account_rent_breakdown() -> SolanaTokenAccountRentBreak
         return _cached_rent_breakdown
 
     wallet_snapshot = resolve_solana_wallet_snapshot(force_refresh=False)
-    sol_usd_price = resolve_sol_usd_price(wallet_snapshot.rpc_url)
+    sol_usd_price = resolve_sol_usd_price()
     rent_breakdown = build_solana_token_account_rent_breakdown_from_wallet_snapshot(
         wallet_snapshot=wallet_snapshot,
         sol_usd_price=sol_usd_price,
@@ -79,7 +80,7 @@ def build_solana_token_account_rent_breakdown_from_wallet_snapshot(
             pending_reclaim_account_count=0,
         )
 
-    stablecoin_mint_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
+    stablecoin_mint_address = resolve_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
     token_account_rent_lamports = resolve_token_account_rent_lamports()
     rent_usd_per_account = (token_account_rent_lamports / 1_000_000_000.0) * sol_usd_price
     inactive_cutoff = get_current_local_datetime() - timedelta(

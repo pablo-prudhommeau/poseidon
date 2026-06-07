@@ -193,7 +193,7 @@ def resolve_rpc_url_for_chain(chain: BlockchainNetwork) -> str:
             else _test_evm_rpc_connectivity(free_rpc_url)
         )
         if connectivity_test_passed:
-            logger.info(
+            logger.debug(
                 "[BLOCKCHAIN][RPC][REGISTRY] Connected to free RPC endpoint — blockchain_network=%s rpc_url=%s",
                 chain.value,
                 free_rpc_url,

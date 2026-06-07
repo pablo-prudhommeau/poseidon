@@ -60,6 +60,10 @@
     --toggle-accent: #22d3ee;
 }
 
+.chronicle-metric-toggle.is-sma-cortex {
+    --toggle-accent: #fbbf24;
+}
+
 .chronicle-metric-toggle.is-all {
     --toggle-accent: #a855f7;
 }

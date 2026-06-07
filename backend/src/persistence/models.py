@@ -94,6 +94,7 @@ class TradingPortfolioSnapshot(DatabaseBaseModel):
     deployable_cash_usd: Mapped[float] = mapped_column(Float, nullable=False)
     holdings_mark_to_market_usd: Mapped[float] = mapped_column(Float, nullable=False)
     wallet_auxiliary_assets_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    total_gas_refill_locked_stablecoin_usd: Mapped[float] = mapped_column(Float, nullable=False)
     sizing_capital_usd: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
 
@@ -103,6 +104,7 @@ class TradingPortfolioSnapshot(DatabaseBaseModel):
             f"deployable_cash_usd={self.deployable_cash_usd} "
             f"holdings_mark_to_market_usd={self.holdings_mark_to_market_usd} "
             f"wallet_auxiliary_assets_usd={self.wallet_auxiliary_assets_usd} "
+            f"total_gas_refill_locked_stablecoin_usd={self.total_gas_refill_locked_stablecoin_usd} "
             f"sizing_capital_usd={self.sizing_capital_usd}>"
         )
 

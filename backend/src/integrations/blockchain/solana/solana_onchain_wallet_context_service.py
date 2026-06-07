@@ -5,16 +5,16 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_helpers import resolve_token_account_rent_lamports
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
 from src.core.trading.portfolio.trading_portfolio_solana_wallet_auxiliary_service import (
     build_solana_token_account_rent_breakdown_from_wallet_snapshot,
     invalidate_solana_rent_breakdown_cache,
-    resolve_solana_locked_token_account_capital_usd,
 )
-from src.core.trading.portfolio.trading_portfolio_structures import SolanaTokenAccountRentBreakdown
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
-from src.integrations.blockchain.blockchain_free_cash_service import _get_stablecoin_address_for_blockchain
-from src.integrations.blockchain.solana.solana_rpc_client import resolve_sol_usd_price
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
+from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.integrations.blockchain.solana.solana_structures import (
     SolanaOnchainWalletContext,
     SolanaRpcFailureReason,
@@ -55,14 +55,14 @@ def resolve_solana_onchain_wallet_context(force_refresh: bool = False) -> Solana
         return _cached_wallet_context
 
     wallet_snapshot = resolve_solana_wallet_snapshot(force_refresh=force_refresh)
-    stablecoin_mint_address = _get_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
+    stablecoin_mint_address = resolve_stablecoin_address_for_blockchain(BlockchainNetwork.SOLANA)
     stablecoin_balance_raw = _resolve_stablecoin_balance_raw(
         wallet_snapshot=wallet_snapshot,
         stablecoin_mint_address=stablecoin_mint_address,
     )
     native_token_balance_raw = float(wallet_snapshot.native_lamports) / 1_000_000_000.0
 
-    sol_usd_price = resolve_sol_usd_price(wallet_snapshot.rpc_url)
+    sol_usd_price = resolve_sol_usd_price()
     native_token_balance_usd = 0.0
     if sol_usd_price is not None and sol_usd_price > 0.0:
         native_token_balance_usd = native_token_balance_raw * sol_usd_price
@@ -93,35 +93,41 @@ def resolve_solana_onchain_wallet_context(force_refresh: bool = False) -> Solana
     return wallet_context
 
 
-def resolve_solana_onchain_wallet_context_or_cached() -> Optional[SolanaOnchainWalletContext]:
+def resolve_solana_onchain_wallet_context_for_live_trading() -> SolanaOnchainWalletContext:
     try:
         return resolve_solana_onchain_wallet_context(force_refresh=False)
-    except BlockchainRpcUnavailableError:
+    except BlockchainRpcUnavailableError as rpc_unavailable_error:
         if _cached_wallet_context is not None:
-            logger.debug("[BLOCKCHAIN][SOL][WALLET][CONTEXT] RPC unavailable — retaining cached wallet context")
+            logger.debug(
+                "[BLOCKCHAIN][SOL][WALLET][CONTEXT] RPC unavailable — reusing stale cached wallet context "
+                "for live trading metrics — failure_reason=%s",
+                rpc_unavailable_error.failure_reason.value,
+            )
             return _cached_wallet_context
-        return None
+        logger.debug(
+            "[BLOCKCHAIN][SOL][WALLET][CONTEXT] RPC unavailable — no cached wallet context for live trading metrics — "
+            "failure_reason=%s",
+            rpc_unavailable_error.failure_reason.value,
+        )
+        raise BlockchainRpcUnavailableError(
+            "[BLOCKCHAIN][SOL][WALLET][CONTEXT] Live trading metrics require Solana wallet context",
+            blockchain_network=BlockchainNetwork.SOLANA,
+            rpc_method="wallet_context",
+            failure_reason=SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
+        ) from rpc_unavailable_error
 
 
 def is_solana_live_portfolio_chain_enabled() -> bool:
     if settings.PAPER_MODE:
         return False
-    for allowed_chain in settings.TRADING_ALLOWED_CHAINS:
-        if allowed_chain.strip().lower() == BlockchainNetwork.SOLANA.value:
+    for blockchain_network in resolve_trading_allowed_blockchain_networks():
+        if blockchain_network == BlockchainNetwork.SOLANA:
             return True
     return False
 
 
 def resolve_required_solana_onchain_wallet_context_for_live_portfolio() -> SolanaOnchainWalletContext:
-    wallet_context = resolve_solana_onchain_wallet_context_or_cached()
-    if wallet_context is None:
-        raise BlockchainRpcUnavailableError(
-            "[BLOCKCHAIN][SOL][WALLET][CONTEXT] Live portfolio and liquidity require complete Solana wallet context",
-            blockchain_network=BlockchainNetwork.SOLANA,
-            rpc_method="wallet_context",
-            failure_reason=SolanaRpcFailureReason.ENDPOINTS_EXHAUSTED,
-        )
-    return wallet_context
+    return resolve_solana_onchain_wallet_context_for_live_trading()
 
 
 def _resolve_stablecoin_balance_raw(
@@ -135,10 +141,3 @@ def _resolve_stablecoin_balance_raw(
             continue
         return float(token_account.balance_raw) / float(10 ** STABLECOIN_DECIMALS)
     return 0.0
-
-
-def resolve_wallet_auxiliary_assets_usd_from_context(wallet_context: SolanaOnchainWalletContext) -> float:
-    locked_token_account_capital_usd = resolve_solana_locked_token_account_capital_usd(
-        wallet_context.rent_breakdown,
-    )
-    return wallet_context.native_token_balance_usd + locked_token_account_capital_usd

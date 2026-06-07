@@ -9,6 +9,11 @@
                         <span class="chronicle-metric-toggle-dot" aria-hidden="true"><i class="fa fa-brain"></i></span>
                         <span class="chronicle-metric-toggle-label">Cortex metrics</span>
                     </label>
+                    <label class="chronicle-metric-toggle is-sma-cortex" [class.is-active]="smaCortexMetricsChecked()" [class.is-mixed]="smaCortexMetricsMixed()" [class.is-disabled]="!smaCortexMetricsAvailable()">
+                        <input type="checkbox" [checked]="smaCortexMetricsChecked()" [disabled]="!smaCortexMetricsAvailable()" (change)="onSmaCortexMetricsToggle($any($event.target).checked)" />
+                        <span class="chronicle-metric-toggle-dot" aria-hidden="true"><i class="fa fa-wave-square"></i></span>
+                        <span class="chronicle-metric-toggle-label">SMA cortex</span>
+                    </label>
                     <label class="chronicle-metric-toggle is-all" [class.is-active]="allMetricsChecked()" [class.is-mixed]="allMetricsMixed()" [class.is-disabled]="!allMetricsAvailable()">
                         <input type="checkbox" [checked]="allMetricsChecked()" [disabled]="!allMetricsAvailable()" (change)="onAllMetricsToggle($any($event.target).checked)" />
                         <span class="chronicle-metric-toggle-dot" aria-hidden="true"><i class="fa fa-chart-line"></i></span>
