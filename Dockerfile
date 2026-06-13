@@ -25,12 +25,16 @@ COPY deploy/optional-dependencies-pack-versions.sh /app/deploy/optional-dependen
 COPY deploy/entrypoint.sh /app/deploy/entrypoint.sh
 COPY deploy/bootstrap-optional-deps.sh /app/deploy/bootstrap-optional-deps.sh
 COPY deploy/bake-optional-dependencies.sh /app/deploy/bake-optional-dependencies.sh
+COPY deploy/memray-wrapper.sh /usr/local/bin/memray
+COPY deploy/memray-flamegraph.sh /usr/local/bin/memray-flamegraph
 RUN sed -i 's/\r$//' \
     /app/deploy/optional-dependencies-pack-versions.sh \
     /app/deploy/entrypoint.sh \
     /app/deploy/bootstrap-optional-deps.sh \
     /app/deploy/bake-optional-dependencies.sh \
-    && chmod +x /app/deploy/bootstrap-optional-deps.sh /app/deploy/bake-optional-dependencies.sh
+    /usr/local/bin/memray \
+    /usr/local/bin/memray-flamegraph \
+    && chmod +x /app/deploy/bootstrap-optional-deps.sh /app/deploy/bake-optional-dependencies.sh /usr/local/bin/memray /usr/local/bin/memray-flamegraph
 COPY frontend/dist/frontend/browser/ /usr/share/nginx/html/
 
 RUN groupadd --system poseidon \

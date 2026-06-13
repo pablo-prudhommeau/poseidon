@@ -213,7 +213,7 @@ class TradingCortexFeatureVectorBuilder:
                 metric_feature,
             )
 
-        return TradingCortexFeatureVectorSnapshot(
+        return TradingCortexFeatureVectorSnapshot.model_construct(
             feature_set_version=scoring_request.feature_set_version,
             named_feature_values=named_feature_values,
             metric_count=metric_count,
@@ -381,7 +381,7 @@ class TradingCortexFeatureVectorBuilder:
             feature_value: float,
     ) -> None:
         named_feature_values.append(
-            TradingCortexNamedFeatureValue(
+            TradingCortexNamedFeatureValue.model_construct(
                 feature_name=feature_name,
                 feature_value=feature_value,
             )

@@ -159,11 +159,13 @@ The production image can temporarily run the backend under `memray` by enabling:
 MEMRAY_ENABLED=true
 ```
 
-Mount `/app/backend/data/memray` as a volume to keep the generated profile outside the container, then generate a flamegraph with:
+Mount `/app/backend/data/memray` as a volume to keep the generated profile outside the container, then render the flamegraph with the one-shot helper:
 
 ```bash
-docker exec poseidon memray flamegraph /app/backend/data/memray/memory_profile.bin -o /app/backend/data/memray/memory_profile.html
+docker exec poseidon memray-flamegraph
 ```
+
+This stops only the backend program to finalize the capture, renders `memory_profile.html` next to `memory_profile.bin`, and restarts the backend (even if rendering fails). Pass custom input/output paths as optional arguments: `memray-flamegraph <input.bin> <output.html>`.
 
 Disable `MEMRAY_ENABLED` after the investigation; it is intended for temporary diagnostics only.
 

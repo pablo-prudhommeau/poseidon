@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Iterator
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, Select
+from sqlalchemy.orm import Session, contains_eager, joinedload, load_only
 
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingShadowingVerdict, TradingShadowingProbe
@@ -12,7 +13,6 @@ logger = get_application_logger(__name__)
 class TradingShadowingVerdictDao:
     @staticmethod
     def _pending_verdicts_load_profile():
-        from sqlalchemy.orm import joinedload, load_only
         return (
             load_only(
                 TradingShadowingVerdict.id,
@@ -99,67 +99,73 @@ class TradingShadowingVerdictDao:
             )
             raise
 
-    def retrieve_resolved_for_cortex_training(self) -> list[TradingShadowingVerdict]:
-        from sqlalchemy.orm import joinedload, load_only
+    def _resolved_for_cortex_training_statement(self) -> Select:
+        return (
+            select(TradingShadowingVerdict)
+            .join(TradingShadowingProbe)
+            .options(
+                load_only(
+                    TradingShadowingVerdict.id,
+                    TradingShadowingVerdict.probe_id,
+                    TradingShadowingVerdict.realized_pnl_percentage,
+                    TradingShadowingVerdict.realized_pnl_usd,
+                    TradingShadowingVerdict.holding_duration_minutes,
+                    TradingShadowingVerdict.is_profitable,
+                    TradingShadowingVerdict.exit_reason,
+                    TradingShadowingVerdict.resolved_at,
+                ),
+                contains_eager(TradingShadowingVerdict.probe).load_only(
+                    TradingShadowingProbe.id,
+                    TradingShadowingProbe.token_symbol,
+                    TradingShadowingProbe.blockchain_network,
+                    TradingShadowingProbe.dex_id,
+                    TradingShadowingProbe.pair_address,
+                    TradingShadowingProbe.candidate_rank,
+                    TradingShadowingProbe.quality_score,
+                    TradingShadowingProbe.token_age_hours,
+                    TradingShadowingProbe.liquidity_usd,
+                    TradingShadowingProbe.market_cap_usd,
+                    TradingShadowingProbe.fully_diluted_valuation_usd,
+                    TradingShadowingProbe.promotion_score,
+                    TradingShadowingProbe.volume_m5_usd,
+                    TradingShadowingProbe.volume_h1_usd,
+                    TradingShadowingProbe.volume_h6_usd,
+                    TradingShadowingProbe.volume_h24_usd,
+                    TradingShadowingProbe.price_change_percentage_m5,
+                    TradingShadowingProbe.price_change_percentage_h1,
+                    TradingShadowingProbe.price_change_percentage_h6,
+                    TradingShadowingProbe.price_change_percentage_h24,
+                    TradingShadowingProbe.transaction_count_m5,
+                    TradingShadowingProbe.transaction_count_h1,
+                    TradingShadowingProbe.transaction_count_h6,
+                    TradingShadowingProbe.transaction_count_h24,
+                    TradingShadowingProbe.buy_to_sell_ratio,
+                    TradingShadowingProbe.order_notional_value_usd,
+                    TradingShadowingProbe.shadowing_regime,
+                    TradingShadowingProbe.shadowing_metrics,
+                ),
+            )
+            .where(TradingShadowingVerdict.realized_pnl_percentage.is_not(None))
+            .where(TradingShadowingVerdict.realized_pnl_usd.is_not(None))
+            .where(TradingShadowingVerdict.holding_duration_minutes.is_not(None))
+            .where(TradingShadowingVerdict.is_profitable.is_not(None))
+            .where(TradingShadowingVerdict.exit_reason.is_not(None))
+            .where(TradingShadowingVerdict.exit_reason != "STALED")
+            .where(TradingShadowingVerdict.resolved_at.is_not(None))
+            .where(TradingShadowingProbe.shadowing_regime.is_not(None))
+            .where(TradingShadowingProbe.shadowing_metrics.is_not(None))
+            .order_by(TradingShadowingVerdict.resolved_at.asc())
+        )
+
+    def stream_resolved_for_cortex_training(self, batch_size: int) -> Iterator[TradingShadowingVerdict]:
         try:
-            return list(self.database_session.scalars(
-                select(TradingShadowingVerdict)
-                .join(TradingShadowingProbe)
-                .options(
-                    load_only(
-                        TradingShadowingVerdict.id,
-                        TradingShadowingVerdict.probe_id,
-                        TradingShadowingVerdict.realized_pnl_percentage,
-                        TradingShadowingVerdict.realized_pnl_usd,
-                        TradingShadowingVerdict.holding_duration_minutes,
-                        TradingShadowingVerdict.is_profitable,
-                        TradingShadowingVerdict.exit_reason,
-                        TradingShadowingVerdict.resolved_at,
-                    ),
-                    joinedload(TradingShadowingVerdict.probe).load_only(
-                        TradingShadowingProbe.id,
-                        TradingShadowingProbe.token_symbol,
-                        TradingShadowingProbe.blockchain_network,
-                        TradingShadowingProbe.dex_id,
-                        TradingShadowingProbe.pair_address,
-                        TradingShadowingProbe.candidate_rank,
-                        TradingShadowingProbe.quality_score,
-                        TradingShadowingProbe.token_age_hours,
-                        TradingShadowingProbe.liquidity_usd,
-                        TradingShadowingProbe.market_cap_usd,
-                        TradingShadowingProbe.fully_diluted_valuation_usd,
-                        TradingShadowingProbe.promotion_score,
-                        TradingShadowingProbe.volume_m5_usd,
-                        TradingShadowingProbe.volume_h1_usd,
-                        TradingShadowingProbe.volume_h6_usd,
-                        TradingShadowingProbe.volume_h24_usd,
-                        TradingShadowingProbe.price_change_percentage_m5,
-                        TradingShadowingProbe.price_change_percentage_h1,
-                        TradingShadowingProbe.price_change_percentage_h6,
-                        TradingShadowingProbe.price_change_percentage_h24,
-                        TradingShadowingProbe.transaction_count_m5,
-                        TradingShadowingProbe.transaction_count_h1,
-                        TradingShadowingProbe.transaction_count_h6,
-                        TradingShadowingProbe.transaction_count_h24,
-                        TradingShadowingProbe.buy_to_sell_ratio,
-                        TradingShadowingProbe.order_notional_value_usd,
-                        TradingShadowingProbe.shadowing_regime,
-                        TradingShadowingProbe.shadowing_metrics,
-                    ),
-                )
-                .where(TradingShadowingVerdict.realized_pnl_percentage.is_not(None))
-                .where(TradingShadowingVerdict.realized_pnl_usd.is_not(None))
-                .where(TradingShadowingVerdict.holding_duration_minutes.is_not(None))
-                .where(TradingShadowingVerdict.is_profitable.is_not(None))
-                .where(TradingShadowingVerdict.exit_reason.is_not(None))
-                .where(TradingShadowingVerdict.exit_reason != "STALED")
-                .where(TradingShadowingVerdict.resolved_at.is_not(None))
-                .where(TradingShadowingProbe.shadowing_regime.is_not(None))
-                .where(TradingShadowingProbe.shadowing_metrics.is_not(None))
-                .order_by(TradingShadowingVerdict.resolved_at.asc())
-            ).unique().all())
+            result = self.database_session.scalars(
+                self._resolved_for_cortex_training_statement()
+                .execution_options(stream_results=True, yield_per=batch_size)
+            )
+            yield from result
         except Exception as error:
-            logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve cortex training verdicts — %s", error)
+            logger.exception("[DAO][SHADOWING_VERDICT] Failed to stream cortex training verdicts — %s", error)
             raise
 
     def count_staled_verdicts(self) -> int:
@@ -175,7 +181,6 @@ class TradingShadowingVerdictDao:
             raise
 
     def retrieve_recent_resolved(self, limit_count: int) -> list[TradingShadowingVerdict]:
-        from sqlalchemy.orm import joinedload, load_only
         try:
             return list(self.database_session.scalars(
                 select(TradingShadowingVerdict)
@@ -230,7 +235,6 @@ class TradingShadowingVerdictDao:
             end_datetime: datetime,
             limit_count: int,
     ) -> list[TradingShadowingVerdict]:
-        from sqlalchemy.orm import joinedload, load_only
         try:
             verdicts = list(self.database_session.scalars(
                 select(TradingShadowingVerdict)
@@ -276,7 +280,6 @@ class TradingShadowingVerdictDao:
             end_datetime: datetime,
             limit_count: int,
     ) -> list[TradingShadowingVerdict]:
-        from sqlalchemy.orm import joinedload, load_only
         try:
             return list(self.database_session.scalars(
                 select(TradingShadowingVerdict)
@@ -348,7 +351,6 @@ class TradingShadowingVerdictDao:
             raise
 
     def retrieve_resolved_for_pair(self, pair_address: str, limit_count: int) -> list[TradingShadowingVerdict]:
-        from sqlalchemy.orm import joinedload
         try:
             return list(self.database_session.scalars(
                 select(TradingShadowingVerdict)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from src.configuration.config import settings
 from src.core.trading.cortex.trading_cortex_inference_provider import (
     get_trading_cortex_inference_service,
@@ -27,6 +29,20 @@ logger = get_application_logger(__name__)
 
 def _cortex_holding_time_max_minutes() -> float:
     return settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS * 60.0
+
+
+def _format_cortex_gate_criteria_summary(model_version: Optional[str], feature_set_version: str) -> str:
+    return (
+            "criteria(Win>=%.1f%%, Tox<=%.1f%%, PnL>=%.2f%%, Hold<=%.1fh) model=%s feature_set=%s"
+            % (
+                settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD * 100.0,
+                settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD * 100.0,
+                settings.TRADING_CORTEX_PNL_THRESHOLD,
+                settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS,
+                model_version,
+                feature_set_version,
+            )
+    )
 
 
 def sort_trading_candidates_by_cortex_final_trade_score(candidates: list[TradingCandidate],descending: bool) -> list[TradingCandidate]:
@@ -140,16 +156,23 @@ def apply_trading_cortex_gate_filter(
 
     _log_cortex_evaluation_details(retained=retained, rejected=rejected)
 
+    gate_criteria_summary: str = _format_cortex_gate_criteria_summary(
+        first_response.model_version,
+        first_response.feature_set_version,
+    )
+
     if rejected:
         logger.info(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Retained %d / %d candidates",
+            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] Retained %d / %d candidates — %s",
             len(retained),
             len(candidates),
+            gate_criteria_summary,
         )
     else:
         logger.debug(
-            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] All %d candidates passed cortex gate",
+            "[TRADING][PIPELINE][TRADING][CORTEX][GATE] All %d candidates passed cortex gate — %s",
             len(candidates),
+            gate_criteria_summary,
         )
 
     return sort_trading_candidates_by_cortex_final_trade_score(retained, descending=True) + skipped_without_cortex
