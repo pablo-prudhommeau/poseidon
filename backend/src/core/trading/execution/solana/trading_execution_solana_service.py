@@ -30,6 +30,9 @@ from src.integrations.blockchain.blockchain_structures import (
     BlockchainSolanaRoute,
 )
 from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
+from src.integrations.blockchain.solana.blockchain_solana_transaction_trade_amounts_service import (
+    resolve_solana_executed_trade_amounts_from_transaction,
+)
 from src.integrations.blockchain.solana.solana_onchain_wallet_context_service import (
     invalidate_solana_onchain_wallet_context_cache,
 )
@@ -104,14 +107,24 @@ def build_solana_buy_route(candidate: TradingCandidate, order_notional_usd: floa
 
 
 def build_solana_sell_route(token_mint: str, token_quantity: float, token_decimals: int) -> BlockchainExecutionRoute:
+    amount_in_lamports = int(token_quantity * (10 ** token_decimals))
+    return build_solana_sell_route_with_smallest_unit_amount(
+        token_mint=token_mint,
+        token_amount_in_smallest_unit=amount_in_lamports,
+    )
+
+
+def build_solana_sell_route_with_smallest_unit_amount(
+        token_mint: str,
+        token_amount_in_smallest_unit: int,
+) -> BlockchainExecutionRoute:
     if not token_mint:
         raise BlockchainExecutionRouteBuildError(
             "Missing SPL token mint for sell route",
             blockchain_network=BlockchainNetwork.SOLANA,
         )
 
-    amount_lamports = int(token_quantity * (10 ** token_decimals))
-    if amount_lamports <= 0:
+    if token_amount_in_smallest_unit <= 0:
         raise BlockchainExecutionRouteBuildError(
             f"Non-positive sell amount for token mint {token_mint}",
             blockchain_network=BlockchainNetwork.SOLANA,
@@ -138,7 +151,7 @@ def build_solana_sell_route(token_mint: str, token_quantity: float, token_decima
             source_address=from_address,
             input_mint=token_mint,
             output_mint=stablecoin_address,
-            amount_in_lamports=amount_lamports,
+            amount_in_lamports=token_amount_in_smallest_unit,
             slippage_basis_points=slippage_basis_points,
         )
     except JupiterApiUnavailableError as jupiter_unavailable_error:
@@ -177,20 +190,39 @@ def resolve_solana_sell_token_decimals(token_address: str) -> int:
     return get_spl_token_decimals(rpc_url, token_address)
 
 
+def resolve_wallet_token_balance_raw_for_mint(token_mint_address: str) -> int:
+    wallet_snapshot = resolve_solana_wallet_snapshot(force_refresh=True)
+    total_balance_raw = 0
+    for token_account in wallet_snapshot.token_accounts:
+        if token_account.token_mint_address != token_mint_address:
+            continue
+        total_balance_raw += token_account.balance_raw
+    return total_balance_raw
+
+
+def resolve_sell_amount_in_lamports_for_close(
+        token_mint_address: str,
+        sell_quantity_human: float,
+        token_decimals: int,
+        is_full_close: bool,
+) -> int:
+    wallet_balance_raw = resolve_wallet_token_balance_raw_for_mint(token_mint_address)
+    if is_full_close:
+        return wallet_balance_raw
+
+    requested_amount_in_lamports = int(sell_quantity_human * (10 ** token_decimals))
+    if requested_amount_in_lamports > wallet_balance_raw:
+        return wallet_balance_raw
+    return requested_amount_in_lamports
+
+
 def cap_solana_sell_quantity_to_wallet_balance(
         token_address: str,
         sell_quantity: float,
         token_decimals: int,
 ) -> float:
-    wallet_snapshot = resolve_solana_wallet_snapshot(force_refresh=True)
-    token_account_balance_raw = 0
-    for token_account in wallet_snapshot.token_accounts:
-        if token_account.token_mint_address != token_address:
-            continue
-        token_account_balance_raw = token_account.balance_raw
-        break
-
-    actual_balance = float(token_account_balance_raw) / float(10 ** token_decimals)
+    wallet_balance_raw = resolve_wallet_token_balance_raw_for_mint(token_address)
+    actual_balance = float(wallet_balance_raw) / float(10 ** token_decimals)
     if actual_balance < sell_quantity:
         logger.warning(
             "[TRADING][EXECUTION][SOLANA][POSITION] Actual balance (%.6f) is less than theoretical (%.6f). Capping sell quantity.",
@@ -375,6 +407,33 @@ async def _execute_solana_live_buy(
             )
             return False
 
+        recorded_price_usd = price_usd
+        recorded_quantity = quantity
+        token_decimals = await asyncio.to_thread(resolve_solana_sell_token_decimals, token.token_address)
+        executed_trade_amounts = await asyncio.to_thread(
+            resolve_solana_executed_trade_amounts_from_transaction,
+            execution_outcome.transaction_hash_or_signature,
+            token.token_address,
+            token_decimals,
+        )
+        if executed_trade_amounts is not None:
+            recorded_price_usd = executed_trade_amounts.executed_token_price_usd
+            recorded_quantity = executed_trade_amounts.executed_token_quantity
+            logger.info(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] Recorded on-chain executed trade amounts — "
+                "token=%s executed_token_price_usd=%.12f executed_token_quantity=%.12f",
+                token.symbol,
+                recorded_price_usd,
+                recorded_quantity,
+            )
+        else:
+            logger.warning(
+                "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][BUY] On-chain trade amount parsing unavailable — "
+                "token=%s transaction_signature=%s falling back to quote-based ledger",
+                token.symbol,
+                execution_outcome.transaction_hash_or_signature,
+            )
+
         with get_database_session() as database_session:
             trade_dao = TradingTradeDao(database_session)
             position_dao = TradingPositionDao(database_session)
@@ -384,8 +443,8 @@ async def _execute_solana_live_buy(
                 trade_side=TradeSide.BUY,
                 token_symbol=token.symbol,
                 blockchain_network=BlockchainNetwork.SOLANA.value,
-                execution_price=price_usd,
-                execution_quantity=quantity,
+                execution_price=recorded_price_usd,
+                execution_quantity=recorded_quantity,
                 transaction_fee=execution_outcome.transaction_fee_usd,
                 realized_profit_and_loss=None,
                 execution_status=ExecutionStatus.LIVE,
@@ -403,9 +462,9 @@ async def _execute_solana_live_buy(
                 blockchain_network=BlockchainNetwork.SOLANA.value,
                 token_address=token.token_address,
                 pair_address=token.pair_address,
-                open_quantity=quantity,
-                current_quantity=quantity,
-                entry_price=price_usd,
+                open_quantity=recorded_quantity,
+                current_quantity=recorded_quantity,
+                entry_price=recorded_price_usd,
                 take_profit_tier_1_price=take_profit_tp1_usd,
                 take_profit_tier_2_price=take_profit_tp2_usd,
                 stop_loss_price=stop_loss_usd,

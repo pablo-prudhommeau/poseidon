@@ -19,7 +19,13 @@ from src.core.trading.execution.trading_blockchain_circuit_breaker_service impor
     should_mark_position_staled_immediately_after_failure,
 )
 from src.core.trading.execution.solana.trading_execution_solana_service import (
+    build_solana_sell_route_with_smallest_unit_amount,
     resolve_solana_wallet_token_transfer_blocked_for_mint,
+    resolve_sell_amount_in_lamports_for_close,
+    resolve_wallet_token_balance_raw_for_mint,
+)
+from src.core.trading.execution.trading_execution_notification_service import (
+    dispatch_position_dust_remaining_alert,
 )
 from src.core.trading.execution.trading_execution_swap_service import run_live_sell_blocking
 from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
@@ -39,6 +45,10 @@ from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainPriceUnavailableError,
 )
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens
+from src.integrations.blockchain.solana.blockchain_solana_transaction_trade_amounts_service import (
+    resolve_solana_executed_trade_amounts_from_transaction,
+)
+from src.integrations.blockchain.solana.solana_structures import SolanaExecutedTradeAmounts
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
@@ -224,6 +234,15 @@ def _execute_closing_sell(
     stablecoin_swap_settled_on_chain = True
     execution_outcome = None
     deployable_cash_before_swap_usd = 0.0
+    executed_trade_amounts: Optional[SolanaExecutedTradeAmounts] = None
+    chain_enum: Optional[BlockchainNetwork] = None
+    token_decimals = 0
+    full_close_reasons = (
+        PositionExitTriggerReason.STOP_LOSS,
+        PositionExitTriggerReason.TAKE_PROFIT_2,
+        PositionExitTriggerReason.MANUAL,
+    )
+    is_full_close = reason in full_close_reasons
 
     if not settings.PAPER_MODE:
         chain_lower = position.blockchain_network.strip().lower()
@@ -296,13 +315,35 @@ def _execute_closing_sell(
                 close_position_as_honeypot(database_session=database_session, position=position)
                 return TradingPositionClosingSellResult()
 
-        try:
-            execution_route = build_route_for_live_sell(
-                token_mint=position.token_address,
-                chain=chain_enum,
-                token_quantity=sell_quantity,
+        if chain_enum == BlockchainNetwork.SOLANA:
+            token_amount_in_smallest_unit = resolve_sell_amount_in_lamports_for_close(
+                token_mint_address=position.token_address,
+                sell_quantity_human=sell_quantity,
                 token_decimals=token_decimals,
+                is_full_close=is_full_close,
             )
+            if token_amount_in_smallest_unit <= 0:
+                logger.error(
+                    "[TRADING][EXECUTION][POSITION][LIVE] Wallet SPL balance is zero for %s while position still holds quantity — marking STALED (external sell or ledger desync)",
+                    position.token_symbol,
+                )
+                mark_position_staled(database_session, position, PositionExitTriggerReason.WALLET_BALANCE_EMPTY)
+                return TradingPositionClosingSellResult()
+            sell_quantity = float(token_amount_in_smallest_unit) / float(10 ** token_decimals)
+
+        try:
+            if chain_enum == BlockchainNetwork.SOLANA:
+                execution_route = build_solana_sell_route_with_smallest_unit_amount(
+                    token_mint=position.token_address,
+                    token_amount_in_smallest_unit=token_amount_in_smallest_unit,
+                )
+            else:
+                execution_route = build_route_for_live_sell(
+                    token_mint=position.token_address,
+                    chain=chain_enum,
+                    token_quantity=sell_quantity,
+                    token_decimals=token_decimals,
+                )
         except BlockchainExecutionRouteBuildError as route_build_error:
             if route_build_error.is_transient:
                 logger.debug(
@@ -361,6 +402,31 @@ def _execute_closing_sell(
         )
         stablecoin_swap_settled_on_chain = settlement_poll_result.swap_settled_on_chain
 
+        if chain_enum == BlockchainNetwork.SOLANA:
+            executed_trade_amounts = resolve_solana_executed_trade_amounts_from_transaction(
+                transaction_signature=execution_outcome.transaction_hash_or_signature,
+                target_token_mint_address=position.token_address,
+                token_decimals=token_decimals,
+            )
+            if executed_trade_amounts is not None:
+                execution_price = executed_trade_amounts.executed_token_price_usd
+                sell_quantity = executed_trade_amounts.executed_token_quantity
+                logger.info(
+                    "[TRADING][EXECUTION][POSITION][LIVE][SELL] Recorded on-chain executed trade amounts — "
+                    "token=%s executed_token_price_usd=%.12f executed_token_quantity=%.12f stablecoin_balance_delta_usd=%.6f",
+                    position.token_symbol,
+                    execution_price,
+                    sell_quantity,
+                    executed_trade_amounts.stablecoin_balance_delta_usd,
+                )
+            else:
+                logger.warning(
+                    "[TRADING][EXECUTION][POSITION][LIVE][SELL] On-chain trade amount parsing unavailable — "
+                    "token=%s transaction_signature=%s falling back to quote-based PnL",
+                    position.token_symbol,
+                    execution_outcome.transaction_hash_or_signature,
+                )
+
     trade_dao = TradingTradeDao(database_session)
     execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
     live_transaction_fee_usd = 0.0
@@ -386,24 +452,30 @@ def _execute_closing_sell(
     )
     trade_dao.save(sell_trade)
 
-    full_close_reasons = (
-        PositionExitTriggerReason.STOP_LOSS,
-        PositionExitTriggerReason.TAKE_PROFIT_2,
-        PositionExitTriggerReason.MANUAL,
-    )
-    if reason in full_close_reasons:
+    if is_full_close:
         position.current_quantity = 0.0
         position.position_phase = PositionPhase.CLOSED
         position.closed_at = get_current_local_datetime()
     else:
-        position.current_quantity -= sell_quantity
+        if (
+                not settings.PAPER_MODE
+                and chain_enum == BlockchainNetwork.SOLANA
+                and token_decimals > 0
+        ):
+            remaining_balance_raw = resolve_wallet_token_balance_raw_for_mint(position.token_address)
+            position.current_quantity = float(remaining_balance_raw) / float(10 ** token_decimals)
+        else:
+            position.current_quantity -= sell_quantity
         if position.current_quantity <= 0.0:
             position.position_phase = PositionPhase.CLOSED
             position.closed_at = get_current_local_datetime()
         else:
             position.position_phase = PositionPhase.PARTIAL
 
-    exit_notional = sell_quantity * execution_price
+    if executed_trade_amounts is not None and executed_trade_amounts.stablecoin_balance_delta_usd > 0.0:
+        exit_notional = executed_trade_amounts.stablecoin_balance_delta_usd
+    else:
+        exit_notional = sell_quantity * execution_price
     entry_notional = sell_quantity * position.entry_price
     allocated_buy_swap_fee_usd = _resolve_allocated_buy_swap_fee_usd_for_sell(
         database_session=database_session,
@@ -431,6 +503,22 @@ def _execute_closing_sell(
         holding_duration_minutes=holding_duration,
         was_profitable=(trade_pnl_usd > 0),
     )
+
+    if (
+            is_full_close
+            and not settings.PAPER_MODE
+            and chain_enum == BlockchainNetwork.SOLANA
+            and token_decimals > 0
+    ):
+        remaining_balance_raw = resolve_wallet_token_balance_raw_for_mint(position.token_address)
+        if remaining_balance_raw > 0:
+            dispatch_position_dust_remaining_alert(
+                token_symbol=position.token_symbol,
+                token_mint_address=position.token_address,
+                remaining_balance_raw=remaining_balance_raw,
+                token_decimals=token_decimals,
+                position_id=position.id,
+            )
 
     return TradingPositionClosingSellResult(
         trading_trade=sell_trade,

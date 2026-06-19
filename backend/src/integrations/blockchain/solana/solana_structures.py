@@ -134,3 +134,12 @@ class SolanaOnchainWalletContext(BaseModel):
     stablecoin_balance_raw: float
     native_token_balance_raw: float
     native_token_balance_usd: float
+
+
+class SolanaExecutedTradeAmounts(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    stablecoin_balance_delta_usd: float
+    token_balance_delta_raw: int
+    executed_token_quantity: float
+    executed_token_price_usd: float
