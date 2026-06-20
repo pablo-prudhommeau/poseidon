@@ -45,6 +45,7 @@ import {
     applyMobileTradingGridLayout,
     isTradingGridCompactViewport,
     resetGridColumnLayout,
+    tradingGridCompactViewportQuery,
     tradingGridsMobileColumnLayout
 } from '../trading-grid-viewport.utils';
 import {
@@ -608,7 +609,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         const handler = (): void => {
             this.applyPositionsColumnVisibilityForViewport();
         };
-        const mediaCompact = window.matchMedia('(max-width: 1024px)');
+        const mediaCompact = window.matchMedia(tradingGridCompactViewportQuery);
         mediaCompact.addEventListener('change', handler);
         this.destroyRef.onDestroy(() => {
             mediaCompact.removeEventListener('change', handler);

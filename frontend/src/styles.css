@@ -498,7 +498,7 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell 
     font-size: 0.9rem;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 768px) {
     .poseidon-grid-symbol-label {
         display: none;
     }

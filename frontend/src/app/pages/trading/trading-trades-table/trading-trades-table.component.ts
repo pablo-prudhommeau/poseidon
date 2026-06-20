@@ -34,6 +34,7 @@ import {
     applyMobileTradingGridLayout,
     isTradingGridCompactViewport,
     resetGridColumnLayout,
+    tradingGridCompactViewportQuery,
     tradingGridsMobileColumnLayout
 } from '../trading-grid-viewport.utils';
 import { positionPhasePillNgClasses, resolveTradeSideIconClass } from '../trading-position-phase-pill.utils';
@@ -415,7 +416,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
         const handler = (): void => {
             this.applyTradesColumnVisibilityForViewport();
         };
-        const mediaCompact = window.matchMedia('(max-width: 1024px)');
+        const mediaCompact = window.matchMedia(tradingGridCompactViewportQuery);
         mediaCompact.addEventListener('change', handler);
         this.destroyRef.onDestroy(() => {
             mediaCompact.removeEventListener('change', handler);

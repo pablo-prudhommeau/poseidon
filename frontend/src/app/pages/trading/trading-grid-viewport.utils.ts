@@ -26,7 +26,7 @@ function isFlexColumnLayout(layout: MobileColumnLayout): layout is FlexColumnLay
 
 export type MobileTradingGridColumnLayoutMap = Record<string, MobileColumnLayout>;
 
-export const tradingGridCompactViewportQuery = '(max-width: 1024px)';
+export const tradingGridCompactViewportQuery = '(max-width: 768px)';
 
 export const tradingGridsMobileColumnLayout = {
     symbol: { flex: 0.65, minWidth: 40 } satisfies FlexColumnLayout,
