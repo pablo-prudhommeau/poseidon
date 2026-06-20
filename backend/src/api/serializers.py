@@ -41,6 +41,7 @@ logger = get_application_logger(__name__)
 def serialize_trading_trade(
         trading_trade: TradingTrade,
         linked_position_id: int,
+        evaluation_order_notional_value_usd: float,
 ) -> TradingTradePayload:
     return TradingTradePayload(
         id=trading_trade.id,
@@ -59,6 +60,7 @@ def serialize_trading_trade(
         dex_id=trading_trade.dex_id,
         created_at=format_datetime_to_local_iso(trading_trade.created_at),
         linked_position_id=linked_position_id,
+        evaluation_order_notional_value_usd=evaluation_order_notional_value_usd,
     )
 
 

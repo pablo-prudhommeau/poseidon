@@ -56,8 +56,9 @@ from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
+from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.database_session_manager import get_database_session
-from src.persistence.models import TradingPortfolioSnapshot, TradingPosition
+from src.persistence.models import TradingPortfolioSnapshot, TradingPosition, TradingEvaluation
 
 logger = get_application_logger(__name__)
 
@@ -189,14 +190,19 @@ def build_trading_trades_payloads() -> list[TradingTradePayload]:
     with get_database_session() as database_session:
         trade_dao = TradingTradeDao(database_session)
         position_dao = TradingPositionDao(database_session)
+        evaluation_dao = TradingEvaluationDao(database_session)
         recent_trade_records = trade_dao.retrieve_recent_trades(limit_count=10000)
         evaluation_ids = [trade_record.evaluation_id for trade_record in recent_trade_records]
         linked_positions = position_dao.retrieve_by_evaluation_ids(evaluation_ids)
+        linked_evaluations = evaluation_dao.retrieve_by_evaluation_ids(evaluation_ids)
         positions_by_evaluation_id: dict[int, TradingPosition] = {}
         for linked_position in linked_positions:
             existing = positions_by_evaluation_id.get(linked_position.evaluation_id)
             if existing is None or linked_position.id > existing.id:
                 positions_by_evaluation_id[linked_position.evaluation_id] = linked_position
+        evaluations_by_id: dict[int, TradingEvaluation] = {
+            linked_evaluation.id: linked_evaluation for linked_evaluation in linked_evaluations
+        }
 
         payloads: list[TradingTradePayload] = []
         for trade_record in recent_trade_records:
@@ -205,7 +211,18 @@ def build_trading_trades_payloads() -> list[TradingTradePayload]:
                 raise ValueError(
                     f"Missing linked trading position for trade_id={trade_record.id} evaluation_id={trade_record.evaluation_id}"
                 )
-            payloads.append(serialize_trading_trade(trade_record, linked_position.id))
+            linked_evaluation = evaluations_by_id.get(trade_record.evaluation_id)
+            if linked_evaluation is None:
+                raise ValueError(
+                    f"Missing linked trading evaluation for trade_id={trade_record.id} evaluation_id={trade_record.evaluation_id}"
+                )
+            payloads.append(
+                serialize_trading_trade(
+                    trading_trade=trade_record,
+                    linked_position_id=linked_position.id,
+                    evaluation_order_notional_value_usd=linked_evaluation.order_notional_value_usd,
+                )
+            )
         return payloads
 
 

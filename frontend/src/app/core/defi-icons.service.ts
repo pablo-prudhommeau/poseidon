@@ -89,7 +89,7 @@ export class DefiIconsService {
         const tokenIconElement = this.buildTokenIconElement(chainName, tokenAddress, tokenSymbol);
 
         const labelElement = document.createElement('span');
-        labelElement.className = 'font-medium';
+        labelElement.className = 'font-medium poseidon-grid-symbol-label';
         labelElement.textContent = tokenSymbol || '—';
 
         rootElement.appendChild(chainIconElement);

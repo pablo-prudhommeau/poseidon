@@ -1,11 +1,8 @@
-<nav class="flex justify-between mx-auto px-6 py-6">
-    <div class="flex items-center gap-4">
-        <div class="relative inline-block">
-            <img src="assets/poseidon.png" alt="Poseidon" class="h-32 w-auto" />
-            <app-connection-overlay-pill></app-connection-overlay-pill>
-        </div>
+<nav class="flex justify-between items-center mx-auto px-3 py-3 md:px-6 md:py-6">
+    <div class="relative inline-block shrink-0">
+        <img src="assets/poseidon.png" alt="Poseidon" class="h-14 w-auto md:h-20" />
+        <app-connection-overlay-pill></app-connection-overlay-pill>
     </div>
-    <app-paper-mode-control></app-paper-mode-control>
     <div class="flex-none">
         <div class="flex items-center gap-1 rounded-full bg-white/5 border border-white/10 backdrop-blur shadow-sm px-1 py-1 text-sm" role="navigation" aria-label="Main">
             @for (item of items; track item.route) {

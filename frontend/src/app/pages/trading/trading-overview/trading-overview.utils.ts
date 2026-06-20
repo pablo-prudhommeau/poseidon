@@ -25,6 +25,16 @@ export function computeProgressPercentage(value: number | null | undefined, requ
     return Math.min(100, ((value ?? 0) / required) * 100);
 }
 
+export function safePercent(value: number | null | undefined, base: number | null | undefined): number | null {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+        return null;
+    }
+    if (base === null || base === undefined || !Number.isFinite(base) || base <= 0) {
+        return null;
+    }
+    return (value / base) * 100;
+}
+
 export function isNonNegative(value: number | null): boolean {
     if (value === null) {
         return false;

@@ -176,6 +176,7 @@ export interface TradingTradePayload {
     realized_profit_and_loss?: number | null;
     transaction_hash?: string | null;
     linked_position_id: number;
+    evaluation_order_notional_value_usd: number;
 }
 
 export interface TradingPositionPayload {

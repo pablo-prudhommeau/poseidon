@@ -1,4 +1,4 @@
-<ag-grid-angular class="w-full poseidon-ag-grid-surface" domLayout="autoHeight" [columnDefs]="columnDefinitions" [defaultColDef]="defaultColumnDefinition" [rowData]="positionsRowData()" [getRowId]="getRowId" [theme]="agGridTheme" (gridReady)="onPositionsGridReady($event)"> </ag-grid-angular>
+<ag-grid-angular class="w-full poseidon-ag-grid-surface" domLayout="autoHeight" [columnDefs]="columnDefinitions" [defaultColDef]="defaultColumnDefinition" [gridOptions]="gridOptions" [rowData]="positionsRowData()" [getRowId]="getRowId" [theme]="agGridTheme" (gridReady)="onPositionsGridReady($event)" (firstDataRendered)="onPositionsFirstDataRendered()" (gridSizeChanged)="onPositionsGridSizeChanged()"> </ag-grid-angular>
 
 <ng-template #actionsTemplate let-row="row">
     <div class="flex items-center justify-center gap-1.5 h-full">

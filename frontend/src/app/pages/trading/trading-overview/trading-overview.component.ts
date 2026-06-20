@@ -6,9 +6,10 @@ import { BlockchainCashBalancePayload, TradingEquityCurvePointPayload, TradingPo
 import { OptionalNumberPipe } from '../../../core/optional-number.pipe';
 import { WebSocketService } from '../../../core/websocket.service';
 import { SparklineComponent } from '../../../widgets/sparkline/sparkline.component';
+import { PaperResetService } from '../../../widgets/paper-mode-control/paper-reset.service';
 import { TradingPositionsTableComponent } from '../trading-positions-table/trading-positions-table.component';
 import { TradingTradesTableComponent } from '../trading-trades-table/trading-trades-table.component';
-import { firstNonNull, isNonNegative, mapNullable } from './trading-overview.utils';
+import { firstNonNull, isNonNegative, mapNullable, safePercent } from './trading-overview.utils';
 import {
     buildGasRefillLockedTooltipHtml,
     buildPortfolioLockedTooltipHtml,
@@ -36,7 +37,6 @@ type LiquidityBalanceCard = BlockchainCashBalancePayload & { isPlaceholder: bool
 })
 export class TradingOverviewComponent implements OnDestroy {
     private readonly webSocketService = inject(WebSocketService);
-
     readonly liquidity = computed(() => this.webSocketService.tradingLiquidity());
 
     readonly blockchainBalances = computed<BlockchainCashBalancePayload[]>(
@@ -81,10 +81,34 @@ export class TradingOverviewComponent implements OnDestroy {
         )
     );
 
+    readonly equity = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.total_equity_value));
+    readonly realizedTotal = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.realized_profit_and_loss_total));
+    readonly unrealized = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.unrealized_profit_and_loss));
+
+    readonly contributedCapitalBase = computed<number | null>(() => {
+        const equity = this.equity();
+        const realizedTotal = this.realizedTotal();
+        const unrealized = this.unrealized();
+        if (equity === null || realizedTotal === null || unrealized === null) {
+            return null;
+        }
+        return equity - realizedTotal - unrealized;
+    });
+
     readonly cumulativeSwapFees = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.cumulative_swap_fees_usd));
+    readonly cumulativeSwapFeesPercent = computed<number | null>(() => {
+        const fees = this.cumulativeSwapFees();
+        const base = this.contributedCapitalBase();
+        if (fees === null || base === null) {
+            return null;
+        }
+        if (fees === 0) {
+            return 0;
+        }
+        return safePercent(-Math.abs(fees), base);
+    });
 
     readonly deployableCash = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.deployable_cash_usd));
-
     readonly holdings = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.holdings_mark_to_market_usd));
     readonly sizingCapital = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.sizing_capital_usd));
 
@@ -137,14 +161,14 @@ export class TradingOverviewComponent implements OnDestroy {
     });
 
     readonly displaySlotCount = computed(() => this.liquidity()?.maximum_chain_count ?? 4);
-    readonly equity = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.total_equity_value));
     readonly equitySpark = computed<TradingEquityCurvePointPayload[]>(() => this.portfolio()?.equity_curve ?? []);
     readonly isNonNegative = isNonNegative;
+    readonly paperResetService = inject(PaperResetService);
+    readonly isPaperResetInProgress = this.paperResetService.isResetInProgress;
     readonly liquiditySkeletonSlotIndices = computed(() => this.rangeArray(this.displaySlotCount()));
     readonly liquiditySubtitle = computed(() => 'deployable');
     readonly liquidityTitle = computed(() => 'capital breakdown');
-
-    private readonly nowMilliseconds = signal(Date.now());
+    readonly nowMilliseconds = signal(Date.now());
 
     readonly liquidityUpdatedAgo = computed(() => {
         if (this.isPaperMode()) {
@@ -173,12 +197,24 @@ export class TradingOverviewComponent implements OnDestroy {
         return `${elapsedHours}h ago`;
     });
 
+    readonly openHoldingsCostBasis = computed<number | null>(() => {
+        const holdings = this.holdings();
+        const unrealized = this.unrealized();
+        if (holdings === null || unrealized === null) {
+            return null;
+        }
+        return holdings - unrealized;
+    });
+
     readonly openShadowChronicle = output<void>();
     readonly portfolioLockedTooltipHtml = computed(() => buildPortfolioLockedTooltipHtml());
     readonly realized24h = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.realized_profit_and_loss_24h));
+    readonly realized24hPercent = computed<number | null>(() => safePercent(this.realized24h(), this.contributedCapitalBase()));
     readonly realized30d = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.realized_profit_and_loss_30d));
+    readonly realized30dPercent = computed<number | null>(() => safePercent(this.realized30d(), this.contributedCapitalBase()));
     readonly realized7d = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.realized_profit_and_loss_7d));
-    readonly realizedTotal = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.realized_profit_and_loss_total));
+    readonly realized7dPercent = computed<number | null>(() => safePercent(this.realized7d(), this.contributedCapitalBase()));
+    readonly realizedTotalPercent = computed<number | null>(() => safePercent(this.realizedTotal(), this.contributedCapitalBase()));
 
     readonly sizingBaseTooltipHtml =
         `<p class="mb-2"><span class="poseidon-tooltip-title text-blue-200">sizing base</span></p>` +
@@ -190,9 +226,9 @@ export class TradingOverviewComponent implements OnDestroy {
     readonly totalGasRefillLockedStablecoin = computed<number | null>(() =>
         mapNullable(this.portfolio(), (portfolio) => portfolio.total_gas_refill_locked_stablecoin_usd)
     );
-    readonly unrealized = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.unrealized_profit_and_loss));
-    readonly walletReserve = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.wallet_auxiliary_assets_usd));
 
+    readonly unrealizedPercent = computed<number | null>(() => safePercent(this.unrealized(), this.openHoldingsCostBasis()));
+    readonly walletReserve = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.wallet_auxiliary_assets_usd));
     readonly walletReserveTooltipHtml = buildWalletReserveTooltipHtml();
 
     private readonly chainIconCandidateIndices = new Map<string, number>();
@@ -241,6 +277,21 @@ export class TradingOverviewComponent implements OnDestroy {
         );
     }
 
+    formatFeesPercentInline(value: number | null): string {
+        if (value === null || !Number.isFinite(value)) {
+            return '';
+        }
+        return `(-${Math.abs(value).toFixed(2)}%)`;
+    }
+
+    formatPercentInline(value: number | null): string {
+        if (value === null || !Number.isFinite(value)) {
+            return '';
+        }
+        const sign = value > 0 ? '+' : '';
+        return `(${sign}${value.toFixed(2)}%)`;
+    }
+
     handleChainIconError(blockchainNetwork: string, event: Event): void {
         const imageElement = event.target as HTMLImageElement | null;
         if (!imageElement) {
@@ -275,6 +326,10 @@ export class TradingOverviewComponent implements OnDestroy {
 
     rangeArray(length: number): number[] {
         return Array.from({ length }, (_, index) => index);
+    }
+
+    resetPaperPortfolio(): void {
+        this.paperResetService.resetPaperPortfolio();
     }
 
     resolveChainIconUrl(blockchainNetwork: string): string {

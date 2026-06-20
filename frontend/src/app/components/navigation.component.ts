@@ -3,7 +3,6 @@ import { Component, inject, OnInit } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { WebSocketService } from '../core/websocket.service';
 import { ConnectionOverlayPillComponent } from '../widgets/connection-overlay-pill/connection-overlay-pill.component';
-import { PaperModeControlComponent } from '../widgets/paper-mode-control/paper-mode-control.component';
 
 interface NavigationItem {
     label: string;
@@ -15,7 +14,7 @@ interface NavigationItem {
 @Component({
     standalone: true,
     selector: 'app-nav',
-    imports: [CommonModule, RouterModule, ConnectionOverlayPillComponent, PaperModeControlComponent],
+    imports: [CommonModule, RouterModule, ConnectionOverlayPillComponent],
     templateUrl: './navigation.component.html'
 })
 export class NavigationComponent implements OnInit {

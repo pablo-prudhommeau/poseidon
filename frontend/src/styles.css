@@ -464,6 +464,163 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell 
     gap: 1px;
 }
 
+.poseidon-grid-delta-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    line-height: 1.12;
+    gap: 1px;
+}
+
+.poseidon-grid-delta-usd {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    opacity: 0.85;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.poseidon-grid-pill-icon {
+    display: none;
+}
+
+.poseidon-page-tabs {
+    --p-tabs-tabpanel-padding: 1.125rem;
+}
+
+.poseidon-page-tabs .p-tabpanel {
+    padding: 0;
+}
+
+@media (max-width: 1024px) {
+    .poseidon-grid-symbol-label {
+        display: none;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell .poseidon-grid-pill-label {
+        display: none;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell .poseidon-grid-pill-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 0.95rem;
+        height: 0.95rem;
+        font-size: 0.82rem;
+        line-height: 0;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell .poseidon-grid-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.65rem;
+        height: 1.65rem;
+        padding: 0;
+        min-width: 0;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-symbol-cell,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-symbol-cell.ag-cell-value {
+        display: flex;
+        align-items: center;
+        line-height: normal;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-symbol-cell app-symbol-chip-renderer {
+        display: contents;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-symbol-cell .inline-flex {
+        display: inline-flex;
+        align-items: center;
+        line-height: normal;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell.ag-cell-value,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='actions'],
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='actions'].ag-cell-value {
+        display: flex;
+        align-items: center;
+        line-height: normal;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell .ag-cell-wrapper,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='actions'] .ag-cell-wrapper {
+        display: flex;
+        align-items: center;
+        height: 100%;
+        width: 100%;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell .ag-cell-value,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell.ag-cell-value {
+        justify-content: center;
+        width: 100%;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='actions'] .ag-cell-value,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='actions'].ag-cell-value {
+        justify-content: center;
+        width: 100%;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell[col-id='deltaPercent'],
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='deltaPercent'],
+    ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell[col-id='realizedProfitAndLoss'],
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='realizedProfitAndLoss'] {
+        padding-inline: 0.25rem;
+        text-align: center;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell[col-id='deltaPercent'] .ag-header-cell-comp-wrapper,
+    ag-grid-angular.poseidon-ag-grid-surface
+        .ag-header-cell[col-id='realizedProfitAndLoss']
+        .ag-header-cell-comp-wrapper {
+        justify-content: center;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-header-cell[col-id='deltaPercent'] app-icon-header-renderer .flex,
+    ag-grid-angular.poseidon-ag-grid-surface
+        .ag-header-cell[col-id='realizedProfitAndLoss']
+        app-icon-header-renderer
+        .flex {
+        justify-content: center !important;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='deltaPercent'].poseidon-grid-delta-stack-cell,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='realizedProfitAndLoss'].poseidon-grid-delta-stack-cell {
+        justify-content: center;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='deltaPercent'] .poseidon-grid-delta-stack,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='realizedProfitAndLoss'] .poseidon-grid-delta-stack {
+        align-items: flex-end;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='deltaPercent'] .poseidon-grid-delta-usd,
+    ag-grid-angular.poseidon-ag-grid-surface .ag-cell[col-id='realizedProfitAndLoss'] .poseidon-grid-delta-usd {
+        align-self: flex-end;
+        text-align: right;
+    }
+
+    .poseidon-page-tabs {
+        --p-tabs-tabpanel-padding: 0.75rem;
+    }
+
+    .poseidon-page-tabs .p-tab {
+        --p-tabs-tab-padding: 0.5rem 0.65rem;
+        font-size: 0.9rem;
+    }
+
+    ag-grid-angular.poseidon-ag-grid-surface .ag-root-wrapper {
+        border-radius: 0.5rem;
+    }
+}
+
 .poseidon-grid-notional-entry-struck {
     text-decoration: line-through;
     font-size: 0.75rem;
@@ -491,6 +648,12 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell 
 }
 
 ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-delta-stack-cell {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -751,6 +914,29 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-price-stack-cell
 .trading-overview-hero-spacer {
     height: 2.5rem;
     margin-top: 0.75rem;
+}
+
+.trading-overview-footer-value-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.trading-overview-pct {
+    flex: none;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0.65;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+}
+
+.trading-overview-pct--fees {
+    color: rgb(255 255 255);
+    opacity: 0.55;
+    text-shadow: 0 0 10px rgb(255 255 255 / 0.22);
 }
 
 .poseidon-tooltip {

@@ -42,13 +42,19 @@ import { SymbolChipRendererComponent } from '../../../renderers/symbol-chip.rend
 import { TemplateCellRendererComponent } from '../../../renderers/template-cell.renderer';
 import { tradingGridsLeadingColumnLayout } from '../trading.constants';
 import {
+    applyMobileTradingGridLayout,
+    isTradingGridCompactViewport,
+    resetGridColumnLayout,
+    tradingGridsMobileColumnLayout
+} from '../trading-grid-viewport.utils';
+import {
     computeTradingPositionDeltaPercent,
-    formatDeltaPercentCellHtml,
+    formatDeltaPercentAndUsdCellHtml,
     formatPositionNotionalCellHtml,
     orderTradingPositionNotionalUsd
 } from '../trading-position-grid-metrics';
 import { formatPositionExitReasonLabel } from '../trading-position-exit-reason.utils';
-import { positionPhasePillNgClasses, resolvePositionPhasePillClass } from '../trading-position-phase-pill.utils';
+import { positionPhasePillNgClasses, resolvePositionPhaseIconClass, resolvePositionPhasePillClass } from '../trading-position-phase-pill.utils';
 import { TradingPositionModalService } from '../trading-position-modal.service';
 import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snapshot-tab/trading-shadowing-snapshot-tab.component';
 import { TradingPositionClosingDialogComponent } from './trading-position-closing-dialog/trading-position-closing-dialog.component';
@@ -96,10 +102,14 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         sortable: true,
         filter: true,
         suppressHeaderMenuButton: false,
+        suppressMovable: true,
         flex: 1
     };
     public readonly detailsVisible = signal<boolean>(false);
     public readonly getRowId = (params: GetRowIdParams<TradingPositionPayload>): string => String(params.data?.id ?? '');
+    public readonly gridOptions = {
+        suppressMovableColumns: true
+    };
     public readonly pendingClosePositionId = signal<number | null>(null);
     public readonly isCloseDialogSubmitInProgress = computed<boolean>(() => {
         const positionId = this.pendingClosePositionId();
@@ -226,8 +236,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                     const pillClass = resolvePositionPhasePillClass(value, {
                         closingPreviewClass: value === 'CLOSING' ? this.resolveClosingPreviewPillClass(params.data) : undefined
                     });
-
-                    return `<span class="poseidon-grid-pill ${pillClass}">${value}</span>`;
+                    const iconClass = resolvePositionPhaseIconClass(value);
+                    return `<span class="poseidon-grid-pill ${pillClass}" title="${value}"><i class="fa-solid ${iconClass} poseidon-grid-pill-icon" aria-hidden="true"></i><span class="poseidon-grid-pill-label">${value}</span></span>`;
                 },
                 cellClass: 'poseidon-grid-phase-side-cell',
                 ...tradingGridsLeadingColumnLayout.phaseOrSide,
@@ -252,7 +262,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 headerComponentParams: { iconClass: 'fa-layer-group', alignRight: true }
             },
             {
-                headerName: 'delta %',
+                headerName: 'delta',
                 colId: 'deltaPercent',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
@@ -260,8 +270,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     p.value == null ? '—' : `${this.numberFormattingService.formatNumber(p.value, 2, 2)}%`,
                 cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    formatDeltaPercentCellHtml(p.value as number | null, this.numberFormattingService),
-                cellClass: 'text-right whitespace-nowrap tabular-nums',
+                    formatDeltaPercentAndUsdCellHtml(p.data ?? null, this.numberFormattingService),
+                cellClass: 'text-right whitespace-nowrap tabular-nums poseidon-grid-delta-stack-cell',
                 ...tradingGridsLeadingColumnLayout.leadingFifthNumeric,
                 headerClass: 'poseidon-header-align-end',
                 headerComponent: IconHeaderRendererComponent,
@@ -417,6 +427,9 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 cellRendererParams: { template: this.actionsTemplate }
             }
         ];
+        queueMicrotask(() => {
+            this.applyPositionsColumnVisibilityForViewport();
+        });
     }
 
     public analyticsForSelected(): TradingEvaluationPayload | null {
@@ -585,20 +598,28 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         this.recoveryPositionIds.update((current) => new Set(current).add(positionId));
     }
 
+    public onPositionsFirstDataRendered(): void {
+        this.applyPositionsColumnVisibilityForViewport();
+    }
+
     public onPositionsGridReady(event: GridReadyEvent): void {
         this.positionsGridApi = event.api;
         this.applyPositionsColumnVisibilityForViewport();
         const handler = (): void => {
             this.applyPositionsColumnVisibilityForViewport();
         };
-        const mediaNarrow = window.matchMedia('(max-width: 1024px)');
-        const mediaExtraSmall = window.matchMedia('(max-width: 768px)');
-        mediaNarrow.addEventListener('change', handler);
-        mediaExtraSmall.addEventListener('change', handler);
+        const mediaCompact = window.matchMedia('(max-width: 1024px)');
+        mediaCompact.addEventListener('change', handler);
         this.destroyRef.onDestroy(() => {
-            mediaNarrow.removeEventListener('change', handler);
-            mediaExtraSmall.removeEventListener('change', handler);
+            mediaCompact.removeEventListener('change', handler);
         });
+    }
+
+    public onPositionsGridSizeChanged(): void {
+        if (!isTradingGridCompactViewport()) {
+            return;
+        }
+        this.applyPositionsColumnVisibilityForViewport();
     }
 
     public onRecoveryDialogVisibleChange(visible: boolean): void {
@@ -767,21 +788,25 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         if (this.positionsGridApi === null) {
             return;
         }
-        const isNarrowViewport = window.matchMedia('(max-width: 1024px)').matches;
-        const isExtraSmallViewport = window.matchMedia('(max-width: 768px)').matches;
-        if (isExtraSmallViewport) {
-            this.positionsGridApi.setColumnsVisible(['tokenSymbol', 'deltaPercent', 'positionEntryNotional', 'actions'], true);
-            this.positionsGridApi.setColumnsVisible(
-                ['openedAt', 'positionPhase', 'openQuantity', 'lastPrice', 'entryPrice', 'takeProfitTier1', 'takeProfitTier2', 'stopLoss'],
-                false
-            );
+        const isCompactViewport = isTradingGridCompactViewport();
+        if (isCompactViewport) {
+            applyMobileTradingGridLayout(this.positionsGridApi, {
+                columnOrder: ['tokenSymbol', 'deltaPercent', 'positionPhase', 'actions'],
+                layoutByColumnIdentifier: {
+                    tokenSymbol: tradingGridsMobileColumnLayout.symbol,
+                    deltaPercent: tradingGridsMobileColumnLayout.deltaOrProfitAndLoss,
+                    positionPhase: tradingGridsMobileColumnLayout.phaseOrSide,
+                    actions: tradingGridsMobileColumnLayout.openPositionsActions
+                }
+            });
             return;
         }
+        resetGridColumnLayout(this.positionsGridApi);
         this.positionsGridApi.setColumnsVisible(
             ['openedAt', 'positionPhase', 'openQuantity', 'lastPrice', 'entryPrice', 'deltaPercent', 'positionEntryNotional'],
             true
         );
-        this.positionsGridApi.setColumnsVisible(['takeProfitTier1', 'takeProfitTier2', 'stopLoss'], !isNarrowViewport);
+        this.positionsGridApi.setColumnsVisible(['takeProfitTier1', 'takeProfitTier2', 'stopLoss'], true);
     }
 
     private findOriginBuyTrade(position: TradingPositionPayload | null): TradingTradePayload | null {

@@ -41,6 +41,7 @@ def _build_trade_payload(
         realized_profit_and_loss=realized_profit_and_loss,
         transaction_hash=None,
         linked_position_id=trade_id,
+        evaluation_order_notional_value_usd=execution_price * execution_quantity,
     )
 
 

@@ -8,46 +8,35 @@ import { WebSocketService } from '../../core/websocket.service';
     standalone: true,
     selector: 'app-paper-mode-control',
     imports: [CommonModule],
-    templateUrl: 'paper-mode-control.component.html'
+    templateUrl: 'paper-mode-control.component.html',
+    styleUrl: 'paper-mode-control.component.css'
 })
 export class PaperModeControlComponent implements OnInit {
     public readonly isApplicationInitialLoading = signal<boolean>(true);
 
-    private readonly tradingMode = signal<TradeMode>('LIVE');
-
-    public readonly isPaperTradingModeActive = computed(() => {
-        return this.tradingMode() === 'PAPER';
-    });
-
-    public readonly isPortfolioResetInProgress = signal<boolean>(false);
-
-    private readonly apiService = inject(ApiService);
     private readonly webSocketService = inject(WebSocketService);
+
+    public readonly isModeResolved = computed<boolean>(() => this.webSocketService.paperTradingModeActive() !== null || !this.isApplicationInitialLoading());
+
+    private readonly statusTradingMode = signal<TradeMode | null>(null);
+
+    public readonly isPaperTradingModeActive = computed<boolean>(() => {
+        const websocketPaperTradingMode = this.webSocketService.paperTradingModeActive();
+        if (websocketPaperTradingMode !== null) {
+            return websocketPaperTradingMode;
+        }
+        return this.statusTradingMode() === 'PAPER';
+    });
+    private readonly apiService = inject(ApiService);
 
     public ngOnInit(): void {
         this.fetchApplicationStatus();
     }
 
-    public resetPaperPortfolioToInitialState(): void {
-        this.isPortfolioResetInProgress.set(true);
-
-        this.apiService.resetPaper().subscribe({
-            next: () => {
-                this.notifyWebSocketRefresh();
-                this.isPortfolioResetInProgress.set(false);
-                console.info('Paper portfolio has been successfully reset');
-            },
-            error: (error: unknown) => {
-                this.isPortfolioResetInProgress.set(false);
-                console.error('An error occurred during paper portfolio reset', error);
-            }
-        });
-    }
-
     private fetchApplicationStatus(): void {
         this.apiService.getStatus().subscribe({
             next: (response: AppStatusResponse) => {
-                this.tradingMode.set(response.status.mode);
+                this.statusTradingMode.set(response.status.mode);
                 this.isApplicationInitialLoading.set(false);
             },
             error: (error: unknown) => {
@@ -55,15 +44,5 @@ export class PaperModeControlComponent implements OnInit {
                 console.error('Failed to synchronize application status', error);
             }
         });
-    }
-
-    private notifyWebSocketRefresh(): void {
-        const socketReference = (this.webSocketService as any)['socket'];
-
-        if (socketReference && socketReference.readyState === WebSocket.OPEN) {
-            socketReference.send(JSON.stringify({ type: 'refresh' }));
-            return;
-        }
-        console.debug('[WEBSOCKET][REFRESH] Refresh skipped because websocket is not open');
     }
 }

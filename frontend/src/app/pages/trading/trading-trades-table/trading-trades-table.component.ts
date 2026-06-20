@@ -30,7 +30,14 @@ import { IconHeaderRendererComponent } from '../../../renderers/icon-header.rend
 import { SymbolChipRendererComponent } from '../../../renderers/symbol-chip.renderer';
 import { TemplateCellRendererComponent } from '../../../renderers/template-cell.renderer';
 import { tradingGridsLeadingColumnLayout } from '../trading.constants';
-import { positionPhasePillNgClasses } from '../trading-position-phase-pill.utils';
+import {
+    applyMobileTradingGridLayout,
+    isTradingGridCompactViewport,
+    resetGridColumnLayout,
+    tradingGridsMobileColumnLayout
+} from '../trading-grid-viewport.utils';
+import { positionPhasePillNgClasses, resolveTradeSideIconClass } from '../trading-position-phase-pill.utils';
+import { buildTradeSecuredProfitAndLossEvaluationPercentTooltip, formatTradeRealizedProfitAndLossCellHtml } from '../trading-position-grid-metrics';
 import { TradingPositionModalService } from '../trading-position-modal.service';
 import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snapshot-tab/trading-shadowing-snapshot-tab.component';
 
@@ -67,11 +74,15 @@ export class TradingTradesTableComponent implements AfterViewInit {
         resizable: true,
         sortable: true,
         filter: true,
+        suppressMovable: true,
         flex: 1
     };
     public readonly detailsVisible = signal<boolean>(false);
-
     public readonly getRowId = (params: GetRowIdParams<TradingTradePayload>): string => String(params.data?.id ?? '');
+
+    public readonly gridOptions = {
+        suppressMovableColumns: true
+    };
     private readonly webSocketService = inject(WebSocketService);
 
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
@@ -157,7 +168,8 @@ export class TradingTradesTableComponent implements AfterViewInit {
                 cellRenderer: (p: ValueFormatterParams<TradingTradePayload>) => {
                     const v = String(p.value ?? '');
                     const pillClass = v === 'BUY' ? 'poseidon-grid-pill--buy' : 'poseidon-grid-pill--sell';
-                    return `<span class="poseidon-grid-pill ${pillClass}">${v}</span>`;
+                    const iconClass = resolveTradeSideIconClass(v);
+                    return `<span class="poseidon-grid-pill ${pillClass}" title="${v}"><i class="fa-solid ${iconClass} poseidon-grid-pill-icon" aria-hidden="true"></i><span class="poseidon-grid-pill-label">${v}</span></span>`;
                 },
                 cellClass: 'poseidon-grid-phase-side-cell',
                 ...tradingGridsLeadingColumnLayout.phaseOrSide,
@@ -192,17 +204,11 @@ export class TradingTradesTableComponent implements AfterViewInit {
                 headerClass: 'ag-right-aligned-header poseidon-header-align-end',
                 headerComponent: IconHeaderRendererComponent,
                 headerComponentParams: { iconClass: 'fa-scale-balanced', alignRight: true },
-                cellClass: (p: ValueFormatterParams<TradingTradePayload>) => {
-                    const n = this.numberFormattingService.toNumberSafe(p.value as number | null);
-                    if (n === null) {
-                        return 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums font-semibold text-slate-400';
-                    }
-                    return n > 0
-                        ? 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums poseidon-grid-emphasized-metric text-emerald-400'
-                        : n < 0
-                          ? 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums poseidon-grid-emphasized-metric text-rose-400'
-                          : 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums font-semibold text-slate-300';
-                },
+                cellRenderer: (p: ValueFormatterParams<TradingTradePayload>) =>
+                    formatTradeRealizedProfitAndLossCellHtml(p.data ?? null, this.numberFormattingService),
+                tooltipValueGetter: (p: ITooltipParams<TradingTradePayload>) =>
+                    buildTradeSecuredProfitAndLossEvaluationPercentTooltip(p.data ?? null, this.numberFormattingService),
+                cellClass: 'text-right whitespace-nowrap ag-right-aligned-cell tabular-nums poseidon-grid-delta-stack-cell',
                 ...tradingGridsLeadingColumnLayout.leadingFifthNumeric
             },
             {
@@ -283,6 +289,9 @@ export class TradingTradesTableComponent implements AfterViewInit {
                 cellRendererParams: { template: this.actionsTemplate }
             }
         ];
+        queueMicrotask(() => {
+            this.applyTradesColumnVisibilityForViewport();
+        });
     }
 
     public analyticsForSelected(): TradingEvaluationPayload | null {
@@ -396,17 +405,28 @@ export class TradingTradesTableComponent implements AfterViewInit {
         return this.getAdjacentTrade(1);
     }
 
+    public onTradesFirstDataRendered(): void {
+        this.applyTradesColumnVisibilityForViewport();
+    }
+
     public onTradesGridReady(event: GridReadyEvent): void {
         this.tradesGridApi = event.api;
         this.applyTradesColumnVisibilityForViewport();
         const handler = (): void => {
             this.applyTradesColumnVisibilityForViewport();
         };
-        const mediaExtraSmall = window.matchMedia('(max-width: 768px)');
-        mediaExtraSmall.addEventListener('change', handler);
+        const mediaCompact = window.matchMedia('(max-width: 1024px)');
+        mediaCompact.addEventListener('change', handler);
         this.destroyRef.onDestroy(() => {
-            mediaExtraSmall.removeEventListener('change', handler);
+            mediaCompact.removeEventListener('change', handler);
         });
+    }
+
+    public onTradesGridSizeChanged(): void {
+        if (!isTradingGridCompactViewport()) {
+            return;
+        }
+        this.applyTradesColumnVisibilityForViewport();
     }
 
     public openDetails(row: TradingTradePayload | null): void {
@@ -523,12 +543,20 @@ export class TradingTradesTableComponent implements AfterViewInit {
         if (this.tradesGridApi === null) {
             return;
         }
-        const isExtraSmallViewport = window.matchMedia('(max-width: 768px)').matches;
-        if (isExtraSmallViewport) {
-            this.tradesGridApi.setColumnsVisible(['tokenSymbol', 'realizedProfitAndLoss', 'actions'], true);
-            this.tradesGridApi.setColumnsVisible(['createdAt', 'tradeSide', 'executionQuantity', 'executionPrice', 'transactionFee', 'transactionHash'], false);
+        const isCompactViewport = isTradingGridCompactViewport();
+        if (isCompactViewport) {
+            applyMobileTradingGridLayout(this.tradesGridApi, {
+                columnOrder: ['tokenSymbol', 'realizedProfitAndLoss', 'tradeSide', 'actions'],
+                layoutByColumnIdentifier: {
+                    tokenSymbol: tradingGridsMobileColumnLayout.symbol,
+                    realizedProfitAndLoss: tradingGridsMobileColumnLayout.deltaOrProfitAndLoss,
+                    tradeSide: tradingGridsMobileColumnLayout.phaseOrSide,
+                    actions: tradingGridsMobileColumnLayout.recentTradesActions
+                }
+            });
             return;
         }
+        resetGridColumnLayout(this.tradesGridApi);
         this.tradesGridApi.setColumnsVisible(
             ['createdAt', 'tradeSide', 'executionQuantity', 'realizedProfitAndLoss', 'executionPrice', 'transactionFee', 'transactionHash'],
             true

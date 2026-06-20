@@ -35,7 +35,7 @@ export const tradingGridsLeadingColumnLayout = {
     symbol: {
         flex: 0,
         width: 170,
-        minWidth: 170,
+        minWidth: 80,
         maxWidth: 170
     },
     dateTime: {
@@ -47,7 +47,7 @@ export const tradingGridsLeadingColumnLayout = {
     phaseOrSide: {
         flex: 0,
         width: 124,
-        minWidth: 124,
+        minWidth: 40,
         maxWidth: 124
     },
     qty: {
@@ -59,7 +59,7 @@ export const tradingGridsLeadingColumnLayout = {
     leadingFifthNumeric: {
         flex: 0,
         width: 112,
-        minWidth: 112,
+        minWidth: 64,
         maxWidth: 112
     }
 } as const;

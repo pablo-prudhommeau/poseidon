@@ -98,6 +98,13 @@ class TradingEvaluationDao:
         )
         return list(self.database_session.execute(database_query).unique().scalars().all())
 
+    def retrieve_by_evaluation_ids(self, evaluation_ids: List[int]) -> List[TradingEvaluation]:
+        normalized_ids = [evaluation_id for evaluation_id in evaluation_ids if evaluation_id is not None]
+        if not normalized_ids:
+            return []
+        database_query = select(TradingEvaluation).where(TradingEvaluation.id.in_(normalized_ids))
+        return list(self.database_session.execute(database_query).scalars().all())
+
     def retrieve_latest_buy_decision(self, token_address: str, before_timestamp: float) -> Optional[TradingEvaluation]:
         database_query = (
             select(TradingEvaluation)

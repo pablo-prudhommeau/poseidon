@@ -18,6 +18,7 @@ export type WebsocketConnectionStatus = 'connecting' | 'open' | 'closed';
 export class WebSocketService {
     public readonly connectionStatus = signal<WebsocketConnectionStatus>('closed');
     public readonly dcaStrategies = signal<DcaStrategyPayload[]>([]);
+    public readonly paperTradingModeActive = signal<boolean | null>(null);
     public readonly tradingLiquidity = signal<TradingLiquidityPayload | null>(null);
     public readonly tradingPortfolio = signal<TradingPortfolioPayload | null>(null);
     public readonly tradingPositions = signal<TradingPositionPayload[]>([]);
@@ -69,6 +70,7 @@ export class WebSocketService {
     private apply(message: WebsocketMessageUnion): void {
         switch (message.type) {
             case WebsocketMessageType.INITIALIZATION: {
+                this.paperTradingModeActive.set(message.payload.status.paper_mode);
                 break;
             }
             case WebsocketMessageType.TRADING_PORTFOLIO: {

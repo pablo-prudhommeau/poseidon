@@ -1,4 +1,4 @@
-import { TradingPositionPayload } from '../../core/models';
+import { TradingPositionPayload, TradingTradePayload } from '../../core/models';
 import { NumberFormattingService } from '../../core/number-formatting.service';
 
 export type DeltaTickVariant = 'static' | 'up' | 'down';
@@ -14,12 +14,28 @@ export function computeTradingPositionDeltaPercent(
     if (enriched !== null) {
         return enriched;
     }
-    const last = numberFormattingService.toNumberSafe(row.last_price as number | null);
-    const entry = numberFormattingService.toNumberSafe(row.entry_price);
-    if (last === null || entry === null || entry === 0) {
+    const lastPrice = numberFormattingService.toNumberSafe(row.last_price as number | null);
+    const entryPrice = numberFormattingService.toNumberSafe(row.entry_price);
+    if (lastPrice === null || entryPrice === null || entryPrice === 0) {
         return null;
     }
-    return ((last - entry) / Math.abs(entry)) * 100;
+    return ((lastPrice - entryPrice) / Math.abs(entryPrice)) * 100;
+}
+
+export function computeTradingPositionUnrealizedUsd(
+    row: TradingPositionPayload | null | undefined,
+    numberFormattingService: NumberFormattingService
+): number | null {
+    if (!row) {
+        return null;
+    }
+    const openQuantity = numberFormattingService.toNumberSafe(row.open_quantity);
+    const lastPrice = numberFormattingService.toNumberSafe(row.last_price as number | null);
+    const entryPrice = numberFormattingService.toNumberSafe(row.entry_price);
+    if (openQuantity === null || lastPrice === null || entryPrice === null) {
+        return null;
+    }
+    return openQuantity * (lastPrice - entryPrice);
 }
 
 export function orderTradingPositionNotionalUsd(
@@ -30,13 +46,13 @@ export function orderTradingPositionNotionalUsd(
     if (!row) {
         return null;
     }
-    const quantity = numberFormattingService.toNumberSafe(row.open_quantity);
+    const openQuantity = numberFormattingService.toNumberSafe(row.open_quantity);
     const price =
         priceBasis === 'entry' ? numberFormattingService.toNumberSafe(row.entry_price) : numberFormattingService.toNumberSafe(row.last_price as number | null);
-    if (quantity === null || price === null) {
+    if (openQuantity === null || price === null) {
         return null;
     }
-    return quantity * price;
+    return openQuantity * price;
 }
 
 export function remainingTradingPositionNotionalUsd(
@@ -47,13 +63,13 @@ export function remainingTradingPositionNotionalUsd(
     if (!row) {
         return null;
     }
-    const quantity = numberFormattingService.toNumberSafe(row.current_quantity);
+    const currentQuantity = numberFormattingService.toNumberSafe(row.current_quantity);
     const price =
         priceBasis === 'entry' ? numberFormattingService.toNumberSafe(row.entry_price) : numberFormattingService.toNumberSafe(row.last_price as number | null);
-    if (quantity === null || price === null) {
+    if (currentQuantity === null || price === null) {
         return null;
     }
-    return quantity * price;
+    return currentQuantity * price;
 }
 
 export function resolveDeltaTickVariant(deltaPercent: number | null | undefined): DeltaTickVariant {
@@ -63,11 +79,16 @@ export function resolveDeltaTickVariant(deltaPercent: number | null | undefined)
     return deltaPercent > 0 ? 'up' : 'down';
 }
 
-export function formatDeltaPercentLabel(deltaPercent: number | null | undefined, numberFormattingService: NumberFormattingService): string {
-    if (deltaPercent == null) {
+export function formatSignedPercentLabel(value: number | null | undefined, numberFormattingService: NumberFormattingService): string {
+    if (value == null || !Number.isFinite(value)) {
         return '—';
     }
-    return `${numberFormattingService.formatNumber(deltaPercent, 2, 2)}%`;
+    const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+    return `${sign}${numberFormattingService.formatNumber(Math.abs(value), 2, 2)}%`;
+}
+
+export function formatDeltaPercentLabel(deltaPercent: number | null | undefined, numberFormattingService: NumberFormattingService): string {
+    return formatSignedPercentLabel(deltaPercent, numberFormattingService);
 }
 
 export function resolveNotionalLiveToneClass(deltaPercent: number | null | undefined): string {
@@ -118,4 +139,78 @@ export function formatDeltaPercentCellHtml(deltaPercent: number | null | undefin
         return `<span class="delta-tick delta-tick-up font-bold"><span class="delta-arrow" aria-hidden="true">↗</span><span class="poseidon-grid-emphasized-metric">${displayedValue}</span></span>`;
     }
     return `<span class="delta-tick delta-tick-down font-bold"><span class="delta-arrow" aria-hidden="true">↘</span><span class="poseidon-grid-emphasized-metric">${displayedValue}</span></span>`;
+}
+
+export function formatSignedUsdLabel(valueUsd: number | null | undefined, numberFormattingService: NumberFormattingService): string {
+    if (valueUsd == null || !Number.isFinite(valueUsd)) {
+        return '—';
+    }
+    const sign = valueUsd > 0 ? '+' : valueUsd < 0 ? '-' : '';
+    return `${sign}${numberFormattingService.formatCurrency(Math.abs(valueUsd), 'USD', 2, 2)}`;
+}
+
+export function formatDeltaPercentAndUsdCellHtml(row: TradingPositionPayload | null | undefined, numberFormattingService: NumberFormattingService): string {
+    const deltaPercent = computeTradingPositionDeltaPercent(row, numberFormattingService);
+    const unrealizedUsd = computeTradingPositionUnrealizedUsd(row, numberFormattingService);
+    const percentHtml = formatDeltaPercentCellHtml(deltaPercent, numberFormattingService);
+    const usdToneClass = resolveSignedUsdLiveToneClass(unrealizedUsd);
+    const usdLabel = formatSignedUsdLabel(unrealizedUsd, numberFormattingService);
+    return `<div class="poseidon-grid-delta-stack">${percentHtml}<span class="${usdToneClass} poseidon-grid-delta-usd">${usdLabel}</span></div>`;
+}
+
+export function computeTradeSecuredProfitAndLossEvaluationPercent(
+    row: TradingTradePayload | null | undefined,
+    numberFormattingService: NumberFormattingService
+): number | null {
+    if (!row) {
+        return null;
+    }
+    const realizedProfitAndLoss = numberFormattingService.toNumberSafe(row.realized_profit_and_loss ?? null);
+    if (realizedProfitAndLoss === null || realizedProfitAndLoss === 0) {
+        return null;
+    }
+    const evaluationOrderNotionalValueUsd = numberFormattingService.toNumberSafe(row.evaluation_order_notional_value_usd ?? null);
+    if (evaluationOrderNotionalValueUsd === null || evaluationOrderNotionalValueUsd <= 0) {
+        return null;
+    }
+    return (realizedProfitAndLoss / evaluationOrderNotionalValueUsd) * 100;
+}
+
+export function buildTradeSecuredProfitAndLossEvaluationPercentTooltip(
+    row: TradingTradePayload | null | undefined,
+    numberFormattingService: NumberFormattingService
+): string {
+    const evaluationOrderNotionalValueUsd = numberFormattingService.toNumberSafe(row?.evaluation_order_notional_value_usd ?? null);
+    if (evaluationOrderNotionalValueUsd === null) {
+        return '';
+    }
+    const formattedEvaluationBase = numberFormattingService.formatCurrency(evaluationOrderNotionalValueUsd, 'USD', 2, 2);
+    return `Secured profit and loss as a percentage of the evaluation order notional (${formattedEvaluationBase})`;
+}
+
+export function resolveSignedProfitAndLossToneClass(realizedProfitAndLoss: number | null): string {
+    if (realizedProfitAndLoss === null || realizedProfitAndLoss === 0) {
+        return 'text-slate-400';
+    }
+    if (realizedProfitAndLoss > 0) {
+        return 'text-emerald-400';
+    }
+    return 'text-rose-400';
+}
+
+export function formatTradeRealizedProfitAndLossCellHtml(
+    row: TradingTradePayload | null | undefined,
+    numberFormattingService: NumberFormattingService
+): string {
+    const realizedProfitAndLoss = numberFormattingService.toNumberSafe(row?.realized_profit_and_loss ?? null);
+    const realizedProfitAndLossPercent = computeTradeSecuredProfitAndLossEvaluationPercent(row, numberFormattingService);
+    const toneClass = resolveSignedProfitAndLossToneClass(realizedProfitAndLoss);
+    const usdLabel = realizedProfitAndLoss === null ? '—' : formatSignedUsdLabel(realizedProfitAndLoss, numberFormattingService);
+    const usdHtml = `<span class="poseidon-grid-delta-usd ${toneClass}">${usdLabel}</span>`;
+    if (realizedProfitAndLossPercent === null) {
+        return `<span class="poseidon-grid-emphasized-metric ${toneClass}">${usdLabel}</span>`;
+    }
+    const percentLabel = formatSignedPercentLabel(realizedProfitAndLossPercent, numberFormattingService);
+    const percentHtml = `<span class="poseidon-grid-emphasized-metric ${toneClass}">${percentLabel}</span>`;
+    return `<div class="poseidon-grid-delta-stack">${percentHtml}${usdHtml}</div>`;
 }

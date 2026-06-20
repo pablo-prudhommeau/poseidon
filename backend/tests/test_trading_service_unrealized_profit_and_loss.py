@@ -48,6 +48,7 @@ def _build_buy_trade(*, transaction_fee: float) -> TradingTradePayload:
         realized_profit_and_loss=None,
         transaction_hash="sig-buy",
         linked_position_id=1,
+        evaluation_order_notional_value_usd=100.0,
     )
 
 

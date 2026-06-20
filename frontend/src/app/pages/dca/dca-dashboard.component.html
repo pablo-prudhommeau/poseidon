@@ -1,6 +1,6 @@
-<div class="space-y-6">
+<div class="space-y-3 md:space-y-6">
     @if (dcaStrategies().length > 0) {
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-3 md:mb-6">
             <div class="flex items-center gap-2 bg-zinc-900/10 border border-white/5 rounded-2xl px-4 py-2 backdrop-blur-2xl shadow-2xl transition-all hover:border-blue-500/20 group relative z-50">
                 <i class="fa fa-robot text-zinc-600 group-hover:text-blue-400 transition-all duration-300"></i>
                 <div class="h-4 w-[1px] bg-white/10 ml-2"></div>
@@ -39,12 +39,12 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-2 md:gap-4">
             <app-dca-synthesis class="contents" [strategy]="activeStrategy()!"></app-dca-synthesis>
         </div>
-        <app-dca-strategy-execution-timeline class="block mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-execution-timeline>
-        <app-dca-strategy-path-projection class="block mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-path-projection>
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+        <app-dca-strategy-execution-timeline class="block mt-2 md:mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-execution-timeline>
+        <app-dca-strategy-path-projection class="block mt-2 md:mt-4" [strategy]="activeStrategy()!"></app-dca-strategy-path-projection>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-2 md:gap-4 mt-2 md:mt-4">
             <app-dca-strategy-charts class="contents" [strategy]="activeStrategy()!"></app-dca-strategy-charts>
         </div>
     } @else {

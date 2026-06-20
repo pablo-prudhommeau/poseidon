@@ -17,6 +17,27 @@ export function resolvePositionPhasePillClass(phase: PositionPhase | string | nu
     }
 }
 
+export function resolvePositionPhaseIconClass(phase: PositionPhase | string | null | undefined): string {
+    switch (phase) {
+        case 'OPEN':
+            return 'fa-circle-dot';
+        case 'PARTIAL':
+            return 'fa-circle-half-stroke';
+        case 'CLOSING':
+            return 'fa-hourglass-half';
+        case 'CLOSED':
+            return 'fa-circle-check';
+        case 'STALED':
+            return 'fa-triangle-exclamation';
+        default:
+            return 'fa-circle';
+    }
+}
+
+export function resolveTradeSideIconClass(tradeSide: string | null | undefined): string {
+    return tradeSide === 'BUY' ? 'fa-arrow-down-long' : 'fa-arrow-up-long';
+}
+
 export function positionPhasePillNgClasses(
     phase: PositionPhase | string | null | undefined,
     options?: { closingPreviewClass?: string }

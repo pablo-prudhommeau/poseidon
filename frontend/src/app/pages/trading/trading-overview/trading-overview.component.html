@@ -1,6 +1,6 @@
-<div class="space-y-6">
-    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 items-stretch">
-        <div class="p-4 rounded-2xl bg-black/20 border border-blue-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between h-full min-h-0 transition-all hover:border-blue-500/30">
+<div class="space-y-3 md:space-y-5">
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 md:gap-4 items-stretch">
+        <div class="p-3 md:p-4 rounded-2xl bg-black/20 border border-blue-500/20 backdrop-blur-2xl shadow-xl flex flex-col justify-between h-full min-h-0 transition-all hover:border-blue-500/30">
             <div class="flex justify-between items-center h-7 mb-3">
                 <span class="trading-overview-title text-blue-400/70">portfolio equity</span>
                 <i class="fa fa-wallet text-blue-400/70 text-lg"></i>
@@ -58,7 +58,7 @@
         </div>
 
         <div
-            class="p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col h-full min-h-0 transition-all border"
+            class="p-3 md:p-4 rounded-2xl bg-black/20 backdrop-blur-2xl shadow-xl flex flex-col h-full min-h-0 transition-all border"
             [ngClass]="{
                 'border-slate-500/20 hover:border-slate-500/30': realizedTotal() === null,
                 'border-emerald-500/20 hover:border-emerald-500/30': realizedTotal() !== null && isNonNegative(realizedTotal()),
@@ -69,8 +69,13 @@
                 <span class="trading-overview-title" [ngClass]="realizedTotal() === null ? 'text-slate-300' : isNonNegative(realizedTotal()) ? 'text-emerald-400/80' : 'text-red-400/80'">pnl cockpit</span>
                 <i class="fa fa-chart-pie text-lg" [ngClass]="realizedTotal() === null ? 'text-slate-500/50' : isNonNegative(realizedTotal()) ? 'text-emerald-400/80' : 'text-red-400/80'"></i>
             </div>
-            <div class="trading-overview-hero-value" [ngClass]="realizedTotal() !== null ? (isNonNegative(realizedTotal()) ? '!text-emerald-400' : '!text-red-400') : ''">
-                {{ realizedTotal() | optionalNumber: '1.2-2' : '$ ' }}
+            <div class="flex items-baseline gap-2">
+                <div class="trading-overview-hero-value" [ngClass]="realizedTotal() !== null ? (isNonNegative(realizedTotal()) ? '!text-emerald-400' : '!text-red-400') : ''">
+                    {{ realizedTotal() | optionalNumber: '1.2-2' : '$ ' }}
+                </div>
+                @if (realizedTotalPercent() !== null) {
+                    <span class="trading-overview-pct" [ngClass]="pnlValueClass(realizedTotalPercent())">{{ formatPercentInline(realizedTotalPercent()) }}</span>
+                }
             </div>
             <div class="trading-overview-subtitle mt-1">realized cumulative</div>
             <div class="mt-2 h-10 flex items-center justify-between gap-2 cursor-help" [pTooltip]="swapFeesTooltipHtml" tooltipPosition="top" [escape]="false" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy poseidon-tooltip-roomy-medium">
@@ -78,27 +83,52 @@
                     <i class="fa fa-right-left" aria-hidden="true"></i>
                     <span>incl. swap fees</span>
                 </div>
-                <span class="trading-overview-footer-value">{{ cumulativeSwapFees() | optionalNumber: '1.2-2' : '- $ ' }}</span>
+                <span class="trading-overview-footer-value-row">
+                    <span class="trading-overview-footer-value">{{ cumulativeSwapFees() | optionalNumber: '1.2-2' : '- $ ' }}</span>
+                    @if (cumulativeSwapFeesPercent() !== null) {
+                        <span class="trading-overview-pct trading-overview-pct--fees">{{ formatFeesPercentInline(cumulativeSwapFeesPercent()) }}</span>
+                    }
+                </span>
             </div>
 
             <div class="trading-overview-card-footer">
                 <div class="trading-overview-footer-grid trading-overview-footer-grid--2x2">
                     <div class="trading-overview-footer-cell trading-overview-footer-cell-edge-start">
                         <span class="trading-overview-label">30d realized</span>
-                        <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(realized30d())">{{ realized30d() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                        <span class="trading-overview-footer-value-row">
+                            <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(realized30d())">{{ realized30d() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                            @if (realized30dPercent() !== null) {
+                                <span class="trading-overview-pct" [ngClass]="pnlValueClass(realized30dPercent())">{{ formatPercentInline(realized30dPercent()) }}</span>
+                            }
+                        </span>
                     </div>
                     <div class="trading-overview-footer-cell trading-overview-footer-cell-divider trading-overview-footer-cell-edge-end">
                         <span class="trading-overview-label">7d realized</span>
-                        <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(realized7d())">{{ realized7d() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                        <span class="trading-overview-footer-value-row">
+                            <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(realized7d())">{{ realized7d() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                            @if (realized7dPercent() !== null) {
+                                <span class="trading-overview-pct" [ngClass]="pnlValueClass(realized7dPercent())">{{ formatPercentInline(realized7dPercent()) }}</span>
+                            }
+                        </span>
                     </div>
                     <div class="trading-overview-footer-row-separator" aria-hidden="true"></div>
                     <div class="trading-overview-footer-cell trading-overview-footer-cell-edge-start">
                         <span class="trading-overview-label">24h realized</span>
-                        <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(realized24h())">{{ realized24h() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                        <span class="trading-overview-footer-value-row">
+                            <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(realized24h())">{{ realized24h() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                            @if (realized24hPercent() !== null) {
+                                <span class="trading-overview-pct" [ngClass]="pnlValueClass(realized24hPercent())">{{ formatPercentInline(realized24hPercent()) }}</span>
+                            }
+                        </span>
                     </div>
                     <div class="trading-overview-footer-cell trading-overview-footer-cell-divider trading-overview-footer-cell-edge-end">
                         <span class="trading-overview-label">unrealized</span>
-                        <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(unrealized())">{{ unrealized() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                        <span class="trading-overview-footer-value-row">
+                            <span class="trading-overview-footer-value" [ngClass]="pnlValueClass(unrealized())">{{ unrealized() | optionalNumber: '1.2-2' : '$ ' }}</span>
+                            @if (unrealizedPercent() !== null) {
+                                <span class="trading-overview-pct" [ngClass]="pnlValueClass(unrealizedPercent())">{{ formatPercentInline(unrealizedPercent()) }}</span>
+                            }
+                        </span>
                     </div>
                 </div>
             </div>
@@ -106,13 +136,24 @@
 
         <app-trading-overview-shadowing-regime (openChronicle)="openShadowChronicle.emit()"></app-trading-overview-shadowing-regime>
 
-        <div class="sm:col-span-2 xl:col-span-2 p-4 rounded-2xl bg-black/20 border border-cyan-500/20 backdrop-blur-2xl shadow-xl flex flex-col transition-all hover:border-cyan-500/30">
+        <div class="sm:col-span-2 xl:col-span-2 p-3 md:p-4 rounded-2xl bg-black/20 border border-cyan-500/20 backdrop-blur-2xl shadow-xl flex flex-col transition-all hover:border-cyan-500/30">
             <div class="flex justify-between items-center h-7 mb-3">
                 <span class="trading-overview-title text-cyan-300/80">{{ liquidityTitle() }}</span>
-                <i class="fa fa-coins text-cyan-300/80 text-lg"></i>
+                <div class="flex items-center gap-2">
+                    @if (isPaperMode()) {
+                        <button type="button" [disabled]="isPaperResetInProgress()" (click)="resetPaperPortfolio()" class="h-6 w-6 inline-grid place-content-center rounded-full ring-1 ring-cyan-400/30 bg-cyan-500/10 text-cyan-300 transition hover:bg-cyan-400/20 active:scale-95 disabled:opacity-50 cursor-pointer" pTooltip="Reset paper portfolio" tooltipPosition="top" tooltipStyleClass="poseidon-tooltip poseidon-tooltip-roomy" aria-label="Reset paper portfolio to initial balance">
+                            @if (!isPaperResetInProgress()) {
+                                <i class="fa-solid fa-arrow-rotate-left text-[10px]"></i>
+                            } @else {
+                                <i class="fa-solid fa-circle-notch text-[10px] animate-spin"></i>
+                            }
+                        </button>
+                    }
+                    <i class="fa fa-coins text-cyan-300/80 text-lg"></i>
+                </div>
             </div>
 
-            <div class="flex-1 grid grid-cols-1 lg:grid-cols-[0.86fr_1.14fr] gap-4 items-stretch">
+            <div class="flex-1 grid grid-cols-1 lg:grid-cols-[0.86fr_1.14fr] gap-2 md:gap-4 items-stretch">
                 <div class="flex flex-col h-full">
                     <div>
                         <div class="trading-overview-hero-value">
@@ -224,16 +265,16 @@
         </div>
     </div>
 
-    <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-5">
-        <div class="flex items-center gap-2 mb-4">
+    <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl px-3 py-3 md:p-5">
+        <div class="flex items-center gap-2 mb-2 md:mb-4">
             <i class="fa fa-layer-group text-blue-400/60 text-sm"></i>
             <span class="text-[11px] uppercase font-bold text-slate-400 tracking-widest">open positions</span>
         </div>
         <trading-positions-table></trading-positions-table>
     </div>
 
-    <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-5">
-        <div class="flex items-center gap-2 mb-4">
+    <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl px-3 py-3 md:p-5">
+        <div class="flex items-center gap-2 mb-2 md:mb-4">
             <i class="fa fa-exchange-alt text-purple-400/60 text-sm"></i>
             <span class="text-[11px] uppercase font-bold text-slate-400 tracking-widest">recent trades</span>
         </div>

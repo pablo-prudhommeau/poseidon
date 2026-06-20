@@ -199,6 +199,7 @@ class TradingTradePayload(BaseModel):
     realized_profit_and_loss: Optional[float] = None
     transaction_hash: Optional[str] = None
     linked_position_id: int
+    evaluation_order_notional_value_usd: float
 
 
 class TradingPositionPricePayload(BaseModel):
