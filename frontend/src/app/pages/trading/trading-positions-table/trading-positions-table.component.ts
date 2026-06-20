@@ -50,8 +50,14 @@ import {
 } from '../trading-grid-viewport.utils';
 import {
     computeTradingPositionDeltaPercent,
+    computeTradingPositionEffectiveNotionalUsd,
+    computeTradingPositionNetResultUsd,
+    computeTradingPositionRealizedSecuredUsd,
+    computeTradingPositionUnrealizedUsd,
+    evaluationOrderNotionalUsd,
     formatDeltaPercentAndUsdCellHtml,
     formatPositionNotionalCellHtml,
+    formatPositionQuantityCellHtml,
     orderTradingPositionNotionalUsd
 } from '../trading-position-grid-metrics';
 import { formatPositionExitReasonLabel } from '../trading-position-exit-reason.utils';
@@ -248,14 +254,17 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             },
             {
                 headerName: 'QTY',
-                colId: 'openQuantity',
-                field: 'open_quantity',
+                colId: 'currentQuantity',
+                field: 'current_quantity',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
+                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) => this.numberFormattingService.toNumberSafe((p.data as any)?.current_quantity),
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) => this.numberFormattingService.formatQuantityHumanReadable(p.value),
+                cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
+                    formatPositionQuantityCellHtml(p.data ?? undefined, this.numberFormattingService),
                 tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
-                    this.numberFormattingService.formatNumber((p.data as any)?.open_quantity, 2, 8),
+                    this.numberFormattingService.formatNumber((p.data as any)?.current_quantity, 2, 8),
                 cellClass: 'text-right whitespace-nowrap tabular-nums font-bold text-slate-100 tracking-tight',
                 ...tradingGridsLeadingColumnLayout.qty,
                 headerClass: 'poseidon-header-align-end',
@@ -383,7 +392,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 colId: 'positionEntryNotional',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
-                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) => this.orderNotionalUsd(p.data ?? null, 'last'),
+                valueGetter: (p: ValueGetterParams<TradingPositionPayload>) =>
+                    computeTradingPositionEffectiveNotionalUsd(p.data ?? null, this.numberFormattingService),
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) =>
                     p.value == null ? '—' : this.numberFormattingService.formatCurrency(p.value as number, 'USD', 0, 2),
                 tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) => {
@@ -391,18 +401,26 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                     if (row == null) {
                         return '';
                     }
-                    const entryNotional = this.orderNotionalUsd(row, 'entry');
-                    const lastNotional = this.orderNotionalUsd(row, 'last');
-                    const delta = computeTradingPositionDeltaPercent(row, this.numberFormattingService);
+                    const evaluationNotional = evaluationOrderNotionalUsd(row, this.numberFormattingService);
+                    const realizedSecured = computeTradingPositionRealizedSecuredUsd(row, this.numberFormattingService);
+                    const unrealized = computeTradingPositionUnrealizedUsd(row, this.numberFormattingService);
+                    const netResult = computeTradingPositionNetResultUsd(row, this.numberFormattingService);
+                    const effectiveNotional = computeTradingPositionEffectiveNotionalUsd(row, this.numberFormattingService);
                     const parts: string[] = [];
-                    if (entryNotional != null) {
-                        parts.push(`entry ${this.numberFormattingService.formatCurrency(entryNotional, 'USD', 2, 8)}`);
+                    if (evaluationNotional != null) {
+                        parts.push(`evaluation ${this.numberFormattingService.formatCurrency(evaluationNotional, 'USD', 2, 8)}`);
                     }
-                    if (lastNotional != null) {
-                        parts.push(`last ${this.numberFormattingService.formatCurrency(lastNotional, 'USD', 2, 8)}`);
+                    if (realizedSecured != null) {
+                        parts.push(`secured ${this.numberFormattingService.formatCurrency(realizedSecured, 'USD', 2, 8)}`);
                     }
-                    if (delta != null) {
-                        parts.push(`delta ${this.numberFormattingService.formatNumber(delta, 2, 2)}%`);
+                    if (unrealized != null) {
+                        parts.push(`unrealized ${this.numberFormattingService.formatCurrency(unrealized, 'USD', 2, 8)}`);
+                    }
+                    if (netResult != null) {
+                        parts.push(`net ${this.numberFormattingService.formatCurrency(netResult, 'USD', 2, 8)}`);
+                    }
+                    if (effectiveNotional != null) {
+                        parts.push(`effective ${this.numberFormattingService.formatCurrency(effectiveNotional, 'USD', 2, 8)}`);
                     }
                     return parts.join(' · ');
                 },
@@ -804,7 +822,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
         resetGridColumnLayout(this.positionsGridApi);
         this.positionsGridApi.setColumnsVisible(
-            ['openedAt', 'positionPhase', 'openQuantity', 'lastPrice', 'entryPrice', 'deltaPercent', 'positionEntryNotional'],
+            ['openedAt', 'positionPhase', 'currentQuantity', 'lastPrice', 'entryPrice', 'deltaPercent', 'positionEntryNotional'],
             true
         );
         this.positionsGridApi.setColumnsVisible(['takeProfitTier1', 'takeProfitTier2', 'stopLoss'], true);

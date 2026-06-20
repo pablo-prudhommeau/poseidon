@@ -180,6 +180,8 @@ class TradingPositionPayload(BaseModel):
     closed_at: Optional[str] = None
     last_price: Optional[float] = None
     exit_reason: Optional[str] = None
+    evaluation_order_notional_value_usd: float
+    realized_profit_and_loss_usd: float
 
 
 class TradingTradePayload(BaseModel):

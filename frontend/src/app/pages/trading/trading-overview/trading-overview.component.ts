@@ -197,15 +197,6 @@ export class TradingOverviewComponent implements OnDestroy {
         return `${elapsedHours}h ago`;
     });
 
-    readonly openHoldingsCostBasis = computed<number | null>(() => {
-        const holdings = this.holdings();
-        const unrealized = this.unrealized();
-        if (holdings === null || unrealized === null) {
-            return null;
-        }
-        return holdings - unrealized;
-    });
-
     readonly openShadowChronicle = output<void>();
     readonly portfolioLockedTooltipHtml = computed(() => buildPortfolioLockedTooltipHtml());
     readonly realized24h = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.realized_profit_and_loss_24h));
@@ -227,7 +218,7 @@ export class TradingOverviewComponent implements OnDestroy {
         mapNullable(this.portfolio(), (portfolio) => portfolio.total_gas_refill_locked_stablecoin_usd)
     );
 
-    readonly unrealizedPercent = computed<number | null>(() => safePercent(this.unrealized(), this.openHoldingsCostBasis()));
+    readonly unrealizedPercent = computed<number | null>(() => safePercent(this.unrealized(), this.contributedCapitalBase()));
     readonly walletReserve = computed<number | null>(() => mapNullable(this.portfolio(), (portfolio) => portfolio.wallet_auxiliary_assets_usd));
     readonly walletReserveTooltipHtml = buildWalletReserveTooltipHtml();
 

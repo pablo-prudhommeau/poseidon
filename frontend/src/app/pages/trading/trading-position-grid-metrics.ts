@@ -29,13 +29,13 @@ export function computeTradingPositionUnrealizedUsd(
     if (!row) {
         return null;
     }
-    const openQuantity = numberFormattingService.toNumberSafe(row.open_quantity);
+    const currentQuantity = numberFormattingService.toNumberSafe(row.current_quantity);
     const lastPrice = numberFormattingService.toNumberSafe(row.last_price as number | null);
     const entryPrice = numberFormattingService.toNumberSafe(row.entry_price);
-    if (openQuantity === null || lastPrice === null || entryPrice === null) {
+    if (currentQuantity === null || lastPrice === null || entryPrice === null) {
         return null;
     }
-    return openQuantity * (lastPrice - entryPrice);
+    return currentQuantity * (lastPrice - entryPrice);
 }
 
 export function orderTradingPositionNotionalUsd(
@@ -72,6 +72,56 @@ export function remainingTradingPositionNotionalUsd(
     return currentQuantity * price;
 }
 
+export function evaluationOrderNotionalUsd(row: TradingPositionPayload | null | undefined, numberFormattingService: NumberFormattingService): number | null {
+    if (!row) {
+        return null;
+    }
+    return numberFormattingService.toNumberSafe(row.evaluation_order_notional_value_usd);
+}
+
+export function computeTradingPositionRealizedSecuredUsd(
+    row: TradingPositionPayload | null | undefined,
+    numberFormattingService: NumberFormattingService
+): number | null {
+    if (!row) {
+        return null;
+    }
+    return numberFormattingService.toNumberSafe(row.realized_profit_and_loss_usd);
+}
+
+export function computeTradingPositionNetResultUsd(
+    row: TradingPositionPayload | null | undefined,
+    numberFormattingService: NumberFormattingService
+): number | null {
+    if (!row) {
+        return null;
+    }
+    const realizedSecuredUsd = computeTradingPositionRealizedSecuredUsd(row, numberFormattingService);
+    const unrealizedUsd = computeTradingPositionUnrealizedUsd(row, numberFormattingService);
+    if (realizedSecuredUsd === null && unrealizedUsd === null) {
+        return null;
+    }
+    return (realizedSecuredUsd ?? 0) + (unrealizedUsd ?? 0);
+}
+
+export function computeTradingPositionEffectiveNotionalUsd(
+    row: TradingPositionPayload | null | undefined,
+    numberFormattingService: NumberFormattingService
+): number | null {
+    if (!row) {
+        return null;
+    }
+    const evaluationNotionalUsd = evaluationOrderNotionalUsd(row, numberFormattingService);
+    const netResultUsd = computeTradingPositionNetResultUsd(row, numberFormattingService);
+    if (evaluationNotionalUsd === null) {
+        return netResultUsd;
+    }
+    if (netResultUsd === null) {
+        return evaluationNotionalUsd;
+    }
+    return evaluationNotionalUsd + netResultUsd;
+}
+
 export function resolveDeltaTickVariant(deltaPercent: number | null | undefined): DeltaTickVariant {
     if (deltaPercent == null || deltaPercent === 0) {
         return 'static';
@@ -91,16 +141,6 @@ export function formatDeltaPercentLabel(deltaPercent: number | null | undefined,
     return formatSignedPercentLabel(deltaPercent, numberFormattingService);
 }
 
-export function resolveNotionalLiveToneClass(deltaPercent: number | null | undefined): string {
-    if (deltaPercent != null && deltaPercent > 0) {
-        return 'poseidon-grid-notional-live poseidon-grid-notional-live--positive';
-    }
-    if (deltaPercent != null && deltaPercent < 0) {
-        return 'poseidon-grid-notional-live poseidon-grid-notional-live--negative';
-    }
-    return 'poseidon-grid-notional-live poseidon-grid-notional-live--neutral';
-}
-
 export function resolveSignedUsdLiveToneClass(valueUsd: number | null | undefined): string {
     if (valueUsd == null || valueUsd === 0) {
         return 'poseidon-grid-notional-live poseidon-grid-notional-live--neutral';
@@ -115,18 +155,33 @@ export function formatPositionNotionalCellHtml(row: TradingPositionPayload | nul
     if (row == null) {
         return '—';
     }
-    const entryNotionalUsd = orderTradingPositionNotionalUsd(row, 'entry', numberFormattingService);
-    const lastNotionalUsd = orderTradingPositionNotionalUsd(row, 'last', numberFormattingService);
-    const entryNotionalLabel = entryNotionalUsd == null ? '—' : numberFormattingService.formatCurrency(entryNotionalUsd, 'USD', 0, 2);
-    const lastNotionalLabel = lastNotionalUsd == null ? '—' : numberFormattingService.formatCurrency(lastNotionalUsd, 'USD', 0, 2);
-    const liveToneClass = resolveNotionalLiveToneClass(computeTradingPositionDeltaPercent(row, numberFormattingService));
-    if (entryNotionalUsd == null && lastNotionalUsd == null) {
+    const evaluationNotionalUsd = evaluationOrderNotionalUsd(row, numberFormattingService);
+    const netResultUsd = computeTradingPositionNetResultUsd(row, numberFormattingService);
+    const effectiveNotionalUsd = computeTradingPositionEffectiveNotionalUsd(row, numberFormattingService);
+    const evaluationNotionalLabel = evaluationNotionalUsd == null ? '—' : numberFormattingService.formatCurrency(evaluationNotionalUsd, 'USD', 0, 2);
+    const effectiveNotionalLabel = effectiveNotionalUsd == null ? '—' : numberFormattingService.formatCurrency(effectiveNotionalUsd, 'USD', 0, 2);
+    const liveToneClass = resolveSignedUsdLiveToneClass(netResultUsd);
+    if (evaluationNotionalUsd == null && effectiveNotionalUsd == null) {
         return '—';
     }
-    if (entryNotionalUsd == null) {
-        return `<span class="${liveToneClass} poseidon-grid-emphasized-metric">${lastNotionalLabel}</span>`;
+    if (evaluationNotionalUsd == null) {
+        return `<span class="${liveToneClass} poseidon-grid-emphasized-metric">${effectiveNotionalLabel}</span>`;
     }
-    return `<div class="poseidon-grid-notional-stack"><span class="poseidon-grid-notional-entry-struck">${entryNotionalLabel}</span><span class="${liveToneClass} poseidon-grid-emphasized-metric">${lastNotionalLabel}</span></div>`;
+    return `<div class="poseidon-grid-notional-stack"><span class="poseidon-grid-notional-entry-struck">${evaluationNotionalLabel}</span><span class="${liveToneClass} poseidon-grid-emphasized-metric">${effectiveNotionalLabel}</span></div>`;
+}
+
+export function formatPositionQuantityCellHtml(row: TradingPositionPayload | null | undefined, numberFormattingService: NumberFormattingService): string {
+    if (row == null) {
+        return '—';
+    }
+    const currentQuantity = numberFormattingService.toNumberSafe(row.current_quantity);
+    const openQuantity = numberFormattingService.toNumberSafe(row.open_quantity);
+    const currentQuantityLabel = currentQuantity == null ? '—' : numberFormattingService.formatQuantityHumanReadable(currentQuantity);
+    if (currentQuantity == null || openQuantity == null || currentQuantity >= openQuantity) {
+        return `<span class="poseidon-grid-emphasized-metric font-bold text-slate-100">${currentQuantityLabel}</span>`;
+    }
+    const openQuantityLabel = numberFormattingService.formatQuantityHumanReadable(openQuantity);
+    return `<div class="poseidon-grid-notional-stack"><span class="poseidon-grid-notional-entry-struck">${openQuantityLabel}</span><span class="poseidon-grid-emphasized-metric font-bold text-slate-100">${currentQuantityLabel}</span></div>`;
 }
 
 export function formatDeltaPercentCellHtml(deltaPercent: number | null | undefined, numberFormattingService: NumberFormattingService): string {

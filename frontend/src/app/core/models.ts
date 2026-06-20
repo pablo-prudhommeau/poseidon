@@ -199,6 +199,8 @@ export interface TradingPositionPayload {
     closed_at?: string | null;
     last_price?: number | null;
     exit_reason?: PositionExitTriggerReason | null;
+    evaluation_order_notional_value_usd: number;
+    realized_profit_and_loss_usd: number;
 }
 
 export interface TradingPositionPricePayload {

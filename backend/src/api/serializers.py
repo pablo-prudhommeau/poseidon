@@ -64,7 +64,12 @@ def serialize_trading_trade(
     )
 
 
-def serialize_trading_position(trading_position: TradingPosition, last_price: Optional[float]) -> TradingPositionPayload:
+def serialize_trading_position(
+        trading_position: TradingPosition,
+        last_price: Optional[float],
+        evaluation_order_notional_value_usd: float,
+        realized_profit_and_loss_usd: float,
+) -> TradingPositionPayload:
     return TradingPositionPayload(
         id=trading_position.id,
         evaluation_id=trading_position.evaluation_id,
@@ -85,6 +90,8 @@ def serialize_trading_position(trading_position: TradingPosition, last_price: Op
         closed_at=format_datetime_to_local_iso(trading_position.closed_at) if trading_position.closed_at else None,
         last_price=last_price,
         exit_reason=trading_position.exit_reason,
+        evaluation_order_notional_value_usd=evaluation_order_notional_value_usd,
+        realized_profit_and_loss_usd=realized_profit_and_loss_usd,
     )
 
 

@@ -38,13 +38,18 @@ from src.core.trading.cache.trading_cache import trading_cache
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.logging.logger import get_application_logger
+from src.core.trading.trading_service import (
+    compute_position_realized_profit_and_loss_usd,
+    group_trades_by_evaluation_id,
+)
 from src.persistence.dao.dca_order_dao import DcaOrderDao
 from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading_position_dao import TradingPositionDao
+from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
-from src.persistence.models import DcaStrategy, PositionPhase
+from src.persistence.models import DcaStrategy, PositionPhase, TradingEvaluation
 
 logger = get_application_logger(__name__)
 
@@ -127,11 +132,29 @@ def build_open_positions_response(database_session: Session) -> TradingPositions
         return TradingPositionsResponse(positions=cached_positions)
 
     position_dao = TradingPositionDao(database_session)
+    evaluation_dao = TradingEvaluationDao(database_session)
+    trade_dao = TradingTradeDao(database_session)
     open_positions = position_dao.retrieve_open_positions()
-    serialized_positions = [
-        serialize_trading_position(position, last_price=position.entry_price)
-        for position in open_positions
-    ]
+    evaluation_ids = [position.evaluation_id for position in open_positions]
+    linked_evaluations = evaluation_dao.retrieve_by_evaluation_ids(evaluation_ids)
+    evaluations_by_id: dict[int, TradingEvaluation] = {
+        linked_evaluation.id: linked_evaluation for linked_evaluation in linked_evaluations
+    }
+    trades_by_evaluation_id = group_trades_by_evaluation_id(trade_dao.retrieve_by_evaluation_ids(evaluation_ids))
+    serialized_positions: List[TradingPositionPayload] = []
+    for position in open_positions:
+        linked_evaluation = evaluations_by_id[position.evaluation_id]
+        realized_profit_and_loss_usd = compute_position_realized_profit_and_loss_usd(
+            trades_by_evaluation_id.get(position.evaluation_id, []),
+        )
+        serialized_positions.append(
+            serialize_trading_position(
+                position,
+                last_price=position.entry_price,
+                evaluation_order_notional_value_usd=linked_evaluation.order_notional_value_usd,
+                realized_profit_and_loss_usd=realized_profit_and_loss_usd,
+            )
+        )
     return TradingPositionsResponse(positions=serialized_positions)
 
 
@@ -158,7 +181,24 @@ def resolve_linked_position_payload_for_evaluation(
                 last_price_candidate = position_price_entry.last_price
                 break
 
-    return serialize_trading_position(position_record, last_price=last_price_candidate)
+    evaluation_dao = TradingEvaluationDao(database_session)
+    evaluations_by_id: dict[int, TradingEvaluation] = {
+        linked_evaluation.id: linked_evaluation
+        for linked_evaluation in evaluation_dao.retrieve_by_evaluation_ids([position_record.evaluation_id])
+    }
+    linked_evaluation = evaluations_by_id[position_record.evaluation_id]
+
+    trade_dao = TradingTradeDao(database_session)
+    realized_profit_and_loss_usd = compute_position_realized_profit_and_loss_usd(
+        trade_dao.retrieve_by_evaluation_id(position_record.evaluation_id),
+    )
+
+    return serialize_trading_position(
+        position_record,
+        last_price=last_price_candidate,
+        evaluation_order_notional_value_usd=linked_evaluation.order_notional_value_usd,
+        realized_profit_and_loss_usd=realized_profit_and_loss_usd,
+    )
 
 
 def compute_dca_amount_per_execution_order(strategy_payload: DcaStrategyCreatePayload) -> float:

@@ -258,6 +258,22 @@ def compute_paper_deployable_cash_usd(database_session: Session) -> float:
     return deployable_cash_usd
 
 
+def compute_position_realized_profit_and_loss_usd(trades: Iterable[TradingTrade]) -> float:
+    total_realized: Decimal = Decimal("0")
+    for trade_record in trades:
+        if trade_record.realized_profit_and_loss is None:
+            continue
+        total_realized += decimal_from_primitive(trade_record.realized_profit_and_loss)
+    return float(quantize_2dp(total_realized))
+
+
+def group_trades_by_evaluation_id(trades: Iterable[TradingTrade]) -> dict[int, list[TradingTrade]]:
+    trades_by_evaluation_id: dict[int, list[TradingTrade]] = {}
+    for trade_record in trades:
+        trades_by_evaluation_id.setdefault(trade_record.evaluation_id, []).append(trade_record)
+    return trades_by_evaluation_id
+
+
 def compute_cumulative_swap_fees_usd(trades: Iterable[TradingTrade]) -> float:
     cumulative_fees: Decimal = Decimal("0")
     for trade_record in trades:

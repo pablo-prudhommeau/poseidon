@@ -24,6 +24,13 @@ class TradingTradeDao:
         database_query = select(TradingTrade).where(TradingTrade.evaluation_id == evaluation_id)
         return list(self.database_session.execute(database_query).scalars().all())
 
+    def retrieve_by_evaluation_ids(self, evaluation_ids: List[int]) -> List[TradingTrade]:
+        normalized_ids = [evaluation_id for evaluation_id in evaluation_ids if evaluation_id is not None]
+        if not normalized_ids:
+            return []
+        database_query = select(TradingTrade).where(TradingTrade.evaluation_id.in_(normalized_ids))
+        return list(self.database_session.execute(database_query).scalars().all())
+
     def save(self, trading_trade: TradingTrade) -> TradingTrade:
         self.database_session.add(trading_trade)
         self.database_session.flush()

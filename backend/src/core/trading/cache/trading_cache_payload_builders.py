@@ -42,6 +42,8 @@ from src.integrations.blockchain.blockchain_free_cash_service import (
 from src.core.trading.portfolio.trading_portfolio_valuation_service import build_trading_portfolio_valuation
 from src.core.trading.trading_service import (
     compute_available_cash_usd,
+    compute_position_realized_profit_and_loss_usd,
+    group_trades_by_evaluation_id,
     has_any_closing_positions,
 )
 from src.core.utils.date_utils import get_current_local_datetime
@@ -270,14 +272,30 @@ def build_trading_positions_payloads(
 ) -> list[TradingPositionPayload]:
     with get_database_session() as database_session:
         position_dao = TradingPositionDao(database_session)
+        evaluation_dao = TradingEvaluationDao(database_session)
+        trade_dao = TradingTradeDao(database_session)
         open_position_records = position_dao.retrieve_open_positions()
+        evaluations_by_id = _resolve_evaluations_by_id_for_positions(open_position_records, evaluation_dao)
+        evaluation_ids = [position_record.evaluation_id for position_record in open_position_records]
+        trades_by_evaluation_id = group_trades_by_evaluation_id(trade_dao.retrieve_by_evaluation_ids(evaluation_ids))
         payloads: list[TradingPositionPayload] = []
         for position_record in open_position_records:
             last_price_candidate = _resolve_optional_last_price_for_position(
                 position_record,
                 onchain_prices_by_pair_address,
             )
-            payloads.append(serialize_trading_position(position_record, last_price=last_price_candidate))
+            linked_evaluation = evaluations_by_id[position_record.evaluation_id]
+            realized_profit_and_loss_usd = compute_position_realized_profit_and_loss_usd(
+                trades_by_evaluation_id.get(position_record.evaluation_id, []),
+            )
+            payloads.append(
+                serialize_trading_position(
+                    position_record,
+                    last_price=last_price_candidate,
+                    evaluation_order_notional_value_usd=linked_evaluation.order_notional_value_usd,
+                    realized_profit_and_loss_usd=realized_profit_and_loss_usd,
+                )
+            )
         return payloads
 
 
@@ -536,6 +554,15 @@ def _build_paper_mode_blockchain_balance_payload() -> BlockchainCashBalancePaylo
         gas_refill_locked_stablecoin_usd=0.0,
         gas_refill_budget_detail_scope=resolve_gas_refill_budget_detail_scope(BlockchainNetwork.PAPER),
     )
+
+
+def _resolve_evaluations_by_id_for_positions(
+        position_records: Iterable[TradingPosition],
+        evaluation_dao: TradingEvaluationDao,
+) -> dict[int, TradingEvaluation]:
+    evaluation_ids = [position_record.evaluation_id for position_record in position_records]
+    linked_evaluations = evaluation_dao.retrieve_by_evaluation_ids(evaluation_ids)
+    return {linked_evaluation.id: linked_evaluation for linked_evaluation in linked_evaluations}
 
 
 def _resolve_optional_last_price_for_position(
