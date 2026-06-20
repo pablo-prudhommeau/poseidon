@@ -493,6 +493,11 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-phase-side-cell 
     padding: 0;
 }
 
+.poseidon-page-tabs .p-tab {
+    --p-tabs-tab-padding: 0.7rem 0.75rem;
+    font-size: 0.9rem;
+}
+
 @media (max-width: 1024px) {
     .poseidon-grid-symbol-label {
         display: none;

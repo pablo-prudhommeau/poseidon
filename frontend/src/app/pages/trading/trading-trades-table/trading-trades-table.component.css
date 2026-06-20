@@ -1,7 +1,9 @@
 .poseidon-ag-grid-surface ::ng-deep .ag-root-wrapper {
     border-radius: 0.75rem;
     border: 1px solid rgba(255, 255, 255, 0.06);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.35);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.35),
+        0 18px 40px rgba(0, 0, 0, 0.35);
 }
 
 .poseidon-ag-grid-surface ::ng-deep .ag-header-cell-text,
@@ -41,12 +43,12 @@
 
 ::ng-deep .trades-table-dialog .p-tablist {
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    padding: 0 1rem;
+    padding: 0;
 }
 
 ::ng-deep .trades-table-dialog .p-tab {
     font-size: 0.9rem !important;
-    padding: 0.7rem 1rem !important;
+    padding: 0.7rem 0.75rem !important;
 }
 
 .trade-modal-header-action {
@@ -64,7 +66,10 @@
     font-weight: 700;
     text-transform: uppercase;
     line-height: 1;
-    transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+    transition:
+        color 140ms ease,
+        border-color 140ms ease,
+        background 140ms ease;
     cursor: pointer;
     appearance: none;
     white-space: nowrap;
@@ -154,7 +159,10 @@
     border-radius: 0.45rem;
     border: 1px solid transparent;
     color: rgb(100 116 139);
-    transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
+    transition:
+        color 140ms ease,
+        background 140ms ease,
+        border-color 140ms ease;
 }
 
 .trade-modal-icon-btn:hover {
@@ -168,7 +176,9 @@
     border-radius: 0.9rem;
     background: rgba(0, 0, 0, 0.2);
     padding: 0.65rem 0.75rem;
-    transition: border-color 140ms ease, background 140ms ease;
+    transition:
+        border-color 140ms ease,
+        background 140ms ease;
 }
 
 .trade-modal-stat-card:hover {

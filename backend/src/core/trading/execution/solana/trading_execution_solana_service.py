@@ -434,6 +434,25 @@ async def _execute_solana_live_buy(
                 execution_outcome.transaction_hash_or_signature,
             )
 
+        take_profit_one_fraction = settings.TRADING_TP1_EXIT_FRACTION
+        take_profit_two_fraction = settings.TRADING_TP2_EXIT_FRACTION
+        stop_loss_fraction = settings.TRADING_STOP_LOSS_FRACTION
+        take_profit_tp1_usd = recorded_price_usd * (1.0 + take_profit_one_fraction)
+        take_profit_tp2_usd = recorded_price_usd * (1.0 + take_profit_two_fraction)
+        stop_loss_usd = recorded_price_usd * (1.0 - stop_loss_fraction)
+        if recorded_price_usd != price_usd:
+            logger.info(
+                "[TRADING][EXECUTION][SOLANA][SWAP][THRESHOLDS] entry=%.10f tp1=%.6f (%.1f%%) tp2=%.6f (%.1f%%) stop=%.6f (%.1f%%) quote_entry=%.10f",
+                recorded_price_usd,
+                take_profit_tp1_usd,
+                take_profit_one_fraction * 100,
+                take_profit_tp2_usd,
+                take_profit_two_fraction * 100,
+                stop_loss_usd,
+                stop_loss_fraction * 100,
+                price_usd,
+            )
+
         with get_database_session() as database_session:
             trade_dao = TradingTradeDao(database_session)
             position_dao = TradingPositionDao(database_session)
