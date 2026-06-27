@@ -7,26 +7,26 @@ from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import (
     AnalyticsResponse,
-    DcaOrdersResponse,
-    DcaStrategiesResponse,
-    DcaStrategyCreatePayload,
-    DcaStrategyCreateResponse,
+    AaveDcaOrdersResponse,
+    AaveDcaStrategiesResponse,
+    AaveDcaStrategyCreatePayload,
+    AaveDcaStrategyCreateResponse,
     TradingEvaluationPayload,
     TradingPositionPayload,
     TradingPositionsResponse,
 )
 from src.api.serializers import (
-    serialize_dca_order,
-    serialize_dca_strategy,
+    serialize_aave_dca_order,
+    serialize_aave_dca_strategy,
     serialize_shadowing_verdict_as_trading_evaluation_payload,
     serialize_trading_evaluation,
     serialize_trading_position,
 )
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
-from src.core.dca.dca_backtester import DcaBacktester
-from src.core.dca.dca_scheduler import DcaScheduler
-from src.core.dca.dca_structures import DcaStrategyStatus
+from src.core.aavedca.aave_dca_backtester import AaveDcaBacktester
+from src.core.aavedca.aave_dca_scheduler import AaveDcaScheduler
+from src.core.aavedca.aave_dca_structures import AaveDcaStrategyStatus
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.analytics.trading_analytics_helpers import (
     build_exit_reason_by_evaluation_id,
@@ -42,14 +42,14 @@ from src.core.trading.trading_service import (
     compute_position_realized_profit_and_loss_usd,
     group_trades_by_evaluation_id,
 )
-from src.persistence.dao.dca_order_dao import DcaOrderDao
-from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
+from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
+from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
-from src.persistence.models import DcaStrategy, PositionPhase, TradingEvaluation
+from src.persistence.models import AaveDcaStrategy, PositionPhase, TradingEvaluation
 
 logger = get_application_logger(__name__)
 
@@ -201,18 +201,18 @@ def resolve_linked_position_payload_for_evaluation(
     )
 
 
-def compute_dca_amount_per_execution_order(strategy_payload: DcaStrategyCreatePayload) -> float:
+def compute_dca_amount_per_execution_order(strategy_payload: AaveDcaStrategyCreatePayload) -> float:
     if strategy_payload.total_planned_executions <= 0:
         return 0.0
     return strategy_payload.total_allocated_budget / strategy_payload.total_planned_executions
 
 
 def build_dca_strategy_entity(
-        strategy_payload: DcaStrategyCreatePayload,
+        strategy_payload: AaveDcaStrategyCreatePayload,
         historical_backtest_payload: dict,
         current_local_time: datetime,
-) -> DcaStrategy:
-    return DcaStrategy(
+) -> AaveDcaStrategy:
+    return AaveDcaStrategy(
         blockchain_network=strategy_payload.blockchain_network.value,
         source_asset_symbol=strategy_payload.source_asset_symbol,
         source_asset_address=strategy_payload.source_asset_address,
@@ -234,7 +234,7 @@ def build_dca_strategy_entity(
         aave_estimated_annual_percentage_yield=strategy_payload.aave_estimated_annual_percentage_yield,
         strategy_start_date=strategy_payload.strategy_start_date,
         strategy_end_date=strategy_payload.strategy_end_date,
-        strategy_status=DcaStrategyStatus.ACTIVE.value,
+        strategy_status=AaveDcaStrategyStatus.ACTIVE.value,
         bypass_security_approval=strategy_payload.bypass_security_approval,
         available_dry_powder=0.0,
         total_deployed_amount=0.0,
@@ -247,14 +247,14 @@ def build_dca_strategy_entity(
     )
 
 
-async def create_dca_strategy_from_payload(
+async def create_aave_dca_strategy_from_payload(
         database_session: Session,
-        strategy_payload: DcaStrategyCreatePayload,
-) -> DcaStrategyCreateResponse:
-    dca_strategy_dao = DcaStrategyDao(database_session)
-    dca_order_dao = DcaOrderDao(database_session)
+        strategy_payload: AaveDcaStrategyCreatePayload,
+) -> AaveDcaStrategyCreateResponse:
+    dca_strategy_dao = AaveDcaStrategyDao(database_session)
+    dca_order_dao = AaveDcaOrderDao(database_session)
 
-    backtest_comparative_snapshot = await DcaBacktester.generate_comparative_snapshot(
+    backtest_comparative_snapshot = await AaveDcaBacktester.generate_comparative_snapshot(
         symbol=strategy_payload.binance_trading_pair,
         start_date=strategy_payload.bear_market_start_date,
         end_date=strategy_payload.bear_market_end_date,
@@ -271,20 +271,20 @@ async def create_dca_strategy_from_payload(
     )
 
     saved_dca_strategy = dca_strategy_dao.save(new_dca_strategy)
-    scheduled_orders = DcaScheduler.generate_linear_execution_calendar(saved_dca_strategy)
+    scheduled_orders = AaveDcaScheduler.generate_linear_execution_calendar(saved_dca_strategy)
     dca_order_dao.bulk_save(scheduled_orders)
 
-    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
+    cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
 
-    return DcaStrategyCreateResponse(
+    return AaveDcaStrategyCreateResponse(
         message="Strategy successfully created",
         strategy_id=saved_dca_strategy.id,
         orders_count=len(scheduled_orders),
     )
 
 
-async def build_dca_strategies_response(database_session: Session) -> DcaStrategiesResponse:
-    dca_strategy_dao = DcaStrategyDao(database_session)
+async def build_aave_dca_strategies_response(database_session: Session) -> AaveDcaStrategiesResponse:
+    dca_strategy_dao = AaveDcaStrategyDao(database_session)
     registered_strategies = dca_strategy_dao.retrieve_all()
     strategy_payloads = []
     for registered_strategy in registered_strategies:
@@ -293,12 +293,12 @@ async def build_dca_strategies_response(database_session: Session) -> DcaStrateg
             asset_in_address=registered_strategy.source_asset_address,
             asset_out_address=registered_strategy.target_asset_address,
         )
-        strategy_payloads.append(serialize_dca_strategy(registered_strategy, live_metrics))
-    return DcaStrategiesResponse(strategies=strategy_payloads)
+        strategy_payloads.append(serialize_aave_dca_strategy(registered_strategy, live_metrics))
+    return AaveDcaStrategiesResponse(strategies=strategy_payloads)
 
 
-def build_dca_orders_response(database_session: Session, strategy_uid: int) -> DcaOrdersResponse:
-    dca_order_dao = DcaOrderDao(database_session)
+def build_aave_dca_orders_response(database_session: Session, strategy_uid: int) -> AaveDcaOrdersResponse:
+    dca_order_dao = AaveDcaOrderDao(database_session)
     strategy_orders = dca_order_dao.retrieve_by_strategy(strategy_uid)
-    serialized_orders = [serialize_dca_order(execution_order) for execution_order in strategy_orders]
-    return DcaOrdersResponse(orders=serialized_orders)
+    serialized_orders = [serialize_aave_dca_order(execution_order) for execution_order in strategy_orders]
+    return AaveDcaOrdersResponse(orders=serialized_orders)

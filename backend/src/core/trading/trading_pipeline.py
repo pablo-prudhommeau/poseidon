@@ -425,7 +425,7 @@ class TradingPipeline:
                 record_skipped_trading_evaluation(candidate, rank, "INSUFFICIENT_GAS_RESERVE")
                 continue
 
-            if not settings.PAPER_MODE and candidate.token.chain == BlockchainNetwork.SOLANA:
+            if not settings.TRADING_PAPER_MODE and candidate.token.chain == BlockchainNetwork.SOLANA:
                 freeze_authority_decision = evaluate_solana_mint_freeze_authority_for_buy(
                     token_mint_address=candidate.token.token_address,
                 )
@@ -440,7 +440,7 @@ class TradingPipeline:
             dex_price = candidate.market_snapshot.price_usd
 
             execution_route: Optional[BlockchainExecutionRoute] = None
-            if not settings.PAPER_MODE:
+            if not settings.TRADING_PAPER_MODE:
                 try:
                     execution_route = build_route_for_live_execution(candidate, order_notional)
                 except BlockchainTradingNotSupportedError:
@@ -476,7 +476,7 @@ class TradingPipeline:
             logger.info(
                 "[TRADING][PIPELINE][EXECUTE] BUY #%d %s (%s) — notional=%.2f quality=%.2f shadow_mult=%.2f mode=%s",
                 rank, candidate.token.symbol, tail(candidate.token.token_address), order_notional, candidate.ai_analysis.adjusted_quality_score, candidate.shadowing_diagnostics.notional_boost_factor,
-                "paper" if settings.PAPER_MODE else "live",
+                "paper" if settings.TRADING_PAPER_MODE else "live",
             )
 
             buy_succeeded = execute_buy(order_payload)

@@ -10,8 +10,8 @@ logger = get_application_logger(__name__)
 class AaveSentinelJob:
     async def run_loop(self) -> None:
         if not settings.AAVE_SENTINEL_ENABLED:
-            logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Sentinel disabled in settings, startup skipped")
+            logger.info("[ORCHESTRATOR][AAVESENTINEL] Sentinel disabled in settings, startup skipped")
             return
 
-        logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Starting Aave sentinel service")
+        logger.info("[ORCHESTRATOR][AAVESENTINEL] Starting Aave sentinel service")
         await sentinel.start()

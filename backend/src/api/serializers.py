@@ -12,8 +12,8 @@ from src.api.http.api_schemas import (
     TradingEvaluationAiPayload,
     TradingEvaluationFundamentalsPayload,
     TradingEvaluationDecisionPayload,
-    DcaOrderPayload,
-    DcaStrategyPayload,
+    AaveDcaOrderPayload,
+    AaveDcaStrategyPayload,
     TradingEvaluationShadowingDiagnosticsPayload,
     TradingScreenerEnvelopePayload,
     BlockchainCashBalancePayload,
@@ -28,8 +28,8 @@ from src.integrations.aave.aave_structures import AaveLiveMetrics
 from src.logging.logger import get_application_logger
 from src.persistence.models import (
     TradingEvaluation,
-    DcaOrder,
-    DcaStrategy,
+    AaveDcaOrder,
+    AaveDcaStrategy,
     TradingTrade,
     TradingPosition,
     TradingShadowingVerdict,
@@ -269,8 +269,8 @@ def serialize_shadowing_verdict_as_trading_evaluation_payload(
     )
 
 
-def serialize_dca_order(order: DcaOrder) -> DcaOrderPayload:
-    return DcaOrderPayload(
+def serialize_aave_dca_order(order: AaveDcaOrder) -> AaveDcaOrderPayload:
+    return AaveDcaOrderPayload(
         id=order.id,
         strategy_id=order.strategy_id,
         planned_execution_date=format_datetime_to_local_iso(order.planned_execution_date),
@@ -285,8 +285,8 @@ def serialize_dca_order(order: DcaOrder) -> DcaOrderPayload:
     )
 
 
-def serialize_dca_strategy(strategy: DcaStrategy, live_metrics: AaveLiveMetrics) -> DcaStrategyPayload:
-    return DcaStrategyPayload(
+def serialize_aave_dca_strategy(strategy: AaveDcaStrategy, live_metrics: AaveLiveMetrics) -> AaveDcaStrategyPayload:
+    return AaveDcaStrategyPayload(
         id=strategy.id,
         blockchain_network=BlockchainNetwork(strategy.blockchain_network.lower()),
         source_asset_symbol=strategy.source_asset_symbol,
@@ -321,7 +321,7 @@ def serialize_dca_strategy(strategy: DcaStrategy, live_metrics: AaveLiveMetrics)
         historical_backtest_payload=strategy.historical_backtest_payload,
         created_at=format_datetime_to_local_iso(strategy.created_at),
         updated_at=format_datetime_to_local_iso(strategy.updated_at),
-        execution_orders=[serialize_dca_order(execution_order) for execution_order in (strategy.execution_orders or [])],
+        execution_orders=[serialize_aave_dca_order(execution_order) for execution_order in (strategy.execution_orders or [])],
         live_aave_apy=live_metrics.supply_apy,
         live_market_price=live_metrics.asset_out_price_usd
     )

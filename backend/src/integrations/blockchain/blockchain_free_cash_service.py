@@ -258,7 +258,7 @@ def fetch_stablecoin_balance_for_blockchain(
 
 
 def fetch_stablecoin_balances_for_allowed_chains(force_refresh: bool = False) -> list[BlockchainCashBalance]:
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         logger.debug("[BLOCKCHAIN][FREE_CASH] Paper mode active — skipping on-chain balance fetch")
         return []
 

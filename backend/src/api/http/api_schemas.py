@@ -43,7 +43,7 @@ class TradingPaperResetPayload(BaseModel):
     ok: bool
 
 
-class DcaStrategyCreatePayload(BaseModel):
+class AaveDcaStrategyCreatePayload(BaseModel):
     blockchain_network: BlockchainNetwork
     source_asset_symbol: str
     source_asset_address: str
@@ -69,13 +69,13 @@ class DcaStrategyCreatePayload(BaseModel):
     aave_estimated_annual_percentage_yield: float
 
 
-class DcaStrategyCreateResponse(BaseModel):
+class AaveDcaStrategyCreateResponse(BaseModel):
     message: str
     strategy_id: int
     orders_count: int
 
 
-class DcaOrderPayload(BaseModel):
+class AaveDcaOrderPayload(BaseModel):
     id: int
     strategy_id: int
     planned_execution_date: str
@@ -89,7 +89,7 @@ class DcaOrderPayload(BaseModel):
     allocation_decision_description: Optional[str] = None
 
 
-class DcaBacktestSeriesPointPayload(BaseModel):
+class AaveDcaBacktestSeriesPointPayload(BaseModel):
     timestamp_iso: str
     execution_price: float
     average_purchase_price: float
@@ -97,7 +97,7 @@ class DcaBacktestSeriesPointPayload(BaseModel):
     dry_powder_remaining: float
 
 
-class DcaBacktestMetadataPayload(BaseModel):
+class AaveDcaBacktestMetadataPayload(BaseModel):
     source_asset_symbol: str
     total_allocated_budget: float
     total_planned_executions: int
@@ -106,13 +106,13 @@ class DcaBacktestMetadataPayload(BaseModel):
     total_overheat_retentions: int
 
 
-class DcaBacktestPayload(BaseModel):
-    metadata: DcaBacktestMetadataPayload
-    dumb_dca_series: List[DcaBacktestSeriesPointPayload]
-    smart_dca_series: List[DcaBacktestSeriesPointPayload]
+class AaveDcaBacktestPayload(BaseModel):
+    metadata: AaveDcaBacktestMetadataPayload
+    dumb_dca_series: List[AaveDcaBacktestSeriesPointPayload]
+    smart_dca_series: List[AaveDcaBacktestSeriesPointPayload]
 
 
-class DcaStrategyPayload(BaseModel):
+class AaveDcaStrategyPayload(BaseModel):
     id: int
     blockchain_network: BlockchainNetwork
     source_asset_symbol: str
@@ -144,20 +144,20 @@ class DcaStrategyPayload(BaseModel):
     available_dry_powder: float
     total_deployed_amount: float
     average_purchase_price: float
-    historical_backtest_payload: DcaBacktestPayload
+    historical_backtest_payload: AaveDcaBacktestPayload
     created_at: str
     updated_at: str
-    execution_orders: List[DcaOrderPayload] = []
+    execution_orders: List[AaveDcaOrderPayload] = []
     live_aave_apy: float
     live_market_price: float
 
 
-class DcaStrategiesResponse(BaseModel):
-    strategies: List[DcaStrategyPayload]
+class AaveDcaStrategiesResponse(BaseModel):
+    strategies: List[AaveDcaStrategyPayload]
 
 
-class DcaOrdersResponse(BaseModel):
-    orders: List[DcaOrderPayload]
+class AaveDcaOrdersResponse(BaseModel):
+    orders: List[AaveDcaOrderPayload]
 
 
 class TradingPositionPayload(BaseModel):

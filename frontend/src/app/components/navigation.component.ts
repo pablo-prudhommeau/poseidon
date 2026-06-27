@@ -20,7 +20,7 @@ interface NavigationItem {
 export class NavigationComponent implements OnInit {
     public readonly items: ReadonlyArray<NavigationItem> = [
         { label: 'Trading', route: '/trading', icon: 'chart-line', exact: false },
-        { label: 'Smart DCA', route: '/dca', icon: 'robot', exact: false }
+        { label: 'AAVE DCA', route: '/dca', icon: 'arrows-spin', exact: false }
     ];
 
     private webSocketService = inject(WebSocketService);

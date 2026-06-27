@@ -11,7 +11,7 @@ from src.core.trading.trading_structures import TradingConfigurationError
 
 
 def resolve_execution_chain_handlers() -> list[TradingExecutionChainHandler]:
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         return []
 
     handlers: list[TradingExecutionChainHandler] = []

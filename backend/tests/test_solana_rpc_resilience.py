@@ -40,7 +40,7 @@ def test_execute_closing_sell_reverts_when_wallet_balance_rpc_unavailable(
         resolve_execution_chain_handler_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     position = _build_position(PositionPhase.CLOSING)
     position.current_quantity = 689.303435
     chain_handler = MagicMock()

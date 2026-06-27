@@ -101,7 +101,7 @@ export class WebSocketService {
                 this.reconcileTrades(message.payload as TradingTradePayload[]);
                 break;
             }
-            case WebsocketMessageType.DCA_STRATEGIES: {
+            case WebsocketMessageType.AAVE_DCA_STRATEGIES: {
                 this.dcaStrategies.set(message.payload);
                 break;
             }

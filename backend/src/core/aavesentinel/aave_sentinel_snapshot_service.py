@@ -46,7 +46,7 @@ class AaveSentinelSnapshotService:
         self._oracle_contract: Optional[AsyncContract] = None
         self._wallet_address: str = ""
         self._private_key: str = ""
-        self._scan_semaphore = asyncio.Semaphore(settings.AAVE_MAX_CONCURRENT_ASSET_SCANS)
+        self._scan_semaphore = asyncio.Semaphore(settings.AAVE_SENTINEL_MAX_CONCURRENT_ASSET_SCANS)
 
     @property
     def wallet_address(self) -> str:
@@ -75,15 +75,15 @@ class AaveSentinelSnapshotService:
             )
             oracle_contract_address = await addresses_provider_contract.functions.getPriceOracle().call()
             self._oracle_contract = self._web3_client.eth.contract(address=oracle_contract_address, abi=AAVE_ORACLE_ABI)
-            logger.debug("[AAVE][SENTINEL][INITIALIZATION] Oracle contract loaded at %s", oracle_contract_address)
+            logger.debug("[AAVESENTINEL][INITIALIZATION] Oracle contract loaded at %s", oracle_contract_address)
         except Exception as exception:
-            logger.exception("[AAVE][SENTINEL][INITIALIZATION] Failed to initialize oracle contract: %s", exception)
+            logger.exception("[AAVESENTINEL][INITIALIZATION] Failed to initialize oracle contract: %s", exception)
 
     async def fetch_position_snapshot(self) -> Optional[AaveSentinelPositionSnapshot]:
         try:
             await self.initialize()
             if not self._wallet_address or self._pool_contract is None:
-                logger.error("[AAVE][SENTINEL][SNAPSHOT] Snapshot aborted because initialization is incomplete")
+                logger.error("[AAVESENTINEL][SNAPSHOT] Snapshot aborted because initialization is incomplete")
                 return None
 
             wallet_checksum_address = AsyncWeb3.to_checksum_address(self._wallet_address)
@@ -98,7 +98,7 @@ class AaveSentinelSnapshotService:
                 normalized_health_factor = raw_health_factor / 1e18
 
             logger.debug(
-                "[AAVE][SENTINEL][SNAPSHOT] Core metrics resolved: health_factor=%0.2f collateral=$%0.2f debt=$%0.2f",
+                "[AAVESENTINEL][SNAPSHOT] Core metrics resolved: health_factor=%0.2f collateral=$%0.2f debt=$%0.2f",
                 normalized_health_factor,
                 total_collateral_usd,
                 total_debt_usd,
@@ -131,24 +131,24 @@ class AaveSentinelSnapshotService:
                 assets=active_assets,
             )
         except Exception as exception:
-            logger.exception("[AAVE][SENTINEL][SNAPSHOT] Snapshot acquisition failed: %s", exception)
+            logger.exception("[AAVESENTINEL][SNAPSHOT] Snapshot acquisition failed: %s", exception)
             return None
 
     async def trigger_emergency_rescue(self) -> AaveSentinelRescueExecutionResult:
-        logger.critical("[AAVE][SENTINEL][RESCUE] Emergency rescue protocol requested")
+        logger.critical("[AAVESENTINEL][RESCUE] Emergency rescue protocol requested")
 
         if self._web3_client is None or self._usdc_contract is None or self._pool_contract is None:
             await self.initialize()
 
         if self._web3_client is None or self._usdc_contract is None or self._pool_contract is None:
-            logger.error("[AAVE][SENTINEL][RESCUE] Emergency rescue aborted because on-chain resources are unavailable")
+            logger.error("[AAVESENTINEL][RESCUE] Emergency rescue aborted because on-chain resources are unavailable")
             return AaveSentinelRescueExecutionResult(
                 status=AaveSentinelRescueExecutionStatus.FAILED,
                 message="Emergency rescue aborted because on-chain resources are unavailable.",
             )
 
         if not self._private_key:
-            logger.warning("[AAVE][SENTINEL][RESCUE] Emergency rescue aborted because wallet credentials are missing")
+            logger.warning("[AAVESENTINEL][RESCUE] Emergency rescue aborted because wallet credentials are missing")
             return AaveSentinelRescueExecutionResult(
                 status=AaveSentinelRescueExecutionStatus.SKIPPED,
                 message="Emergency rescue aborted because wallet credentials are missing.",
@@ -164,17 +164,17 @@ class AaveSentinelSnapshotService:
             available_usdc_balance_wei = await self._usdc_contract.functions.balanceOf(rescue_sender_address).call()
             available_usdc_balance = available_usdc_balance_wei / 1e6
 
-            required_rescue_collateral_base_units = (settings.AAVE_RESCUE_TARGET_HF_IMPROVEMENT * total_liabilities_base_units) / settings.AAVE_RESCUE_USDC_LIQUIDATION_THRESHOLD
+            required_rescue_collateral_base_units = (settings.AAVE_SENTINEL_RESCUE_TARGET_HF_IMPROVEMENT * total_liabilities_base_units) / settings.AAVE_SENTINEL_RESCUE_USDC_LIQUIDATION_THRESHOLD
             required_liquidity_injection_usdc = (required_rescue_collateral_base_units / 100.0) * 1.01
             calculated_injection_amount_usdc = min(
                 required_liquidity_injection_usdc,
                 available_usdc_balance,
-                settings.AAVE_RESCUE_MAX_CAP_USDC,
+                settings.AAVE_SENTINEL_RESCUE_MAX_CAP_USDC,
             )
 
-            if calculated_injection_amount_usdc < settings.AAVE_RESCUE_MIN_AMOUNT_USDC:
+            if calculated_injection_amount_usdc < settings.AAVE_SENTINEL_RESCUE_MIN_AMOUNT_USDC:
                 logger.warning(
-                    "[AAVE][SENTINEL][RESCUE] Rescue aborted because computed amount %0.2f USDC is below minimum threshold",
+                    "[AAVESENTINEL][RESCUE] Rescue aborted because computed amount %0.2f USDC is below minimum threshold",
                     calculated_injection_amount_usdc,
                 )
                 return AaveSentinelRescueExecutionResult(
@@ -185,19 +185,19 @@ class AaveSentinelSnapshotService:
 
             injection_amount_wei = int(calculated_injection_amount_usdc * 1e6)
 
-            if settings.PAPER_MODE:
+            if settings.AAVE_SENTINEL_PAPER_MODE:
                 logger.info(
-                    "[AAVE][SENTINEL][RESCUE] Paper mode active, simulated injection amount=%0.2f available=%0.2f target_hf_delta=%0.2f",
+                    "[AAVESENTINEL][RESCUE] Paper mode active, simulated injection amount=%0.2f available=%0.2f target_hf_delta=%0.2f",
                     calculated_injection_amount_usdc,
                     available_usdc_balance,
-                    settings.AAVE_RESCUE_TARGET_HF_IMPROVEMENT,
+                    settings.AAVE_SENTINEL_RESCUE_TARGET_HF_IMPROVEMENT,
                 )
                 return AaveSentinelRescueExecutionResult(
                     status=AaveSentinelRescueExecutionStatus.SIMULATED,
                     message=(
                         "Paper mode active.\n"
                         f"Injection calculée : <b>{calculated_injection_amount_usdc:.2f} USDC</b>\n"
-                        f"(Cible: +{settings.AAVE_RESCUE_TARGET_HF_IMPROVEMENT} HF | "
+                        f"(Cible: +{settings.AAVE_SENTINEL_RESCUE_TARGET_HF_IMPROVEMENT} HF | "
                         f"Dispo: {available_usdc_balance:.2f} USDC)"
                     ),
                     amount_usdc=calculated_injection_amount_usdc,
@@ -241,7 +241,7 @@ class AaveSentinelSnapshotService:
             )
             transaction_hash = await self._web3_client.eth.send_raw_transaction(signed_supply_transaction.rawTransaction)
 
-            logger.info("[AAVE][SENTINEL][RESCUE] Rescue supply transaction broadcast: %s", transaction_hash.hex())
+            logger.info("[AAVESENTINEL][RESCUE] Rescue supply transaction broadcast: %s", transaction_hash.hex())
             return AaveSentinelRescueExecutionResult(
                 status=AaveSentinelRescueExecutionStatus.EXECUTED,
                 message=(
@@ -252,27 +252,27 @@ class AaveSentinelSnapshotService:
                 transaction_hash=transaction_hash.hex(),
             )
         except Exception as exception:
-            logger.exception("[AAVE][SENTINEL][RESCUE] Emergency rescue execution failed: %s", exception)
+            logger.exception("[AAVESENTINEL][RESCUE] Emergency rescue execution failed: %s", exception)
             return AaveSentinelRescueExecutionResult(
                 status=AaveSentinelRescueExecutionStatus.FAILED,
                 message=f"Emergency rescue failed: {exception}",
             )
 
     def _derive_credentials(self) -> None:
-        if not settings.WALLET_MNEMONIC:
-            logger.warning("[AAVE][SENTINEL][CREDENTIALS] Wallet mnemonic is not configured, sentinel is read-only")
+        if not settings.AAVE_SENTINEL_WALLET_MNEMONIC:
+            logger.warning("[AAVESENTINEL][CREDENTIALS] Wallet mnemonic is not configured, sentinel is read-only")
             return
 
         try:
             account_instance: LocalAccount = Account.from_mnemonic(
-                mnemonic=settings.WALLET_MNEMONIC,
-                account_path=f"m/44'/60'/0'/0/{settings.WALLET_DERIVATION_INDEX}",
+                mnemonic=settings.AAVE_SENTINEL_WALLET_MNEMONIC,
+                account_path=f"m/44'/60'/0'/0/{settings.AAVE_SENTINEL_WALLET_DERIVATION_INDEX}",
             )
             self._private_key = account_instance.key.hex()
             self._wallet_address = account_instance.address
-            logger.info("[AAVE][SENTINEL][CREDENTIALS] Wallet loaded for sentinel: %s", self._wallet_address)
+            logger.info("[AAVESENTINEL][CREDENTIALS] Wallet loaded for sentinel: %s", self._wallet_address)
         except Exception as exception:
-            logger.exception("[AAVE][SENTINEL][CREDENTIALS] Wallet derivation failed: %s", exception)
+            logger.exception("[AAVESENTINEL][CREDENTIALS] Wallet derivation failed: %s", exception)
 
     def _convert_ray_to_annual_percentage_yield(self, ray_value: int) -> float:
         if ray_value == 0:
@@ -290,7 +290,7 @@ class AaveSentinelSnapshotService:
         try:
             return await coroutine_operation
         except Exception as exception:
-            logger.debug("[AAVE][SENTINEL][RPC] On-chain call failed for %s: %s", operation_label, exception)
+            logger.debug("[AAVESENTINEL][RPC] On-chain call failed for %s: %s", operation_label, exception)
             return fallback_default_value
 
     async def _scan_asset_snapshot(
@@ -301,7 +301,7 @@ class AaveSentinelSnapshotService:
         async with self._scan_semaphore:
             try:
                 if self._pool_contract is None or self._web3_client is None or self._oracle_contract is None:
-                    logger.error("[AAVE][SENTINEL][SCAN] Asset scan aborted because contracts are not initialized")
+                    logger.error("[AAVESENTINEL][SCAN] Asset scan aborted because contracts are not initialized")
                     return None
 
                 asset_checksum_address = AsyncWeb3.to_checksum_address(asset_contract_address)
@@ -351,7 +351,7 @@ class AaveSentinelSnapshotService:
                         native_balance = await self._web3_client.eth.get_balance(target_user_address)
                         token_wallet_balance += native_balance
                     except Exception as exception:
-                        logger.exception("[AAVE][SENTINEL][SCAN] Failed to aggregate native AVAX balance: %s", exception)
+                        logger.exception("[AAVESENTINEL][SCAN] Failed to aggregate native AVAX balance: %s", exception)
 
                 if token_supply_balance == 0 and token_debt_balance == 0 and token_wallet_balance == 0:
                     return None
@@ -367,7 +367,7 @@ class AaveSentinelSnapshotService:
                 wallet_value_usd = normalized_wallet_amount * asset_price_usd
 
                 logger.debug(
-                    "[AAVE][SENTINEL][SCAN] Asset resolved %s supply=$%0.2f debt=$%0.2f wallet=$%0.2f",
+                    "[AAVESENTINEL][SCAN] Asset resolved %s supply=$%0.2f debt=$%0.2f wallet=$%0.2f",
                     asset_symbol,
                     supply_value_usd,
                     debt_value_usd,
@@ -388,7 +388,7 @@ class AaveSentinelSnapshotService:
                 )
             except Exception as exception:
                 logger.exception(
-                    "[AAVE][SENTINEL][SCAN] Asset scan failed for %s and will be skipped: %s",
+                    "[AAVESENTINEL][SCAN] Asset scan failed for %s and will be skipped: %s",
                     asset_contract_address,
                     exception,
                 )

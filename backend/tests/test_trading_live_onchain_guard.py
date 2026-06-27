@@ -44,7 +44,7 @@ def test_build_trading_liquidity_payload_raises_when_solana_context_missing(
         has_any_closing_positions_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     has_any_closing_positions_mock.return_value = False
     fetch_balances_mock.return_value = []
     resolve_chain_handlers_mock.side_effect = BlockchainRpcUnavailableError(

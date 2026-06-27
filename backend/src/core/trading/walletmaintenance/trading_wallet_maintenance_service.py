@@ -27,7 +27,7 @@ logger = get_application_logger(__name__)
 def resolve_wallet_maintenance_chain_handlers() -> list[
     TradingWalletMaintenanceChainHandler
 ]:
-    if settings.PAPER_MODE or not settings.TRADING_WALLET_MAINTENANCE_ENABLED:
+    if settings.TRADING_PAPER_MODE or not settings.TRADING_WALLET_MAINTENANCE_ENABLED:
         return []
 
     handlers: list[TradingWalletMaintenanceChainHandler] = []

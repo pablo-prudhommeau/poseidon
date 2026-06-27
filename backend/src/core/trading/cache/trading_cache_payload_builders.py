@@ -230,7 +230,7 @@ def build_trading_trades_payloads() -> list[TradingTradePayload]:
 
 def build_trading_liquidity_payload() -> TradingLiquidityPayload:
     updated_at = get_current_local_datetime().isoformat()
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         available_cash_usd = compute_available_cash_usd()
         return TradingLiquidityPayload(
             mode="PAPER",
@@ -354,7 +354,7 @@ def build_trading_portfolio_payload(
         )
 
         if blockchain_balances_override_payload is None:
-            if settings.PAPER_MODE:
+            if settings.TRADING_PAPER_MODE:
                 blockchain_balance_payloads = [_build_paper_mode_blockchain_balance_payload()]
             else:
                 blockchain_balances_raw = fetch_stablecoin_balances_for_allowed_chains()
@@ -540,7 +540,7 @@ def _convert_blockchain_cash_balance_to_payload(
 
 def _build_paper_mode_blockchain_balance_payload() -> BlockchainCashBalancePayload:
     available_cash_usd = compute_available_cash_usd()
-    paper_wallet_address = settings.PAPER_MODE_VIRTUAL_WALLET_ADDRESS
+    paper_wallet_address = settings.TRADING_PAPER_MODE_VIRTUAL_WALLET_ADDRESS
     return BlockchainCashBalancePayload(
         blockchain_network=BlockchainNetwork.PAPER,
         stablecoin_symbol="Paper USD",

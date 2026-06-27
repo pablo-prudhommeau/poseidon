@@ -18,7 +18,7 @@ class WebsocketMessageType(str, Enum):
     TRADING_POSITIONS = "trading_positions"
     TRADING_POSITION_PRICES = "trading_position_prices"
     TRADING_TRADES = "trading_trades"
-    DCA_STRATEGIES = "dca_strategies"
+    AAVE_DCA_STRATEGIES = "aave_dca_strategies"
     PONG = "pong"
     ERROR = "error"
     REFRESH = "refresh"

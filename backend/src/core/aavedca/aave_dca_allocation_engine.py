@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from src.core.dca.dca_structures import AllocationResult
+from src.core.aavedca.aave_dca_structures import AllocationResult
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
 
-class DcaAllocationEngine:
+class AaveDcaAllocationEngine:
 
     @staticmethod
     def calculate_dynamic_allocation(
@@ -19,7 +19,7 @@ class DcaAllocationEngine:
             price_elasticity_aggressiveness: float
     ) -> AllocationResult:
         logger.debug(
-            "[DCA][ALLOCATION][CHECK] Nominal: %s | DryPowder: %s | Price: %s | PRU: %s",
+            "[AAVEDCA][ALLOCATION][CHECK] Nominal: %s | DryPowder: %s | Price: %s | PRU: %s",
             nominal_investment_amount,
             current_dry_powder_reserve,
             current_market_price,
@@ -28,7 +28,7 @@ class DcaAllocationEngine:
 
         if is_last_execution_cycle:
             total_remaining_liquidity = nominal_investment_amount + current_dry_powder_reserve
-            logger.info("[DCA][ALLOCATION][FINAL] Final execution cycle triggered: deploying all remaining liquidity")
+            logger.info("[AAVEDCA][ALLOCATION][FINAL] Final execution cycle triggered: deploying all remaining liquidity")
             return AllocationResult(
                 spend_amount=total_remaining_liquidity,
                 dry_powder_delta=-current_dry_powder_reserve,
@@ -36,7 +36,7 @@ class DcaAllocationEngine:
             )
 
         if current_average_purchase_price > 0 and current_market_price > current_average_purchase_price:
-            logger.info("[DCA][ALLOCATION][SKIP] Kill-switch active: market price is above average purchase price")
+            logger.info("[AAVEDCA][ALLOCATION][SKIP] Kill-switch active: market price is above average purchase price")
             return AllocationResult(
                 spend_amount=0.0,
                 dry_powder_delta=nominal_investment_amount,
@@ -47,7 +47,7 @@ class DcaAllocationEngine:
         if current_average_purchase_price > 0 and current_market_price <= current_average_purchase_price:
             distance_from_pru_percent = (current_average_purchase_price - current_market_price) / current_average_purchase_price
             investment_multiplier = 1.0 + (distance_from_pru_percent * price_elasticity_aggressiveness)
-            logger.debug("[DCA][ALLOCATION][SCALING] Elasticity multiplier calculated: %s", investment_multiplier)
+            logger.debug("[AAVEDCA][ALLOCATION][SCALING] Elasticity multiplier calculated: %s", investment_multiplier)
 
         if current_macro_ema > 0 and current_market_price > current_macro_ema:
             base_allocation_amount = nominal_investment_amount * 0.5
@@ -66,7 +66,7 @@ class DcaAllocationEngine:
         dry_powder_delta = nominal_investment_amount - actual_spend_amount
 
         logger.info(
-            "[DCA][ALLOCATION][RESULT] Action: %s | Spend: %s | Multiplier: %s",
+            "[AAVEDCA][ALLOCATION][RESULT] Action: %s | Spend: %s | Multiplier: %s",
             action_prefix,
             actual_spend_amount,
             investment_multiplier

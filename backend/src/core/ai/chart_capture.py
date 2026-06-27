@@ -41,7 +41,7 @@ class ChartCaptureService:
             lookback_minutes: int,
             interval_label: Optional[str] = None,
     ) -> str:
-        screenshots_directory = Path(settings.SCREENSHOT_DIR)
+        screenshots_directory = Path(settings.CHART_AI_SCREENSHOT_DIR)
         screenshots_directory.mkdir(parents=True, exist_ok=True)
 
         current_timestamp = get_current_local_datetime().strftime("%Y%m%d-%H%M%S")
@@ -82,7 +82,7 @@ class ChartCaptureService:
             tradingview_iframe = browser_page.frame_locator("iframe").first
 
             intervals_toolbar = tradingview_iframe.locator("#header-toolbar-intervals")
-            intervals_toolbar.wait_for(state="visible", timeout=int(settings.CHART_CAPTURE_WAIT_CANVAS_MS))
+            intervals_toolbar.wait_for(state="visible", timeout=int(settings.CHART_AI_CAPTURE_WAIT_CANVAS_MS))
 
             toolbar_value_candidates = self._map_time_interval_to_toolbar_values(time_interval)
             for candidate_value in toolbar_value_candidates:
@@ -133,7 +133,7 @@ class ChartCaptureService:
         try:
             tradingview_iframe = browser_page.frame_locator("iframe").first
             chart_canvas = tradingview_iframe.locator("canvas").first
-            chart_canvas.wait_for(state="visible", timeout=int(settings.CHART_CAPTURE_WAIT_CANVAS_MS))
+            chart_canvas.wait_for(state="visible", timeout=int(settings.CHART_AI_CAPTURE_WAIT_CANVAS_MS))
             chart_canvas.click()
 
             normalized_interval = (time_interval or "").strip().upper()
@@ -184,15 +184,15 @@ class ChartCaptureService:
         logger.debug("[AI][CHART][CAPTURE][BROWSER] Initiating headless browser navigation to %s", target_url)
 
         with sync_playwright() as playwright_context_manager:
-            browser_engine_choice = (settings.CHART_CAPTURE_BROWSER or "chromium").lower()
+            browser_engine_choice = (settings.CHART_AI_CAPTURE_BROWSER or "chromium").lower()
 
             if browser_engine_choice == "firefox":
-                headless_browser = playwright_context_manager.firefox.launch(headless=bool(settings.CHART_CAPTURE_HEADLESS))
+                headless_browser = playwright_context_manager.firefox.launch(headless=bool(settings.CHART_AI_CAPTURE_HEADLESS))
             elif browser_engine_choice == "webkit":
-                headless_browser = playwright_context_manager.webkit.launch(headless=bool(settings.CHART_CAPTURE_HEADLESS))
+                headless_browser = playwright_context_manager.webkit.launch(headless=bool(settings.CHART_AI_CAPTURE_HEADLESS))
             else:
                 headless_browser = playwright_context_manager.chromium.launch(
-                    headless=bool(settings.CHART_CAPTURE_HEADLESS),
+                    headless=bool(settings.CHART_AI_CAPTURE_HEADLESS),
                     args=["--no-sandbox", "--disable-dev-shm-usage"],
                 )
 
@@ -202,8 +202,8 @@ class ChartCaptureService:
                     viewport=cast(
                         "ViewportSize",
                         {
-                            "width": int(settings.CHART_CAPTURE_VIEWPORT_WIDTH),
-                            "height": int(settings.CHART_CAPTURE_VIEWPORT_HEIGHT),
+                            "width": int(settings.CHART_AI_CAPTURE_VIEWPORT_WIDTH),
+                            "height": int(settings.CHART_AI_CAPTURE_VIEWPORT_HEIGHT),
                         },
                     ),
                     user_agent=(
@@ -227,16 +227,16 @@ class ChartCaptureService:
                 try:
                     tradingview_iframe_locator.locator("canvas").first.wait_for(
                         state="visible",
-                        timeout=int(settings.CHART_CAPTURE_WAIT_CANVAS_MS),
+                        timeout=int(settings.CHART_AI_CAPTURE_WAIT_CANVAS_MS),
                     )
                 except PlaywrightTimeoutError as exception:
                     logger.warning(
                         "[AI][CHART][CAPTURE][BROWSER] Chart canvas failed to become visible within the allocated timeout of %s milliseconds, proceeding with capture fallback",
-                        int(settings.CHART_CAPTURE_WAIT_CANVAS_MS),
+                        int(settings.CHART_AI_CAPTURE_WAIT_CANVAS_MS),
                         exception
                     )
 
-                browser_page.wait_for_timeout(int(settings.CHART_CAPTURE_AFTER_RENDER_MS))
+                browser_page.wait_for_timeout(int(settings.CHART_AI_CAPTURE_AFTER_RENDER_MS))
                 captured_png_bytes = browser_page.screenshot(type="png", full_page=True)
                 return captured_png_bytes
 
@@ -284,7 +284,7 @@ class ChartCaptureService:
                 file_path=cached_capture_entry.file_path,
             )
 
-        capture_timeout_in_seconds = int(settings.CHART_CAPTURE_TIMEOUT_SEC)
+        capture_timeout_in_seconds = int(settings.CHART_AI_CAPTURE_TIMEOUT_SEC)
         persisted_file_path: Optional[str] = None
 
         raw_token_identifier = f"{chain.value}:{pair_address}"

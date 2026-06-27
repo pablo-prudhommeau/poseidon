@@ -7,7 +7,7 @@ from typing import Any, Optional
 from sqlalchemy import Enum as SQLAlchemyEnum, Float, Integer, String, JSON, Boolean, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.dca.dca_structures import DcaOrderStatus, DcaStrategyStatus
+from src.core.aavedca.aave_dca_structures import AaveDcaOrderStatus, AaveDcaStrategyStatus
 from src.core.trading.screener.trading_screener_structures import TradingScreenerEnvelope
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingCandidateShadowingMetricEvaluation,
@@ -53,7 +53,7 @@ class TradingPosition(DatabaseBaseModel):
     take_profit_tier_1_price: Mapped[float] = mapped_column(Float, nullable=False)
     take_profit_tier_2_price: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss_price: Mapped[float] = mapped_column(Float, nullable=False)
-    position_phase: Mapped[PositionPhase] = mapped_column(SQLAlchemyEnum(PositionPhase, name="positionphase"), nullable=False)
+    position_phase: Mapped[PositionPhase] = mapped_column(SQLAlchemyEnum(PositionPhase, name="positionphase", native_enum=False, length=50), nullable=False)
     exit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     opened_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(onupdate=get_current_local_datetime, nullable=False)
@@ -68,14 +68,14 @@ class TradingTrade(DatabaseBaseModel):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     evaluation_id: Mapped[int] = mapped_column(ForeignKey("trading_evaluations.id"), nullable=False)
-    trade_side: Mapped[TradeSide] = mapped_column(SQLAlchemyEnum(TradeSide, name="tradeside"), index=True)
+    trade_side: Mapped[TradeSide] = mapped_column(SQLAlchemyEnum(TradeSide, name="tradeside", native_enum=False, length=50), index=True)
     token_symbol: Mapped[str] = mapped_column(String(24), index=True)
     blockchain_network: Mapped[str] = mapped_column(String(32), nullable=False)
     execution_price: Mapped[float] = mapped_column(Float, nullable=False)
     execution_quantity: Mapped[float] = mapped_column(Float, nullable=False)
     transaction_fee: Mapped[float] = mapped_column(Float, nullable=False)
     realized_profit_and_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    execution_status: Mapped[ExecutionStatus] = mapped_column(SQLAlchemyEnum(ExecutionStatus, name="executionstatus"), nullable=False)
+    execution_status: Mapped[ExecutionStatus] = mapped_column(SQLAlchemyEnum(ExecutionStatus, name="executionstatus", native_enum=False, length=50), nullable=False)
     token_address: Mapped[str] = mapped_column(String(128), nullable=False)
     pair_address: Mapped[str] = mapped_column(String(128), nullable=False)
     dex_id: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -266,8 +266,8 @@ class TradingOutcome(DatabaseBaseModel):
         return f"<TradingOutcome evaluation_id={self.evaluation_id} is_profitable={self.is_profitable}>"
 
 
-class DcaStrategy(DatabaseBaseModel):
-    __tablename__ = "dca_strategies"
+class AaveDcaStrategy(DatabaseBaseModel):
+    __tablename__ = "aave_dca_strategies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     blockchain_network: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -293,7 +293,7 @@ class DcaStrategy(DatabaseBaseModel):
     last_yield_calculation_timestamp: Mapped[datetime] = mapped_column(nullable=False)
     strategy_start_date: Mapped[datetime] = mapped_column(nullable=False)
     strategy_end_date: Mapped[datetime] = mapped_column(nullable=False)
-    strategy_status: Mapped[DcaStrategyStatus] = mapped_column(SQLAlchemyEnum(DcaStrategyStatus, name="dcastrategystatus"), nullable=False)
+    strategy_status: Mapped[AaveDcaStrategyStatus] = mapped_column(SQLAlchemyEnum(AaveDcaStrategyStatus, name="dcastrategystatus", native_enum=False, length=50), nullable=False)
     bypass_security_approval: Mapped[bool] = mapped_column(Boolean, nullable=False)
     available_dry_powder: Mapped[float] = mapped_column(Float, nullable=False)
     total_deployed_amount: Mapped[float] = mapped_column(Float, nullable=False)
@@ -301,27 +301,27 @@ class DcaStrategy(DatabaseBaseModel):
     historical_backtest_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(nullable=False)
-    execution_orders: Mapped[list[DcaOrder]] = relationship("DcaOrder", back_populates="parent_strategy", cascade="all, delete-orphan")
+    execution_orders: Mapped[list[AaveDcaOrder]] = relationship("AaveDcaOrder", back_populates="parent_strategy", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
-        return f"<DcaStrategy identifier={self.id} blockchain_network={self.blockchain_network} routing={self.source_asset_symbol}->{self.target_asset_symbol}>"
+        return f"<AaveDcaStrategy identifier={self.id} blockchain_network={self.blockchain_network} routing={self.source_asset_symbol}->{self.target_asset_symbol}>"
 
 
-class DcaOrder(DatabaseBaseModel):
-    __tablename__ = "dca_orders"
+class AaveDcaOrder(DatabaseBaseModel):
+    __tablename__ = "aave_dca_orders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    strategy_id: Mapped[int] = mapped_column(ForeignKey("dca_strategies.id"), nullable=False)
+    strategy_id: Mapped[int] = mapped_column(ForeignKey("aave_dca_strategies.id"), nullable=False)
     planned_execution_date: Mapped[datetime] = mapped_column(nullable=False)
     planned_source_asset_amount: Mapped[float] = mapped_column(Float, nullable=False)
     executed_source_asset_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     executed_target_asset_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    order_status: Mapped[DcaOrderStatus] = mapped_column(SQLAlchemyEnum(DcaOrderStatus, name="dcaorderstatus"), nullable=False)
+    order_status: Mapped[AaveDcaOrderStatus] = mapped_column(SQLAlchemyEnum(AaveDcaOrderStatus, name="dcaorderstatus", native_enum=False, length=50), nullable=False)
     transaction_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     actual_execution_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     executed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     allocation_decision_description: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    parent_strategy: Mapped[DcaStrategy] = relationship("DcaStrategy", back_populates="execution_orders")
+    parent_strategy: Mapped[AaveDcaStrategy] = relationship("AaveDcaStrategy", back_populates="execution_orders")
 
 
 class TradingCortexModelManifest(DatabaseBaseModel):

@@ -14,7 +14,7 @@ from src.api.websocket.websocket_hub import router as ws_router
 from src.api.websocket.websocket_manager import websocket_manager
 from src.cache.cache_invalidator import cache_invalidator
 from src.configuration.config import settings
-from src.core.dca.cache.dca_cache_rebuilders import register_dca_rebuilders
+from src.core.aavedca.cache.aave_dca_cache_rebuilders import register_aave_dca_rebuilders
 from src.core.jobs.job_structures import ApiStatusResponse
 from src.core.jobs.orchestrator import read_background_jobs_runtime_status, start_background_jobs
 from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders
@@ -48,12 +48,12 @@ def _register_enabled_cache_rebuilders() -> bool:
     else:
         logger.info("[STARTUP][CACHE][SHADOWING] Shadowing disabled or trading inactive, shadowing rebuilders skipped")
 
-    if settings.DCA_ENABLED:
-        register_dca_rebuilders()
+    if settings.AAVE_DCA_ENABLED:
+        register_aave_dca_rebuilders()
         registered_rebuilder_count += 1
-        logger.info("[STARTUP][CACHE][DCA] DCA rebuilders registered")
+        logger.info("[STARTUP][CACHE][AAVEDCA] DCA rebuilders registered")
     else:
-        logger.info("[STARTUP][CACHE][DCA] DCA disabled, DCA rebuilders skipped")
+        logger.info("[STARTUP][CACHE][AAVEDCA] DCA disabled, DCA rebuilders skipped")
 
     return registered_rebuilder_count > 0
 
@@ -102,12 +102,12 @@ def create_app() -> FastAPI:
         else:
             logger.info("[STARTUP][CACHE] No enabled rebuilders detected, invalidation watcher skipped")
 
-        if settings.DCA_ENABLED:
-            from src.core.dca.dca_manager import DcaManager
+        if settings.AAVE_DCA_ENABLED:
+            from src.core.aavedca.aave_dca_manager import AaveDcaManager
             with get_database_session() as database_session:
-                DcaManager(database_session).resync_waiting_approvals()
+                AaveDcaManager(database_session).resync_waiting_approvals()
         else:
-            logger.info("[STARTUP][DCA] DCA disabled in settings, waiting approvals resync skipped")
+            logger.info("[STARTUP][AAVEDCA] DCA disabled in settings, waiting approvals resync skipped")
 
         start_background_jobs()
 

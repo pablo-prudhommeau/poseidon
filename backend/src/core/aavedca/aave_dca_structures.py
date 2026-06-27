@@ -4,14 +4,14 @@ from typing import List
 from pydantic import BaseModel
 
 
-class DcaStrategyStatus(Enum):
+class AaveDcaStrategyStatus(Enum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
 
-class DcaOrderStatus(Enum):
+class AaveDcaOrderStatus(Enum):
     PENDING = "PENDING"
     WAITING_USER_APPROVAL = "WAITING_USER_APPROVAL"
     APPROVED = "APPROVED"
@@ -23,7 +23,7 @@ class DcaOrderStatus(Enum):
     REJECTED = "REJECTED"
 
 
-class DcaBacktestSeriesPoint(BaseModel):
+class AaveDcaBacktestSeriesPoint(BaseModel):
     timestamp_iso: str
     execution_price: float
     average_purchase_price: float
@@ -31,7 +31,7 @@ class DcaBacktestSeriesPoint(BaseModel):
     dry_powder_remaining: float
 
 
-class DcaBacktestMetadata(BaseModel):
+class AaveDcaBacktestMetadata(BaseModel):
     source_asset_symbol: str
     total_allocated_budget: float
     total_planned_executions: int
@@ -40,10 +40,10 @@ class DcaBacktestMetadata(BaseModel):
     total_overheat_retentions: int
 
 
-class DcaBacktestPayload(BaseModel):
-    metadata: DcaBacktestMetadata
-    dumb_dca_series: List[DcaBacktestSeriesPoint]
-    smart_dca_series: List[DcaBacktestSeriesPoint]
+class AaveDcaBacktestPayload(BaseModel):
+    metadata: AaveDcaBacktestMetadata
+    dumb_dca_series: List[AaveDcaBacktestSeriesPoint]
+    smart_dca_series: List[AaveDcaBacktestSeriesPoint]
 
 
 class AllocationResult(BaseModel):

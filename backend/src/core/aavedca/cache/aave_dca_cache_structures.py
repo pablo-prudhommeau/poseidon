@@ -5,9 +5,9 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.api.http.api_schemas import (
-    DcaStrategyPayload,
+    AaveDcaStrategyPayload,
 )
 
 
-class DcaState(BaseModel):
-    dca_strategies: Optional[list[DcaStrategyPayload]] = None
+class AaveDcaState(BaseModel):
+    aave_dca_strategies: Optional[list[AaveDcaStrategyPayload]] = None

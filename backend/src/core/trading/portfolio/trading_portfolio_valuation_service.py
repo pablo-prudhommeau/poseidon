@@ -31,7 +31,7 @@ def build_trading_portfolio_valuation(
         open_positions,
         onchain_prices_by_pair_address,
     )
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         deployable_cash_usd = compute_paper_deployable_cash_usd(database_session)
         wallet_auxiliary_assets_usd = 0.0
         total_gas_refill_locked_stablecoin_usd = 0.0
@@ -77,7 +77,7 @@ def build_trading_portfolio_valuation(
         wallet_auxiliary_assets_usd,
         total_gas_refill_locked_stablecoin_usd,
         sizing_capital_usd,
-        settings.PAPER_MODE,
+        settings.TRADING_PAPER_MODE,
     )
     return TradingPortfolioValuation(
         deployable_cash_usd=deployable_cash_usd,

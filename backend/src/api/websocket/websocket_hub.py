@@ -7,15 +7,15 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 
 from src.api.http.api_schemas import (
-    DcaStrategyPayload,
+    AaveDcaStrategyPayload,
     WebsocketInitializationPayload,
     WebsocketStatusPayload,
 )
 from src.api.websocket.websocket_manager import websocket_manager
 from src.api.websocket.websocket_structures import WebsocketInboundMessage, WebsocketMessageType
 from src.configuration.config import settings
-from src.core.dca.cache.dca_cache import dca_state_cache
-from src.core.dca.cache.dca_cache_structures import DcaState
+from src.core.aavedca.cache.aave_dca_cache import aave_dca_state_cache
+from src.core.aavedca.cache.aave_dca_cache_structures import AaveDcaState
 from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.cache.trading_cache_structures import TradingState
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
@@ -67,11 +67,11 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
                 "payload": jsonable_encoder(trading_shadowing_state.shadowing_verdict_chronicle),
             })
 
-        dca_state: DcaState = dca_state_cache.get_dca_state()
-        if dca_state.dca_strategies is not None:
-            dca_strategies_payload: list[DcaStrategyPayload] = dca_state.dca_strategies
+        aave_dca_state: AaveDcaState = aave_dca_state_cache.get_aave_dca_state()
+        if aave_dca_state.aave_dca_strategies is not None:
+            dca_strategies_payload: list[AaveDcaStrategyPayload] = aave_dca_state.aave_dca_strategies
             await websocket_connection.send_json({
-                "type": WebsocketMessageType.DCA_STRATEGIES.value,
+                "type": WebsocketMessageType.AAVE_DCA_STRATEGIES.value,
                 "payload": jsonable_encoder(dca_strategies_payload),
             })
 
@@ -83,7 +83,7 @@ async def _send_cached_state_to_client(websocket_connection: WebSocket) -> None:
 
 async def send_websocket_handshake(websocket_connection: WebSocket) -> None:
     handshake_payload = WebsocketInitializationPayload(
-        status=WebsocketStatusPayload(paper_mode=settings.PAPER_MODE, interval_seconds=settings.TRADING_LOOP_INTERVAL_SECONDS)
+        status=WebsocketStatusPayload(paper_mode=settings.TRADING_PAPER_MODE, interval_seconds=settings.TRADING_LOOP_INTERVAL_SECONDS)
     )
     await websocket_connection.send_json({
         "type": WebsocketMessageType.INITIALIZATION.value,

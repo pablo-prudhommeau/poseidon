@@ -5,18 +5,18 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.api.http.api_schemas import (
-    DcaOrdersResponse,
-    DcaStrategiesResponse,
-    DcaStrategyCreatePayload,
-    DcaStrategyCreateResponse,
+    AaveDcaOrdersResponse,
+    AaveDcaStrategiesResponse,
+    AaveDcaStrategyCreatePayload,
+    AaveDcaStrategyCreateResponse,
     SystemHealthComponentPayload,
     SystemHealthComponentsPayload,
     SystemHealthPayload,
 )
 from src.api.http.http_helpers import (
-    build_dca_orders_response,
-    build_dca_strategies_response,
-    create_dca_strategy_from_payload,
+    build_aave_dca_orders_response,
+    build_aave_dca_strategies_response,
+    create_aave_dca_strategy_from_payload,
 )
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
@@ -51,40 +51,40 @@ def get_health_status(database_session: Session = Depends(get_fastapi_database_s
 
 
 @router.post("/api/dca/strategies", tags=["dca"])
-async def create_new_dca_strategy(
-        strategy_payload: DcaStrategyCreatePayload,
+async def create_new_aave_dca_strategy(
+        strategy_payload: AaveDcaStrategyCreatePayload,
         database_session: Session = Depends(get_fastapi_database_session),
-) -> DcaStrategyCreateResponse:
-    logger.debug("[HTTP][DCA][STRATEGY][CREATE] Initiating DCA strategy creation for symbol %s", strategy_payload.binance_trading_pair)
-    create_response = await create_dca_strategy_from_payload(database_session, strategy_payload)
+) -> AaveDcaStrategyCreateResponse:
+    logger.debug("[HTTP][AAVEDCA][STRATEGY][CREATE] Initiating DCA strategy creation for symbol %s", strategy_payload.binance_trading_pair)
+    create_response = await create_aave_dca_strategy_from_payload(database_session, strategy_payload)
     logger.info(
-        "[HTTP][DCA][STRATEGY][CREATE] Successfully created DCA strategy with id %s generating %s orders",
+        "[HTTP][AAVEDCA][STRATEGY][CREATE] Successfully created DCA strategy with id %s generating %s orders",
         create_response.strategy_id,
         create_response.orders_count,
     )
-    cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
+    cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
     return create_response
 
 
 @router.get("/api/dca/strategies", tags=["dca"])
-async def get_all_dca_strategies(
+async def get_all_aave_dca_strategies(
         database_session: Session = Depends(get_fastapi_database_session),
-) -> DcaStrategiesResponse:
-    logger.debug("[HTTP][DCA][STRATEGIES][FETCH] Retrieving all registered DCA strategies")
-    strategies_response = await build_dca_strategies_response(database_session)
-    logger.info("[HTTP][DCA][STRATEGIES][FETCH] Successfully retrieved %s DCA strategies", len(strategies_response.strategies))
+) -> AaveDcaStrategiesResponse:
+    logger.debug("[HTTP][AAVEDCA][STRATEGIES][FETCH] Retrieving all registered DCA strategies")
+    strategies_response = await build_aave_dca_strategies_response(database_session)
+    logger.info("[HTTP][AAVEDCA][STRATEGIES][FETCH] Successfully retrieved %s DCA strategies", len(strategies_response.strategies))
     return strategies_response
 
 
 @router.get("/api/dca/strategies/{strategy_uid}/orders", tags=["dca"])
-def get_dca_strategy_orders(
+def get_aave_dca_strategy_orders(
         strategy_uid: int,
         database_session: Session = Depends(get_fastapi_database_session),
-) -> DcaOrdersResponse:
-    logger.debug("[HTTP][DCA][ORDERS][FETCH] Retrieving orders mapped to DCA strategy id %s", strategy_uid)
-    orders_response = build_dca_orders_response(database_session, strategy_uid)
+) -> AaveDcaOrdersResponse:
+    logger.debug("[HTTP][AAVEDCA][ORDERS][FETCH] Retrieving orders mapped to DCA strategy id %s", strategy_uid)
+    orders_response = build_aave_dca_orders_response(database_session, strategy_uid)
     logger.info(
-        "[HTTP][DCA][ORDERS][FETCH] Successfully retrieved %s orders mapped to DCA strategy id %s",
+        "[HTTP][AAVEDCA][ORDERS][FETCH] Successfully retrieved %s orders mapped to DCA strategy id %s",
         len(orders_response.orders),
         strategy_uid,
     )

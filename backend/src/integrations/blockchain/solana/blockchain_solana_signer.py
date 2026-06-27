@@ -402,7 +402,7 @@ def build_default_solana_signer() -> SolanaSigner:
     from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
     configuration = SolanaSignerConfiguration(
         rpc_url=resolve_rpc_url_for_chain(BlockchainNetwork.SOLANA),
-        mnemonic=settings.WALLET_MNEMONIC,
-        wallet_derivation_index=settings.WALLET_DERIVATION_INDEX
+        mnemonic=settings.TRADING_WALLET_MNEMONIC,
+        wallet_derivation_index=settings.TRADING_WALLET_DERIVATION_INDEX
     )
     return SolanaSigner(configuration)

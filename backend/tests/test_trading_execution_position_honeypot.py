@@ -40,7 +40,7 @@ def test_close_position_as_honeypot_records_total_loss(
         trading_evaluation_dao_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = True
+    settings_mock.TRADING_PAPER_MODE = True
     position = _build_position(PositionPhase.CLOSING)
     database_session = MagicMock()
     trading_trade_dao_mock.return_value.save.side_effect = lambda trade: setattr(trade, "id", 901) or trade
@@ -64,7 +64,7 @@ def test_close_position_with_synthetic_total_loss_uses_requested_exit_reason(
         trading_evaluation_dao_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = True
+    settings_mock.TRADING_PAPER_MODE = True
     position = _build_position(PositionPhase.STALED)
     database_session = MagicMock()
     trading_trade_dao_mock.return_value.save.side_effect = lambda trade: setattr(trade, "id", 902) or trade

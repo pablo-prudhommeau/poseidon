@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src.core.dca.dca_structures import DcaOrderStatus
+from src.core.aavedca.aave_dca_structures import AaveDcaOrderStatus
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
-from src.persistence.models import DcaStrategy, DcaOrder
+from src.persistence.models import AaveDcaStrategy, AaveDcaOrder
 
 logger = get_application_logger(__name__)
 
 
-class DcaScheduler:
+class AaveDcaScheduler:
     @staticmethod
-    def generate_linear_execution_calendar(dca_strategy: DcaStrategy) -> list[DcaOrder]:
-        scheduled_orders_collection: list[DcaOrder] = []
+    def generate_linear_execution_calendar(dca_strategy: AaveDcaStrategy) -> list[AaveDcaOrder]:
+        scheduled_orders_collection: list[AaveDcaOrder] = []
 
         system_local_timezone = get_current_local_datetime().tzinfo
 
@@ -29,7 +29,7 @@ class DcaScheduler:
 
         if total_strategy_duration_in_seconds <= 0 or dca_strategy.total_planned_executions <= 0:
             logger.warning(
-                "[DCA][SCHEDULER][VALIDATION] Aborting calendar generation: invalid duration (%s s) or execution count (%s) for strategy id %s",
+                "[AAVEDCA][SCHEDULER][VALIDATION] Aborting calendar generation: invalid duration (%s s) or execution count (%s) for strategy id %s",
                 total_strategy_duration_in_seconds,
                 dca_strategy.total_planned_executions,
                 dca_strategy.id
@@ -40,7 +40,7 @@ class DcaScheduler:
         current_iterative_timestamp = strategy_start_date_local.timestamp()
 
         logger.debug(
-            "[DCA][SCHEDULER][COMPUTE] Generating %s orders with an interval of %0.2f seconds",
+            "[AAVEDCA][SCHEDULER][COMPUTE] Generating %s orders with an interval of %0.2f seconds",
             dca_strategy.total_planned_executions,
             time_interval_between_executions_in_seconds
         )
@@ -48,13 +48,13 @@ class DcaScheduler:
         for execution_index in range(dca_strategy.total_planned_executions):
             calculated_scheduled_date = datetime.fromtimestamp(current_iterative_timestamp, tz=system_local_timezone)
 
-            new_dca_order = DcaOrder(
+            new_dca_order = AaveDcaOrder(
                 strategy_id=dca_strategy.id,
                 planned_execution_date=calculated_scheduled_date,
                 planned_source_asset_amount=dca_strategy.amount_per_execution_order,
                 executed_source_asset_amount=None,
                 executed_target_asset_amount=None,
-                order_status=DcaOrderStatus.PENDING,
+                order_status=AaveDcaOrderStatus.PENDING,
                 transaction_hash=None,
                 actual_execution_price=None,
                 executed_at=None
@@ -64,7 +64,7 @@ class DcaScheduler:
             current_iterative_timestamp += time_interval_between_executions_in_seconds
 
         logger.info(
-            "[DCA][SCHEDULER][SUCCESS] Successfully generated %d linear execution orders for strategy id %s",
+            "[AAVEDCA][SCHEDULER][SUCCESS] Successfully generated %d linear execution orders for strategy id %s",
             len(scheduled_orders_collection),
             dca_strategy.id
         )

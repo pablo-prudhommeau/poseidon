@@ -5,7 +5,7 @@ import threading
 
 from src.configuration.config import settings
 from src.core.jobs.aave_sentinel_job import AaveSentinelJob
-from src.core.jobs.dca_job import DcaJob
+from src.core.jobs.aave_dca_job import AaveDcaJob
 from src.core.jobs.job_structures import BackgroundJobsRuntimeStatus
 from src.core.jobs.trading_cycle_job import TradingCycleJob
 from src.core.jobs.trading_position_guard_job import TradingPositionGuardJob
@@ -21,7 +21,7 @@ _trading_cycle_thread: threading.Thread | None = None
 _shadowing_thread: threading.Thread | None = None
 _position_guard_task: asyncio.Task | None = None
 _aave_sentinel_task: asyncio.Task | None = None
-_dca_background_task: asyncio.Task | None = None
+_aave_dca_background_task: asyncio.Task | None = None
 _trading_cortex_training_task: asyncio.Task | None = None
 _wallet_maintenance_task: asyncio.Task | None = None
 _stop_event = threading.Event()
@@ -30,7 +30,7 @@ _stop_event = threading.Event()
 def start_background_jobs() -> None:
     global _started, _stop_event
     global _trading_cycle_thread, _shadowing_thread
-    global _position_guard_task, _aave_sentinel_task, _dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task
+    global _position_guard_task, _aave_sentinel_task, _aave_dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task
 
     if _started:
         return
@@ -68,15 +68,15 @@ def start_background_jobs() -> None:
 
     if settings.AAVE_SENTINEL_ENABLED:
         _aave_sentinel_task = event_loop.create_task(AaveSentinelJob().run_loop())
-        logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Sentinel background task armed")
+        logger.info("[ORCHESTRATOR][AAVESENTINEL] Sentinel background task armed")
     else:
-        logger.info("[ORCHESTRATOR][AAVE_SENTINEL] Sentinel disabled in settings, task not scheduled")
+        logger.info("[ORCHESTRATOR][AAVESENTINEL] Sentinel disabled in settings, task not scheduled")
 
-    if settings.DCA_ENABLED:
-        _dca_background_task = event_loop.create_task(DcaJob().run_loop())
-        logger.info("[ORCHESTRATOR][DCA_JOB] Scheduled task started (interval=%ss)", settings.AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS)
+    if settings.AAVE_DCA_ENABLED:
+        _aave_dca_background_task = event_loop.create_task(AaveDcaJob().run_loop())
+        logger.info("[ORCHESTRATOR][AAVEDCA] Scheduled task started (interval=%ss)", settings.AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS)
     else:
-        logger.info("[ORCHESTRATOR][DCA_JOB] DCA disabled in settings, task not scheduled")
+        logger.info("[ORCHESTRATOR][AAVEDCA] DCA disabled in settings, task not scheduled")
 
     if settings.TRADING_CORTEX_ENABLED:
         from src.core.jobs.trading_cortex_training_job import TradingCortexTrainingJob
@@ -88,7 +88,7 @@ def start_background_jobs() -> None:
     else:
         logger.info("[ORCHESTRATOR][TRADING][CORTEX][TRAINING] TradingCortex disabled in settings, task not scheduled")
 
-    if settings.TRADING_WALLET_MAINTENANCE_ENABLED and not settings.PAPER_MODE:
+    if settings.TRADING_WALLET_MAINTENANCE_ENABLED and not settings.TRADING_PAPER_MODE:
         _wallet_maintenance_task = event_loop.create_task(TradingWalletMaintenanceJob().run_loop())
         logger.info(
             "[ORCHESTRATOR][TRADING][WALLET_MAINTENANCE] Scheduled task started (interval=%ss)",
@@ -103,7 +103,7 @@ def start_background_jobs() -> None:
 
 def stop_background_jobs() -> None:
     global _started, _stop_event
-    global _position_guard_task, _aave_sentinel_task, _dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task
+    global _position_guard_task, _aave_sentinel_task, _aave_dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task
 
     if not _started:
         return
@@ -116,7 +116,7 @@ def stop_background_jobs() -> None:
         task for task in [
             _position_guard_task,
             _aave_sentinel_task,
-            _dca_background_task,
+            _aave_dca_background_task,
             _trading_cortex_training_task,
             _wallet_maintenance_task,
         ] if task is not None
@@ -131,9 +131,9 @@ def stop_background_jobs() -> None:
 
 def read_background_jobs_runtime_status() -> BackgroundJobsRuntimeStatus:
     return BackgroundJobsRuntimeStatus(
-        mode=Mode.PAPER if settings.PAPER_MODE else Mode.LIVE,
+        mode=Mode.PAPER if settings.TRADING_PAPER_MODE else Mode.LIVE,
         trading_enabled=settings.TRADING_ENABLED,
-        dca_enabled=settings.DCA_ENABLED,
+        aave_dca_enabled=settings.AAVE_DCA_ENABLED,
         trading_interval_seconds=settings.TRADING_LOOP_INTERVAL_SECONDS,
         position_guard_interval_seconds=settings.TRADING_POSITION_GUARD_INTERVAL_SECONDS,
         shadowing_enabled=settings.TRADING_SHADOWING_ENABLED,

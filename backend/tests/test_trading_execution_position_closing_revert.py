@@ -41,7 +41,7 @@ def test_execute_closing_sell_reverts_on_rpc_unavailable(
         resolve_execution_chain_handler_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     position = _build_closing_position()
     chain_handler = MagicMock()
     chain_handler.resolve_sell_token_decimals.side_effect = BlockchainRpcUnavailableError(
@@ -73,7 +73,7 @@ def test_execute_closing_sell_reverts_on_unexpected_exception(
         resolve_execution_chain_handler_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     position = _build_closing_position()
     chain_handler = MagicMock()
     chain_handler.resolve_sell_token_decimals.side_effect = RuntimeError("unexpected failure")
@@ -102,7 +102,7 @@ def test_execute_closing_sell_paper_mode_completes_partial_take_profit(
         trading_evaluation_dao_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = True
+    settings_mock.TRADING_PAPER_MODE = True
     position = _build_closing_position()
     database_session = MagicMock()
     saved_trade = MagicMock()
@@ -132,7 +132,7 @@ def test_execute_position_exit_sell_reverts_when_mark_closing_then_rpc_fails(
         mark_position_closing_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     position = _build_closing_position()
     position.position_phase = PositionPhase.OPEN
     position.exit_reason = None

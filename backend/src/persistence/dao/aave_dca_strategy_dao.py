@@ -6,32 +6,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.logging.logger import get_application_logger
-from src.persistence.models import DcaStrategy
+from src.persistence.models import AaveDcaStrategy
 
 logger = get_application_logger(__name__)
 
 
-class DcaStrategyDao:
+class AaveDcaStrategyDao:
     def __init__(self, database_session: Session) -> None:
         self.database_session = database_session
 
-    def save(self, dca_strategy: DcaStrategy) -> DcaStrategy:
-        logger.debug("[DATABASE][DAO][DCA_STRATEGY][SAVE] Saving DCA strategy record")
+    def save(self, dca_strategy: AaveDcaStrategy) -> AaveDcaStrategy:
+        logger.debug("[DATABASE][DAO][AAVEDCA_STRATEGY][SAVE] Saving DCA strategy record")
         self.database_session.add(dca_strategy)
         self.database_session.flush()
         return dca_strategy
 
-    def retrieve_by_id(self, strategy_id: int) -> Optional[DcaStrategy]:
-        return self.database_session.get(DcaStrategy, strategy_id)
+    def retrieve_by_id(self, strategy_id: int) -> Optional[AaveDcaStrategy]:
+        return self.database_session.get(AaveDcaStrategy, strategy_id)
 
-    def retrieve_active(self) -> List[DcaStrategy]:
-        logger.debug("[DATABASE][DAO][DCA_STRATEGY][RETRIEVE] Fetching active DCA strategies")
-        database_query = select(DcaStrategy).where(DcaStrategy.strategy_status == "ACTIVE")
+    def retrieve_active(self) -> List[AaveDcaStrategy]:
+        logger.debug("[DATABASE][DAO][AAVEDCA_STRATEGY][RETRIEVE] Fetching active DCA strategies")
+        database_query = select(AaveDcaStrategy).where(AaveDcaStrategy.strategy_status == "ACTIVE")
         return list(self.database_session.execute(database_query).scalars().all())
 
     def update_strategy_execution_metrics(
             self,
-            dca_strategy: DcaStrategy,
+            dca_strategy: AaveDcaStrategy,
             last_execution_source_amount: float,
             last_execution_price: float
     ) -> None:
@@ -53,12 +53,12 @@ class DcaStrategyDao:
 
         self.save(dca_strategy)
 
-    def retrieve_all(self) -> List[DcaStrategy]:
-        database_query = select(DcaStrategy)
+    def retrieve_all(self) -> List[AaveDcaStrategy]:
+        database_query = select(AaveDcaStrategy)
         return list(self.database_session.execute(database_query).scalars().all())
 
     def delete(self, strategy_id: int) -> bool:
-        logger.warning("[DATABASE][DAO][DCA_STRATEGY][DELETE] Deleting DCA strategy ID: %d", strategy_id)
+        logger.warning("[DATABASE][DAO][AAVEDCA_STRATEGY][DELETE] Deleting DCA strategy ID: %d", strategy_id)
         strategy_record = self.retrieve_by_id(strategy_id)
         if strategy_record:
             self.database_session.delete(strategy_record)

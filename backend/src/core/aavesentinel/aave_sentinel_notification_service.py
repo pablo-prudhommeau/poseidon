@@ -15,7 +15,7 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelState,
     AaveSentinelStrategyDirection,
 )
-from src.core.dca.dca_structures import DcaOrderStatus
+from src.core.aavedca.aave_dca_structures import AaveDcaOrderStatus
 from src.core.utils.date_utils import get_current_local_datetime
 from src.core.utils.format_utils import format_currency, format_percent
 from src.integrations.telegram.telegram_client import (
@@ -26,8 +26,8 @@ from src.integrations.telegram.telegram_client import (
 )
 from src.integrations.telegram.telegram_structures import TelegramCallbackQuery, TelegramMessage
 from src.logging.logger import get_application_logger
-from src.persistence.dao.dca_order_dao import DcaOrderDao
-from src.persistence.dao.dca_strategy_dao import DcaStrategyDao
+from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
+from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
 from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
@@ -41,7 +41,7 @@ class AaveSentinelNotificationService:
         self._http_client: Optional[httpx.AsyncClient] = None
         self._state = AaveSentinelState()
         self._last_telegram_update_id = 0
-        self._initial_basis_usd: Optional[float] = settings.AAVE_INITIAL_DEPOSIT_USD
+        self._initial_basis_usd: Optional[float] = settings.AAVE_SENTINEL_INITIAL_DEPOSIT_USD
 
     async def close(self) -> None:
         if self._http_client is not None:
@@ -55,19 +55,19 @@ class AaveSentinelNotificationService:
 
     async def register_bot_commands(self) -> None:
         if not settings.TELEGRAM_BOT_TOKEN:
-            logger.debug("[AAVE][SENTINEL][TELEGRAM] Bot command registration skipped because token is missing")
+            logger.debug("[AAVESENTINEL][TELEGRAM] Bot command registration skipped because token is missing")
             return
 
         defined_commands = [{"command": "snapshot", "description": "Afficher le statut du portefeuille"}]
         try:
             is_registration_successful = await asyncio.to_thread(register_bot_commands, defined_commands)
             if is_registration_successful:
-                logger.info("[AAVE][SENTINEL][TELEGRAM] Telegram bot commands registered")
+                logger.info("[AAVESENTINEL][TELEGRAM] Telegram bot commands registered")
                 return
 
-            logger.warning("[AAVE][SENTINEL][TELEGRAM] Telegram bot command registration was rejected")
+            logger.warning("[AAVESENTINEL][TELEGRAM] Telegram bot command registration was rejected")
         except Exception as exception:
-            logger.exception("[AAVE][SENTINEL][TELEGRAM] Telegram bot command registration failed: %s", exception)
+            logger.exception("[AAVESENTINEL][TELEGRAM] Telegram bot command registration failed: %s", exception)
 
     async def process_telegram_commands(self) -> None:
         if not settings.TELEGRAM_BOT_TOKEN:
@@ -83,7 +83,7 @@ class AaveSentinelNotificationService:
                 if telegram_update.callback_query is not None:
                     await self._handle_callback_query(telegram_update.callback_query)
         except Exception as exception:
-            logger.exception("[AAVE][SENTINEL][TELEGRAM] Telegram update processing failed: %s", exception)
+            logger.exception("[AAVESENTINEL][TELEGRAM] Telegram update processing failed: %s", exception)
 
     async def send_alert(
             self,
@@ -92,7 +92,7 @@ class AaveSentinelNotificationService:
             severity: AaveSentinelAlertSeverity = AaveSentinelAlertSeverity.INFO,
     ) -> None:
         if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHAT_ID:
-            logger.debug("[AAVE][SENTINEL][TELEGRAM] Alert skipped because Telegram credentials are missing")
+            logger.debug("[AAVESENTINEL][TELEGRAM] Alert skipped because Telegram credentials are missing")
             return
 
         severity_emoji_by_level = {
@@ -113,9 +113,9 @@ class AaveSentinelNotificationService:
                 message,
                 resolved_emoji_indicator,
             )
-            logger.info("[AAVE][SENTINEL][TELEGRAM] Alert dispatched: %s", title)
+            logger.info("[AAVESENTINEL][TELEGRAM] Alert dispatched: %s", title)
         except Exception as exception:
-            logger.exception("[AAVE][SENTINEL][TELEGRAM] Alert dispatch failed: %s", exception)
+            logger.exception("[AAVESENTINEL][TELEGRAM] Alert dispatch failed: %s", exception)
 
     async def format_notification_message(self, position_snapshot: AaveSentinelPositionSnapshot) -> str:
         current_usd_to_eur_exchange_rate = await self._fetch_usd_eur_exchange_rate()
@@ -275,7 +275,7 @@ class AaveSentinelNotificationService:
                 and self._state.last_health_factor is not None
         ):
             health_factor_drop = self._state.last_health_factor - position_snapshot.health_factor
-            if health_factor_drop > settings.AAVE_SIGNIFICANT_DEVIATION_HF:
+            if health_factor_drop > settings.AAVE_SENTINEL_SIGNIFICANT_DEVIATION_HF:
                 is_notification_dispatch_required = True
                 notification_severity = self._map_risk_status_to_alert_severity(current_risk_status)
                 notification_title = f"Chute rapide du HF (-{health_factor_drop:.2f})"
@@ -287,7 +287,7 @@ class AaveSentinelNotificationService:
                 if self._state.last_total_equity_usd > 0
                 else 0.0
             )
-            if equity_drawdown_percentage > settings.AAVE_SIGNIFICANT_DEVIATION_EQUITY_PCT:
+            if equity_drawdown_percentage > settings.AAVE_SENTINEL_SIGNIFICANT_DEVIATION_EQUITY_PCT:
                 is_notification_dispatch_required = True
                 notification_severity = AaveSentinelAlertSeverity.WARNING
                 notification_title = f"Chute brutale de la valeur (-{format_percent(equity_drawdown_percentage)})"
@@ -297,7 +297,7 @@ class AaveSentinelNotificationService:
                     evaluation_timestamp - self._state.last_notification_time
             ).total_seconds()
             if (
-                    seconds_since_last_notification > settings.AAVE_ALERT_COOLDOWN_SECONDS
+                    seconds_since_last_notification > settings.AAVE_SENTINEL_ALERT_COOLDOWN_SECONDS
                     and current_risk_status != AaveSentinelRiskStatus.OPTIMAL
             ):
                 is_notification_dispatch_required = True
@@ -324,7 +324,7 @@ class AaveSentinelNotificationService:
             return float(response.json()["rates"]["EUR"])
         except Exception as exception:
             logger.exception(
-                "[AAVE][SENTINEL][FX] Exchange rate fetch failed, using fallback %0.2f: %s",
+                "[AAVESENTINEL][FX] Exchange rate fetch failed, using fallback %0.2f: %s",
                 fallback_exchange_rate,
                 exception,
             )
@@ -343,7 +343,7 @@ class AaveSentinelNotificationService:
         if normalized_message_text != "/snapshot":
             return
 
-        logger.info("[AAVE][SENTINEL][TELEGRAM] Manual snapshot requested")
+        logger.info("[AAVESENTINEL][TELEGRAM] Manual snapshot requested")
         await self.send_alert("Snapshot demandé", "📸 Calcul du snapshot en cours...", AaveSentinelAlertSeverity.INFO)
         current_position_snapshot = await self._fetch_position_snapshot()
         if current_position_snapshot is None:
@@ -355,7 +355,7 @@ class AaveSentinelNotificationService:
 
     async def _handle_callback_query(self, telegram_callback_query: TelegramCallbackQuery) -> None:
         if telegram_callback_query.message is None:
-            logger.warning("[AAVE][SENTINEL][CALLBACK] Malformed callback query received")
+            logger.warning("[AAVESENTINEL][CALLBACK] Malformed callback query received")
             return
 
         interaction_callback_data = telegram_callback_query.data
@@ -365,31 +365,31 @@ class AaveSentinelNotificationService:
         origin_message_identifier = telegram_callback_query.message.message_id
         target_order_identifier = int(interaction_callback_data.split(":")[1])
         is_approval_action = interaction_callback_data.startswith("approve_dca:")
-        resolved_order_status = DcaOrderStatus.APPROVED if is_approval_action else DcaOrderStatus.REJECTED
+        resolved_order_status = AaveDcaOrderStatus.APPROVED if is_approval_action else AaveDcaOrderStatus.REJECTED
         resolved_status_label = "APPROUVÉ ✅" if is_approval_action else "REJETÉ ❌"
 
         logger.info(
-            "[AAVE][SENTINEL][CALLBACK] Processing %s for order id %s",
+            "[AAVESENTINEL][CALLBACK] Processing %s for order id %s",
             resolved_order_status.value,
             target_order_identifier,
         )
 
         with get_database_session() as database_session:
-            order_dao = DcaOrderDao(database_session)
-            strategy_dao = DcaStrategyDao(database_session)
+            order_dao = AaveDcaOrderDao(database_session)
+            strategy_dao = AaveDcaStrategyDao(database_session)
             target_dca_order = order_dao.retrieve_by_id(target_order_identifier)
 
             if target_dca_order is None:
-                logger.error("[AAVE][SENTINEL][CALLBACK] DCA order id %s was not found", target_order_identifier)
+                logger.error("[AAVESENTINEL][CALLBACK] DCA order id %s was not found", target_order_identifier)
                 return
 
             target_dca_order.order_status = resolved_order_status.value
             order_dao.save(target_dca_order)
             database_session.commit()
 
-            from src.core.dca.dca_manager import DcaManager
+            from src.core.aavedca.aave_dca_manager import AaveDcaManager
 
-            dca_manager = DcaManager(database_session)
+            dca_manager = AaveDcaManager(database_session)
             strategy_instance = strategy_dao.retrieve_by_id(target_dca_order.strategy_id)
 
             if strategy_instance is not None:
@@ -405,32 +405,32 @@ class AaveSentinelNotificationService:
                     text=f"✅ Ordre #{target_order_identifier} {resolved_status_label} avec succès.",
                 )
 
-            cache_invalidator.mark_dirty(CacheRealm.DCA_STRATEGIES)
+            cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
             logger.info(
-                "[AAVE][SENTINEL][CALLBACK] DCA order id %s updated to %s",
+                "[AAVESENTINEL][CALLBACK] DCA order id %s updated to %s",
                 target_order_identifier,
                 resolved_order_status.value,
             )
 
     def _resolve_risk_status(self, current_health_factor: float) -> AaveSentinelRiskStatus:
-        if current_health_factor < settings.AAVE_HEALTH_FACTOR_DANGER_THRESHOLD:
+        if current_health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_DANGER_THRESHOLD:
             return AaveSentinelRiskStatus.CRITICAL
-        if current_health_factor < settings.AAVE_HEALTH_FACTOR_WARNING_THRESHOLD:
+        if current_health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_WARNING_THRESHOLD:
             return AaveSentinelRiskStatus.DANGER
-        if current_health_factor < settings.AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD:
+        if current_health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_NEUTRAL_THRESHOLD:
             return AaveSentinelRiskStatus.WARNING
-        if current_health_factor < settings.AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD:
+        if current_health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_RELOOP_THRESHOLD:
             return AaveSentinelRiskStatus.NEUTRAL
         return AaveSentinelRiskStatus.OPTIMAL
 
     def _resolve_health_factor_indicator(self, current_health_factor: float) -> str:
-        if current_health_factor >= settings.AAVE_HEALTH_FACTOR_RELOOP_THRESHOLD:
+        if current_health_factor >= settings.AAVE_SENTINEL_HEALTH_FACTOR_RELOOP_THRESHOLD:
             return "🟢"
-        if current_health_factor >= settings.AAVE_HEALTH_FACTOR_NEUTRAL_THRESHOLD:
+        if current_health_factor >= settings.AAVE_SENTINEL_HEALTH_FACTOR_NEUTRAL_THRESHOLD:
             return "⚪"
-        if current_health_factor >= settings.AAVE_HEALTH_FACTOR_WARNING_THRESHOLD:
+        if current_health_factor >= settings.AAVE_SENTINEL_HEALTH_FACTOR_WARNING_THRESHOLD:
             return "🟡"
-        if current_health_factor >= settings.AAVE_HEALTH_FACTOR_DANGER_THRESHOLD:
+        if current_health_factor >= settings.AAVE_SENTINEL_HEALTH_FACTOR_DANGER_THRESHOLD:
             return "🟠"
         return "🔴"
 

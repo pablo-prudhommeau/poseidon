@@ -10,6 +10,6 @@ class CacheRealm(str, Enum):
     TRADES = "trades"
     AVAILABLE_CASH = "available_cash"
     PORTFOLIO = "portfolio"
-    DCA_STRATEGIES = "dca_strategies"
+    AAVE_DCA_STRATEGIES = "aave_dca_strategies"
     SHADOWING_SNAPSHOT = "shadowing_snapshot"
     SHADOWING_VERDICT_CHRONICLE = "shadowing_verdict_chronicle"

@@ -118,7 +118,7 @@ def resolve_solana_onchain_wallet_context_for_live_trading() -> SolanaOnchainWal
 
 
 def is_solana_live_portfolio_chain_enabled() -> bool:
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         return False
     for blockchain_network in resolve_trading_allowed_blockchain_networks():
         if blockchain_network == BlockchainNetwork.SOLANA:

@@ -51,7 +51,7 @@ def test_resolve_wallet_maintenance_chain_handlers_disabled() -> None:
     with patch(
         "src.core.trading.walletmaintenance.trading_wallet_maintenance_service.settings"
     ) as mock_settings:
-        mock_settings.PAPER_MODE = True
+        mock_settings.TRADING_PAPER_MODE = True
         mock_settings.TRADING_WALLET_MAINTENANCE_ENABLED = True
 
         handlers = resolve_wallet_maintenance_chain_handlers()
@@ -66,7 +66,7 @@ def test_resolve_wallet_maintenance_chain_handlers_solana_only() -> None:
         "src.core.trading.walletmaintenance.trading_wallet_maintenance_service.resolve_trading_allowed_blockchain_networks",
         return_value=[BlockchainNetwork.SOLANA],
     ):
-        mock_settings.PAPER_MODE = False
+        mock_settings.TRADING_PAPER_MODE = False
         mock_settings.TRADING_WALLET_MAINTENANCE_ENABLED = True
 
         handlers = resolve_wallet_maintenance_chain_handlers()

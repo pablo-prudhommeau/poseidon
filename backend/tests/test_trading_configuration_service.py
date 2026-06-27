@@ -7,7 +7,7 @@ from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.trading_configuration_service import (
     TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE,
     TRADING_SOLANA_SUPPORTED_DEX_IDS_ENVIRONMENT_VARIABLE,
-    WALLET_MNEMONIC_ENVIRONMENT_VARIABLE,
+    TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE,
     validate_and_apply_trading_application_configuration,
     validate_live_wallet_configuration,
 )
@@ -25,9 +25,9 @@ from src.core.trading.trading_dex_capability_service import (
 class _SettingsStub:
     TRADING_ALLOWED_CHAINS: list[str]
     TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str]
-    PAPER_MODE: bool = True
-    WALLET_MNEMONIC: str = ""
-    WALLET_DERIVATION_INDEX: int = 0
+    TRADING_PAPER_MODE: bool = True
+    TRADING_WALLET_MNEMONIC: str = ""
+    TRADING_WALLET_DERIVATION_INDEX: int = 0
     TRADING_STABLECOIN_ADDRESS_SOLANA: str = ""
     TRADING_STABLECOIN_ADDRESS_BSC: str = ""
     TRADING_STABLECOIN_ADDRESS_BASE: str = ""
@@ -43,9 +43,9 @@ class _SettingsStub:
 
 
 class _LiveWalletSettingsStub(_SettingsStub):
-    PAPER_MODE = False
-    WALLET_MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-    WALLET_DERIVATION_INDEX = 0
+    TRADING_PAPER_MODE = False
+    TRADING_WALLET_MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    TRADING_WALLET_DERIVATION_INDEX = 0
     TRADING_STABLECOIN_ADDRESS_SOLANA = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
 
     def __init__(self) -> None:
@@ -146,8 +146,8 @@ def test_validate_live_wallet_configuration_skips_paper_mode() -> None:
     )
 
     paper_settings = _LiveWalletSettingsStub()
-    paper_settings.PAPER_MODE = True
-    paper_settings.WALLET_MNEMONIC = ""
+    paper_settings.TRADING_PAPER_MODE = True
+    paper_settings.TRADING_WALLET_MNEMONIC = ""
 
     validate_live_wallet_configuration(paper_settings)
 
@@ -161,11 +161,11 @@ def test_validate_live_wallet_configuration_rejects_missing_mnemonic_in_live_mod
     )
 
     live_settings = _LiveWalletSettingsStub()
-    live_settings.WALLET_MNEMONIC = ""
+    live_settings.TRADING_WALLET_MNEMONIC = ""
 
     with pytest.raises(
             TradingConfigurationError,
-            match=f"{WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is required when PAPER_MODE=false",
+            match=f"{TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is required when TRADING_PAPER_MODE=false",
     ):
         validate_live_wallet_configuration(live_settings)
 

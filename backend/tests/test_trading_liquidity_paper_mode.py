@@ -12,14 +12,14 @@ def test_build_trading_liquidity_payload_paper_mode_does_not_require_wallet_mnem
         settings_mock: MagicMock,
         compute_available_cash_usd_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = True
-    settings_mock.WALLET_MNEMONIC = ""
-    settings_mock.PAPER_MODE_VIRTUAL_WALLET_ADDRESS = "PaperMode1111111111111111111111111111111111"
+    settings_mock.TRADING_PAPER_MODE = True
+    settings_mock.TRADING_WALLET_MNEMONIC = ""
+    settings_mock.TRADING_PAPER_MODE_VIRTUAL_WALLET_ADDRESS = "PaperMode1111111111111111111111111111111111"
 
     payload = build_trading_liquidity_payload()
 
     assert payload.mode == "PAPER"
     assert len(payload.blockchain_balances) == 1
     assert payload.blockchain_balances[0].blockchain_network == BlockchainNetwork.PAPER
-    assert payload.blockchain_balances[0].wallet_address == settings_mock.PAPER_MODE_VIRTUAL_WALLET_ADDRESS
+    assert payload.blockchain_balances[0].wallet_address == settings_mock.TRADING_PAPER_MODE_VIRTUAL_WALLET_ADDRESS
     assert compute_available_cash_usd_mock.call_count >= 1

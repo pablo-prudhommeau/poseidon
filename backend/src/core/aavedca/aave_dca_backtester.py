@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src.core.dca.dca_allocation_engine import DcaAllocationEngine
-from src.core.dca.dca_structures import DcaBacktestMetadata, DcaBacktestPayload, DcaBacktestSeriesPoint
+from src.core.aavedca.aave_dca_allocation_engine import AaveDcaAllocationEngine
+from src.core.aavedca.aave_dca_structures import AaveDcaBacktestMetadata, AaveDcaBacktestPayload, AaveDcaBacktestSeriesPoint
 from src.core.utils.date_utils import convert_epoch_to_local_datetime
 from src.integrations.binance.binance_client import fetch_bulk_historical_candlesticks
 from src.integrations.binance.binance_structures import CandlestickData
@@ -12,7 +12,7 @@ from src.logging.logger import get_application_logger
 logger = get_application_logger(__name__)
 
 
-class DcaBacktester:
+class AaveDcaBacktester:
 
     @staticmethod
     async def generate_comparative_snapshot(
@@ -22,15 +22,15 @@ class DcaBacktester:
             total_budget: float,
             total_execution_cycles: int,
             price_elasticity_aggressiveness: float
-    ) -> DcaBacktestPayload:
+    ) -> AaveDcaBacktestPayload:
         logger.info(
-            "[DCA][BACKTESTER][START] Initiating comparative simulation for %s with %d cycles",
+            "[AAVEDCA][BACKTESTER][START] Initiating comparative simulation for %s with %d cycles",
             symbol,
             total_execution_cycles
         )
 
         if total_execution_cycles <= 0 or total_budget <= 0.0:
-            logger.error("[DCA][BACKTESTER][VALIDATION] Total budget and execution cycles must be strictly positive")
+            logger.error("[AAVEDCA][BACKTESTER][VALIDATION] Total budget and execution cycles must be strictly positive")
             raise ValueError("Simulation parameters must be strictly positive")
 
         historical_candlesticks: list[CandlestickData] = await fetch_bulk_historical_candlesticks(
@@ -40,7 +40,7 @@ class DcaBacktester:
         )
 
         if not historical_candlesticks:
-            logger.error("[DCA][BACKTESTER][DATA] Failed to retrieve historical market data for %s", symbol)
+            logger.error("[AAVEDCA][BACKTESTER][DATA] Failed to retrieve historical market data for %s", symbol)
             raise RuntimeError(f"Backtest aborted: No market data available for {symbol}")
 
         ema_calculations_map: dict[int, float] = {}
@@ -66,7 +66,7 @@ class DcaBacktester:
         ]
 
         if not valid_market_timestamps:
-            logger.error("[DCA][BACKTESTER][DATA] Simulation window contains no valid market timestamps")
+            logger.error("[AAVEDCA][BACKTESTER][DATA] Simulation window contains no valid market timestamps")
             raise RuntimeError("Simulation window is outside of available market data range")
 
         end_timestamp_milliseconds = int(end_date.timestamp() * 1000)
@@ -78,8 +78,8 @@ class DcaBacktester:
 
         budget_per_execution_cycle = total_budget / total_execution_cycles
 
-        standard_dca_series: list[DcaBacktestSeriesPoint] = []
-        dynamic_dca_series: list[DcaBacktestSeriesPoint] = []
+        standard_dca_series: list[AaveDcaBacktestSeriesPoint] = []
+        dynamic_dca_series: list[AaveDcaBacktestSeriesPoint] = []
 
         standard_cumulative_spent = 0.0
         standard_accumulated_asset_units = 0.0
@@ -91,7 +91,7 @@ class DcaBacktester:
         total_market_overheat_preventions = 0
 
         for cycle_index, target_timestamp in enumerate(scheduled_execution_timestamps):
-            actual_execution_timestamp = DcaBacktester._resolve_closest_market_timestamp(
+            actual_execution_timestamp = AaveDcaBacktester._resolve_closest_market_timestamp(
                 valid_market_timestamps,
                 target_timestamp
             )
@@ -111,7 +111,7 @@ class DcaBacktester:
             )
 
             standard_dca_series.append(
-                DcaBacktestSeriesPoint(
+                AaveDcaBacktestSeriesPoint(
                     timestamp_iso=execution_date_iso,
                     execution_price=current_market_price,
                     average_purchase_price=standard_average_purchase_price,
@@ -122,7 +122,7 @@ class DcaBacktester:
 
             is_final_cycle = (cycle_index == total_execution_cycles - 1)
 
-            allocation_verdict = DcaAllocationEngine.calculate_dynamic_allocation(
+            allocation_verdict = AaveDcaAllocationEngine.calculate_dynamic_allocation(
                 nominal_investment_amount=budget_per_execution_cycle,
                 current_dry_powder_reserve=dynamic_dry_powder_reserve,
                 current_market_price=current_market_price,
@@ -149,7 +149,7 @@ class DcaBacktester:
             )
 
             logger.debug(
-                "[DCA][BACKTESTER][STEP] [%s] Price: %s | Action: %s | Spent: %s | PRU: %s",
+                "[AAVEDCA][BACKTESTER][STEP] [%s] Price: %s | Action: %s | Spent: %s | PRU: %s",
                 execution_date_iso,
                 current_market_price,
                 allocation_verdict.action_description,
@@ -158,7 +158,7 @@ class DcaBacktester:
             )
 
             dynamic_dca_series.append(
-                DcaBacktestSeriesPoint(
+                AaveDcaBacktestSeriesPoint(
                     timestamp_iso=execution_date_iso,
                     execution_price=current_market_price,
                     average_purchase_price=dynamic_average_purchase_price,
@@ -171,14 +171,14 @@ class DcaBacktester:
         final_dynamic_pru = dynamic_dca_series[-1].average_purchase_price if dynamic_dca_series else 0.0
 
         logger.info(
-            "[DCA][BACKTESTER][FINISH] Completed for %s. Standard PRU: %s | Dynamic PRU: %s",
+            "[AAVEDCA][BACKTESTER][FINISH] Completed for %s. Standard PRU: %s | Dynamic PRU: %s",
             symbol,
             final_standard_pru,
             final_dynamic_pru
         )
 
-        return DcaBacktestPayload(
-            metadata=DcaBacktestMetadata(
+        return AaveDcaBacktestPayload(
+            metadata=AaveDcaBacktestMetadata(
                 source_asset_symbol=symbol,
                 total_allocated_budget=total_budget,
                 total_planned_executions=total_execution_cycles,

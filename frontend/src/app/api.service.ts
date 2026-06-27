@@ -19,7 +19,7 @@ import {
 export interface AppStatus {
     mode: TradeMode;
     trading_enabled: boolean;
-    dca_enabled: boolean;
+    aave_dca_enabled: boolean;
     trading_interval_seconds: number;
     position_guard_interval_seconds: number;
     shadowing_enabled: boolean;

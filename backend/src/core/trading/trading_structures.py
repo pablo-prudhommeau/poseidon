@@ -136,9 +136,9 @@ class GasRefillBudgetDetailScope(str, enum.Enum):
 class TradingApplicationBootConfigurationSettings(Protocol):
     TRADING_ALLOWED_CHAINS: list[str]
     TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str]
-    PAPER_MODE: bool
-    WALLET_MNEMONIC: str
-    WALLET_DERIVATION_INDEX: int
+    TRADING_PAPER_MODE: bool
+    TRADING_WALLET_MNEMONIC: str
+    TRADING_WALLET_DERIVATION_INDEX: int
     TRADING_STABLECOIN_ADDRESS_SOLANA: str
     TRADING_STABLECOIN_ADDRESS_BSC: str
     TRADING_STABLECOIN_ADDRESS_BASE: str

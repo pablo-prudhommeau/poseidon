@@ -22,7 +22,7 @@ from src.api.http.http_helpers import (
 )
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
-from src.core.paper import paper_service
+from src.core.trading.trading_paper_service import reset_trading_paper_state
 from src.core.trading.execution.trading_execution_position_service import (
     PositionCloseConflictError,
     PositionCloseNotFoundError,
@@ -44,7 +44,7 @@ def reset_trading_paper_mode(
         database_session: Session = Depends(get_fastapi_database_session),
 ) -> TradingPaperResetPayload:
     logger.debug("[HTTP][TRADING][PAPER][RESET] Initiating paper mode reset process")
-    paper_service.reset_paper(database_session)
+    reset_trading_paper_state(database_session)
 
     cache_invalidator.mark_dirty(
         CacheRealm.POSITIONS,

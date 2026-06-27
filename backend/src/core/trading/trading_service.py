@@ -240,7 +240,7 @@ def compute_holdings_and_unrealized_totals(
 
 
 def compute_available_cash_usd(*, database_session: Optional[Session] = None) -> float:
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         if database_session is not None:
             return compute_paper_deployable_cash_usd(database_session)
         with get_database_session() as opened_database_session:
@@ -250,7 +250,7 @@ def compute_available_cash_usd(*, database_session: Optional[Session] = None) ->
 
 def compute_paper_deployable_cash_usd(database_session: Session) -> float:
     trade_records = TradingTradeDao(database_session).retrieve_recent_trades(limit_count=100000)
-    deployable_cash_usd = compute_available_cash_from_trades(settings.PAPER_STARTING_CASH, trade_records)
+    deployable_cash_usd = compute_available_cash_from_trades(settings.TRADING_PAPER_STARTING_CASH, trade_records)
     logger.debug(
         "[TRADING][CASH][PAPER] Deployable cash resolved — balance=%.2f",
         deployable_cash_usd,

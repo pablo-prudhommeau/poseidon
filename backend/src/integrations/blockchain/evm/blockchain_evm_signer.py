@@ -153,7 +153,7 @@ def build_default_evm_signer(chain: BlockchainNetwork) -> EvmSigner:
     from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
     default_configuration = EvmSignerConfiguration(
         rpc_endpoint_url=resolve_rpc_url_for_chain(chain),
-        security_mnemonic_phrase=settings.WALLET_MNEMONIC,
-        wallet_derivation_index=settings.WALLET_DERIVATION_INDEX,
+        security_mnemonic_phrase=settings.TRADING_WALLET_MNEMONIC,
+        wallet_derivation_index=settings.TRADING_WALLET_DERIVATION_INDEX,
     )
     return EvmSigner(default_configuration)

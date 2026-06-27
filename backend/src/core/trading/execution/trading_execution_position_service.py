@@ -244,7 +244,7 @@ def _execute_closing_sell(
     )
     is_full_close = reason in full_close_reasons
 
-    if not settings.PAPER_MODE:
+    if not settings.TRADING_PAPER_MODE:
         chain_lower = position.blockchain_network.strip().lower()
         try:
             chain_enum = BlockchainNetwork(chain_lower)
@@ -428,10 +428,10 @@ def _execute_closing_sell(
                 )
 
     trade_dao = TradingTradeDao(database_session)
-    execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
+    execution_status = ExecutionStatus.PAPER if settings.TRADING_PAPER_MODE else ExecutionStatus.LIVE
     live_transaction_fee_usd = 0.0
     live_transaction_hash: Optional[str] = None
-    if not settings.PAPER_MODE:
+    if not settings.TRADING_PAPER_MODE:
         live_transaction_fee_usd = execution_outcome.transaction_fee_usd
         live_transaction_hash = execution_outcome.transaction_hash_or_signature
     sell_trade = TradingTrade(
@@ -458,7 +458,7 @@ def _execute_closing_sell(
         position.closed_at = get_current_local_datetime()
     else:
         if (
-                not settings.PAPER_MODE
+                not settings.TRADING_PAPER_MODE
                 and chain_enum == BlockchainNetwork.SOLANA
                 and token_decimals > 0
         ):
@@ -506,7 +506,7 @@ def _execute_closing_sell(
 
     if (
             is_full_close
-            and not settings.PAPER_MODE
+            and not settings.TRADING_PAPER_MODE
             and chain_enum == BlockchainNetwork.SOLANA
             and token_decimals > 0
     ):
@@ -572,7 +572,7 @@ def close_position_with_synthetic_total_loss(
     entry_notional_usd = open_quantity * entry_price
 
     trade_dao = TradingTradeDao(database_session)
-    execution_status = ExecutionStatus.PAPER if settings.PAPER_MODE else ExecutionStatus.LIVE
+    execution_status = ExecutionStatus.PAPER if settings.TRADING_PAPER_MODE else ExecutionStatus.LIVE
     synthetic_sell_trade = TradingTrade(
         evaluation_id=position.evaluation_id,
         trade_side=TradeSide.SELL,

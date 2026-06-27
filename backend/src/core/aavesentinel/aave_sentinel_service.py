@@ -27,19 +27,19 @@ class AaveSentinelService:
 
     async def start(self) -> None:
         if self.is_running:
-            logger.info("[AAVE][SENTINEL][LIFECYCLE] Start request ignored because the service is already running")
+            logger.info("[AAVESENTINEL][LIFECYCLE] Start request ignored because the service is already running")
             return
 
         if not settings.AAVE_SENTINEL_ENABLED:
-            logger.info("[AAVE][SENTINEL][LIFECYCLE] Start request ignored because the sentinel is disabled")
+            logger.info("[AAVESENTINEL][LIFECYCLE] Start request ignored because the sentinel is disabled")
             return
 
         self.is_running = True
         await self._snapshot_service.initialize()
 
-        operating_mode_label = "PAPER MODE" if settings.PAPER_MODE else "LIVE TRADING"
+        operating_mode_label = "PAPER MODE" if settings.AAVE_SENTINEL_PAPER_MODE else "LIVE TRADING"
         logger.info(
-            "[AAVE][SENTINEL][LIFECYCLE] Sentinel initialized in %s for wallet %s",
+            "[AAVESENTINEL][LIFECYCLE] Sentinel initialized in %s for wallet %s",
             operating_mode_label,
             self._snapshot_service.wallet_address,
         )
@@ -71,7 +71,7 @@ class AaveSentinelService:
                 current_loop_timestamp = get_current_local_datetime()
                 should_run_monitoring_cycle = (
                         last_monitoring_cycle_timestamp is None
-                        or (current_loop_timestamp - last_monitoring_cycle_timestamp).total_seconds() > settings.AAVE_REPORTING_INTERVAL_SECONDS
+                        or (current_loop_timestamp - last_monitoring_cycle_timestamp).total_seconds() > settings.AAVE_SENTINEL_REPORTING_INTERVAL_SECONDS
                 )
 
                 if should_run_monitoring_cycle:
@@ -80,12 +80,12 @@ class AaveSentinelService:
 
                     if current_position_snapshot is not None:
                         logger.debug(
-                            "[AAVE][SENTINEL][LIFECYCLE] Monitoring cycle snapshot resolved with health_factor=%0.4f",
+                            "[AAVESENTINEL][LIFECYCLE] Monitoring cycle snapshot resolved with health_factor=%0.4f",
                             current_position_snapshot.health_factor,
                         )
                         await self._notification_service.evaluate_risk_and_notify(current_position_snapshot)
 
-                        if current_position_snapshot.health_factor < settings.AAVE_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
+                        if current_position_snapshot.health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
                             rescue_result = await self._snapshot_service.trigger_emergency_rescue()
                             if rescue_result.status == AaveSentinelRescueExecutionStatus.SIMULATED:
                                 await self._notification_service.send_alert(
@@ -107,14 +107,14 @@ class AaveSentinelService:
                                 )
                             await asyncio.sleep(600)
             except Exception as exception:
-                logger.exception("[AAVE][SENTINEL][LIFECYCLE] Monitoring loop failed: %s", exception)
+                logger.exception("[AAVESENTINEL][LIFECYCLE] Monitoring loop failed: %s", exception)
 
             await asyncio.sleep(settings.TELEGRAM_POLL_INTERVAL_SECONDS)
 
     async def stop(self) -> None:
         self.is_running = False
         await self._notification_service.close()
-        logger.info("[AAVE][SENTINEL][LIFECYCLE] Sentinel shutdown sequence completed")
+        logger.info("[AAVESENTINEL][LIFECYCLE] Sentinel shutdown sequence completed")
 
 
 sentinel = AaveSentinelService()

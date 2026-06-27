@@ -185,14 +185,14 @@ def test_compute_net_deployable_cash_usd_subtracts_locked_total() -> None:
         "compute_gas_refill_locked_stablecoin_snapshot",
         return_value=locked_snapshot,
     ):
-        mock_settings.PAPER_MODE = False
+        mock_settings.TRADING_PAPER_MODE = False
         assert compute_total_gas_refill_locked_stablecoin_usd() == 2.5
         assert compute_net_deployable_cash_usd(13.76) == 11.26
 
 
 def test_compute_total_gas_refill_locked_stablecoin_usd_paper_mode_returns_zero() -> None:
     with patch("src.core.trading.gasreserve.trading_gas_reserve_service.settings") as mock_settings:
-        mock_settings.PAPER_MODE = True
+        mock_settings.TRADING_PAPER_MODE = True
         assert compute_total_gas_refill_locked_stablecoin_usd() == 0.0
 
 

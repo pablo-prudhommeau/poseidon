@@ -4,7 +4,7 @@
 >
 > Poseidon is currently in an **ACTIVE DEVELOPMENT (alpha)** stage. It is designed to interact with **real financial assets** and decentralized protocols.
 >
-> **UNLESS EXPLICITLY TESTED IN `PAPER_MODE`, DO NOT USE THIS SOFTWARE WITH YOUR LIVE FUNDS.**
+> **UNLESS EXPLICITLY TESTED IN `TRADING_PAPER_MODE`, DO NOT USE THIS SOFTWARE WITH YOUR LIVE FUNDS.**
 >
 > Use at your own risk. The authors and contributors are not responsible for any financial losses, bugs, or liquidation events. Always start with a dedicated, isolated wallet with minimal funds for initial testing.
 
@@ -98,15 +98,22 @@ OPENAI_API_KEY=your_openai_key_here
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
-# === WALLET ===
-WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
+# === WALLETS (one mnemonic per module, can be identical) ===
+TRADING_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
+AAVE_DCA_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
+AAVE_SENTINEL_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
+
+# === PAPER MODES (per module) ===
+TRADING_PAPER_MODE=true
+AAVE_DCA_PAPER_MODE=true
+AAVE_SENTINEL_PAPER_MODE=true
 
 # === BLOCKCHAIN RPCs ===
 EVM_RPC_URL=https://your-eth-rpc-url
 SOLANA_RPC_URL=https://your-solana-rpc-url
 
 # === DCA ===
-AAVE_INITIAL_DEPOSIT_USD=10000
+AAVE_SENTINEL_INITIAL_DEPOSIT_USD=10000
 
 # === DATABASE ===
 DATABASE_NAME=poseidon
@@ -117,12 +124,12 @@ DATABASE_URL="postgresql+psycopg://poseidon:<hostname>@postgres:5432/poseidon"
 # === RUNTIME FLAGS ===
 TRADING_ENABLED=false
 TRADING_SHADOWING_ENABLED=false
-DCA_ENABLED=true
+AAVE_DCA_ENABLED=true
 AAVE_SENTINEL_ENABLED=false
 DATABASE_AUTO_MIGRATE=true
 
 # === PATHS ===
-SCREENSHOT_DIR="/app/data/screenshots"
+CHART_AI_SCREENSHOT_DIR="/app/data/screenshots"
 
 # === TRADING ===
 # ⚠️ DANGEROUS SECTION ⚠️
@@ -174,4 +181,4 @@ Disable `MEMRAY_ENABLED` after the investigation; it is intended for temporary d
 ## ⚖️ Final disclaimer
 
 > **DO NOT DEPLOY WITHOUT LIVE TESTING IN PAPER MODE.**
-> This software is provided "as is", without warranty of any kind. Automated trading involves significant risk of capital loss. The DCA algorithms and AI analysis can fail during extreme market volatility. Ensure your `PAPER_MODE` is set to `true` for at least 48 hours before considering any real-money interactions.
+> This software is provided "as is", without warranty of any kind. Automated trading involves significant risk of capital loss. The DCA algorithms and AI analysis can fail during extreme market volatility. Ensure your `TRADING_PAPER_MODE` is set to `true` for at least 48 hours before considering any real-money interactions.

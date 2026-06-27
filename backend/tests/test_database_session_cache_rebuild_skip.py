@@ -70,7 +70,7 @@ def test_closing_position_liquidity_skip_does_not_log_db_rollback(
         caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.ERROR)
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     trading_cache_mock.get_trading_liquidity_state.return_value = MagicMock()
     get_database_session_mock.side_effect = mock_database_session
 
@@ -98,7 +98,7 @@ def test_closing_position_liquidity_skip_on_cold_cache_raises_rebuild_skipped(
         fetch_balances_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     trading_cache_mock.get_trading_liquidity_state.return_value = None
     get_database_session_mock.side_effect = mock_database_session
 

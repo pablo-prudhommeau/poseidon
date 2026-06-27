@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE = "TRADING_ALLOWED_CHAINS"
 TRADING_SOLANA_SUPPORTED_DEX_IDS_ENVIRONMENT_VARIABLE = "TRADING_SOLANA_SUPPORTED_DEX_IDS"
-WALLET_MNEMONIC_ENVIRONMENT_VARIABLE = "WALLET_MNEMONIC"
+TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE = "TRADING_WALLET_MNEMONIC"
 
 
 def validate_and_apply_trading_application_configuration(
@@ -100,13 +100,13 @@ def _normalize_unique_identifiers(raw_identifiers: list[str]) -> list[str]:
 def validate_live_wallet_configuration(
         configuration_settings: TradingApplicationBootConfigurationSettings,
 ) -> None:
-    if configuration_settings.PAPER_MODE:
+    if configuration_settings.TRADING_PAPER_MODE:
         return
 
-    wallet_mnemonic = configuration_settings.WALLET_MNEMONIC.strip()
+    wallet_mnemonic = configuration_settings.TRADING_WALLET_MNEMONIC.strip()
     if not wallet_mnemonic:
         raise TradingConfigurationError(
-            f"{WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is required when PAPER_MODE=false",
+            f"{TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is required when TRADING_PAPER_MODE=false",
         )
 
     for blockchain_network in resolve_trading_allowed_blockchain_networks():
@@ -120,13 +120,13 @@ def validate_live_wallet_configuration(
         if not stablecoin_address:
             raise TradingConfigurationError(
                 f"{stablecoin_address_environment_variable} is required for enabled blockchain "
-                f"'{blockchain_network.value}' when PAPER_MODE=false",
+                f"'{blockchain_network.value}' when TRADING_PAPER_MODE=false",
             )
 
         if blockchain_network == BlockchainNetwork.SOLANA:
             _validate_solana_wallet_derivation(
                 wallet_mnemonic=wallet_mnemonic,
-                wallet_derivation_index=configuration_settings.WALLET_DERIVATION_INDEX,
+                wallet_derivation_index=configuration_settings.TRADING_WALLET_DERIVATION_INDEX,
             )
 
     logger.info(
@@ -143,7 +143,7 @@ def _validate_solana_wallet_derivation(wallet_mnemonic: str, wallet_derivation_i
         )
     except ValueError as exception:
         raise TradingConfigurationError(
-            f"{WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is invalid for Solana wallet derivation — {exception}",
+            f"{TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is invalid for Solana wallet derivation — {exception}",
         ) from exception
 
 

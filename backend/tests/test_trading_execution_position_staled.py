@@ -55,7 +55,7 @@ def test_kill_staled_position_records_negative_hundred_percent_outcome(
         trading_evaluation_dao_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = True
+    settings_mock.TRADING_PAPER_MODE = True
     position = _build_position(PositionPhase.STALED)
     database_session = MagicMock()
     database_session.get.return_value = position
@@ -81,7 +81,7 @@ def test_execute_closing_sell_marks_staled_when_wallet_balance_is_zero(
         resolve_execution_chain_handler_mock: MagicMock,
         settings_mock: MagicMock,
 ) -> None:
-    settings_mock.PAPER_MODE = False
+    settings_mock.TRADING_PAPER_MODE = False
     position = _build_position(PositionPhase.CLOSING)
     position.token_symbol = "SPEC"
     position.current_quantity = 689.303435

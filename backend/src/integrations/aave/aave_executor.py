@@ -51,13 +51,13 @@ class AaveExecutor:
         if chain in self.web3_clients:
             return
 
-        if not settings.WALLET_MNEMONIC:
+        if not settings.AAVE_DCA_WALLET_MNEMONIC:
             logger.error("[AAVE][EXECUTOR][INIT] Mnemonic configuration is missing")
             raise ValueError("Mnemonic configuration is missing.")
 
         account: LocalAccount = Account.from_mnemonic(
-            settings.WALLET_MNEMONIC,
-            account_path=f"m/44'/60'/0'/0/{settings.WALLET_DERIVATION_INDEX}"
+            settings.AAVE_DCA_WALLET_MNEMONIC,
+            account_path=f"m/44'/60'/0'/0/{settings.AAVE_DCA_WALLET_DERIVATION_INDEX}"
         )
         self.private_key = account.key.hex()
         self.wallet_address = account.address

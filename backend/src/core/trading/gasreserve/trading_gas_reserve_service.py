@@ -37,7 +37,7 @@ def resolve_gas_reserve_chain_handlers(
 
 
 def is_gas_reserve_sufficient_for_buy(blockchain_network: BlockchainNetwork) -> bool:
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         return True
 
     if blockchain_network == BlockchainNetwork.SOLANA:
@@ -79,7 +79,7 @@ def resolve_gas_reserve_chain_handlers_for_liquidity_payload() -> dict[Blockchai
 
 
 def resolve_gas_refill_locked_stablecoin_snapshots() -> list[GasRefillLockedStablecoinSnapshot]:
-    if settings.PAPER_MODE or not _is_solana_gas_reserve_chain_enabled():
+    if settings.TRADING_PAPER_MODE or not _is_solana_gas_reserve_chain_enabled():
         return []
 
     solana_wallet_context = _resolve_solana_wallet_context_for_live_gas_reserve()
@@ -93,7 +93,7 @@ def resolve_gas_refill_locked_stablecoin_snapshots() -> list[GasRefillLockedStab
 
 
 def resolve_wallet_auxiliary_assets_snapshots() -> list[WalletAuxiliaryAssetsSnapshot]:
-    if settings.PAPER_MODE or not _is_solana_gas_reserve_chain_enabled():
+    if settings.TRADING_PAPER_MODE or not _is_solana_gas_reserve_chain_enabled():
         return []
 
     solana_wallet_context = _resolve_solana_wallet_context_for_live_gas_reserve()

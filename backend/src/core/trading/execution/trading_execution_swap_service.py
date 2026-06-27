@@ -119,7 +119,7 @@ def execute_buy(payload: TradingOrderPayload) -> bool:
         stop_loss_fraction * 100,
     )
 
-    if settings.PAPER_MODE:
+    if settings.TRADING_PAPER_MODE:
         logger.info("[TRADING][EXECUTION][SWAP][BUY] PAPER trade — %s @ %.12f qty=%.12f", payload.target_token, price_usd, quantity)
         with get_database_session() as database_session:
             trade_dao = TradingTradeDao(database_session)
