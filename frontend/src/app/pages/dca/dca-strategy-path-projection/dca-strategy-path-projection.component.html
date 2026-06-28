@@ -1,17 +1,85 @@
 <p-card>
     <ng-template pTemplate="title">
-        <div class="flex justify-between items-center">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <span>Strategy path projection</span>
-            <div class="flex items-center gap-3">
-                <span class="relative flex h-2.5 w-2.5">
-                    @if (engineStatus() === 'ACTIVE') {
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    }
-                    <span class="relative inline-flex rounded-full h-2.5 w-2.5" [ngClass]="engineStatus() === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'"></span>
-                </span>
-                <span class="text-sm font-normal text-slate-300">{{ engineStatus() }}</span>
-            </div>
+            @if (hasExecutedOrders()) {
+                <div class="dca-strategy-path-metric-toggles">
+                    <label
+                        class="dca-strategy-path-metric-toggle is-effective"
+                        [class.is-active]="effectiveMetricsToggleState().checked"
+                        [class.is-mixed]="effectiveMetricsToggleState().mixed"
+                        [class.is-disabled]="!effectiveMetricsToggleState().available"
+                    >
+                        <input type="checkbox" [checked]="effectiveMetricsToggleState().checked" [disabled]="!effectiveMetricsToggleState().available" (change)="onEffectiveMetricsToggle($any($event.target).checked)" />
+                        <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-bolt"></i></span>
+                        <span class="dca-strategy-path-metric-toggle-label">Effective</span>
+                    </label>
+                    <label
+                        class="dca-strategy-path-metric-toggle is-projected"
+                        [class.is-active]="projectedMetricsToggleState().checked"
+                        [class.is-mixed]="projectedMetricsToggleState().mixed"
+                        [class.is-disabled]="!projectedMetricsToggleState().available"
+                    >
+                        <input type="checkbox" [checked]="projectedMetricsToggleState().checked" [disabled]="!projectedMetricsToggleState().available" (change)="onProjectedMetricsToggle($any($event.target).checked)" />
+                        <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-forward"></i></span>
+                        <span class="dca-strategy-path-metric-toggle-label">Projected</span>
+                    </label>
+                    <label
+                        class="dca-strategy-path-metric-toggle is-backtesting"
+                        [class.is-active]="backtestingMetricsToggleState().checked"
+                        [class.is-mixed]="backtestingMetricsToggleState().mixed"
+                        [class.is-disabled]="!backtestingMetricsToggleState().available"
+                    >
+                        <input type="checkbox" [checked]="backtestingMetricsToggleState().checked" [disabled]="!backtestingMetricsToggleState().available" (change)="onBacktestingMetricsToggle($any($event.target).checked)" />
+                        <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-clock-rotate-left"></i></span>
+                        <span class="dca-strategy-path-metric-toggle-label">Backtesting</span>
+                    </label>
+                    <label
+                        class="dca-strategy-path-metric-toggle is-bands"
+                        [class.is-active]="bandsMetricsToggleState().checked"
+                        [class.is-mixed]="bandsMetricsToggleState().mixed"
+                        [class.is-disabled]="!bandsMetricsToggleState().available"
+                    >
+                        <input type="checkbox" [checked]="bandsMetricsToggleState().checked" [disabled]="!bandsMetricsToggleState().available" (change)="onBandsMetricsToggle($any($event.target).checked)" />
+                        <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-layer-group"></i></span>
+                        <span class="dca-strategy-path-metric-toggle-label">Bands</span>
+                    </label>
+                    <label
+                        class="dca-strategy-path-metric-toggle is-all"
+                        [class.is-active]="allMetricsChecked()"
+                        [class.is-mixed]="allMetricsMixed()"
+                        [class.is-disabled]="!allMetricsAvailable()"
+                    >
+                        <input type="checkbox" [checked]="allMetricsChecked()" [disabled]="!allMetricsAvailable()" (change)="onAllMetricsToggle($any($event.target).checked)" />
+                        <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-chart-line"></i></span>
+                        <span class="dca-strategy-path-metric-toggle-label">All metrics</span>
+                    </label>
+                </div>
+            }
         </div>
     </ng-template>
-    <apx-chart [series]="mainSeries()" [chart]="mainChartConfig.chart" [colors]="mainChartConfig.colors" [stroke]="mainChartConfig.stroke" [fill]="mainChartConfig.fill" [dataLabels]="mainChartConfig.dataLabels" [xaxis]="mainChartConfig.xaxis" [yaxis]="mainChartConfig.yaxis" [grid]="mainChartConfig.grid" [theme]="mainChartConfig.theme" [legend]="mainChartConfig.legend"> </apx-chart>
+
+    @if (hasExecutedOrders()) {
+        <div class="dca-strategy-path-chart-shell flex flex-col gap-3 overflow-hidden">
+            <div #chartHost class="relative z-0 h-[540px] min-h-[540px] w-full overflow-hidden rounded-lg border border-white/5 bg-[#121212]"></div>
+            @if (legendItems().length > 0) {
+                <button type="button" class="dca-legend-toggle" [class.is-open]="showLegendPanel()" (click)="toggleLegendPanel()">
+                    {{ showLegendPanel() ? 'Hide legend' : 'Show legend' }}
+                </button>
+            }
+            @if (legendItems().length > 0 && showLegendPanel()) {
+                <div class="dca-custom-legend">
+                    @for (item of legendItems(); track item.name) {
+                        <label class="dca-custom-legend-item">
+                            <input type="checkbox" [checked]="item.visible" (change)="onLegendItemToggle(item.name, $any($event.target).checked)" />
+                            <span class="dca-legend-swatch" [class.is-line]="item.swatchKind === 'line'" [class.is-dashed-line]="item.swatchKind === 'dashed-line'" [class.is-area]="item.swatchKind === 'area'" [class.is-band]="item.swatchKind === 'band'" [style.--legend-color]="item.stroke" [style.--band-fill-above]="item.bandFillAbove" [style.--band-fill-below]="item.bandFillBelow"></span>
+                            <span class="dca-legend-label" [title]="item.name">{{ legendSeriesLabel(item.name) }}</span>
+                        </label>
+                    }
+                </div>
+            }
+        </div>
+    } @else {
+        <div class="flex h-[400px] w-full items-center justify-center text-3xl font-black text-slate-500">—</div>
+    }
 </p-card>

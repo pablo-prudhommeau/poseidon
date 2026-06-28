@@ -1,130 +1,168 @@
-import { NgClass } from '@angular/common';
-import { Component, computed, input } from '@angular/core';
-import { ApexChart, ApexDataLabels, ApexFill, ApexGrid, ApexLegend, ApexStroke, ApexTheme, ApexXAxis, ApexYAxis, NgApexchartsModule } from 'ng-apexcharts';
+import { Component, computed, effect, ElementRef, inject, input, OnDestroy, signal, untracked, viewChild } from '@angular/core';
 import { CardModule } from 'primeng/card';
-import { DcaBacktestSeriesPointPayload, DcaOrderPayload, DcaStrategyPayload } from '../../../core/models';
+import { DcaStrategyPayload } from '../../../core/models';
+import { hasExecutedDcaOrders } from '../dca-execution.utils';
+import type { DcaStrategyPathLegendSeriesItem } from './chart/dca-strategy-path-projection-legend.adapter';
+import { DcaStrategyPathProjectionSurfaceCoordinator } from './chart/dca-strategy-path-projection-surface.coordinator';
+import { dcaStrategyPathSeriesDisplayLabel } from './data/dca-strategy-path-projection-legend.utils';
+import {
+    DCA_STRATEGY_PATH_BACKTESTING_METRIC_SERIES_NAMES,
+    DCA_STRATEGY_PATH_BAND_METRIC_SERIES_NAMES,
+    DCA_STRATEGY_PATH_EFFECTIVE_METRIC_SERIES_NAMES,
+    DCA_STRATEGY_PATH_PROJECTED_METRIC_SERIES_NAMES
+} from './data/dca-strategy-path-projection-metric-groups';
+import { resolveDcaStrategyPathMetricGroupToggleState } from './data/dca-strategy-path-projection-metric-group-state.utils';
+import { DcaStrategyPathProjectionSciChartLoaderService } from './services/dca-strategy-path-projection-scichart-loader.service';
 
 @Component({
     standalone: true,
     selector: 'app-dca-strategy-path-projection',
     host: { class: 'block w-full' },
-    imports: [NgClass, CardModule, NgApexchartsModule],
-    templateUrl: './dca-strategy-path-projection.component.html'
+    imports: [CardModule],
+    templateUrl: './dca-strategy-path-projection.component.html',
+    styleUrl: './dca-strategy-path-projection.component.css'
 })
-export class DcaStrategyPathProjectionComponent {
+export class DcaStrategyPathProjectionComponent implements OnDestroy {
+    public readonly legendItems = signal<DcaStrategyPathLegendSeriesItem[]>([]);
+
+    public readonly allMetricsAvailable = computed<boolean>(() => this.legendItems().length > 0);
+
+    public readonly allMetricsChecked = computed<boolean>(() => {
+        const legendItems: DcaStrategyPathLegendSeriesItem[] = this.legendItems();
+        return legendItems.length > 0 && legendItems.every((legendItem: DcaStrategyPathLegendSeriesItem) => legendItem.visible);
+    });
+    public readonly allMetricsMixed = computed<boolean>(() => {
+        const legendItems: DcaStrategyPathLegendSeriesItem[] = this.legendItems();
+        return legendItems.some((legendItem: DcaStrategyPathLegendSeriesItem) => legendItem.visible) && !this.allMetricsChecked();
+    });
+
+    public readonly backtestingMetricsToggleState = computed(() =>
+        resolveDcaStrategyPathMetricGroupToggleState(this.legendItems(), DCA_STRATEGY_PATH_BACKTESTING_METRIC_SERIES_NAMES)
+    );
+
+    public readonly bandsMetricsToggleState = computed(() =>
+        resolveDcaStrategyPathMetricGroupToggleState(this.legendItems(), DCA_STRATEGY_PATH_BAND_METRIC_SERIES_NAMES)
+    );
+
+    public readonly effectiveMetricsToggleState = computed(() =>
+        resolveDcaStrategyPathMetricGroupToggleState(this.legendItems(), DCA_STRATEGY_PATH_EFFECTIVE_METRIC_SERIES_NAMES)
+    );
+
     public strategy = input.required<DcaStrategyPayload>();
 
-    public readonly engineStatus = computed<string>(() => this.strategy().strategy_status);
+    public readonly hasExecutedOrders = computed<boolean>(() => hasExecutedDcaOrders(this.strategy()));
 
-    public readonly mainChartConfig = {
-        chart: {
-            id: 'main-projection-chart',
-            type: 'line',
-            height: 400,
-            toolbar: { show: false },
-            background: 'transparent',
-            animations: { enabled: false },
-            zoom: { enabled: false }
-        } as ApexChart,
-        colors: ['#334155', '#ef4444', '#10b981'],
-        stroke: { width: [1, 2, 3], curve: 'smooth', dashArray: [0, 4, 0] } as ApexStroke,
-        fill: { type: ['gradient', 'solid', 'solid'], gradient: { opacityFrom: 0.2, opacityTo: 0.0 } } as ApexFill,
-        dataLabels: { enabled: false } as ApexDataLabels,
-        xaxis: {
-            type: 'datetime',
-            labels: {
-                style: { colors: '#94a3b8' },
-                datetimeUTC: false
-            },
-            axisBorder: { show: false }
-        } as ApexXAxis,
-        yaxis: {
-            tickAmount: 8,
-            labels: {
-                style: { colors: '#94a3b8' },
-                formatter: (value: number) => `$${value.toFixed(0)}`
+    public readonly projectedMetricsToggleState = computed(() =>
+        resolveDcaStrategyPathMetricGroupToggleState(this.legendItems(), DCA_STRATEGY_PATH_PROJECTED_METRIC_SERIES_NAMES)
+    );
+
+    public readonly showLegendPanel = signal<boolean>(true);
+
+    private readonly chartHost = viewChild<ElementRef<HTMLDivElement>>('chartHost');
+    private readonly sciChartLoader: DcaStrategyPathProjectionSciChartLoaderService = inject(DcaStrategyPathProjectionSciChartLoaderService);
+    private readonly surfaceCoordinator: DcaStrategyPathProjectionSurfaceCoordinator = new DcaStrategyPathProjectionSurfaceCoordinator(this.sciChartLoader);
+
+    constructor() {
+        effect((onCleanup) => {
+            const strategy: DcaStrategyPayload = this.strategy();
+            const hasExecutedOrders: boolean = this.hasExecutedOrders();
+
+            if (!hasExecutedOrders) {
+                untracked(() => {
+                    const hostElement: HTMLDivElement | undefined = this.chartHost()?.nativeElement;
+                    this.surfaceCoordinator.teardownChartSurface(hostElement);
+                    this.legendItems.set([]);
+                    this.showLegendPanel.set(true);
+                });
+                return;
             }
-        } as ApexYAxis,
-        grid: {
-            show: true,
-            borderColor: '#1e293b',
-            strokeDashArray: 4,
-            xaxis: { lines: { show: true } },
-            yaxis: { lines: { show: true } }
-        } as ApexGrid,
-        theme: { mode: 'dark' } as ApexTheme,
-        legend: { position: 'top', horizontalAlign: 'right', labels: { colors: '#f8fafc' } } as ApexLegend
-    };
 
-    private readonly mappedBacktestSeries = computed(() => {
-        const strat = this.strategy();
-        if (!strat.historical_backtest_payload) {
-            return null;
+            let cancelled: boolean = false;
+            onCleanup(() => {
+                cancelled = true;
+            });
+
+            untracked(() => {
+                void this.scheduleChartSynchronization(strategy, () => cancelled);
+            });
+        });
+    }
+
+    ngOnDestroy(): void {
+        const hostElement: HTMLDivElement | undefined = this.chartHost()?.nativeElement;
+        this.surfaceCoordinator.teardownChartSurface(hostElement);
+    }
+
+    legendSeriesLabel(seriesName: string): string {
+        return dcaStrategyPathSeriesDisplayLabel(seriesName);
+    }
+
+    onAllMetricsToggle(nextVisible: boolean): void {
+        for (const legendItem of this.legendItems()) {
+            this.surfaceCoordinator.setSeriesVisibility(legendItem.name, nextVisible);
         }
+        this.syncLegendFromChart();
+    }
 
-        const baselineSeries: DcaBacktestSeriesPointPayload[] = strat.historical_backtest_payload.dumb_dca_series;
-        const smartSeries: DcaBacktestSeriesPointPayload[] = strat.historical_backtest_payload.smart_dca_series;
+    onBacktestingMetricsToggle(nextVisible: boolean): void {
+        this.setMetricGroupVisibility(DCA_STRATEGY_PATH_BACKTESTING_METRIC_SERIES_NAMES, nextVisible);
+    }
 
-        if (!baselineSeries || baselineSeries.length === 0) {
-            return null;
+    onBandsMetricsToggle(nextVisible: boolean): void {
+        this.setMetricGroupVisibility(DCA_STRATEGY_PATH_BAND_METRIC_SERIES_NAMES, nextVisible);
+    }
+
+    onEffectiveMetricsToggle(nextVisible: boolean): void {
+        this.setMetricGroupVisibility(DCA_STRATEGY_PATH_EFFECTIVE_METRIC_SERIES_NAMES, nextVisible);
+    }
+
+    onLegendItemToggle(seriesName: string, nextVisible: boolean): void {
+        this.surfaceCoordinator.setSeriesVisibility(seriesName, nextVisible);
+        this.syncLegendFromChart();
+    }
+
+    onProjectedMetricsToggle(nextVisible: boolean): void {
+        this.setMetricGroupVisibility(DCA_STRATEGY_PATH_PROJECTED_METRIC_SERIES_NAMES, nextVisible);
+    }
+
+    toggleLegendPanel(): void {
+        this.showLegendPanel.update((value) => !value);
+    }
+
+    private async scheduleChartSynchronization(strategy: DcaStrategyPayload, isCancelled: () => boolean): Promise<void> {
+        for (let attempt = 0; attempt < 24; attempt++) {
+            if (isCancelled()) {
+                return;
+            }
+
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+            const hostElement: HTMLDivElement | undefined = this.chartHost()?.nativeElement;
+            if (hostElement && hostElement.isConnected && hostElement.clientWidth > 0 && hostElement.clientHeight > 0) {
+                if (isCancelled()) {
+                    return;
+                }
+                await this.surfaceCoordinator.synchronizeChartSurface(hostElement, strategy);
+                if (!isCancelled()) {
+                    this.syncLegendFromChart();
+                }
+                return;
+            }
+
+            await new Promise<void>((resolve) => setTimeout(resolve, 20));
         }
+    }
 
-        const historicalStartTimestamp = new Date(baselineSeries[0].timestamp_iso).getTime();
-        const historicalEndTimestamp = new Date(baselineSeries[baselineSeries.length - 1].timestamp_iso).getTime();
-        const historicalStartPrice = baselineSeries[0].execution_price;
-
-        const liveStartTimestamp = new Date(strat.strategy_start_date).getTime();
-        const liveEndTimestamp = new Date(strat.strategy_end_date).getTime();
-
-        const livePrice = this.calculateCurrentLivePrice(strat);
-        const priceMultiplier = livePrice > 0 && historicalStartPrice > 0 ? livePrice / historicalStartPrice : 1;
-
-        const mapTimeToLiveWindow = (historicalTimestamp: number): number => {
-            const timePercentage = (historicalTimestamp - historicalStartTimestamp) / (historicalEndTimestamp - historicalStartTimestamp);
-            return liveStartTimestamp + timePercentage * (liveEndTimestamp - liveStartTimestamp);
-        };
-
-        const mappedBaselineData = baselineSeries.map((point) => [
-            mapTimeToLiveWindow(new Date(point.timestamp_iso).getTime()),
-            point.average_purchase_price * priceMultiplier
-        ]);
-
-        const mappedSmartData = smartSeries.map((point) => [
-            mapTimeToLiveWindow(new Date(point.timestamp_iso).getTime()),
-            point.average_purchase_price * priceMultiplier
-        ]);
-
-        const mappedMarketPriceData = smartSeries.map((point) => [
-            mapTimeToLiveWindow(new Date(point.timestamp_iso).getTime()),
-            point.execution_price * priceMultiplier
-        ]);
-
-        return { mappedMarketPriceData, mappedBaselineData, mappedSmartData };
-    });
-
-    public readonly mainSeries = computed(() => {
-        const data = this.mappedBacktestSeries();
-        if (!data) {
-            return [];
+    private setMetricGroupVisibility(seriesNames: string[], nextVisible: boolean): void {
+        for (const legendItem of this.legendItems()) {
+            if (seriesNames.includes(legendItem.name)) {
+                this.surfaceCoordinator.setSeriesVisibility(legendItem.name, nextVisible);
+            }
         }
-        return [
-            { name: 'Projected Market Price', data: data.mappedMarketPriceData, type: 'area' },
-            { name: 'Projected Baseline PRU', data: data.mappedBaselineData, type: 'line' },
-            { name: 'Projected Smart PRU', data: data.mappedSmartData, type: 'line' }
-        ];
-    });
+        this.syncLegendFromChart();
+    }
 
-    private calculateCurrentLivePrice(strategy: DcaStrategyPayload): number {
-        if (!strategy.execution_orders) {
-            return 0;
-        }
-        const executedOrders = strategy.execution_orders.filter(
-            (order: DcaOrderPayload) => order.order_status === 'EXECUTED' && order.actual_execution_price !== null
-        );
-        if (executedOrders.length === 0) {
-            return 0;
-        }
-        executedOrders.sort((orderA, orderB) => new Date(orderB.executed_at as string).getTime() - new Date(orderA.executed_at as string).getTime());
-        return executedOrders[0].actual_execution_price ?? 0;
+    private syncLegendFromChart(): void {
+        this.legendItems.set(this.surfaceCoordinator.listLegendSeries());
     }
 }

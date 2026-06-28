@@ -12,6 +12,7 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelRescueExecutionStatus,
 )
 from src.core.utils.date_utils import get_current_local_datetime
+from src.integrations.telegram.telegram_update_registry import telegram_update_registry
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -24,6 +25,10 @@ class AaveSentinelService:
         self._notification_service = AaveSentinelNotificationService(
             fetch_position_snapshot=self._snapshot_service.fetch_position_snapshot,
         )
+
+    @property
+    def notification_service(self) -> AaveSentinelNotificationService:
+        return self._notification_service
 
     async def start(self) -> None:
         if self.is_running:
@@ -66,8 +71,6 @@ class AaveSentinelService:
 
         while self.is_running:
             try:
-                await self._notification_service.process_telegram_commands()
-
                 current_loop_timestamp = get_current_local_datetime()
                 should_run_monitoring_cycle = (
                         last_monitoring_cycle_timestamp is None
@@ -118,3 +121,10 @@ class AaveSentinelService:
 
 
 sentinel = AaveSentinelService()
+
+
+def register_aave_sentinel_telegram_handlers() -> None:
+    telegram_update_registry.register_message_handler(
+        sentinel.notification_service.handle_telegram_message,
+    )
+    logger.info("[AAVESENTINEL][TELEGRAM] Sentinel Telegram handlers registered")

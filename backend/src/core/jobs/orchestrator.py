@@ -7,7 +7,9 @@ from src.configuration.config import settings
 from src.core.jobs.aave_sentinel_job import AaveSentinelJob
 from src.core.jobs.aave_dca_job import AaveDcaJob
 from src.core.jobs.job_structures import BackgroundJobsRuntimeStatus
+from src.core.jobs.telegram_polling_job import TelegramPollingJob
 from src.core.jobs.trading_cycle_job import TradingCycleJob
+from src.integrations.telegram.telegram_update_registry import telegram_update_registry
 from src.core.jobs.trading_position_guard_job import TradingPositionGuardJob
 from src.core.jobs.trading_shadowing_job import TradingShadowingJob
 from src.core.jobs.trading_wallet_maintenance_job import TradingWalletMaintenanceJob
@@ -24,13 +26,14 @@ _aave_sentinel_task: asyncio.Task | None = None
 _aave_dca_background_task: asyncio.Task | None = None
 _trading_cortex_training_task: asyncio.Task | None = None
 _wallet_maintenance_task: asyncio.Task | None = None
+_telegram_polling_task: asyncio.Task | None = None
 _stop_event = threading.Event()
 
 
 def start_background_jobs() -> None:
     global _started, _stop_event
     global _trading_cycle_thread, _shadowing_thread
-    global _position_guard_task, _aave_sentinel_task, _aave_dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task
+    global _position_guard_task, _aave_sentinel_task, _aave_dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task, _telegram_polling_task
 
     if _started:
         return
@@ -78,6 +81,15 @@ def start_background_jobs() -> None:
     else:
         logger.info("[ORCHESTRATOR][AAVEDCA] DCA disabled in settings, task not scheduled")
 
+    if telegram_update_registry.has_registered_handlers():
+        _telegram_polling_task = event_loop.create_task(TelegramPollingJob().run_loop())
+        logger.info(
+            "[ORCHESTRATOR][TELEGRAM] Telegram polling task started (interval=%ss)",
+            settings.TELEGRAM_POLL_INTERVAL_SECONDS,
+        )
+    else:
+        logger.info("[ORCHESTRATOR][TELEGRAM] No Telegram handlers registered, polling not scheduled")
+
     if settings.TRADING_CORTEX_ENABLED:
         from src.core.jobs.trading_cortex_training_job import TradingCortexTrainingJob
         _trading_cortex_training_task = event_loop.create_task(TradingCortexTrainingJob().run_loop())
@@ -103,7 +115,7 @@ def start_background_jobs() -> None:
 
 def stop_background_jobs() -> None:
     global _started, _stop_event
-    global _position_guard_task, _aave_sentinel_task, _aave_dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task
+    global _position_guard_task, _aave_sentinel_task, _aave_dca_background_task, _trading_cortex_training_task, _wallet_maintenance_task, _telegram_polling_task
 
     if not _started:
         return
@@ -119,6 +131,7 @@ def stop_background_jobs() -> None:
             _aave_dca_background_task,
             _trading_cortex_training_task,
             _wallet_maintenance_task,
+            _telegram_polling_task,
         ] if task is not None
     ]
 

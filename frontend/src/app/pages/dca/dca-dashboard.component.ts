@@ -5,7 +5,6 @@ import { SelectModule } from 'primeng/select';
 import { ApiService } from '../../api.service';
 import { DcaStrategyPayload } from '../../core/models';
 import { WebSocketService } from '../../core/websocket.service';
-import { DcaStrategyChartsComponent } from './dca-strategy-charts/dca-strategy-charts.component';
 import { DcaStrategyExecutionTimelineComponent } from './dca-strategy-execution-timeline/dca-strategy-execution-timeline.component';
 import { DcaStrategyPathProjectionComponent } from './dca-strategy-path-projection/dca-strategy-path-projection.component';
 import { DcaSynthesisComponent } from './dca-synthesis/dca-synthesis.component';
@@ -13,15 +12,7 @@ import { DcaSynthesisComponent } from './dca-synthesis/dca-synthesis.component';
 @Component({
     standalone: true,
     selector: 'app-dca-dashboard',
-    imports: [
-        FormsModule,
-        CardModule,
-        SelectModule,
-        DcaSynthesisComponent,
-        DcaStrategyPathProjectionComponent,
-        DcaStrategyChartsComponent,
-        DcaStrategyExecutionTimelineComponent
-    ],
+    imports: [FormsModule, CardModule, SelectModule, DcaSynthesisComponent, DcaStrategyPathProjectionComponent, DcaStrategyExecutionTimelineComponent],
     templateUrl: './dca-dashboard.component.html'
 })
 export class DcaDashboardComponent implements OnInit {

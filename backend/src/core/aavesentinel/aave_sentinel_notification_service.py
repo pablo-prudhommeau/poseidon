@@ -5,8 +5,6 @@ from typing import Awaitable, Callable, Optional
 
 import httpx
 
-from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelAlertSeverity,
@@ -15,20 +13,14 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelState,
     AaveSentinelStrategyDirection,
 )
-from src.core.aavedca.aave_dca_structures import AaveDcaOrderStatus
 from src.core.utils.date_utils import get_current_local_datetime
 from src.core.utils.format_utils import format_currency, format_percent
 from src.integrations.telegram.telegram_client import (
-    edit_message_text,
-    get_updates,
     register_bot_commands,
     send_alert as send_telegram_alert,
 )
-from src.integrations.telegram.telegram_structures import TelegramCallbackQuery, TelegramMessage
+from src.integrations.telegram.telegram_structures import TelegramMessage
 from src.logging.logger import get_application_logger
-from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
-from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
-from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 
@@ -40,7 +32,6 @@ class AaveSentinelNotificationService:
         self._fetch_position_snapshot = fetch_position_snapshot
         self._http_client: Optional[httpx.AsyncClient] = None
         self._state = AaveSentinelState()
-        self._last_telegram_update_id = 0
         self._initial_basis_usd: Optional[float] = settings.AAVE_SENTINEL_INITIAL_DEPOSIT_USD
 
     async def close(self) -> None:
@@ -68,22 +59,6 @@ class AaveSentinelNotificationService:
             logger.warning("[AAVESENTINEL][TELEGRAM] Telegram bot command registration was rejected")
         except Exception as exception:
             logger.exception("[AAVESENTINEL][TELEGRAM] Telegram bot command registration failed: %s", exception)
-
-    async def process_telegram_commands(self) -> None:
-        if not settings.TELEGRAM_BOT_TOKEN:
-            return
-
-        try:
-            telegram_updates = await asyncio.to_thread(get_updates, self._last_telegram_update_id + 1, ["message", "callback_query"], 0)
-            for telegram_update in telegram_updates:
-                self._last_telegram_update_id = telegram_update.update_id
-                if telegram_update.message is not None:
-                    await self._handle_message(telegram_update.message)
-                    continue
-                if telegram_update.callback_query is not None:
-                    await self._handle_callback_query(telegram_update.callback_query)
-        except Exception as exception:
-            logger.exception("[AAVESENTINEL][TELEGRAM] Telegram update processing failed: %s", exception)
 
     async def send_alert(
             self,
@@ -335,7 +310,7 @@ class AaveSentinelNotificationService:
             self._http_client = httpx.AsyncClient(timeout=10.0)
         return self._http_client
 
-    async def _handle_message(self, telegram_message: TelegramMessage) -> None:
+    async def handle_telegram_message(self, telegram_message: TelegramMessage) -> None:
         if telegram_message.text is None:
             return
 
@@ -352,65 +327,6 @@ class AaveSentinelNotificationService:
 
         formatted_message = await self.format_notification_message(current_position_snapshot)
         await self.send_alert("Snapshot manuel", formatted_message, AaveSentinelAlertSeverity.INFO)
-
-    async def _handle_callback_query(self, telegram_callback_query: TelegramCallbackQuery) -> None:
-        if telegram_callback_query.message is None:
-            logger.warning("[AAVESENTINEL][CALLBACK] Malformed callback query received")
-            return
-
-        interaction_callback_data = telegram_callback_query.data
-        if not interaction_callback_data.startswith("approve_dca:") and not interaction_callback_data.startswith("reject_dca:"):
-            return
-
-        origin_message_identifier = telegram_callback_query.message.message_id
-        target_order_identifier = int(interaction_callback_data.split(":")[1])
-        is_approval_action = interaction_callback_data.startswith("approve_dca:")
-        resolved_order_status = AaveDcaOrderStatus.APPROVED if is_approval_action else AaveDcaOrderStatus.REJECTED
-        resolved_status_label = "APPROUVÉ ✅" if is_approval_action else "REJETÉ ❌"
-
-        logger.info(
-            "[AAVESENTINEL][CALLBACK] Processing %s for order id %s",
-            resolved_order_status.value,
-            target_order_identifier,
-        )
-
-        with get_database_session() as database_session:
-            order_dao = AaveDcaOrderDao(database_session)
-            strategy_dao = AaveDcaStrategyDao(database_session)
-            target_dca_order = order_dao.retrieve_by_id(target_order_identifier)
-
-            if target_dca_order is None:
-                logger.error("[AAVESENTINEL][CALLBACK] DCA order id %s was not found", target_order_identifier)
-                return
-
-            target_dca_order.order_status = resolved_order_status.value
-            order_dao.save(target_dca_order)
-            database_session.commit()
-
-            from src.core.aavedca.aave_dca_manager import AaveDcaManager
-
-            dca_manager = AaveDcaManager(database_session)
-            strategy_instance = strategy_dao.retrieve_by_id(target_dca_order.strategy_id)
-
-            if strategy_instance is not None:
-                base_message_details = dca_manager._generate_approval_message_body(target_dca_order, strategy_instance)
-                full_confirmation_message = f"{base_message_details}✨ <b>Statut:</b> {resolved_status_label}"
-                edit_message_text(
-                    message_id=origin_message_identifier,
-                    text=full_confirmation_message,
-                )
-            else:
-                edit_message_text(
-                    message_id=origin_message_identifier,
-                    text=f"✅ Ordre #{target_order_identifier} {resolved_status_label} avec succès.",
-                )
-
-            cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
-            logger.info(
-                "[AAVESENTINEL][CALLBACK] DCA order id %s updated to %s",
-                target_order_identifier,
-                resolved_order_status.value,
-            )
 
     def _resolve_risk_status(self, current_health_factor: float) -> AaveSentinelRiskStatus:
         if current_health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_DANGER_THRESHOLD:

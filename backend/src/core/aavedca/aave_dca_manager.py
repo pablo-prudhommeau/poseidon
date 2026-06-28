@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.aavedca.aave_dca_allocation_engine import AaveDcaAllocationEngine
+from src.core.aavedca.aave_dca_notification_service import build_approval_message_body
 from src.core.aavedca.aave_dca_structures import AaveDcaOrderStatus, AaveDcaStrategyStatus
 from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime
@@ -22,6 +24,7 @@ from src.integrations.telegram.telegram_structures import (
 from src.logging.logger import get_application_logger
 from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
 from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
+from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import AaveDcaOrder, AaveDcaStrategy
 
 logger = get_application_logger(__name__)
@@ -241,6 +244,14 @@ class AaveDcaManager:
             return
 
         try:
+            if dca_order.order_status == AaveDcaOrderStatus.WAITING_USER_APPROVAL:
+                logger.info("[AAVEDCA][MANAGER][APPROVAL] Order identifier %s is still waiting for user approval. Skipping for this cycle.", dca_order.id)
+                return
+
+            if dca_order.order_status == AaveDcaOrderStatus.REJECTED:
+                logger.warning("[AAVEDCA][MANAGER][APPROVAL] Order identifier %s was rejected. Skipping for this cycle.", dca_order.id)
+                return
+
             if dca_order.executed_source_asset_amount == 0.0:
                 logger.info("[AAVEDCA][MANAGER][PIPELINE] Execution bypass: Amount is 0 (Protection active). Finalizing accounting only.")
                 dca_order.order_status = AaveDcaOrderStatus.EXECUTED
@@ -367,26 +378,9 @@ class AaveDcaManager:
                 "❌"
             )
 
-    def _generate_approval_message_body(self, dca_order: AaveDcaOrder, dca_strategy: AaveDcaStrategy) -> str:
-        average_purchase_price_difference_percentage = 0.0
-        if dca_strategy.average_purchase_price > 0:
-            average_purchase_price_difference_percentage = ((dca_order.actual_execution_price or 0.0) / dca_strategy.average_purchase_price - 1) * 100
-
-        price_trend_indicator_emoji = "📈" if average_purchase_price_difference_percentage > 0 else "📉"
-
-        return (
-            f"📦 <b>Ordre #{dca_order.id}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🔹 <b>Actif:</b> <code>{dca_strategy.target_asset_symbol}</code>\n"
-            f"💵 <b>Montant:</b> <code>${dca_order.planned_source_asset_amount:.2f}</code>\n"
-            f"💰 <b>Prix Actuel:</b> <code>${dca_order.actual_execution_price:.2f}</code>\n"
-            f"{price_trend_indicator_emoji} <b>vs PRU:</b> <code>{average_purchase_price_difference_percentage:+.2f}%</code> (<code>${dca_strategy.average_purchase_price:.2f}</code>)\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-        )
-
     def _send_approval_request(self, dca_order: AaveDcaOrder, dca_strategy: AaveDcaStrategy) -> None:
         title = "DEMANDE D'APPROBATION"
-        message_body = self._generate_approval_message_body(dca_order, dca_strategy)
+        message_body = build_approval_message_body(dca_order, dca_strategy)
         footer = "Souhaitez-vous autoriser cette exécution ?"
 
         buttons = [
@@ -408,14 +402,12 @@ class AaveDcaManager:
     def resync_waiting_approvals(self) -> None:
         logger.info("[AAVEDCA][MANAGER][RESYNC] Resynchronizing pending approval requests after startup")
 
-        from src.persistence.database_session_manager import get_database_session
         with get_database_session() as session_instance:
             strategy_dao_instance = AaveDcaStrategyDao(session_instance)
             order_dao_instance = AaveDcaOrderDao(session_instance)
 
-            from sqlalchemy import select
             waiting_orders_query = select(AaveDcaOrder).where(
-                AaveDcaOrder.order_status.in_([AaveDcaOrderStatus.WAITING_USER_APPROVAL, AaveDcaOrderStatus.REJECTED])
+                AaveDcaOrder.order_status == AaveDcaOrderStatus.WAITING_USER_APPROVAL
             )
             waiting_orders = session_instance.execute(waiting_orders_query).scalars().all()
 
@@ -423,9 +415,4 @@ class AaveDcaManager:
                 strategy = strategy_dao_instance.retrieve_by_id(order.strategy_id)
                 if strategy:
                     logger.info("[AAVEDCA][MANAGER][RESYNC] Re-sending approval request for order identifier %s", order.id)
-                    if order.order_status == AaveDcaOrderStatus.REJECTED:
-                        order.order_status = AaveDcaOrderStatus.WAITING_USER_APPROVAL
-                        order_dao_instance.save(order)
-                        session_instance.commit()
-
                     self._send_approval_request(order, strategy)

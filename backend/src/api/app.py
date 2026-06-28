@@ -14,9 +14,12 @@ from src.api.websocket.websocket_hub import router as ws_router
 from src.api.websocket.websocket_manager import websocket_manager
 from src.cache.cache_invalidator import cache_invalidator
 from src.configuration.config import settings
+from src.core.aavedca.aave_dca_manager import AaveDcaManager
+from src.core.aavedca.aave_dca_notification_service import register_aave_dca_telegram_handlers
 from src.core.aavedca.cache.aave_dca_cache_rebuilders import register_aave_dca_rebuilders
+from src.core.aavesentinel.aave_sentinel_service import register_aave_sentinel_telegram_handlers, sentinel
 from src.core.jobs.job_structures import ApiStatusResponse
-from src.core.jobs.orchestrator import read_background_jobs_runtime_status, start_background_jobs
+from src.core.jobs.orchestrator import read_background_jobs_runtime_status, start_background_jobs, stop_background_jobs
 from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders
 from src.core.trading.shadowing.cache.trading_shadowing_cache_rebuilders import register_trading_shadowing_rebuilders
 from src.logging.application_exception_hooks import install_asyncio_unhandled_exception_handler
@@ -56,6 +59,26 @@ def _register_enabled_cache_rebuilders() -> bool:
         logger.info("[STARTUP][CACHE][AAVEDCA] DCA disabled, DCA rebuilders skipped")
 
     return registered_rebuilder_count > 0
+
+
+def _register_enabled_telegram_handlers() -> bool:
+    registered_handler_module_count: int = 0
+
+    if settings.AAVE_DCA_ENABLED:
+        register_aave_dca_telegram_handlers()
+        registered_handler_module_count += 1
+        logger.info("[STARTUP][TELEGRAM][AAVEDCA] DCA Telegram handlers registered")
+    else:
+        logger.info("[STARTUP][TELEGRAM][AAVEDCA] DCA disabled, Telegram handlers skipped")
+
+    if settings.AAVE_SENTINEL_ENABLED:
+        register_aave_sentinel_telegram_handlers()
+        registered_handler_module_count += 1
+        logger.info("[STARTUP][TELEGRAM][AAVESENTINEL] Sentinel Telegram handlers registered")
+    else:
+        logger.info("[STARTUP][TELEGRAM][AAVESENTINEL] Sentinel disabled, Telegram handlers skipped")
+
+    return registered_handler_module_count > 0
 
 
 def create_app() -> FastAPI:
@@ -103,11 +126,12 @@ def create_app() -> FastAPI:
             logger.info("[STARTUP][CACHE] No enabled rebuilders detected, invalidation watcher skipped")
 
         if settings.AAVE_DCA_ENABLED:
-            from src.core.aavedca.aave_dca_manager import AaveDcaManager
             with get_database_session() as database_session:
                 AaveDcaManager(database_session).resync_waiting_approvals()
         else:
             logger.info("[STARTUP][AAVEDCA] DCA disabled in settings, waiting approvals resync skipped")
+
+        _register_enabled_telegram_handlers()
 
         start_background_jobs()
 
@@ -115,12 +139,10 @@ def create_app() -> FastAPI:
     async def on_shutdown() -> None:
         logger.info("[SHUTDOWN] Application shutdown initiated")
 
-        from src.core.jobs.orchestrator import stop_background_jobs
         stop_background_jobs()
 
         await websocket_manager.close_all_connections()
 
-        from src.core.aavesentinel.aave_sentinel_service import sentinel
         await sentinel.stop()
 
         logger.info("[SHUTDOWN] Application shutdown complete")

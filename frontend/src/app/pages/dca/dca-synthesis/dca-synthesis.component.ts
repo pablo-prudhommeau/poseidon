@@ -1,8 +1,11 @@
 import { DecimalPipe, NgIf } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { CardModule } from 'primeng/card';
-import { DcaOrderPayload, DcaStrategyPayload, MacroProjectionSavings, TradingEquityCurvePointPayload, YieldMetrics } from '../../../core/models';
+import { OptionalNumberPipe } from '../../../core/optional-number.pipe';
+import { DcaOrderPayload, DcaStrategyPayload, TradingEquityCurvePointPayload, YieldMetrics } from '../../../core/models';
 import { SparklineComponent } from '../../../widgets/sparkline/sparkline.component';
+import { hasExecutedDcaOrders } from '../dca-execution.utils';
+import { resolveHistoricalBacktestStartExecutionPrice, resolveProjectedLivePriceMultiplier } from '../dca-price-scaling.utils';
 
 export interface DurationSummary {
     totalWeeks: number;
@@ -12,21 +15,31 @@ export interface DurationSummary {
 }
 
 export interface FinalProjections {
-    smartPru: number;
-    standardPru: number;
-    alphaPercentage: number;
-    accumulatedAsset: number;
+    smartAverageUnitPrice: number | null;
+    standardAverageUnitPrice: number | null;
+    alphaPercentage: number | null;
+    accumulatedTargetAssetQuantity: number | null;
 }
 
 export interface BullPortfolioProjections {
-    totalValue: number;
-    multiplier: number;
-    smartAlphaUsd: number;
-    bearValue: number;
-    standardTotalValue: number;
-    lumpSumTotalValue: number;
-    dumbVariancePercentage: number;
-    lumpSumVariancePercentage: number;
+    totalValue: number | null;
+    multiplier: number | null;
+    smartAlphaUsd: number | null;
+    bearValue: number | null;
+    standardTotalValue: number | null;
+    lumpSumTotalValue: number | null;
+    dumbVariancePercentage: number | null;
+    lumpSumVariancePercentage: number | null;
+}
+
+export interface ProjectedSavingsDisplay {
+    live: number | null;
+    bear: number | null;
+    bull: number | null;
+    bearPriceTarget: number | null;
+    bullPriceTarget: number | null;
+    livePrice: number | null;
+    cryptoAmount: number | null;
 }
 
 export interface YieldAccrualMetrics {
@@ -38,63 +51,87 @@ export interface YieldAccrualMetrics {
 @Component({
     standalone: true,
     selector: 'app-dca-synthesis',
-    imports: [DecimalPipe, NgIf, CardModule, SparklineComponent],
+    imports: [DecimalPipe, NgIf, CardModule, SparklineComponent, OptionalNumberPipe],
     templateUrl: './dca-synthesis.component.html'
 })
 export class DcaSynthesisComponent {
     public strategy = input.required<DcaStrategyPayload>();
 
     public readonly availableDryPowder = computed<number>(() => this.strategy().available_dry_powder ?? 0);
+
+    public readonly hasExecutedOrders = computed<boolean>(() => hasExecutedDcaOrders(this.strategy()));
+
     public readonly finalProjections = computed<FinalProjections>(() => {
-        const strat = this.strategy();
-        const backtestMetadata = strat.historical_backtest_payload?.metadata;
-        if (!backtestMetadata) {
-            return { smartPru: 0, standardPru: 0, alphaPercentage: 0, accumulatedAsset: 0 };
+        const emptyProjections: FinalProjections = {
+            smartAverageUnitPrice: null,
+            standardAverageUnitPrice: null,
+            alphaPercentage: null,
+            accumulatedTargetAssetQuantity: null
+        };
+
+        if (!this.hasExecutedOrders()) {
+            return emptyProjections;
         }
 
-        const historicalStartPrice = strat.historical_backtest_payload.dumb_dca_series?.[0]?.execution_price ?? 0;
-        const livePrice = this.calculateCurrentLivePrice(strat);
-        const priceMultiplier = livePrice > 0 && historicalStartPrice > 0 ? livePrice / historicalStartPrice : 1;
+        const strat: DcaStrategyPayload = this.strategy();
+        const backtestMetadata = strat.historical_backtest_payload?.metadata;
+        if (!backtestMetadata) {
+            return emptyProjections;
+        }
 
-        const smartPru = backtestMetadata.final_smart_average_unit_price * priceMultiplier;
-        const standardPru = backtestMetadata.final_dumb_average_unit_price * priceMultiplier;
-        const alphaPercentage = standardPru > 0 ? ((standardPru - smartPru) / standardPru) * 100 : 0;
-        const accumulatedAsset = strat.total_allocated_budget / smartPru;
+        const priceMultiplier: number = resolveProjectedLivePriceMultiplier(strat);
+
+        const smartAverageUnitPrice: number = backtestMetadata.final_smart_average_unit_price * priceMultiplier;
+        const standardAverageUnitPrice: number = backtestMetadata.final_dumb_average_unit_price * priceMultiplier;
+        const alphaPercentage: number =
+            standardAverageUnitPrice > 0 ? ((standardAverageUnitPrice - smartAverageUnitPrice) / standardAverageUnitPrice) * 100 : 0;
+        const accumulatedTargetAssetQuantity: number = strat.total_allocated_budget / smartAverageUnitPrice;
 
         return {
-            smartPru,
-            standardPru,
+            smartAverageUnitPrice,
+            standardAverageUnitPrice,
             alphaPercentage,
-            accumulatedAsset
+            accumulatedTargetAssetQuantity
         };
     });
 
-    public readonly projectedSavings = computed<MacroProjectionSavings>(() => {
-        const strat = this.strategy();
-        const projections = this.finalProjections();
-        if (projections.smartPru <= 0 || projections.standardPru <= 0) {
-            return {
-                live: 0,
-                bear: 0,
-                bull: 0,
-                bearPriceTarget: 0,
-                bullPriceTarget: 0,
-                livePrice: 0,
-                cryptoAmount: 0
-            };
+    public readonly projectedSavings = computed<ProjectedSavingsDisplay>(() => {
+        const strat: DcaStrategyPayload = this.strategy();
+        const emptyProjectedSavings: ProjectedSavingsDisplay = {
+            live: null,
+            bear: null,
+            bull: null,
+            bearPriceTarget: null,
+            bullPriceTarget: null,
+            livePrice: strat.live_market_price > 0 ? strat.live_market_price : null,
+            cryptoAmount: null
+        };
+
+        if (!this.hasExecutedOrders()) {
+            return emptyProjectedSavings;
         }
 
-        const baselineCryptoQuantity = strat.total_allocated_budget / projections.standardPru;
-        const smartCryptoQuantity = strat.total_allocated_budget / projections.smartPru;
-        const extraCryptoGained = smartCryptoQuantity - baselineCryptoQuantity;
+        const projections: FinalProjections = this.finalProjections();
+        if (
+            projections.smartAverageUnitPrice === null ||
+            projections.standardAverageUnitPrice === null ||
+            projections.smartAverageUnitPrice <= 0 ||
+            projections.standardAverageUnitPrice <= 0
+        ) {
+            return emptyProjectedSavings;
+        }
 
-        const livePrice = strat.live_market_price;
-        const bearMarketBottomPrice = strat.previous_all_time_high_price * strat.bear_market_bottom_multiplier;
-        const previousAmplitudeMultiplier = 1 + strat.previous_bull_market_amplitude_percentage / 100;
-        const topPriceMultiplier = Math.pow(previousAmplitudeMultiplier, 1 / strat.curve_flattening_factor);
-        const targetCycleTopPrice = bearMarketBottomPrice * topPriceMultiplier;
-        const minimumProgressionAth = strat.previous_all_time_high_price * strat.minimum_bull_market_multiplier;
-        const finalizedTargetPrice = Math.max(targetCycleTopPrice, minimumProgressionAth);
+        const baselineCryptoQuantity: number = strat.total_allocated_budget / projections.standardAverageUnitPrice;
+        const smartCryptoQuantity: number = strat.total_allocated_budget / projections.smartAverageUnitPrice;
+        const extraCryptoGained: number = smartCryptoQuantity - baselineCryptoQuantity;
+
+        const livePrice: number = strat.live_market_price;
+        const bearMarketBottomPrice: number = strat.previous_all_time_high_price * strat.bear_market_bottom_multiplier;
+        const previousAmplitudeMultiplier: number = 1 + strat.previous_bull_market_amplitude_percentage / 100;
+        const topPriceMultiplier: number = Math.pow(previousAmplitudeMultiplier, 1 / strat.curve_flattening_factor);
+        const targetCycleTopPrice: number = bearMarketBottomPrice * topPriceMultiplier;
+        const minimumProgressionAth: number = strat.previous_all_time_high_price * strat.minimum_bull_market_multiplier;
+        const finalizedTargetPrice: number = Math.max(targetCycleTopPrice, minimumProgressionAth);
 
         return {
             live: extraCryptoGained * livePrice,
@@ -102,32 +139,51 @@ export class DcaSynthesisComponent {
             bull: extraCryptoGained * finalizedTargetPrice,
             bearPriceTarget: bearMarketBottomPrice,
             bullPriceTarget: finalizedTargetPrice,
-            livePrice: livePrice,
+            livePrice: livePrice > 0 ? livePrice : null,
             cryptoAmount: extraCryptoGained
         };
     });
 
     public readonly bullPortfolioProjections = computed<BullPortfolioProjections>(() => {
-        const strat = this.strategy();
-        const projections = this.finalProjections();
-        const savings = this.projectedSavings();
+        const emptyBullPortfolioProjections: BullPortfolioProjections = {
+            totalValue: null,
+            multiplier: null,
+            smartAlphaUsd: null,
+            bearValue: null,
+            standardTotalValue: null,
+            lumpSumTotalValue: null,
+            dumbVariancePercentage: null,
+            lumpSumVariancePercentage: null
+        };
 
-        const totalValue = projections.accumulatedAsset * savings.bullPriceTarget;
-        const multiplier = strat.total_allocated_budget > 0 ? totalValue / strat.total_allocated_budget : 0;
-        const smartAlphaUsd = savings.cryptoAmount * savings.bullPriceTarget;
-        const bearValue = projections.accumulatedAsset * savings.bearPriceTarget;
+        if (!this.hasExecutedOrders()) {
+            return emptyBullPortfolioProjections;
+        }
 
-        const historicalStartPrice = strat.historical_backtest_payload.dumb_dca_series?.[0]?.execution_price ?? 0;
-        const livePrice = this.calculateCurrentLivePrice(strat);
-        const priceMultiplier = livePrice > 0 && historicalStartPrice > 0 ? livePrice / historicalStartPrice : 1;
-        const scaledStartPrice = historicalStartPrice * priceMultiplier;
-        const backtestMetadata = strat.historical_backtest_payload?.metadata;
+        const strat: DcaStrategyPayload = this.strategy();
+        const projections: FinalProjections = this.finalProjections();
+        const savings: ProjectedSavingsDisplay = this.projectedSavings();
 
-        const standardTotalValue = (strat.total_allocated_budget / (projections.standardPru || 1)) * savings.bullPriceTarget;
-        const lumpSumTotalValue = (strat.total_allocated_budget / (scaledStartPrice || 1)) * savings.bullPriceTarget;
+        if (projections.accumulatedTargetAssetQuantity === null || savings.bullPriceTarget === null || savings.bearPriceTarget === null) {
+            return emptyBullPortfolioProjections;
+        }
 
-        const dumbVariancePercentage = totalValue > 0 ? ((standardTotalValue - totalValue) / totalValue) * 100 : 0;
-        const lumpSumVariancePercentage = totalValue > 0 ? ((lumpSumTotalValue - totalValue) / totalValue) * 100 : 0;
+        const accumulatedTargetAssetQuantity: number = projections.accumulatedTargetAssetQuantity;
+        const totalValue: number = accumulatedTargetAssetQuantity * savings.bullPriceTarget;
+        const multiplier: number = strat.total_allocated_budget > 0 ? totalValue / strat.total_allocated_budget : 0;
+        const smartAlphaUsd: number = (savings.cryptoAmount ?? 0) * savings.bullPriceTarget;
+        const bearValue: number = accumulatedTargetAssetQuantity * savings.bearPriceTarget;
+
+        const historicalStartPrice: number = resolveHistoricalBacktestStartExecutionPrice(strat);
+        const priceMultiplier: number = resolveProjectedLivePriceMultiplier(strat);
+        const scaledStartPrice: number = historicalStartPrice * priceMultiplier;
+
+        const standardAverageUnitPrice: number = projections.standardAverageUnitPrice ?? 1;
+        const standardTotalValue: number = (strat.total_allocated_budget / standardAverageUnitPrice) * savings.bullPriceTarget;
+        const lumpSumTotalValue: number = (strat.total_allocated_budget / (scaledStartPrice > 0 ? scaledStartPrice : 1)) * savings.bullPriceTarget;
+
+        const dumbVariancePercentage: number = totalValue > 0 ? ((standardTotalValue - totalValue) / totalValue) * 100 : 0;
+        const lumpSumVariancePercentage: number = totalValue > 0 ? ((lumpSumTotalValue - totalValue) / totalValue) * 100 : 0;
 
         return {
             totalValue,
@@ -141,7 +197,13 @@ export class DcaSynthesisComponent {
         };
     });
 
-    public readonly currentAveragePurchasePrice = computed<number>(() => this.strategy().average_purchase_price ?? 0);
+    public readonly currentAveragePurchasePrice = computed<number | null>(() => {
+        if (!this.hasExecutedOrders()) {
+            return null;
+        }
+        const averagePurchasePrice: number = this.strategy().average_purchase_price;
+        return averagePurchasePrice > 0 ? averagePurchasePrice : null;
+    });
 
     public readonly deployedAmount = computed<number>(() => this.strategy().total_deployed_amount ?? 0);
 
@@ -227,20 +289,4 @@ export class DcaSynthesisComponent {
             extraStepsFunded
         };
     });
-
-    private calculateCurrentLivePrice(strategy: DcaStrategyPayload): number {
-        if (strategy.live_market_price > 0) {
-            return strategy.live_market_price;
-        }
-
-        if (!strategy.execution_orders || strategy.execution_orders.length === 0) {
-            return 0;
-        }
-
-        const executedOrders = strategy.execution_orders
-            .filter((order: DcaOrderPayload) => order.order_status === 'EXECUTED' && order.actual_execution_price != null)
-            .sort((orderA, orderB) => new Date(orderB.executed_at!).getTime() - new Date(orderA.executed_at!).getTime());
-
-        return executedOrders.length > 0 ? (executedOrders[0].actual_execution_price ?? 0) : 0;
-    }
 }

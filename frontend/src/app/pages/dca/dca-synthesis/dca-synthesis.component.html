@@ -62,7 +62,7 @@
     </ng-template>
     <div class="flex flex-col gap-4 mt-1">
         <div class="flex flex-col">
-            <div class="text-3xl font-black text-white tracking-tight">{{ strategy().source_asset_currency_symbol }} {{ currentAveragePurchasePrice() | number: '1.2-2' }}</div>
+            <div class="text-3xl font-black text-white tracking-tight">{{ currentAveragePurchasePrice() | optionalNumber: '1.2-2' : strategy().source_asset_currency_symbol + ' ' }}</div>
         </div>
 
         <div class="h-8 py-1">
@@ -72,17 +72,17 @@
         <div class="grid grid-cols-1 gap-1.5 border-t border-white/5 pt-3">
             <div class="flex items-center justify-between text-[11px]">
                 <span class="text-slate-400">Projected Smart PRU</span>
-                <span class="text-emerald-400 text-sm font-bold"> {{ strategy().source_asset_currency_symbol }} {{ finalProjections().smartPru | number: '1.0-0' }} </span>
+                <span class="text-emerald-400 text-sm font-bold">{{ finalProjections().smartAverageUnitPrice | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
             </div>
             <div class="flex items-center justify-between text-[11px]">
                 <span class="text-slate-600 italic">Comparison (Standard DCA)</span>
-                <span class="text-slate-600 line-through text-sm font-bold decoration-slate-700"> {{ strategy().source_asset_currency_symbol }} {{ finalProjections().standardPru | number: '1.0-0' }} </span>
+                <span class="text-slate-600 line-through text-sm font-bold decoration-slate-700">{{ finalProjections().standardAverageUnitPrice | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
             </div>
             <div class="flex items-center justify-between text-[11px] mt-1 pt-2 border-t border-white/5">
                 <span class="text-slate-400 font-bold uppercase tracking-tight">Target Accumulation</span>
                 <div class="flex items-baseline gap-1">
                     <span class="text-sm text-emerald-500/50 font-bold uppercase">{{ strategy().target_asset_currency_symbol }}</span>
-                    <span class="text-sm font-bold text-white">{{ finalProjections().accumulatedAsset | number: '1.2-4' }}</span>
+                    <span class="text-sm font-bold text-white">{{ finalProjections().accumulatedTargetAssetQuantity | optionalNumber: '1.2-4' }}</span>
                 </div>
             </div>
         </div>
@@ -97,14 +97,14 @@
         </div>
     </ng-template>
 
-    <div class="flex flex-col gap-4 mt-1" *ngIf="projectedSavings() as proj; else noProj">
+    <div class="flex flex-col gap-4 mt-1">
         <div class="flex items-center justify-between gap-6 pb-2 border-b border-white/5">
             <div class="flex flex-col">
-                <div class="text-3xl font-black text-white tracking-tight">{{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().totalValue | number: '1.0-0' }}</div>
+                <div class="text-3xl font-black text-white tracking-tight">{{ bullPortfolioProjections().totalValue | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</div>
                 <div class="flex items-center gap-2 mt-1 tracking-tight">
                     <span class="text-[11px] text-slate-500 uppercase">Target ROI :</span>
                     <div class="flex items-center gap-1 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20">
-                        <span class="text-emerald-400 text-[11px] font-bold">× {{ bullPortfolioProjections().multiplier | number: '1.1-1' }}</span>
+                        <span class="text-emerald-400 text-[11px] font-bold">{{ bullPortfolioProjections().multiplier | optionalNumber: '1.1-1' : '× ' }}</span>
                     </div>
                     <div class="flex items-center">
                         <div class="flex gap-1">
@@ -119,18 +119,18 @@
             <div class="flex gap-4">
                 <div class="flex flex-col items-end pr-4 border-r border-white/5">
                     <span class="text-[10px] text-orange-500/70 font-bold uppercase tracking-wider mb-1">Dumb DCA</span>
-                    <span class="text-sm font-bold text-orange-400 text-right"> {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().standardTotalValue | number: '1.0-0' }} </span>
+                    <span class="text-sm font-bold text-orange-400 text-right">{{ bullPortfolioProjections().standardTotalValue | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
                     <div class="text-[10px] text-slate-500 font-medium italic mt-0.5 flex flex-col items-end">
                         <span>Average Entry</span>
-                        <span class="text-orange-500/50 font-bold">{{ bullPortfolioProjections().dumbVariancePercentage | number: '1.1-1' }}% vs Smart</span>
+                        <span class="text-orange-500/50 font-bold">{{ bullPortfolioProjections().dumbVariancePercentage | optionalNumber: '1.1-1' : '' : '% vs Smart' }}</span>
                     </div>
                 </div>
                 <div class="flex flex-col items-end">
                     <span class="text-[10px] text-red-500/70 font-bold uppercase tracking-wider mb-1">Lump Sum</span>
-                    <span class="text-sm font-bold text-red-500 text-right"> {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().lumpSumTotalValue | number: '1.0-0' }} </span>
+                    <span class="text-sm font-bold text-red-500 text-right">{{ bullPortfolioProjections().lumpSumTotalValue | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
                     <div class="text-[10px] text-slate-500 font-medium italic mt-0.5 flex flex-col items-end">
                         <span>Max Risk Entry</span>
-                        <span class="text-red-500/50 font-bold">{{ bullPortfolioProjections().lumpSumVariancePercentage | number: '1.1-1' }}% vs Smart</span>
+                        <span class="text-red-500/50 font-bold">{{ bullPortfolioProjections().lumpSumVariancePercentage | optionalNumber: '1.1-1' : '' : '% vs Smart' }}</span>
                     </div>
                 </div>
             </div>
@@ -139,18 +139,18 @@
         <div class="grid grid-cols-3 gap-2">
             <div class="p-2 rounded bg-black/20 border border-emerald-500/20 flex flex-col gap-0.5">
                 <span class="text-[9px] uppercase font-bold text-emerald-400/80 tracking-widest">Smart Alpha ($)</span>
-                <span class="text-sm font-semibold text-emerald-100">+ {{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().smartAlphaUsd | number: '1.0-0' }}</span>
+                <span class="text-sm font-semibold text-emerald-100">{{ bullPortfolioProjections().smartAlphaUsd | optionalNumber: '1.0-0' : '+ ' + strategy().source_asset_currency_symbol + ' ' }}</span>
             </div>
             <div class="p-2 rounded bg-black/20 border border-purple-500/20 flex flex-col gap-0.5" title="Additional crypto accumulated vs standard DCA">
                 <span class="text-[9px] uppercase font-bold text-purple-400/80 tracking-widest">Extra Asset</span>
                 <div class="flex items-baseline gap-1">
                     <span class="text-sm text-purple-400 font-bold uppercase">{{ strategy().target_asset_currency_symbol }}</span>
-                    <span class="text-sm font-semibold text-slate-100">{{ proj.cryptoAmount | number: '1.2-6' }}</span>
+                    <span class="text-sm font-semibold text-slate-100">{{ projectedSavings().cryptoAmount | optionalNumber: '1.2-6' }}</span>
                 </div>
             </div>
             <div class="p-2 rounded bg-black/20 border border-red-500/10 flex flex-col gap-0.5" title="Portfolio value if we re-test bear bottom">
                 <span class="text-[9px] uppercase font-bold text-red-400/80 tracking-widest">Bear Value</span>
-                <span class="text-sm font-semibold text-red-100">{{ strategy().source_asset_currency_symbol }} {{ bullPortfolioProjections().bearValue | number: '1.0-0' }}</span>
+                <span class="text-sm font-semibold text-red-100">{{ bullPortfolioProjections().bearValue | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
             </div>
         </div>
 
@@ -158,22 +158,19 @@
             <div class="flex gap-8">
                 <div class="flex flex-col">
                     <span class="text-[9px] text-slate-600 uppercase font-bold">Bear Price</span>
-                    <span class="text-slate-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ proj.bearPriceTarget | number: '1.0-0' }}</span>
+                    <span class="text-slate-400 font-black">{{ projectedSavings().bearPriceTarget | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
                 </div>
                 <div class="flex flex-col border-l border-white/5 pl-4">
                     <span class="text-[9px] text-blue-500/50 uppercase font-bold">Live Price</span>
-                    <span class="text-blue-300/80 font-black">{{ strategy().source_asset_currency_symbol }} {{ strategy().live_market_price | number: '1.0-0' }}</span>
+                    <span class="text-blue-300/80 font-black">{{ projectedSavings().livePrice | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
                 </div>
                 <div class="flex flex-col border-l border-white/5 pl-4">
                     <span class="text-[9px] text-emerald-500/50 uppercase font-bold">Bull Target</span>
-                    <span class="text-emerald-400 font-black">{{ strategy().source_asset_currency_symbol }} {{ proj.bullPriceTarget | number: '1.0-0' }}</span>
+                    <span class="text-emerald-400 font-black">{{ projectedSavings().bullPriceTarget | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
                 </div>
             </div>
         </div>
     </div>
-    <ng-template #noProj>
-        <div class="text-xs text-slate-400 mt-2">Waiting for strategy projection...</div>
-    </ng-template>
 </p-card>
 
 <p-card styleClass="lg:col-span-2 sm:col-span-2 h-full">

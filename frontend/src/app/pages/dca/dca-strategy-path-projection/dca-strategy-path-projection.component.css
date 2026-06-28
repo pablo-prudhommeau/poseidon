@@ -1,0 +1,258 @@
+.dca-strategy-path-chart-shell {
+    position: relative;
+}
+
+.dca-strategy-path-metric-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.45rem;
+}
+
+.dca-strategy-path-metric-toggle {
+    --toggle-accent: #a855f7;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.32rem 0.68rem 0.32rem 0.38rem;
+    width: fit-content;
+    border: 1px solid color-mix(in srgb, var(--toggle-accent) 26%, transparent 74%);
+    border-radius: 999px;
+    background: rgba(18, 18, 18, 0.82);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 20px rgba(0, 0, 0, 0.35);
+    color: #e4e4e7;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.16s ease;
+}
+
+.dca-strategy-path-metric-toggle.is-bands {
+    --toggle-accent: #fdba74;
+}
+
+.dca-strategy-path-metric-toggle.is-effective {
+    --toggle-accent: #8b5cf6;
+}
+
+.dca-strategy-path-metric-toggle.is-backtesting {
+    --toggle-accent: #f472b6;
+}
+
+.dca-strategy-path-metric-toggle.is-projected {
+    --toggle-accent: #3b82f6;
+}
+
+.dca-strategy-path-metric-toggle.is-all {
+    --toggle-accent: #22d3ee;
+}
+
+.dca-strategy-path-metric-toggle:hover {
+    border-color: color-mix(in srgb, var(--toggle-accent) 56%, transparent 44%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 0 20px color-mix(in srgb, var(--toggle-accent) 26%, transparent 74%);
+    transform: translateY(-1px);
+}
+
+.dca-strategy-path-metric-toggle input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: inherit;
+}
+
+.dca-strategy-path-metric-toggle-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--toggle-accent) 24%, rgba(148, 163, 184, 0.28) 76%);
+    background: rgba(18, 18, 18, 0.9);
+    color: color-mix(in srgb, var(--toggle-accent) 72%, #e5e7eb 28%);
+    font-size: 0.72rem;
+    padding: 0.45em;
+}
+
+.dca-strategy-path-metric-toggle-dot i {
+    display: block;
+    width: 1.05em;
+    height: 1.05em;
+    line-height: 1;
+    text-align: center;
+}
+
+.dca-strategy-path-metric-toggle-label {
+    color: color-mix(in srgb, var(--toggle-accent) 42%, #f8fafc 58%);
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.dca-strategy-path-metric-toggle.is-active {
+    border-color: color-mix(in srgb, var(--toggle-accent) 62%, transparent 38%);
+    background: color-mix(in srgb, var(--toggle-accent) 18%, rgba(18, 18, 18, 0.9) 82%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 0 22px color-mix(in srgb, var(--toggle-accent) 24%, transparent 76%);
+}
+
+.dca-strategy-path-metric-toggle.is-active .dca-strategy-path-metric-toggle-dot {
+    border-color: color-mix(in srgb, var(--toggle-accent) 72%, #ffffff 28%);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--toggle-accent) 55%, transparent 45%);
+}
+
+.dca-strategy-path-metric-toggle.is-mixed:not(.is-active) .dca-strategy-path-metric-toggle-dot {
+    border-color: color-mix(in srgb, var(--toggle-accent) 58%, transparent 42%);
+    box-shadow: none;
+}
+
+.dca-strategy-path-metric-toggle.is-disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.dca-legend-toggle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 16;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(18, 18, 18, 0.78);
+    color: #e4e4e7;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.65rem;
+    transition: all 0.15s ease;
+    line-height: 1;
+}
+
+.dca-legend-toggle:hover {
+    background: rgba(23, 23, 23, 0.92);
+    border-color: rgba(255, 255, 255, 0.22);
+    cursor: pointer;
+}
+
+.dca-legend-toggle.is-open {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dca-custom-legend {
+    position: absolute;
+    top: 52px;
+    right: 8px;
+    z-index: 15;
+    max-height: calc(100% - 20px);
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(18, 18, 18, 0.58);
+    backdrop-filter: blur(3px);
+}
+
+.dca-custom-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #e4e4e7;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.dca-custom-legend-item input[type='checkbox'] {
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    accent-color: #d4d4d8;
+}
+
+.dca-legend-swatch {
+    flex: 0 0 auto;
+    opacity: 0.95;
+}
+
+.dca-legend-swatch.is-line,
+.dca-legend-swatch.is-dashed-line {
+    width: 16px;
+    height: 0;
+    border-top: 2px solid var(--legend-color);
+}
+
+.dca-legend-swatch.is-dashed-line {
+    border-top-style: dashed;
+}
+
+.dca-legend-swatch.is-area {
+    width: 16px;
+    height: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--legend-color) 70%, #ffffff 30%);
+    border-radius: 1.5px;
+    background: color-mix(in srgb, var(--legend-color) 35%, transparent 65%);
+}
+
+.dca-legend-swatch.is-band {
+    --band-fill-above: #c4b5fd;
+    --band-fill-below: #93c5fd;
+    position: relative;
+    width: 18px;
+    height: 12px;
+    margin: 0 -1px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 3px;
+    overflow: hidden;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 1px 4px rgba(0, 0, 0, 0.45);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--band-fill-above) 52%, #121212 48%) 0%,
+        color-mix(in srgb, var(--band-fill-above) 38%, transparent 62%) 46%,
+        color-mix(in srgb, var(--band-fill-below) 38%, transparent 62%) 54%,
+        color-mix(in srgb, var(--band-fill-below) 52%, #121212 48%) 100%
+    );
+}
+
+.dca-legend-swatch.is-band::before,
+.dca-legend-swatch.is-band::after {
+    content: '';
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    height: 2px;
+    border-radius: 999px;
+    opacity: 0.88;
+}
+
+.dca-legend-swatch.is-band::before {
+    top: 2px;
+    background: color-mix(in srgb, var(--band-fill-above) 92%, #ffffff 8%);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--band-fill-above) 55%, transparent 45%);
+    transform: rotate(-7deg);
+}
+
+.dca-legend-swatch.is-band::after {
+    bottom: 2px;
+    background: color-mix(in srgb, var(--band-fill-below) 92%, #ffffff 8%);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--band-fill-below) 55%, transparent 45%);
+    transform: rotate(7deg);
+}
+
+.dca-legend-label {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

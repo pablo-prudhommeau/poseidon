@@ -8,6 +8,7 @@ from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
 from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
+from src.persistence.database_session_manager import get_database_session
 
 logger = get_application_logger(__name__)
 
@@ -34,8 +35,6 @@ class AaveDcaJob:
         logger.info("[AAVEDCA][JOB] Background monitoring stopped.")
 
     async def _process_tick(self) -> None:
-        from src.persistence.database_session_manager import get_database_session
-
         due_order_ids: list[int] = []
 
         with get_database_session() as database_session:
