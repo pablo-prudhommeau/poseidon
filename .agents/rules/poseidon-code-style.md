@@ -41,7 +41,7 @@ Pour chaque portion de code générée, je souhaiterais que tu te mettes dans un
 # Backend (SQLAchemy / Alembic)
 * Tu ne dois en aucun cas utiliser l'idempotence dans les migrations SQLAchemy car nous nous appuyons sur le DDL transactionnel de PostgreSQL et le versioning strict d'Alembic.
 * Tu dois utiliser des syntaxes compatibles SQLite et PostgreSQL.
-* Tu dois utiliser un nom de fichier de migration au format `YYYYMMDDHHMMSS_<description>.py` avec une description respectant les conventions de nommage de migration SQLAchemy.
+* Tu dois utiliser un nom de fichier de migration au format `YYYYMMDD_HHMM_<description>.py` avec une description respectant les conventions de nommage de migration SQLAchemy.
 
 # Frontend (TypeScript, HTML, CSS)
 * Respecte strictement le schéma `<nom>.<type>.ts` avec un suffixe qui décrit la responsabilité dominante du fichier (`component`, `service`, `builder`, `formatter`, `adapter`, `models`, `utils`, etc.).

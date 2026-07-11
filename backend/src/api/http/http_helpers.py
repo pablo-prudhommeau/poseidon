@@ -219,6 +219,7 @@ def build_dca_strategy_entity(
         source_asset_decimals=strategy_payload.source_asset_decimals,
         target_asset_symbol=strategy_payload.target_asset_symbol,
         target_asset_address=strategy_payload.target_asset_address,
+        target_asset_decimals=strategy_payload.target_asset_decimals,
         binance_trading_pair=strategy_payload.binance_trading_pair,
         total_allocated_budget=strategy_payload.total_allocated_budget,
         total_planned_executions=strategy_payload.total_planned_executions,

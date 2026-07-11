@@ -16,9 +16,9 @@ export type DcaStrategyStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
 export type DcaOrderStatus =
     | 'PENDING'
     | 'WAITING_USER_APPROVAL'
-    | 'APPROVED'
-    | 'WITHDRAWN_FROM_AAVE'
-    | 'SWAPPED'
+    | 'AWAITING_WITHDRAW'
+    | 'AWAITING_SWAP'
+    | 'AWAITING_SUPPLY'
     | 'EXECUTED'
     | 'SKIPPED'
     | 'FAILED'
@@ -49,6 +49,7 @@ export interface DcaStrategyCreatePayload {
     source_asset_decimals: number;
     target_asset_symbol: string;
     target_asset_address: string;
+    target_asset_decimals: number;
     binance_trading_pair: string;
     total_allocated_budget: number;
     total_planned_executions: number;
@@ -74,6 +75,30 @@ export interface DcaStrategyCreateResponse {
     orders_count: number;
 }
 
+export type DcaAllocationDecision =
+    | 'AVERAGE_PRICE_PROTECTION_HALT'
+    | 'CONSERVATIVE_RETENTION_SCALED'
+    | 'AGGRESSIVE_DIP_ACCUMULATION_SCALED'
+    | 'FALLBACK_NOMINAL_STRATEGY';
+
+export interface DcaPipelineOperationPayload {
+    step: 'WITHDRAW' | 'SWAP' | 'SUPPLY';
+    status: string;
+    started_at?: string | null;
+    completed_at?: string | null;
+    transaction_hash?: string | null;
+    route_tool?: string | null;
+    source_amount_base_units?: number | null;
+    expected_output_base_units?: number | null;
+    minimum_output_base_units?: number | null;
+}
+
+export interface DcaOrderPipelineOperationsPayload {
+    initialized_at?: string | null;
+    last_updated_at?: string | null;
+    pipeline_operations: DcaPipelineOperationPayload[];
+}
+
 export interface DcaOrderPayload {
     id: number;
     strategy_id: number;
@@ -82,10 +107,16 @@ export interface DcaOrderPayload {
     executed_source_asset_amount?: number | null;
     executed_target_asset_amount?: number | null;
     order_status: DcaOrderStatus;
-    transaction_hash?: string | null;
     actual_execution_price?: number | null;
     executed_at?: string | null;
-    allocation_decision_description?: string | null;
+    allocation_decision?: DcaAllocationDecision | null;
+    allocation_multiplier?: number | null;
+    dry_powder_delta?: number | null;
+    reference_market_price?: number | null;
+    pipeline_operations?: DcaOrderPipelineOperationsPayload | null;
+    pipeline_attempt_count?: number;
+    next_attempt_at?: string | null;
+    suspension_reason?: string | null;
 }
 
 export interface DcaBacktestSeriesPointPayload {
@@ -120,6 +151,7 @@ export interface DcaStrategyPayload {
     source_asset_currency_symbol: string;
     target_asset_symbol: string;
     target_asset_address: string;
+    target_asset_decimals: number;
     target_asset_currency_symbol: string;
     binance_trading_pair: string;
     total_allocated_budget: number;
@@ -579,8 +611,10 @@ export interface TimelineNode {
 }
 
 export interface OrderDueDateMarker {
+    orderId: number;
     leftPositionPercent: number;
     status: string;
+    anchorsMajorNode: boolean;
 }
 
 export interface TradingAnalyticsHeatmapCellPayload {

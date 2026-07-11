@@ -76,6 +76,17 @@ AAVE_POOL_ABI: Final[List[Any]] = [
         "type": "function",
     },
     {
+        "inputs": [
+            {"internalType": "address", "name": "asset", "type": "address"},
+            {"internalType": "uint256", "name": "amount", "type": "uint256"},
+            {"internalType": "address", "name": "to", "type": "address"},
+        ],
+        "name": "withdraw",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
         "anonymous": False,
         "inputs": [
             {"indexed": True, "internalType": "address", "name": "reserve", "type": "address"},
@@ -136,6 +147,16 @@ ERC20_ABI: Final[List[Any]] = [
         "inputs": [{"name": "_owner", "type": "address"}],
         "name": "balanceOf",
         "outputs": [{"name": "balance", "type": "uint256"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [
+            {"name": "_owner", "type": "address"},
+            {"name": "_spender", "type": "address"},
+        ],
+        "name": "allowance",
+        "outputs": [{"name": "", "type": "uint256"}],
         "type": "function",
     },
     {

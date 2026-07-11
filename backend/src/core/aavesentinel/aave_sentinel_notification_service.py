@@ -19,6 +19,10 @@ from src.integrations.telegram.telegram_client import (
     register_bot_commands,
     send_alert as send_telegram_alert,
 )
+from src.integrations.telegram.telegram_format_utils import (
+    TELEGRAM_MAIN_TITLE_BODY_SEPARATOR,
+    build_telegram_section_block,
+)
 from src.integrations.telegram.telegram_structures import TelegramMessage
 from src.logging.logger import get_application_logger
 
@@ -87,6 +91,8 @@ class AaveSentinelNotificationService:
                 formatted_title,
                 message,
                 resolved_emoji_indicator,
+                reply_markup=None,
+                title_body_separator=TELEGRAM_MAIN_TITLE_BODY_SEPARATOR,
             )
             logger.info("[AAVESENTINEL][TELEGRAM] Alert dispatched: %s", title)
         except Exception as exception:
@@ -133,7 +139,7 @@ class AaveSentinelNotificationService:
                 asset.supply_annual_percentage_yield,
             )
             for asset in position_snapshot.assets
-            if asset.supply_value_usd > 1.0
+            if asset.supply_amount > 0
         ]
         debt_inventory_lines = [
             format_asset_inventory_line(
@@ -143,7 +149,7 @@ class AaveSentinelNotificationService:
                 asset.borrow_annual_percentage_yield,
             )
             for asset in position_snapshot.assets
-            if asset.debt_value_usd > 1.0
+            if asset.debt_amount > 0
         ]
         wallet_inventory_lines = [
             format_asset_inventory_line(
@@ -152,7 +158,7 @@ class AaveSentinelNotificationService:
                 asset.wallet_value_usd,
             )
             for asset in position_snapshot.assets
-            if asset.wallet_value_usd > 1.0
+            if asset.wallet_amount > 0
         ]
 
         formatted_supply_section = "\n".join(supply_inventory_lines) or "  (Aucun)"
@@ -161,7 +167,17 @@ class AaveSentinelNotificationService:
 
         health_factor_indicator = self._resolve_health_factor_indicator(position_snapshot.health_factor)
 
-        strategy_context_block = ""
+        account_status_section_lines: list[str] = [
+            f"🏥 Santé : <code>{position_snapshot.health_factor:.2f}</code> {health_factor_indicator}",
+            f"⚡ Levier : <code>x{position_snapshot.current_leverage:.2f}</code>",
+            f"💎 Net Aave : <code>{format_monetary_values(position_snapshot.aave_net_worth_usd)}</code>",
+            f"💰 Net Total : <code>{format_monetary_values(position_snapshot.total_strategy_equity_usd)}</code>",
+            f"💵 PnL latent : {performance_display_value}",
+        ]
+        message_sections: list[str] = [
+            build_telegram_section_block("Statut du compte", account_status_section_lines),
+        ]
+
         if (
                 position_snapshot.strategy_direction != AaveSentinelStrategyDirection.NEUTRAL
                 and position_snapshot.main_asset_symbol
@@ -174,40 +190,37 @@ class AaveSentinelNotificationService:
                 distance_to_liquidation = abs(current_market_price_usd - liquidation_price_usd) / current_market_price_usd
 
             direction_indicator = "📉" if position_snapshot.strategy_direction == AaveSentinelStrategyDirection.LONG else "📈"
-            strategy_context_block = (
-                "\n<b>Stratégie</b>\n"
-                "<b>----------</b>\n"
-                f"🎯 Type : <b>{position_snapshot.strategy_direction.value}</b> sur {position_snapshot.main_asset_symbol}\n"
-                f"💲 Prix actuel : <code>{format_currency(current_market_price_usd)}</code>\n"
-                f"💀 Liquidation : <code>{format_currency(liquidation_price_usd)}</code>\n"
-                f"📏 Distance : <b>{format_percent(distance_to_liquidation)}</b> {direction_indicator}\n"
-            )
+            strategy_section_lines: list[str] = [
+                f"🎯 Type : <b>{position_snapshot.strategy_direction.value}</b> sur {position_snapshot.main_asset_symbol}",
+                f"💲 Prix actuel : <code>{format_currency(current_market_price_usd)}</code>",
+                f"💀 Liquidation : <code>{format_currency(liquidation_price_usd)}</code>",
+                f"📏 Distance : <b>{format_percent(distance_to_liquidation)}</b> {direction_indicator}",
+            ]
+            message_sections.append(build_telegram_section_block("Stratégie", strategy_section_lines))
+
+        aave_positions_section_lines: list[str] = [
+            f"📈 Supply total : <code>{format_monetary_values(position_snapshot.total_collateral_usd)}</code>",
+            formatted_supply_section,
+            "",
+            f"📉 Dette totale : <code>{format_monetary_values(position_snapshot.total_debt_usd)}</code>",
+            formatted_debt_section,
+        ]
+        message_sections.append(build_telegram_section_block("Positions Aave", aave_positions_section_lines))
+
+        wallet_section_lines: list[str] = [
+            f"💼 Total : <code>{format_monetary_values(position_snapshot.total_wallet_usd)}</code>",
+            formatted_wallet_section,
+        ]
+        message_sections.append(build_telegram_section_block("Wallet", wallet_section_lines))
 
         initial_basis_display_value = self._initial_basis_usd or 0.0
-        return (
-            "<b>Statut du compte</b>\n"
-            "<b>----------</b>\n"
-            f"🏥 Santé : <code>{position_snapshot.health_factor:.2f}</code> {health_factor_indicator}\n"
-            f"⚡ Levier : <code>x{position_snapshot.current_leverage:.2f}</code>\n"
-            f"💎 Net Aave : <code>{format_monetary_values(position_snapshot.aave_net_worth_usd)}</code>\n"
-            f"💰 Net Total : <code>{format_monetary_values(position_snapshot.total_strategy_equity_usd)}</code>\n"
-            f"💵 PnL latent : {performance_display_value}\n"
-            f"{strategy_context_block}\n"
-            "<b>Positions Aave</b>\n"
-            "<b>----------</b>\n"
-            f"📈 Supply total : <code>{format_monetary_values(position_snapshot.total_collateral_usd)}</code>\n"
-            f"{formatted_supply_section}\n\n"
-            f"📉 Dette totale : <code>{format_monetary_values(position_snapshot.total_debt_usd)}</code>\n"
-            f"{formatted_debt_section}\n\n"
-            "<b>Wallet</b>\n"
-            "<b>----------</b>\n"
-            f"💼 Total : <code>{format_monetary_values(position_snapshot.total_wallet_usd)}</code>\n"
-            f"{formatted_wallet_section}\n\n"
-            "<b>Performance</b>\n"
-            "<b>----------</b>\n"
-            f"📊 Net APY : <code>{format_percent(position_snapshot.weighted_net_apy)}</code>\n"
-            f"💰 Initial : <code>{format_monetary_values(initial_basis_display_value)}</code>"
-        )
+        performance_section_lines: list[str] = [
+            f"📊 Net APY : <code>{format_percent(position_snapshot.weighted_net_apy)}</code>",
+            f"💰 Initial : <code>{format_monetary_values(initial_basis_display_value)}</code>",
+        ]
+        message_sections.append(build_telegram_section_block("Performance", performance_section_lines))
+
+        return "\n".join(section for section in message_sections if section)
 
     async def evaluate_risk_and_notify(self, position_snapshot: AaveSentinelPositionSnapshot) -> None:
         evaluation_timestamp = get_current_local_datetime()

@@ -159,7 +159,7 @@ def test_build_solana_sell_route_maps_jupiter_rate_limit_without_error_log(
 
 @patch("src.core.trading.execution.solana.trading_execution_solana_service.cache_invalidator")
 @patch("src.core.trading.execution.solana.trading_execution_solana_service.poll_deployable_stablecoin_until_swap_settled")
-@patch("src.core.trading.execution.solana.trading_execution_solana_service.LiveExecutionService")
+@patch("src.core.trading.execution.solana.trading_execution_solana_service.BlockchainExecutionService")
 @patch("src.core.trading.execution.solana.trading_execution_solana_service.resolve_total_deployable_stablecoin_cash_usd")
 @patch("src.core.trading.execution.solana.trading_execution_solana_service._fetch_onchain_price_for_token")
 def test_run_solana_live_buy_returns_false_on_transient_rpc_without_error_log(

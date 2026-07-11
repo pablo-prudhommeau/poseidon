@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Optional
 
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 from web3 import AsyncWeb3
 from web3.contract import AsyncContract
+from web3.exceptions import TimeExhausted
 from web3.types import TxParams
 
 from src.configuration.config import settings
+from src.integrations.blockchain.blockchain_execution_service import (
+    AAVE_EVM_APPROVE_GAS_LIMIT,
+    AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+    BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS,
+    EVM_SWAP_GAS_BUFFER_MULTIPLIER,
+)
+from src.integrations.blockchain.blockchain_utils import normalize_evm_transaction_hash
 from src.core.structures.structures import BlockchainNetwork
 from src.integrations.aave.aave_abis import (
     AAVE_POOL_ABI,
@@ -47,6 +54,53 @@ class AaveExecutor:
     def get_wallet_address(self) -> str:
         return self.wallet_address
 
+    async def confirm_transaction(
+            self,
+            chain: BlockchainNetwork,
+            transaction_hash_hex: str,
+            submitted_gas_limit: Optional[int] = None,
+    ) -> bool:
+        await self._initialize_provider(chain)
+        client = self.web3_clients[chain]
+        timeout_seconds = BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS
+        try:
+            receipt = await client.eth.wait_for_transaction_receipt(transaction_hash_hex, timeout=timeout_seconds)
+        except TimeExhausted:
+            logger.warning(
+                "[AAVE][EXECUTOR][CONFIRM] Transaction %s confirmation timed out after %ss",
+                transaction_hash_hex,
+                timeout_seconds,
+            )
+            return False
+        except Exception as exception:
+            logger.exception(
+                "[AAVE][EXECUTOR][CONFIRM] Error waiting for transaction receipt %s: %s",
+                transaction_hash_hex,
+                exception,
+            )
+            raise RuntimeError(
+                f"Transaction receipt wait failed for {transaction_hash_hex}"
+            ) from exception
+
+        receipt_status: Optional[int] = None
+        if receipt is not None and receipt.get("status") is not None:
+            receipt_status = int(receipt["status"])
+        if receipt_status == 1:
+            logger.debug("[AAVE][EXECUTOR][CONFIRM] Transaction confirmed: %s", transaction_hash_hex)
+            return True
+
+        gas_used: Optional[int] = None
+        if receipt is not None and receipt.get("gasUsed") is not None:
+            gas_used = int(receipt["gasUsed"])
+        logger.warning(
+            "[AAVE][EXECUTOR][CONFIRM] Transaction %s failed on-chain status=%s gas_used=%s submitted_gas_limit=%s",
+            transaction_hash_hex,
+            receipt_status,
+            gas_used,
+            submitted_gas_limit,
+        )
+        return False
+
     async def _initialize_provider(self, chain: BlockchainNetwork) -> None:
         if chain in self.web3_clients:
             return
@@ -77,6 +131,143 @@ class AaveExecutor:
         self.pool_contracts[chain] = client.eth.contract(address=pool_address_checksum, abi=AAVE_POOL_ABI)
 
         logger.info("[AAVE][EXECUTOR][INIT] Provider initialized for chain: %s", chain)
+
+    async def _build_eip1559_transaction_parameters(
+            self,
+            chain: BlockchainNetwork,
+            transaction_parameters: TxParams,
+            gas_limit: int,
+    ) -> TxParams:
+        client = self.web3_clients[chain]
+        latest_block = await client.eth.get_block("latest")
+        network_base_fee: int = int(latest_block.get("baseFeePerGas") or 0)
+
+        try:
+            max_priority_fee: int = int(await client.eth.max_priority_fee)
+        except Exception:
+            max_priority_fee = int(AsyncWeb3.to_wei(1, "gwei"))
+
+        total_max_fee_per_gas: int = (network_base_fee * 2) + max_priority_fee
+        chain_identifier: int = await client.eth.chain_id
+
+        merged_transaction_parameters: TxParams = {
+            **transaction_parameters,
+            "type": 2,
+            "chainId": chain_identifier,
+            "gas": gas_limit,
+            "maxPriorityFeePerGas": max_priority_fee,
+            "maxFeePerGas": total_max_fee_per_gas,
+        }
+        if "gasPrice" in merged_transaction_parameters:
+            del merged_transaction_parameters["gasPrice"]
+
+        logger.debug(
+            "[AAVE][EXECUTOR][BUILD] EIP-1559 transaction prepared: nonce=%s gas_limit=%s max_fee_per_gas=%s",
+            merged_transaction_parameters.get("nonce"),
+            gas_limit,
+            total_max_fee_per_gas,
+        )
+        return merged_transaction_parameters
+
+    async def _resolve_pending_transaction_nonce(self, chain: BlockchainNetwork) -> int:
+        client = self.web3_clients[chain]
+        return int(await client.eth.get_transaction_count(self.wallet_address, "pending"))
+
+    async def ensure_erc20_allowance(
+            self,
+            chain: BlockchainNetwork,
+            token_address: str,
+            spender_address: str,
+            required_amount_wei: int,
+    ) -> None:
+        await self._initialize_provider(chain)
+        client = self.web3_clients[chain]
+
+        checksum_token = AsyncWeb3.to_checksum_address(token_address)
+        checksum_spender = AsyncWeb3.to_checksum_address(spender_address)
+        token_contract = client.eth.contract(address=checksum_token, abi=ERC20_ABI)
+
+        current_allowance: int = int(
+            await token_contract.functions.allowance(self.wallet_address, checksum_spender).call()
+        )
+        if current_allowance >= required_amount_wei:
+            logger.debug(
+                "[AAVE][EXECUTOR][ALLOWANCE] Existing allowance sufficient for spender=%s allowance_wei=%s required_wei=%s",
+                checksum_spender,
+                current_allowance,
+                required_amount_wei,
+            )
+            return
+
+        nonce: int = await self._resolve_pending_transaction_nonce(chain)
+        maximum_allowance_wei: int = (2 ** 256) - 1
+        approve_transaction: TxParams = await token_contract.functions.approve(
+            checksum_spender,
+            maximum_allowance_wei,
+        ).build_transaction({
+            "from": self.wallet_address,
+            "nonce": nonce,
+        })
+        approve_transaction = await self._build_eip1559_transaction_parameters(
+            chain=chain,
+            transaction_parameters=approve_transaction,
+            gas_limit=AAVE_EVM_APPROVE_GAS_LIMIT,
+        )
+        signed_approval = client.eth.account.sign_transaction(approve_transaction, self.private_key)
+        approval_transaction_hash = await client.eth.send_raw_transaction(signed_approval.raw_transaction)
+        approval_confirmed = await self.confirm_transaction(
+            chain,
+            normalize_evm_transaction_hash(approval_transaction_hash),
+        )
+        if not approval_confirmed:
+            raise RuntimeError(f"ERC20 allowance approval not confirmed for spender {checksum_spender}")
+
+    async def execute_raw_evm_transaction(
+            self,
+            chain: BlockchainNetwork,
+            to_address: str,
+            transaction_calldata: str,
+            transaction_value_wei: int,
+            gas_limit: int,
+    ) -> Optional[str]:
+        await self._initialize_provider(chain)
+        client = self.web3_clients[chain]
+        checksum_to = AsyncWeb3.to_checksum_address(to_address)
+
+        if gas_limit <= 0:
+            raise ValueError("Swap gas limit must be a strictly positive integer provided by LI.FI routing quote")
+
+        nonce: int = await self._resolve_pending_transaction_nonce(chain)
+        buffered_swap_gas_limit: int = int(gas_limit * EVM_SWAP_GAS_BUFFER_MULTIPLIER)
+        raw_transaction: TxParams = {
+            "from": self.wallet_address,
+            "to": checksum_to,
+            "data": transaction_calldata,
+            "value": transaction_value_wei,
+            "nonce": nonce,
+        }
+        raw_transaction = await self._build_eip1559_transaction_parameters(
+            chain=chain,
+            transaction_parameters=raw_transaction,
+            gas_limit=buffered_swap_gas_limit,
+        )
+        signed_transaction = client.eth.account.sign_transaction(raw_transaction, self.private_key)
+        transaction_hash = await client.eth.send_raw_transaction(signed_transaction.raw_transaction)
+        transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
+        is_confirmed = await self.confirm_transaction(
+            chain,
+            transaction_hash_hex,
+            submitted_gas_limit=buffered_swap_gas_limit,
+        )
+        if not is_confirmed:
+            return None
+        return transaction_hash_hex
+
+    async def fetch_native_gas_balance_avax(self, chain: BlockchainNetwork) -> float:
+        await self._initialize_provider(chain)
+        client = self.web3_clients[chain]
+        balance_wei: int = await client.eth.get_balance(self.wallet_address)
+        return float(balance_wei) / 1e18
 
     async def fetch_supply_apy(self, chain: BlockchainNetwork, asset_address: str) -> float:
         await self._initialize_provider(chain)
@@ -161,27 +352,32 @@ class AaveExecutor:
 
         checksum_asset = AsyncWeb3.to_checksum_address(asset_address)
         try:
-            nonce = await client.eth.get_transaction_count(self.wallet_address)
-            gas_price = await client.eth.gas_price
-            adjusted_gas_price = int(gas_price * 1.1)
+            nonce = await self._resolve_pending_transaction_nonce(chain)
 
             withdraw_transaction: TxParams = await pool.functions.withdraw(
                 checksum_asset, amount_in_wei, self.wallet_address
             ).build_transaction({
                 'from': self.wallet_address,
                 'nonce': nonce,
-                'gas': 350000,
-                'gasPrice': adjusted_gas_price
             })
+            withdraw_transaction = await self._build_eip1559_transaction_parameters(
+                chain=chain,
+                transaction_parameters=withdraw_transaction,
+                gas_limit=AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+            )
 
             signed_transaction = client.eth.account.sign_transaction(withdraw_transaction, self.private_key)
-            transaction_hash = await client.eth.send_raw_transaction(signed_transaction.rawTransaction)
+            transaction_hash = await client.eth.send_raw_transaction(signed_transaction.raw_transaction)
+            transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
 
-            logger.info("[AAVE][EXECUTOR][WITHDRAW] Transaction sent: %s", transaction_hash.hex())
-            return transaction_hash.hex()
+            logger.info("[AAVE][EXECUTOR][WITHDRAW] Transaction sent: %s", transaction_hash_hex)
+            is_confirmed = await self.confirm_transaction(chain, transaction_hash_hex)
+            if not is_confirmed:
+                return None
+            return transaction_hash_hex
         except Exception as exception:
-            logger.exception("[AAVE][EXECUTOR][WITHDRAW] Withdrawal execution failed: %s", exception)
-            return None
+            logger.error("[AAVE][EXECUTOR][WITHDRAW] Withdrawal execution failed: %s", exception)
+            raise
 
     async def execute_supply(self, chain: BlockchainNetwork, asset_address: str, amount_in_wei: int) -> Optional[str]:
         await self._initialize_provider(chain)
@@ -191,82 +387,71 @@ class AaveExecutor:
         checksum_asset = AsyncWeb3.to_checksum_address(asset_address)
         try:
             token_contract = client.eth.contract(address=checksum_asset, abi=ERC20_ABI)
-            nonce = await client.eth.get_transaction_count(self.wallet_address)
-            gas_price = await client.eth.gas_price
-            adjusted_gas_price = int(gas_price * 1.1)
+            nonce = await self._resolve_pending_transaction_nonce(chain)
 
             allowance = await token_contract.functions.allowance(self.wallet_address, pool.address).call()
             if allowance < amount_in_wei:
                 approve_transaction: TxParams = await token_contract.functions.approve(
                     pool.address, amount_in_wei
                 ).build_transaction({
-                    'from': self.wallet_address, 'nonce': nonce,
-                    'gas': 80000, 'gasPrice': adjusted_gas_price
+                    'from': self.wallet_address,
+                    'nonce': nonce,
                 })
+                approve_transaction = await self._build_eip1559_transaction_parameters(
+                    chain=chain,
+                    transaction_parameters=approve_transaction,
+                    gas_limit=AAVE_EVM_APPROVE_GAS_LIMIT,
+                )
                 signed_approval = client.eth.account.sign_transaction(approve_transaction, self.private_key)
-                await client.eth.send_raw_transaction(signed_approval.rawTransaction)
+                approval_transaction_hash = await client.eth.send_raw_transaction(signed_approval.raw_transaction)
+                approval_confirmed = await self.confirm_transaction(
+                    chain,
+                    normalize_evm_transaction_hash(approval_transaction_hash),
+                )
+                if not approval_confirmed:
+                    return None
                 nonce += 1
-                await asyncio.sleep(3)
 
             supply_transaction: TxParams = await pool.functions.supply(
                 checksum_asset, amount_in_wei, self.wallet_address, 0
             ).build_transaction({
-                'from': self.wallet_address, 'nonce': nonce,
-                'gas': 350000, 'gasPrice': adjusted_gas_price
+                'from': self.wallet_address,
+                'nonce': nonce,
             })
+            supply_transaction = await self._build_eip1559_transaction_parameters(
+                chain=chain,
+                transaction_parameters=supply_transaction,
+                gas_limit=AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+            )
 
             signed_supply = client.eth.account.sign_transaction(supply_transaction, self.private_key)
-            transaction_hash = await client.eth.send_raw_transaction(signed_supply.rawTransaction)
-            return transaction_hash.hex()
+            transaction_hash = await client.eth.send_raw_transaction(signed_supply.raw_transaction)
+            transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
+            is_confirmed = await self.confirm_transaction(chain, transaction_hash_hex)
+            if not is_confirmed:
+                return None
+            return transaction_hash_hex
         except Exception as exception:
-            logger.exception("[AAVE][EXECUTOR] Supply execution failed: %s", exception)
-            return None
+            logger.error("[AAVE][EXECUTOR] Supply execution failed: %s", exception)
+            raise
 
     async def approve_and_execute_raw_transaction(
             self, chain: BlockchainNetwork, source_token: str, spender: str, amount_in_wei: int,
-            to_address: str, tx_data: str, tx_value: int, gas_limit: int, chain_id_numeric: int
+            to_address: str, tx_data: str, tx_value: int, gas_limit: int,
     ) -> Optional[str]:
-        await self._initialize_provider(chain)
-        client = self.web3_clients[chain]
-
-        checksum_token = AsyncWeb3.to_checksum_address(source_token)
-        checksum_spender = AsyncWeb3.to_checksum_address(spender)
-        checksum_to = AsyncWeb3.to_checksum_address(to_address)
-
-        try:
-            token_contract = client.eth.contract(address=checksum_token, abi=ERC20_ABI)
-            nonce = await client.eth.get_transaction_count(self.wallet_address)
-            gas_price = await client.eth.gas_price
-
-            allowance = await token_contract.functions.allowance(self.wallet_address, checksum_spender).call()
-            if allowance < amount_in_wei:
-                approve_transaction: TxParams = await token_contract.functions.approve(
-                    checksum_spender, amount_in_wei
-                ).build_transaction({
-                    'from': self.wallet_address, 'nonce': nonce,
-                    'gas': 80000, 'gasPrice': gas_price
-                })
-                signed_approval = client.eth.account.sign_transaction(approve_transaction, self.private_key)
-                await client.eth.send_raw_transaction(signed_approval.rawTransaction)
-                nonce += 1
-                await asyncio.sleep(3)
-
-            raw_transaction: TxParams = {
-                'from': self.wallet_address,
-                'to': checksum_to,
-                'data': tx_data,
-                'value': tx_value,
-                'nonce': nonce,
-                'gas': int(gas_limit * 1.2),
-                'gasPrice': gas_price,
-                'chainId': chain_id_numeric
-            }
-            signed_tx = client.eth.account.sign_transaction(raw_transaction, self.private_key)
-            transaction_hash = await client.eth.send_raw_transaction(signed_tx.rawTransaction)
-            return transaction_hash.hex()
-        except Exception as exception:
-            logger.exception("[ONCHAIN][EXECUTOR] Raw transaction failed: %s", exception)
-            return None
+        await self.ensure_erc20_allowance(
+            chain=chain,
+            token_address=source_token,
+            spender_address=spender,
+            required_amount_wei=amount_in_wei,
+        )
+        return await self.execute_raw_evm_transaction(
+            chain=chain,
+            to_address=to_address,
+            transaction_calldata=tx_data,
+            transaction_value_wei=tx_value,
+            gas_limit=gas_limit,
+        )
 
     async def fetch_erc20_balance(self, chain: BlockchainNetwork, token_address: str) -> int:
         await self._initialize_provider(chain)

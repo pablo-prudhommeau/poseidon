@@ -72,7 +72,7 @@ async def get_all_aave_dca_strategies(
 ) -> AaveDcaStrategiesResponse:
     logger.debug("[HTTP][AAVEDCA][STRATEGIES][FETCH] Retrieving all registered DCA strategies")
     strategies_response = await build_aave_dca_strategies_response(database_session)
-    logger.info("[HTTP][AAVEDCA][STRATEGIES][FETCH] Successfully retrieved %s DCA strategies", len(strategies_response.strategies))
+    logger.debug("[HTTP][AAVEDCA][STRATEGIES][FETCH] Successfully retrieved %s DCA strategies", len(strategies_response.strategies))
     return strategies_response
 
 

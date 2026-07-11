@@ -1,32 +1,37 @@
 from __future__ import annotations
 
+from typing import Final, Optional
+
+BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS: Final[int] = 45
+
+EVM_FALLBACK_GAS_LIMIT: Final[int] = 400_000
+EVM_GAS_ESTIMATION_BUFFER_MULTIPLIER: Final[float] = 1.1
+EVM_SWAP_GAS_BUFFER_MULTIPLIER: Final[float] = 1.35
+
+AAVE_EVM_APPROVE_GAS_LIMIT: Final[int] = 80_000
+AAVE_EVM_POOL_OPERATION_GAS_LIMIT: Final[int] = 350_000
+
 import asyncio
-from dataclasses import dataclass
-from typing import Optional
 
 import base58
 
 from src.core.structures.structures import BlockchainNetwork
 from src.integrations.blockchain.blockchain_execution_structures import (
+    BlockchainExecutionResult,
     BlockchainTransactionExecutionError,
     BlockchainTransactionFailureReason,
 )
 from src.integrations.blockchain.blockchain_structures import BlockchainEvmRoute, BlockchainSolanaRoute
+from src.integrations.blockchain.blockchain_utils import normalize_evm_transaction_hash
 from src.integrations.blockchain.evm.blockchain_evm_signer import build_default_evm_signer, EvmSigner
 from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer, SolanaSigner
+from src.integrations.lifi.lifi_helpers import parse_lifi_hex_or_decimal_integer
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
 
-@dataclass(frozen=True)
-class BlockchainExecutionResult:
-    network: BlockchainNetwork
-    transaction_hash_or_signature: str
-    transaction_fee_usd: float
-
-
-class LiveExecutionService:
+class BlockchainExecutionService:
     def __init__(self) -> None:
         self._solana_signer: Optional[SolanaSigner] = None
         self._evm_signer: Optional[EvmSigner] = None
@@ -47,7 +52,7 @@ class LiveExecutionService:
         signature = self._solana_signer.send_raw_transaction(serialized)
         logger.info("[BLOCKCHAIN][EXECUTOR][SOL] Broadcast success — signature=%s. Waiting for confirmation...", signature)
 
-        confirmation_result = await asyncio.to_thread(self._solana_signer.confirm_transaction, signature, 45)
+        confirmation_result = await asyncio.to_thread(self._solana_signer.confirm_transaction, signature)
         if not confirmation_result.is_confirmed:
             failure_reason = confirmation_result.failure_reason
             if failure_reason is None:
@@ -114,13 +119,13 @@ class LiveExecutionService:
             provider = Web3.HTTPProvider(resolve_rpc_url_for_chain(chain))
             web3 = Web3(provider)
             tx_hash = web3.eth.send_raw_transaction(bytes.fromhex(raw_rlp.removeprefix("0x")))
-            hex_hash = tx_hash.hex()
+            hex_hash = normalize_evm_transaction_hash(tx_hash)
             logger.info("[BLOCKCHAIN][EXECUTOR][EVM] Broadcast success — tx=%s. Waiting for confirmation...", hex_hash)
 
             if self._evm_signer is None:
                 self._evm_signer = build_default_evm_signer(chain=chain)
 
-            is_confirmed = await asyncio.to_thread(self._evm_signer.confirm_transaction, hex_hash, 45)
+            is_confirmed = await asyncio.to_thread(self._evm_signer.confirm_transaction, hex_hash)
             if not is_confirmed:
                 raise RuntimeError(f"EVM transaction {hex_hash} failed during on-chain execution or timed out")
 
@@ -134,7 +139,6 @@ class LiveExecutionService:
         to = transaction_request.to
         data = transaction_request.data
         value = transaction_request.value
-        gas = transaction_request.gas
 
         if not isinstance(to, str) or len(to) == 0 or not isinstance(data, str) or len(data) == 0:
             raise ValueError("Unsupported EVM route shape: missing 'to' or 'data' in transactionRequest")
@@ -143,13 +147,11 @@ class LiveExecutionService:
         if isinstance(value, int):
             value_wei = value
         elif isinstance(value, str) and len(value) > 0:
-            value_wei = int(value, 16) if value.startswith("0x") else int(value)
+            value_wei = parse_lifi_hex_or_decimal_integer(value)
 
         gas_limit: Optional[int] = None
-        if isinstance(gas, int):
-            gas_limit = gas
-        elif isinstance(gas, str) and len(gas) > 0:
-            gas_limit = int(gas, 16) if gas.startswith("0x") else int(gas)
+        if transaction_request.gas_limit is not None and transaction_request.gas_limit.strip():
+            gas_limit = parse_lifi_hex_or_decimal_integer(transaction_request.gas_limit)
 
         if self._evm_signer is None:
             self._evm_signer = build_default_evm_signer(chain=chain)
@@ -158,7 +160,7 @@ class LiveExecutionService:
         transaction_hash_hex = self._evm_signer.broadcast_transaction(recipient_address=to, transaction_data_hex=data, value_in_wei=value_wei, gas_limit=gas_limit)
         logger.info("[BLOCKCHAIN][EXECUTOR][EVM] Broadcast success — tx=%s. Waiting for confirmation...", transaction_hash_hex)
 
-        is_confirmed = await asyncio.to_thread(self._evm_signer.confirm_transaction, transaction_hash_hex, 45)
+        is_confirmed = await asyncio.to_thread(self._evm_signer.confirm_transaction, transaction_hash_hex)
         if not is_confirmed:
             raise RuntimeError(f"EVM transaction {transaction_hash_hex} failed during on-chain execution or timed out")
 

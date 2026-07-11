@@ -16,10 +16,9 @@ function resolveExecutedOrders(executionOrders: DcaOrderPayload[]): DcaOrderPayl
         .filter(
             (executionOrder: DcaOrderPayload) =>
                 executionOrder.order_status === 'EXECUTED' &&
+                (executionOrder.executed_source_asset_amount ?? 0) > 0 &&
                 executionOrder.executed_at !== null &&
-                executionOrder.executed_at !== undefined &&
-                executionOrder.actual_execution_price !== null &&
-                executionOrder.actual_execution_price !== undefined
+                executionOrder.executed_at !== undefined
         )
         .sort(
             (orderA: DcaOrderPayload, orderB: DcaOrderPayload) =>

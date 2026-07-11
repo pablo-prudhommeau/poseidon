@@ -18,8 +18,8 @@ class _DcaStrategiesRebuilder:
     realm = CacheRealm.AAVE_DCA_STRATEGIES
     ttl_seconds = 30.0
 
-    def rebuild(self) -> list[AaveDcaStrategyPayload]:
-        return build_aave_dca_strategies_payload()
+    async def rebuild_async(self) -> list[AaveDcaStrategyPayload]:
+        return await build_aave_dca_strategies_payload()
 
     def apply_to_cache(self, payload: list[AaveDcaStrategyPayload]) -> None:
         aave_dca_state_cache.update_aave_dca_strategies_state(payload)

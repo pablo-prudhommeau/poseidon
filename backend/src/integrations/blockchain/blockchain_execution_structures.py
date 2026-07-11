@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import enum
+from dataclasses import dataclass
+
+from src.core.structures.structures import BlockchainNetwork
 
 
 class BlockchainTransactionFailureReason(str, enum.Enum):
@@ -23,3 +26,10 @@ class BlockchainTransactionExecutionError(Exception):
         self.transaction_signature = transaction_signature
         self.failure_reason = failure_reason
         self.raw_error_text = raw_error_text
+
+
+@dataclass(frozen=True)
+class BlockchainExecutionResult:
+    network: BlockchainNetwork
+    transaction_hash_or_signature: str
+    transaction_fee_usd: float

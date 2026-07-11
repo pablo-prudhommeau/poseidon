@@ -14,7 +14,6 @@ from src.api.websocket.websocket_hub import router as ws_router
 from src.api.websocket.websocket_manager import websocket_manager
 from src.cache.cache_invalidator import cache_invalidator
 from src.configuration.config import settings
-from src.core.aavedca.aave_dca_manager import AaveDcaManager
 from src.core.aavedca.aave_dca_notification_service import register_aave_dca_telegram_handlers
 from src.core.aavedca.cache.aave_dca_cache_rebuilders import register_aave_dca_rebuilders
 from src.core.aavesentinel.aave_sentinel_service import register_aave_sentinel_telegram_handlers, sentinel
@@ -127,9 +126,11 @@ def create_app() -> FastAPI:
 
         if settings.AAVE_DCA_ENABLED:
             with get_database_session() as database_session:
-                AaveDcaManager(database_session).resync_waiting_approvals()
+                from src.core.aavedca.aave_dca_notification_service import resync_active_dca_order_telegram_messages
+
+                resync_active_dca_order_telegram_messages(database_session)
         else:
-            logger.info("[STARTUP][AAVEDCA] DCA disabled in settings, waiting approvals resync skipped")
+            logger.info("[STARTUP][AAVEDCA] DCA disabled in settings, telegram resync skipped")
 
         _register_enabled_telegram_handlers()
 

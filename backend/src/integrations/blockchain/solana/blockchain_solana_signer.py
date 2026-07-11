@@ -20,6 +20,7 @@ except Exception:
     SendTransactionResp = object
 
 from src.configuration.config import settings
+from src.integrations.blockchain.blockchain_execution_service import BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS
 from src.integrations.blockchain.solana.solana_structures import (
     SolanaTransactionConfirmationResult,
     SolanaTransactionFeeBreakdown,
@@ -301,9 +302,11 @@ class SolanaSigner:
         )
         return signature
 
-    def confirm_transaction(self, signature_str: str, timeout_seconds: int = 45) -> SolanaTransactionConfirmationResult:
+    def confirm_transaction(self, signature_str: str) -> SolanaTransactionConfirmationResult:
         import time
         from solders.signature import Signature
+
+        timeout_seconds = BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS
 
         try:
             signature_obj = Signature.from_string(signature_str)

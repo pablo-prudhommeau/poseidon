@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 
 from src.core.aavedca.aave_dca_allocation_engine import AaveDcaAllocationEngine
-from src.core.aavedca.aave_dca_structures import AaveDcaBacktestMetadata, AaveDcaBacktestPayload, AaveDcaBacktestSeriesPoint
+from src.core.aavedca.aave_dca_structures import (
+    AaveDcaAllocationDecision,
+    AaveDcaBacktestMetadata,
+    AaveDcaBacktestPayload,
+    AaveDcaBacktestSeriesPoint,
+)
 from src.core.utils.date_utils import convert_epoch_to_local_datetime
 from src.integrations.binance.binance_client import fetch_bulk_historical_candlesticks
 from src.integrations.binance.binance_structures import CandlestickData
@@ -120,22 +125,19 @@ class AaveDcaBacktester:
                 )
             )
 
-            is_final_cycle = (cycle_index == total_execution_cycles - 1)
-
             allocation_verdict = AaveDcaAllocationEngine.calculate_dynamic_allocation(
                 nominal_investment_amount=budget_per_execution_cycle,
                 current_dry_powder_reserve=dynamic_dry_powder_reserve,
                 current_market_price=current_market_price,
                 current_macro_ema=current_macro_ema,
                 current_average_purchase_price=dynamic_average_purchase_price,
-                is_last_execution_cycle=is_final_cycle,
                 price_elasticity_aggressiveness=price_elasticity_aggressiveness
             )
 
             cycle_spend_amount = allocation_verdict.spend_amount
             dynamic_dry_powder_reserve += allocation_verdict.dry_powder_delta
 
-            if "RETENTION" in allocation_verdict.action_description:
+            if allocation_verdict.allocation_decision == AaveDcaAllocationDecision.CONSERVATIVE_RETENTION_SCALED:
                 total_market_overheat_preventions += 1
 
             dynamic_cumulative_spent += cycle_spend_amount
@@ -152,7 +154,7 @@ class AaveDcaBacktester:
                 "[AAVEDCA][BACKTESTER][STEP] [%s] Price: %s | Action: %s | Spent: %s | PRU: %s",
                 execution_date_iso,
                 current_market_price,
-                allocation_verdict.action_description,
+                allocation_verdict.allocation_decision.value,
                 cycle_spend_amount,
                 dynamic_average_purchase_price
             )

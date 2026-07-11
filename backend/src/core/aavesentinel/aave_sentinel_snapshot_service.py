@@ -11,6 +11,10 @@ from web3.contract import AsyncContract
 from web3.types import TxParams
 
 from src.configuration.config import settings
+from src.integrations.blockchain.blockchain_execution_service import (
+    AAVE_EVM_APPROVE_GAS_LIMIT,
+    AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+)
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelAssetSnapshot,
     AaveSentinelPositionSnapshot,
@@ -28,6 +32,7 @@ from src.integrations.aave.aave_abis import (
     SECONDS_PER_YEAR,
 )
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
+from src.integrations.blockchain.blockchain_utils import normalize_evm_transaction_hash
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -213,14 +218,14 @@ class AaveSentinelSnapshotService:
             ).build_transaction({
                 "from": rescue_sender_address,
                 "nonce": current_nonce,
-                "gas": 80000,
+                "gas": AAVE_EVM_APPROVE_GAS_LIMIT,
                 "gasPrice": aggressive_gas_price,
             })
             signed_approval_transaction = self._web3_client.eth.account.sign_transaction(
                 approval_transaction,
                 self._private_key,
             )
-            await self._web3_client.eth.send_raw_transaction(signed_approval_transaction.rawTransaction)
+            await self._web3_client.eth.send_raw_transaction(signed_approval_transaction.raw_transaction)
 
             await asyncio.sleep(2)
 
@@ -232,24 +237,25 @@ class AaveSentinelSnapshotService:
             ).build_transaction({
                 "from": rescue_sender_address,
                 "nonce": current_nonce + 1,
-                "gas": 350000,
+                "gas": AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
                 "gasPrice": aggressive_gas_price,
             })
             signed_supply_transaction = self._web3_client.eth.account.sign_transaction(
                 supply_transaction,
                 self._private_key,
             )
-            transaction_hash = await self._web3_client.eth.send_raw_transaction(signed_supply_transaction.rawTransaction)
+            transaction_hash = await self._web3_client.eth.send_raw_transaction(signed_supply_transaction.raw_transaction)
+            transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
 
-            logger.info("[AAVESENTINEL][RESCUE] Rescue supply transaction broadcast: %s", transaction_hash.hex())
+            logger.info("[AAVESENTINEL][RESCUE] Rescue supply transaction broadcast: %s", transaction_hash_hex)
             return AaveSentinelRescueExecutionResult(
                 status=AaveSentinelRescueExecutionStatus.EXECUTED,
                 message=(
                     f"Injection de <b>{calculated_injection_amount_usdc:.2f} USDC</b> exécutée avec succès.\n"
-                    f"TX: <code>{transaction_hash.hex()}</code>"
+                    f"TX: <code>{transaction_hash_hex}</code>"
                 ),
                 amount_usdc=calculated_injection_amount_usdc,
-                transaction_hash=transaction_hash.hex(),
+                transaction_hash=transaction_hash_hex,
             )
         except Exception as exception:
             logger.exception("[AAVESENTINEL][RESCUE] Emergency rescue execution failed: %s", exception)

@@ -28,7 +28,7 @@ async def fetch_exponential_moving_average_and_price(
         "limit": limit
     }
 
-    logger.info("[BINANCE][CLIENT][EMA] Fetching exponential moving average and price for symbol: %s", symbol)
+    logger.debug("[BINANCE][CLIENT][EMA] Fetching exponential moving average and price for symbol: %s", symbol)
     logger.debug("[BINANCE][CLIENT][EMA] Request parameters: %s", query_parameters)
 
     try:
@@ -54,7 +54,7 @@ async def fetch_exponential_moving_average_and_price(
                 + exponential_moving_average_value
         )
 
-    logger.info(
+    logger.debug(
         "[BINANCE][CLIENT][EMA] Successfully calculated exponential moving average for %s: %f",
         symbol,
         exponential_moving_average_value

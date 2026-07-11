@@ -17,7 +17,8 @@ from src.integrations.blockchain.blockchain_execution_structures import (
     BlockchainTransactionExecutionError,
     BlockchainTransactionFailureReason,
 )
-from src.integrations.blockchain.blockchain_live_executor import BlockchainExecutionResult, LiveExecutionService
+from src.integrations.blockchain.blockchain_execution_service import BlockchainExecutionService
+from src.integrations.blockchain.blockchain_execution_structures import BlockchainExecutionResult
 from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainExecutionRouteBuildError,
     BlockchainPriceUnavailableError,
@@ -343,7 +344,7 @@ async def _execute_solana_live_buy(
         execution_route: BlockchainExecutionRoute,
         origin_evaluation_id: int,
 ) -> bool:
-    execution_service = LiveExecutionService()
+    execution_service = BlockchainExecutionService()
     buy_committed = False
     try:
         logger.info(
@@ -548,7 +549,7 @@ async def _execute_solana_live_sell(
         execution_route: BlockchainExecutionRoute,
         origin_evaluation_id: int,
 ) -> TradingLiveSellExecutionOutcome:
-    execution_service = LiveExecutionService()
+    execution_service = BlockchainExecutionService()
     try:
         logger.info(
             "[TRADING][EXECUTION][SOLANA][SWAP][LIVE][SELL] Executing route for %s on Solana",

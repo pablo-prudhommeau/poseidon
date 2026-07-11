@@ -4,16 +4,18 @@
             <div class="flex items-center gap-2 bg-zinc-900/10 border border-white/5 rounded-2xl px-4 py-2 backdrop-blur-2xl shadow-2xl transition-all hover:border-blue-500/20 group relative z-50">
                 <i class="fa fa-robot text-zinc-600 group-hover:text-blue-400 transition-all duration-300"></i>
                 <div class="h-4 w-[1px] bg-white/10 ml-2"></div>
-                <p-select [options]="dcaStrategies()" [(ngModel)]="selectedStrategyId" optionLabel="target_asset_symbol" optionValue="id" [style]="{ background: 'transparent', border: 'none', padding: '0', 'box-shadow': 'none' }" [panelStyle]="{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', 'box-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }" class="min-w-[210px]">
+                <p-select [options]="dcaStrategies()" [ngModel]="selectedStrategyId()" (ngModelChange)="onSelectedStrategyIdChange($event)" optionLabel="target_asset_symbol" optionValue="id" [style]="{ background: 'transparent', border: 'none', padding: '0', 'box-shadow': 'none' }" [panelStyle]="{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', 'box-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }" class="min-w-[210px]">
                     <ng-template pTemplate="selectedItem" let-selectedOption>
-                        <div class="flex items-center gap-2.5">
-                            <span class="text-[10px] text-zinc-500 uppercase font-bold tracking-widest hidden sm:inline">Accumulation</span>
-                            <div class="flex items-center gap-1.5">
-                                <span class="font-bold text-zinc-100 tracking-wide">{{ selectedOption.target_asset_symbol }}</span>
-                                <span class="text-zinc-600 text-xs">/</span>
-                                <span class="text-zinc-400 text-xs">{{ selectedOption.source_asset_symbol }}</span>
+                        @if (selectedOption ?? activeStrategy(); as strategy) {
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-[10px] text-zinc-500 uppercase font-bold tracking-widest hidden sm:inline">Accumulation</span>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="font-bold text-zinc-100 tracking-wide">{{ strategy.target_asset_symbol }}</span>
+                                    <span class="text-zinc-600 text-xs">/</span>
+                                    <span class="text-zinc-400 text-xs">{{ strategy.source_asset_symbol }}</span>
+                                </div>
                             </div>
-                        </div>
+                        }
                     </ng-template>
                     <ng-template pTemplate="item" let-strategy>
                         <div class="flex flex-col py-1.5 group/item">

@@ -4,52 +4,27 @@
             <span>Strategy path projection</span>
             @if (hasExecutedOrders()) {
                 <div class="dca-strategy-path-metric-toggles">
-                    <label
-                        class="dca-strategy-path-metric-toggle is-effective"
-                        [class.is-active]="effectiveMetricsToggleState().checked"
-                        [class.is-mixed]="effectiveMetricsToggleState().mixed"
-                        [class.is-disabled]="!effectiveMetricsToggleState().available"
-                    >
+                    <label class="dca-strategy-path-metric-toggle is-effective" [class.is-active]="effectiveMetricsToggleState().checked" [class.is-mixed]="effectiveMetricsToggleState().mixed" [class.is-disabled]="!effectiveMetricsToggleState().available">
                         <input type="checkbox" [checked]="effectiveMetricsToggleState().checked" [disabled]="!effectiveMetricsToggleState().available" (change)="onEffectiveMetricsToggle($any($event.target).checked)" />
                         <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-bolt"></i></span>
                         <span class="dca-strategy-path-metric-toggle-label">Effective</span>
                     </label>
-                    <label
-                        class="dca-strategy-path-metric-toggle is-projected"
-                        [class.is-active]="projectedMetricsToggleState().checked"
-                        [class.is-mixed]="projectedMetricsToggleState().mixed"
-                        [class.is-disabled]="!projectedMetricsToggleState().available"
-                    >
+                    <label class="dca-strategy-path-metric-toggle is-projected" [class.is-active]="projectedMetricsToggleState().checked" [class.is-mixed]="projectedMetricsToggleState().mixed" [class.is-disabled]="!projectedMetricsToggleState().available">
                         <input type="checkbox" [checked]="projectedMetricsToggleState().checked" [disabled]="!projectedMetricsToggleState().available" (change)="onProjectedMetricsToggle($any($event.target).checked)" />
                         <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-forward"></i></span>
                         <span class="dca-strategy-path-metric-toggle-label">Projected</span>
                     </label>
-                    <label
-                        class="dca-strategy-path-metric-toggle is-backtesting"
-                        [class.is-active]="backtestingMetricsToggleState().checked"
-                        [class.is-mixed]="backtestingMetricsToggleState().mixed"
-                        [class.is-disabled]="!backtestingMetricsToggleState().available"
-                    >
+                    <label class="dca-strategy-path-metric-toggle is-backtesting" [class.is-active]="backtestingMetricsToggleState().checked" [class.is-mixed]="backtestingMetricsToggleState().mixed" [class.is-disabled]="!backtestingMetricsToggleState().available">
                         <input type="checkbox" [checked]="backtestingMetricsToggleState().checked" [disabled]="!backtestingMetricsToggleState().available" (change)="onBacktestingMetricsToggle($any($event.target).checked)" />
                         <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-clock-rotate-left"></i></span>
                         <span class="dca-strategy-path-metric-toggle-label">Backtesting</span>
                     </label>
-                    <label
-                        class="dca-strategy-path-metric-toggle is-bands"
-                        [class.is-active]="bandsMetricsToggleState().checked"
-                        [class.is-mixed]="bandsMetricsToggleState().mixed"
-                        [class.is-disabled]="!bandsMetricsToggleState().available"
-                    >
+                    <label class="dca-strategy-path-metric-toggle is-bands" [class.is-active]="bandsMetricsToggleState().checked" [class.is-mixed]="bandsMetricsToggleState().mixed" [class.is-disabled]="!bandsMetricsToggleState().available">
                         <input type="checkbox" [checked]="bandsMetricsToggleState().checked" [disabled]="!bandsMetricsToggleState().available" (change)="onBandsMetricsToggle($any($event.target).checked)" />
                         <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-layer-group"></i></span>
                         <span class="dca-strategy-path-metric-toggle-label">Bands</span>
                     </label>
-                    <label
-                        class="dca-strategy-path-metric-toggle is-all"
-                        [class.is-active]="allMetricsChecked()"
-                        [class.is-mixed]="allMetricsMixed()"
-                        [class.is-disabled]="!allMetricsAvailable()"
-                    >
+                    <label class="dca-strategy-path-metric-toggle is-all" [class.is-active]="allMetricsChecked()" [class.is-mixed]="allMetricsMixed()" [class.is-disabled]="!allMetricsAvailable()">
                         <input type="checkbox" [checked]="allMetricsChecked()" [disabled]="!allMetricsAvailable()" (change)="onAllMetricsToggle($any($event.target).checked)" />
                         <span class="dca-strategy-path-metric-toggle-dot" aria-hidden="true"><i class="fa fa-chart-line"></i></span>
                         <span class="dca-strategy-path-metric-toggle-label">All metrics</span>

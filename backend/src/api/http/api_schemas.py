@@ -50,6 +50,7 @@ class AaveDcaStrategyCreatePayload(BaseModel):
     source_asset_decimals: int
     target_asset_symbol: str
     target_asset_address: str
+    target_asset_decimals: int
     binance_trading_pair: str
     total_allocated_budget: float
     total_planned_executions: int
@@ -75,6 +76,24 @@ class AaveDcaStrategyCreateResponse(BaseModel):
     orders_count: int
 
 
+class AaveDcaPipelineOperationPayload(BaseModel):
+    step: str
+    status: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    transaction_hash: Optional[str] = None
+    route_tool: Optional[str] = None
+    source_amount_base_units: Optional[int] = None
+    expected_output_base_units: Optional[int] = None
+    minimum_output_base_units: Optional[int] = None
+
+
+class AaveDcaOrderPipelineOperationsPayload(BaseModel):
+    initialized_at: Optional[str] = None
+    last_updated_at: Optional[str] = None
+    pipeline_operations: list[AaveDcaPipelineOperationPayload]
+
+
 class AaveDcaOrderPayload(BaseModel):
     id: int
     strategy_id: int
@@ -83,10 +102,16 @@ class AaveDcaOrderPayload(BaseModel):
     executed_source_asset_amount: Optional[float] = None
     executed_target_asset_amount: Optional[float] = None
     order_status: str
-    transaction_hash: Optional[str] = None
     actual_execution_price: Optional[float] = None
     executed_at: Optional[str] = None
-    allocation_decision_description: Optional[str] = None
+    allocation_decision: Optional[str] = None
+    allocation_multiplier: Optional[float] = None
+    dry_powder_delta: Optional[float] = None
+    reference_market_price: Optional[float] = None
+    pipeline_operations: Optional[AaveDcaOrderPipelineOperationsPayload] = None
+    pipeline_attempt_count: int
+    next_attempt_at: Optional[str] = None
+    suspension_reason: Optional[str] = None
 
 
 class AaveDcaBacktestSeriesPointPayload(BaseModel):
@@ -121,6 +146,7 @@ class AaveDcaStrategyPayload(BaseModel):
     source_asset_currency_symbol: str
     target_asset_symbol: str
     target_asset_address: str
+    target_asset_decimals: int
     target_asset_currency_symbol: str
     binance_trading_pair: str
     total_allocated_budget: float

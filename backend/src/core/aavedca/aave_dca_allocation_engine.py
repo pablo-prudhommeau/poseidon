@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.core.aavedca.aave_dca_structures import AllocationResult
+from src.core.aavedca.aave_dca_structures import AllocationResult, AaveDcaAllocationDecision
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -15,7 +15,6 @@ class AaveDcaAllocationEngine:
             current_market_price: float,
             current_macro_ema: float,
             current_average_purchase_price: float,
-            is_last_execution_cycle: bool,
             price_elasticity_aggressiveness: float
     ) -> AllocationResult:
         logger.debug(
@@ -26,21 +25,13 @@ class AaveDcaAllocationEngine:
             current_average_purchase_price
         )
 
-        if is_last_execution_cycle:
-            total_remaining_liquidity = nominal_investment_amount + current_dry_powder_reserve
-            logger.info("[AAVEDCA][ALLOCATION][FINAL] Final execution cycle triggered: deploying all remaining liquidity")
-            return AllocationResult(
-                spend_amount=total_remaining_liquidity,
-                dry_powder_delta=-current_dry_powder_reserve,
-                action_description="FINAL_FULL_DEPLOYMENT"
-            )
-
         if current_average_purchase_price > 0 and current_market_price > current_average_purchase_price:
-            logger.info("[AAVEDCA][ALLOCATION][SKIP] Kill-switch active: market price is above average purchase price")
+            logger.debug("[AAVEDCA][ALLOCATION][SKIP] Kill-switch active: market price is above average purchase price")
             return AllocationResult(
                 spend_amount=0.0,
                 dry_powder_delta=nominal_investment_amount,
-                action_description="AVERAGE_PRICE_PROTECTION_HALT"
+                allocation_decision=AaveDcaAllocationDecision.AVERAGE_PRICE_PROTECTION_HALT,
+                allocation_multiplier=1.0
             )
 
         investment_multiplier = 1.0
@@ -52,22 +43,22 @@ class AaveDcaAllocationEngine:
         if current_macro_ema > 0 and current_market_price > current_macro_ema:
             base_allocation_amount = nominal_investment_amount * 0.5
             target_spend_amount = base_allocation_amount * investment_multiplier
-            action_prefix = "CONSERVATIVE_RETENTION_SCALED"
+            allocation_decision = AaveDcaAllocationDecision.CONSERVATIVE_RETENTION_SCALED
         elif current_macro_ema > 0 and current_market_price <= current_macro_ema:
             base_allocation_amount = nominal_investment_amount + (current_dry_powder_reserve * 0.5)
             target_spend_amount = base_allocation_amount * investment_multiplier
-            action_prefix = "AGGRESSIVE_DIP_ACCUMULATION_SCALED"
+            allocation_decision = AaveDcaAllocationDecision.AGGRESSIVE_DIP_ACCUMULATION_SCALED
         else:
-            target_spend_amount = nominal_investment_amount
-            action_prefix = "FALLBACK_NOMINAL_STRATEGY"
+            target_spend_amount = nominal_investment_amount * investment_multiplier
+            allocation_decision = AaveDcaAllocationDecision.FALLBACK_NOMINAL_STRATEGY
 
         max_available_liquidity = nominal_investment_amount + current_dry_powder_reserve
         actual_spend_amount = min(target_spend_amount, max_available_liquidity)
         dry_powder_delta = nominal_investment_amount - actual_spend_amount
 
-        logger.info(
-            "[AAVEDCA][ALLOCATION][RESULT] Action: %s | Spend: %s | Multiplier: %s",
-            action_prefix,
+        logger.debug(
+            "[AAVEDCA][ALLOCATION][RESULT] Decision: %s | Spend: %s | Multiplier: %s",
+            allocation_decision.value,
             actual_spend_amount,
             investment_multiplier
         )
@@ -75,5 +66,6 @@ class AaveDcaAllocationEngine:
         return AllocationResult(
             spend_amount=actual_spend_amount,
             dry_powder_delta=dry_powder_delta,
-            action_description=f"{action_prefix}_(X:{investment_multiplier:.2f})"
+            allocation_decision=allocation_decision,
+            allocation_multiplier=investment_multiplier
         )

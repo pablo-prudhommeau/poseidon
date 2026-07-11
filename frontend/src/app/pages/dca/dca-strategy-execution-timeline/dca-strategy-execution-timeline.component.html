@@ -21,7 +21,7 @@
                 </div>
                 <div class="flex items-center gap-1.5">
                     <div class="h-2.5 w-2.5 rounded-full bg-rose-500"></div>
-                    <span class="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Rejected</span>
+                    <span class="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Suspended</span>
                 </div>
                 <div class="flex items-center gap-1.5">
                     <div class="h-2.5 w-2.5 rounded-full bg-slate-600"></div>
@@ -31,22 +31,13 @@
         </div>
     </ng-template>
     <div class="relative h-24 px-6 flex items-center">
-        <div class="absolute top-1/2 -translate-y-1/2 left-6 right-6 h-[1px] bg-slate-600/50 overflow-hidden">
+        <div class="absolute top-1/2 -translate-y-1/2 left-6 right-6 h-[1px] bg-slate-700/70 overflow-hidden">
             <div class="h-full bg-gradient-to-r transition-all duration-1000 ease-out" [ngClass]="progressGradientClass()" [style.width.%]="currentProgressPercent()" [style.mask-image]="'linear-gradient(to right, black calc(100% - 6px), transparent 100%)'" [style.-webkit-mask-image]="'linear-gradient(to right, black calc(100% - 6px), transparent 100%)'"></div>
         </div>
         <div class="relative w-full h-full flex items-center">
-            @for (marker of orderDueDateMarkers(); track marker.leftPositionPercent) {
-                <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-[5]" [style.left.%]="marker.leftPositionPercent">
-                    <div
-                        class="h-1 w-1 rounded-full opacity-70"
-                        [ngClass]="{
-                            'bg-emerald-500': marker.status === 'EXECUTED',
-                            'bg-blue-500': ['WAITING_USER_APPROVAL', 'APPROVED', 'WITHDRAWN_FROM_AAVE', 'SWAPPED'].includes(marker.status),
-                            'bg-amber-500': marker.status === 'SKIPPED',
-                            'bg-rose-500': marker.status === 'FAILED' || marker.status === 'REJECTED',
-                            'bg-slate-600': marker.status === 'PENDING',
-                        }"
-                    ></div>
+            @for (marker of orderDueDateMarkers(); track marker.orderId) {
+                <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none" [style.left.%]="marker.leftPositionPercent" [style.z-index]="marker.anchorsMajorNode ? 15 : 5">
+                    <div class="h-1 w-1 rounded-full" [ngClass]="resolveOrderMarkerClasses(marker.status)"></div>
                 </div>
             }
             @for (timelineNode of timelineNodes(); track timelineNode.identifier) {
@@ -54,36 +45,21 @@
                     <div class="h-10 w-10 flex items-center justify-center cursor-pointer relative" (click)="popoverComponent.toggle($event)">
                         @if (timelineNode.isProcessing) {
                             <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <div class="absolute rounded-full bg-blue-500/30 reticle-core" [ngClass]="timelineNode.isMajor ? 'h-5 w-5' : 'h-3.5 w-3.5'"></div>
-                                <div class="absolute reticle-ring" [ngClass]="timelineNode.isMajor ? 'h-7 w-7' : 'h-5 w-5'"></div>
+                                <div class="absolute rounded-full bg-blue-500/30 reticle-core" [ngClass]="isPrimaryMajorNode(timelineNode) ? 'h-5 w-5' : 'h-3.5 w-3.5'"></div>
+                                <div class="absolute reticle-ring" [ngClass]="isPrimaryMajorNode(timelineNode) ? 'h-7 w-7' : 'h-5 w-5'"></div>
                             </div>
                         }
 
-                        <div
-                            class="rounded-full transition-all duration-300 flex items-center justify-center shadow-lg group-hover:scale-125 z-10 relative"
-                            [ngClass]="{
-                                'h-4 w-4 border-2': timelineNode.isMajor,
-                                'h-2.5 w-2.5 border': timelineNode.isMinor,
-                                'border-emerald-500 bg-emerald-500/20 shadow-emerald-500/20': timelineNode.representativeStatus === 'EXECUTED',
-                                'border-blue-500 bg-blue-500/30 shadow-blue-500/30': timelineNode.isProcessing,
-                                'border-slate-600 bg-slate-900/20': timelineNode.representativeStatus === 'PENDING',
-                                'border-rose-500 bg-rose-500/10': timelineNode.representativeStatus === 'FAILED' || timelineNode.representativeStatus === 'REJECTED',
-                                'border-amber-500 bg-amber-500/10': timelineNode.representativeStatus === 'SKIPPED' || timelineNode.representativeStatus === 'WAITING_USER_APPROVAL',
-                            }"
-                        >
-                            @if (timelineNode.representativeStatus === 'EXECUTED' && timelineNode.isMajor) {
-                                <div class="h-1.5 w-1.5 rounded-full bg-emerald-400"></div>
-                            }
-                        </div>
+                        <div class="rounded-full transition-all duration-300 flex items-center justify-center shadow-lg group-hover:scale-125 z-10 relative" [ngClass]="resolveNodeCircleClasses(timelineNode)"></div>
                     </div>
 
-                    @if (timelineNode.isMajor) {
-                        <div class="absolute top-8 -translate-x-[65%] -rotate-[45deg] origin-top-right whitespace-nowrap text-[11px] uppercase font-bold tracking-tighter transition-colors duration-300 pointer-events-none" [ngClass]="timelineNode.isProcessing ? 'text-blue-500' : 'text-slate-500'">
+                    @if (isPrimaryMajorNode(timelineNode)) {
+                        <div class="absolute top-8 -translate-x-[65%] -rotate-[45deg] origin-top-right whitespace-nowrap text-[11px] uppercase font-bold tracking-tighter transition-colors duration-300 pointer-events-none" [ngClass]="resolveNodeLabelClasses(timelineNode)">
                             {{ timelineNode.label }}
                         </div>
                     }
-                    @if (timelineNode.isMinor && !timelineNode.isMajor) {
-                        <div class="absolute top-8 -translate-x-[35%] -rotate-[45deg] origin-top-right whitespace-nowrap text-[10px] uppercase tracking-tight transition-colors duration-300 pointer-events-none text-slate-600/70">
+                    @if (isSecondaryMajorNode(timelineNode)) {
+                        <div class="absolute top-8 -translate-x-[35%] -rotate-[45deg] origin-top-right whitespace-nowrap text-[10px] uppercase tracking-tight transition-colors duration-300 pointer-events-none" [ngClass]="resolveNodeLabelClasses(timelineNode)">
                             {{ timelineNode.label }}
                         </div>
                     }
@@ -146,22 +122,28 @@
                                             <span
                                                 class="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide"
                                                 [ngClass]="{
-                                                    'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20': executionOrder.order_status === 'EXECUTED',
-                                                    'bg-blue-500/10 text-blue-500 border border-blue-500/20': ['WAITING_USER_APPROVAL', 'APPROVED', 'WITHDRAWN_FROM_AAVE', 'SWAPPED'].includes(executionOrder.order_status),
-                                                    'bg-slate-700/50 text-slate-400 border border-slate-600/30': executionOrder.order_status === 'PENDING',
-                                                    'bg-rose-500/10 text-rose-400 border border-rose-500/20': executionOrder.order_status === 'FAILED' || executionOrder.order_status === 'REJECTED',
-                                                    'bg-amber-500/10 text-amber-400 border border-amber-500/20': executionOrder.order_status === 'SKIPPED',
+                                                    'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20': resolveOrderVisualStatus(executionOrder) === 'EXECUTED',
+                                                    'bg-blue-500/10 text-blue-500 border border-blue-500/20': ['WAITING_USER_APPROVAL', 'AWAITING_WITHDRAW', 'AWAITING_SWAP', 'AWAITING_SUPPLY', 'PROCESSING'].includes(resolveOrderVisualStatus(executionOrder)),
+                                                    'bg-slate-700/50 text-slate-400 border border-slate-600/30': resolveOrderVisualStatus(executionOrder) === 'PENDING',
+                                                    'bg-rose-500/10 text-rose-400 border border-rose-500/20': isTerminalFailureStatus(resolveOrderVisualStatus(executionOrder)),
+                                                    'bg-amber-500/10 text-amber-400 border border-amber-500/20': resolveOrderVisualStatus(executionOrder) === 'SKIPPED',
                                                 }"
                                             >
-                                                {{ executionOrder.order_status.replace('_', ' ') }}
+                                                {{ resolveOrderVisualStatus(executionOrder).replaceAll('_', ' ') }}
                                             </span>
                                         </div>
 
-                                        @if (executionOrder.allocation_decision_description) {
+                                        @if (executionOrder.suspension_reason) {
+                                            <div class="mb-2 text-[9px] font-semibold uppercase tracking-wide text-rose-400 font-mono">
+                                                {{ executionOrder.suspension_reason }}
+                                            </div>
+                                        }
+
+                                        @if (executionOrder.allocation_decision) {
                                             <div class="mb-2 flex items-center gap-1.5">
-                                                <i class="fa fa-brain text-[9px]" [ngClass]="resolveAllocationDecisionColor(executionOrder.allocation_decision_description)"></i>
-                                                <span class="text-[9px] font-semibold uppercase tracking-wide" [ngClass]="resolveAllocationDecisionColor(executionOrder.allocation_decision_description)">
-                                                    {{ resolveAllocationDecisionLabel(executionOrder.allocation_decision_description) }}
+                                                <i class="fa fa-brain text-[9px]" [ngClass]="resolveAllocationDecisionColor(executionOrder.allocation_decision)"></i>
+                                                <span class="text-[9px] font-semibold uppercase tracking-wide" [ngClass]="resolveAllocationDecisionColor(executionOrder.allocation_decision)">
+                                                    {{ resolveAllocationDecisionLabel(executionOrder.allocation_decision, executionOrder.allocation_multiplier) }}
                                                 </span>
                                             </div>
                                         }
@@ -169,7 +151,7 @@
                                         <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
                                             <div class="flex flex-col">
                                                 <span class="text-slate-500 uppercase">Planned Date</span>
-                                                <span class="font-semibold text-slate-400">{{ executionOrder.planned_execution_date | date: 'medium' }}</span>
+                                                <span class="font-semibold text-slate-300">{{ executionOrder.planned_execution_date | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
                                             </div>
                                             <div class="flex flex-col">
                                                 <span class="text-slate-500 uppercase">Planned</span>
@@ -190,6 +172,18 @@
                                                     <span class="text-slate-500 uppercase">Execution Price</span>
                                                     <span class="font-semibold text-slate-300">{{ executionOrder.actual_execution_price | currency: 'USD' }}</span>
                                                 </div>
+                                            } @else if (executionOrder.reference_market_price) {
+                                                <div class="flex flex-col">
+                                                    <span class="text-slate-500 uppercase">Market Price</span>
+                                                    <span class="font-semibold text-slate-300">{{ executionOrder.reference_market_price | currency: 'USD' }}</span>
+                                                </div>
+                                            }
+
+                                            @if (executionOrder.dry_powder_delta !== null && executionOrder.dry_powder_delta !== undefined && executionOrder.dry_powder_delta !== 0) {
+                                                <div class="flex flex-col">
+                                                    <span class="text-slate-500 uppercase">Dry Powder Delta</span>
+                                                    <span class="font-semibold" [ngClass]="executionOrder.dry_powder_delta >= 0 ? 'text-amber-400' : 'text-emerald-400'"> {{ executionOrder.dry_powder_delta >= 0 ? '+' : '' }}{{ executionOrder.dry_powder_delta | currency: 'USD' }} </span>
+                                                </div>
                                             }
 
                                             @if (executionOrder.executed_target_asset_amount) {
@@ -204,15 +198,26 @@
                                             @if (executionOrder.executed_at) {
                                                 <div class="flex flex-col col-span-2 mt-1 pt-1 border-t border-slate-700/30">
                                                     <span class="text-slate-500 uppercase">Executed At</span>
-                                                    <span class="font-semibold text-slate-400">{{ executionOrder.executed_at | date: 'medium' }}</span>
+                                                    <span class="font-semibold text-slate-300">{{ executionOrder.executed_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
                                                 </div>
                                             }
 
-                                            @if (executionOrder.transaction_hash && executionOrder.transaction_hash !== 'AVERAGE_PRICE_PROTECTION_BYPASS') {
-                                                <div class="flex flex-col col-span-2 mt-1">
-                                                    <span class="text-slate-500 uppercase">Transaction Hash</span>
-                                                    <span class="font-semibold text-slate-500 font-mono text-[9px]">{{ executionOrder.transaction_hash.substring(0, 16) }}...</span>
-                                                </div>
+                                            @if (executionOrder.pipeline_operations; as pipelineOperationsPayload) {
+                                                @for (pipelineOperation of pipelineOperationsPayload.pipeline_operations; track pipelineOperation.step + (pipelineOperation.transaction_hash ?? '')) {
+                                                    @if (pipelineOperation.transaction_hash) {
+                                                        <div class="flex flex-col col-span-2 mt-1">
+                                                            <span class="text-slate-500 uppercase">{{ pipelineOperation.step }} Hash</span>
+                                                            <div class="flex items-center gap-2 min-w-0">
+                                                                <span class="font-semibold text-slate-300 font-mono text-[10px] truncate" [title]="resolveTransactionHashTitle(pipelineOperation.transaction_hash)">
+                                                                    {{ formatTransactionHashPreview(pipelineOperation.transaction_hash) }}
+                                                                </span>
+                                                                <button type="button" class="shrink-0 cursor-pointer text-slate-400 transition-colors hover:text-slate-200" (click)="copyToClipboard(pipelineOperation.transaction_hash); $event.stopPropagation()">
+                                                                    <i class="far fa-copy text-[10px]"></i>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                }
                                             }
                                         </div>
 

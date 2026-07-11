@@ -1,30 +1,56 @@
 from __future__ import annotations
 
 import asyncio
+import html
+from typing import Optional
 
-from sqlalchemy import select
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.aavedca.aave_dca_allocation_engine import AaveDcaAllocationEngine
-from src.core.aavedca.aave_dca_notification_service import build_approval_message_body
-from src.core.aavedca.aave_dca_structures import AaveDcaOrderStatus, AaveDcaStrategyStatus
+from src.core.aavedca.aave_dca_helpers import (
+    append_completed_pipeline_operation,
+    convert_token_amount_to_base_units,
+    create_empty_pipeline_operations,
+    poll_erc20_balance_until_minimum,
+    resolve_allocation_decision_display_title,
+    run_aave_dca_live_pipeline_preflight_checks,
+    validate_lifi_swap_price_against_binance_reference,
+    compute_pipeline_next_attempt_at,
+)
+from src.core.aavedca.aave_dca_notification_service import publish_dca_order_telegram_message
+from src.core.aavedca.aave_dca_structures import (
+    AaveDcaAllocationDecision,
+    AaveDcaBlockingPipelineError,
+    AaveDcaOrderStatus,
+    AaveDcaPipelineOperation,
+    AaveDcaPipelineOperationStatus,
+    AaveDcaPipelineOperationStep,
+    AaveDcaPipelinePreflightFailureReason,
+    AaveDcaStrategyStatus,
+    AaveDcaTransientPipelineError,
+)
 from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor
 from src.integrations.binance.binance_client import fetch_exponential_moving_average_and_price
-from src.integrations.lifi.lifi_client import generate_token_to_token_quote, resolve_lifi_chain_identifier
-from src.integrations.telegram.telegram_client import send_alert
-from src.integrations.telegram.telegram_structures import (
-    TelegramInlineKeyboardButton,
-    TelegramInlineKeyboardMarkup,
+from src.integrations.lifi.lifi_client import (
+    fetch_alternative_token_to_token_route_summaries,
+    generate_token_to_token_route,
 )
+from src.integrations.lifi.lifi_helpers import (
+    LIFI_EVM_DIAMOND_CONTRACT_ADDRESS,
+    parse_lifi_hex_or_decimal_integer,
+    resolve_lifi_transaction_gas_limit_in_units,
+)
+from src.integrations.lifi.lifi_structures import LifiAlternativeRouteSummary, LifiQuoteUnavailableError, LifiRouteNormalizationError
+from src.integrations.telegram.telegram_client import send_alert
 from src.logging.logger import get_application_logger
 from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
 from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
-from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import AaveDcaOrder, AaveDcaStrategy
 
 logger = get_application_logger(__name__)
@@ -37,20 +63,89 @@ class AaveDcaManager:
         self.dca_order_dao = AaveDcaOrderDao(database_session)
         self.aave_executor = AaveExecutor()
 
-    def _resolve_action_display_title(self, action_description: str) -> str:
-        if "AGGRESSIVE_DIP_ACCUMULATION" in action_description:
-            return "Accumulation Agressive 🚀"
-        if "CONSERVATIVE_RETENTION" in action_description:
-            return "Accumulation Prudente 🛡️"
-        if "FINAL_FULL_DEPLOYMENT" in action_description:
-            return "Déploiement Final 🏁"
-        if "FALLBACK_NOMINAL_STRATEGY" in action_description:
-            return "Stratégie Nominale ⚖️"
-        if "AVERAGE_PRICE_PROTECTION" in action_description:
-            return "Protection PRU [Halt] 🛑"
-        return "Exécution Stratégique"
+    def _resolve_allocation_decision(self, dca_order: AaveDcaOrder) -> Optional[AaveDcaAllocationDecision]:
+        if dca_order.allocation_decision is None:
+            return None
+        return AaveDcaAllocationDecision(dca_order.allocation_decision)
+
+    def _finalize_skipped_order(
+            self,
+            dca_order: AaveDcaOrder,
+            dca_strategy: AaveDcaStrategy,
+            dry_powder_delta: float,
+            status_note: Optional[str],
+    ) -> None:
+        dca_order.order_status = AaveDcaOrderStatus.SKIPPED
+        dca_order.executed_at = get_current_local_datetime()
+        dca_order.executed_target_asset_amount = 0.0
+        dca_order.dry_powder_delta = dry_powder_delta
+        dca_strategy.available_dry_powder += dry_powder_delta
+        self.dca_strategy_dao.update_strategy_execution_metrics(
+            dca_strategy=dca_strategy,
+            last_execution_source_amount=0.0,
+        )
+        self._reset_pipeline_recovery_state(dca_order)
+        self.dca_order_dao.save(dca_order)
+        self.database_session.commit()
+        cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+        self._publish_order_telegram_message(dca_order, dca_strategy, status_note=status_note)
+
+    def _record_pipeline_operation(
+            self,
+            dca_order: AaveDcaOrder,
+            pipeline_step: AaveDcaPipelineOperationStep,
+            pipeline_status: AaveDcaPipelineOperationStatus,
+            transaction_hash: Optional[str] = None,
+            route_tool: Optional[str] = None,
+            source_amount_base_units: Optional[int] = None,
+            expected_output_base_units: Optional[int] = None,
+            minimum_output_base_units: Optional[int] = None,
+    ) -> None:
+        current_timestamp_iso: str = get_current_local_datetime().isoformat()
+        pipeline_operation = AaveDcaPipelineOperation(
+            step=pipeline_step,
+            status=pipeline_status,
+            started_at=current_timestamp_iso,
+            completed_at=current_timestamp_iso,
+            transaction_hash=transaction_hash,
+            route_tool=route_tool,
+            source_amount_base_units=source_amount_base_units,
+            expected_output_base_units=expected_output_base_units,
+            minimum_output_base_units=minimum_output_base_units,
+        )
+        dca_order.pipeline_operations = append_completed_pipeline_operation(
+            dca_order.pipeline_operations,
+            pipeline_operation,
+        )
+
+    def _publish_order_telegram_message(
+            self,
+            dca_order: AaveDcaOrder,
+            dca_strategy: AaveDcaStrategy,
+            status_note: Optional[str] = None,
+    ) -> None:
+        publish_dca_order_telegram_message(
+            dca_order=dca_order,
+            dca_strategy=dca_strategy,
+            order_dao=self.dca_order_dao,
+            status_note=status_note,
+        )
 
     async def process_scheduled_dca_order(self, dca_order: AaveDcaOrder, dca_strategy: AaveDcaStrategy) -> None:
+        pipeline_resume_statuses = (
+            AaveDcaOrderStatus.AWAITING_WITHDRAW,
+            AaveDcaOrderStatus.AWAITING_SWAP,
+            AaveDcaOrderStatus.AWAITING_SUPPLY,
+        )
+        if dca_order.order_status in pipeline_resume_statuses:
+            logger.info(
+                "[AAVEDCA][MANAGER][RESUME] Resuming in-flight pipeline for order identifier %s at status %s",
+                dca_order.id,
+                dca_order.order_status,
+            )
+            await self.execute_onchain_defi_routing_pipeline(dca_order, dca_strategy)
+            return
+
         logger.info("[AAVEDCA][MANAGER][EVALUATE] Evaluating scheduled order identifier %s for strategy identifier %s", dca_order.id, dca_strategy.id)
 
         current_local_time = get_current_local_datetime()
@@ -94,28 +189,30 @@ class AaveDcaManager:
             ema_warmup_limit = settings.AAVE_DCA_EMA50_WARMUP_KLINES
             market_data = await fetch_exponential_moving_average_and_price(dca_strategy.binance_trading_pair, "1h", ema_warmup_limit)
 
-            pending_orders = self.dca_order_dao.retrieve_pending_by_strategy(dca_strategy.id)
-            remaining_orders_count = len(pending_orders)
-            is_final_execution = (remaining_orders_count <= 1)
-
             allocation_verdict = AaveDcaAllocationEngine.calculate_dynamic_allocation(
                 nominal_investment_amount=dca_order.planned_source_asset_amount,
                 current_dry_powder_reserve=dca_strategy.available_dry_powder,
                 current_market_price=market_data.latest_closing_price,
                 current_macro_ema=market_data.exponential_moving_average,
                 current_average_purchase_price=dca_strategy.average_purchase_price,
-                is_last_execution_cycle=is_final_execution,
                 price_elasticity_aggressiveness=dca_strategy.average_unit_price_elasticity_factor
             )
 
             dca_order.executed_source_asset_amount = allocation_verdict.spend_amount
-            dca_order.actual_execution_price = market_data.latest_closing_price
-            dca_order.allocation_decision_description = allocation_verdict.action_description
+            dca_order.allocation_decision = allocation_verdict.allocation_decision.value
+            dca_order.allocation_multiplier = allocation_verdict.allocation_multiplier
+            dca_order.dry_powder_delta = allocation_verdict.dry_powder_delta
+            dca_order.reference_market_price = market_data.latest_closing_price
+            dca_order.pipeline_operations = create_empty_pipeline_operations()
+            if allocation_verdict.spend_amount > 0:
+                dca_order.actual_execution_price = market_data.latest_closing_price
+            else:
+                dca_order.actual_execution_price = None
             self.dca_order_dao.save(dca_order)
 
             logger.info(
                 "[AAVEDCA][MANAGER][ALLOCATION] Decision resolved [%s]: Planned=%0.2f, Actual=%0.2f, DryPowder Delta=%0.2f",
-                allocation_verdict.action_description,
+                allocation_verdict.allocation_decision.value,
                 dca_order.planned_source_asset_amount,
                 dca_order.executed_source_asset_amount,
                 allocation_verdict.dry_powder_delta
@@ -125,22 +222,147 @@ class AaveDcaManager:
                 logger.info("[AAVEDCA][MANAGER][APPROVAL] Order identifier %s requires user authorization before proceeding", dca_order.id)
                 dca_order.order_status = AaveDcaOrderStatus.WAITING_USER_APPROVAL
                 self.dca_order_dao.save(dca_order)
-                self._send_approval_request(dca_order, dca_strategy)
+                self._publish_order_telegram_message(dca_order, dca_strategy)
                 cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
                 return
 
-            if "AVERAGE_PRICE_PROTECTION" in allocation_verdict.action_description:
-                send_alert(
-                    f"[{dca_strategy.target_asset_symbol}] bouclier PRU Activé",
-                    f"Prix de marché supérieur au PRU (${dca_strategy.average_purchase_price:.2f}).\n"
-                    f"Accumulation stoppée. {dca_order.planned_source_asset_amount:.2f} {dca_strategy.source_asset_symbol} transférés vers le coffre (Dry Powder).",
-                    "🛑"
+            if allocation_verdict.allocation_decision == AaveDcaAllocationDecision.AVERAGE_PRICE_PROTECTION_HALT:
+                pru_status_note = (
+                    f"🛑 <b>Bouclier PRU activé</b> — prix marché supérieur au PRU "
+                    f"(<code>${dca_strategy.average_purchase_price:.2f}</code>).\n"
+                    f"Accumulation stoppée, <code>${dca_order.planned_source_asset_amount:.2f}</code> "
+                    f"vers Dry powder."
                 )
+                self._finalize_skipped_order(
+                    dca_order=dca_order,
+                    dca_strategy=dca_strategy,
+                    dry_powder_delta=allocation_verdict.dry_powder_delta,
+                    status_note=pru_status_note,
+                )
+                return
 
-            dca_order.order_status = AaveDcaOrderStatus.APPROVED
+            pru_status_note = None
+
+            dca_order.order_status = AaveDcaOrderStatus.AWAITING_WITHDRAW
             self.dca_order_dao.save(dca_order)
+            self._publish_order_telegram_message(dca_order, dca_strategy, status_note=pru_status_note)
 
         await self.execute_onchain_defi_routing_pipeline(dca_order, dca_strategy)
+
+    def _reset_pipeline_recovery_state(self, dca_order: AaveDcaOrder) -> None:
+        dca_order.pipeline_attempt_count = 0
+        dca_order.next_attempt_at = None
+        dca_order.suspension_reason = None
+
+    def _suspend_order(
+            self,
+            dca_order: AaveDcaOrder,
+            dca_strategy: AaveDcaStrategy,
+            suspension_reason: str,
+    ) -> None:
+        dca_order.suspension_reason = suspension_reason
+        dca_order.next_attempt_at = None
+        self.dca_order_dao.save(dca_order)
+        self.database_session.commit()
+        cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+        logger.warning(
+            "[AAVEDCA][MANAGER][SUSPEND] Order_id=%s suspended at status=%s reason=%s",
+            dca_order.id,
+            dca_order.order_status,
+            suspension_reason,
+        )
+        self._publish_order_telegram_message(dca_order, dca_strategy)
+
+    def _schedule_transient_retry(
+            self,
+            dca_order: AaveDcaOrder,
+            failure_message: str,
+    ) -> None:
+        dca_order.pipeline_attempt_count += 1
+        if dca_order.pipeline_attempt_count > settings.AAVE_DCA_PIPELINE_MAX_RETRY_ATTEMPTS:
+            logger.warning(
+                "[AAVEDCA][MANAGER][RETRY] Order_id=%s exceeded max retry attempts (%s): %s",
+                dca_order.id,
+                settings.AAVE_DCA_PIPELINE_MAX_RETRY_ATTEMPTS,
+                failure_message,
+            )
+            raise AaveDcaBlockingPipelineError(
+                AaveDcaPipelinePreflightFailureReason.MAX_RETRIES_EXCEEDED.value,
+                failure_message,
+            )
+
+        dca_order.next_attempt_at = compute_pipeline_next_attempt_at(dca_order.pipeline_attempt_count)
+        self.dca_order_dao.save(dca_order)
+        self.database_session.commit()
+        cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+        logger.warning(
+            "[AAVEDCA][MANAGER][RETRY] Order_id=%s transient failure at status=%s attempt=%s next_attempt_at=%s message=%s",
+            dca_order.id,
+            dca_order.order_status,
+            dca_order.pipeline_attempt_count,
+            dca_order.next_attempt_at,
+            failure_message,
+        )
+
+    def _schedule_transient_retry_with_strategy(
+            self,
+            dca_order: AaveDcaOrder,
+            dca_strategy: AaveDcaStrategy,
+            failure_message: str,
+    ) -> None:
+        self._schedule_transient_retry(dca_order, failure_message)
+        self._publish_order_telegram_message(dca_order, dca_strategy)
+
+    async def _run_live_pipeline_preflight(
+            self,
+            dca_order: AaveDcaOrder,
+            dca_strategy: AaveDcaStrategy,
+            blockchain: BlockchainNetwork,
+            amount_in_base_units: int,
+            order_status: AaveDcaOrderStatus,
+    ) -> None:
+        preflight_result = await run_aave_dca_live_pipeline_preflight_checks(
+            aave_executor=self.aave_executor,
+            blockchain=blockchain,
+            order_status=order_status,
+            source_asset_address=dca_strategy.source_asset_address,
+            source_asset_decimals=dca_strategy.source_asset_decimals,
+            required_execution_amount_base_units=amount_in_base_units,
+            minimum_native_gas_reserve_avax=settings.AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX,
+        )
+
+        if preflight_result.is_successful:
+            logger.debug(
+                "[AAVEDCA][MANAGER][PREFLIGHT] Checks passed for order_id=%s status=%s native_gas_balance_avax=%s aave_supply_balance=%s wallet_source_balance=%s required_amount_base_units=%s",
+                dca_order.id,
+                order_status.value,
+                preflight_result.native_gas_balance_avax,
+                preflight_result.aave_supply_balance,
+                preflight_result.wallet_source_balance,
+                preflight_result.required_execution_amount_base_units,
+            )
+            return
+
+        failure_reason: str = (
+            preflight_result.failure_reason.value
+            if preflight_result.failure_reason is not None
+            else "UNKNOWN"
+        )
+        logger.warning(
+            "[AAVEDCA][MANAGER][PREFLIGHT] Live pipeline preflight failed for order_id=%s status=%s failure_reason=%s native_gas_balance_avax=%s aave_supply_balance=%s wallet_source_balance=%s required_amount_base_units=%s minimum_native_gas_reserve_avax=%s",
+            dca_order.id,
+            order_status.value,
+            failure_reason,
+            preflight_result.native_gas_balance_avax,
+            preflight_result.aave_supply_balance,
+            preflight_result.wallet_source_balance,
+            preflight_result.required_execution_amount_base_units,
+            settings.AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX,
+        )
+        raise AaveDcaBlockingPipelineError(
+            failure_reason,
+            f"Live pipeline preflight failed for order {dca_order.id}: {failure_reason}",
+        )
 
     async def execute_onchain_defi_routing_pipeline(
             self,
@@ -163,44 +385,38 @@ class AaveDcaManager:
             try:
                 if dca_order.executed_source_asset_amount == 0.0:
                     logger.info("[AAVEDCA][MANAGER][PAPER] Execution bypass: Amount is 0 (PRU Protection active). Finalizing accounting only.")
-                    dca_order.order_status = AaveDcaOrderStatus.EXECUTED
-                    dca_order.executed_at = get_current_local_datetime()
-                    dca_order.executed_target_asset_amount = 0.0
-                    dca_order.transaction_hash = "AVERAGE_PRICE_PROTECTION_BYPASS"
-
-                    dca_strategy.available_dry_powder += dry_powder_delta
-                    self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
-                    self.dca_order_dao.save(dca_order)
-                    cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
-
-                    send_alert(
-                        f"[{dca_strategy.target_asset_symbol}] : PRU Protection",
-                        f"ℹ️ Mode: Transaction simulée (Paper Mode)\n"
-                        f"📊 Logique: {dca_order.allocation_decision_description}\n\n"
-                        f"🛡️ PRU Protection: Budget ({dca_order.planned_source_asset_amount:.2f} {dca_strategy.source_asset_symbol}) routé vers Dry Powder\n"
-                        f"📦 Dry Powder: +{dry_powder_delta:.2f} (${dca_strategy.available_dry_powder:.2f} total)\n"
-                        f"🌐 Réseau: {dca_strategy.blockchain_network.upper()}",
-                        "🛡️"
+                    self._finalize_skipped_order(
+                        dca_order=dca_order,
+                        dca_strategy=dca_strategy,
+                        dry_powder_delta=dry_powder_delta,
+                        status_note=(
+                            f"ℹ️ <b>Mode:</b> Paper\n"
+                            f"🛡️ <b>PRU Protection:</b> <code>{dca_order.planned_source_asset_amount:.2f}</code> "
+                            f"{dca_strategy.source_asset_symbol} routés vers Dry powder "
+                            f"(<code>+{dry_powder_delta:.2f}</code>, total <code>${dca_strategy.available_dry_powder:.2f}</code>)"
+                        ),
                     )
                     return
 
                 dca_order.executed_at = get_current_local_datetime()
 
-                if dca_order.order_status == AaveDcaOrderStatus.APPROVED:
-                    dca_order.order_status = AaveDcaOrderStatus.WITHDRAWN_FROM_AAVE
+                if dca_order.order_status == AaveDcaOrderStatus.AWAITING_WITHDRAW:
+                    dca_order.order_status = AaveDcaOrderStatus.AWAITING_SWAP
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
                     cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+                    self._publish_order_telegram_message(dca_order, dca_strategy)
                     await asyncio.sleep(2)
 
-                if dca_order.order_status == AaveDcaOrderStatus.WITHDRAWN_FROM_AAVE:
-                    dca_order.order_status = AaveDcaOrderStatus.SWAPPED
+                if dca_order.order_status == AaveDcaOrderStatus.AWAITING_SWAP:
+                    dca_order.order_status = AaveDcaOrderStatus.AWAITING_SUPPLY
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
                     cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+                    self._publish_order_telegram_message(dca_order, dca_strategy)
                     await asyncio.sleep(2)
 
-                if dca_order.order_status == AaveDcaOrderStatus.SWAPPED:
+                if dca_order.order_status == AaveDcaOrderStatus.AWAITING_SUPPLY:
                     dca_order.order_status = AaveDcaOrderStatus.EXECUTED
                     if dca_order.executed_source_asset_amount > 0 and dca_order.actual_execution_price > 0:
                         dca_order.executed_target_asset_amount = dca_order.executed_source_asset_amount / dca_order.actual_execution_price
@@ -208,21 +424,32 @@ class AaveDcaManager:
                         dca_order.executed_target_asset_amount = 0.0
 
                     dca_strategy.available_dry_powder += dry_powder_delta
-                    self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
+                    self.dca_strategy_dao.update_strategy_execution_metrics(
+                        dca_strategy=dca_strategy,
+                        last_execution_source_amount=dca_order.executed_source_asset_amount or 0.0,
+                        last_execution_target_asset_amount=dca_order.executed_target_asset_amount,
+                        last_execution_reference_price=dca_order.actual_execution_price,
+                    )
                     self.dca_order_dao.save(dca_order)
                     self.database_session.commit()
                     cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
 
-                display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
-                send_alert(
-                    f"[{dca_strategy.target_asset_symbol}] : {display_title}",
-                    f"ℹ️ Mode: Transaction simulée (Paper Mode)\n"
-                    f"📊 Logique: {dca_order.allocation_decision_description}\n\n"
-                    f"🔄 Échange: {dca_order.executed_source_asset_amount:.2f} {dca_strategy.source_asset_symbol} ➔ {dca_strategy.target_asset_symbol}\n"
-                    f"💰 Prix: ${dca_order.actual_execution_price:.2f} (PRU: ${dca_strategy.average_purchase_price:.2f})\n"
-                    f"📦 Dry Powder: {dry_powder_delta >= 0 and '+' or ''}{dry_powder_delta:.2f} (${dca_strategy.available_dry_powder:.2f} total)\n"
-                    f"🌐 Réseau: {dca_strategy.blockchain_network.upper()}",
-                    "✅"
+                resolved_allocation_decision = self._resolve_allocation_decision(dca_order)
+                display_title = (
+                    resolve_allocation_decision_display_title(resolved_allocation_decision)
+                    if resolved_allocation_decision is not None
+                    else "Exécution Stratégique"
+                )
+                self._publish_order_telegram_message(
+                    dca_order,
+                    dca_strategy,
+                    status_note=(
+                        f"ℹ️ <b>Mode:</b> Paper — {display_title}\n"
+                        f"🔄 <b>Échange:</b> <code>{dca_order.executed_source_asset_amount:.2f}</code> "
+                        f"{dca_strategy.source_asset_symbol} ➔ {dca_strategy.target_asset_symbol}\n"
+                        f"📦 <b>Dry powder:</b> <code>{'+' if dry_powder_delta >= 0 else '-'}${abs(dry_powder_delta):.2f}</code> "
+                        f"(total <code>${dca_strategy.available_dry_powder:.2f}</code>)"
+                    ),
                 )
 
             except Exception as exception:
@@ -234,185 +461,317 @@ class AaveDcaManager:
                 dca_order.order_status = AaveDcaOrderStatus.FAILED
                 self.dca_order_dao.save(dca_order)
                 cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
-                send_alert(
-                    f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline (Paper)",
-                    f"🆔 Ordre identifier: {dca_order.id}\n"
-                    f"🛑 État Terminal: {dca_order.order_status}\n"
-                    f"⚠️ Erreur: {str(exception)}",
-                    "❌"
+                self._publish_order_telegram_message(
+                    dca_order,
+                    dca_strategy,
+                    status_note=f"⚠️ <b>Erreur:</b> <code>{html.escape(str(exception))}</code>",
                 )
             return
 
         try:
-            if dca_order.order_status == AaveDcaOrderStatus.WAITING_USER_APPROVAL:
+            current_order_status: AaveDcaOrderStatus = dca_order.order_status
+
+            if current_order_status == AaveDcaOrderStatus.WAITING_USER_APPROVAL:
                 logger.info("[AAVEDCA][MANAGER][APPROVAL] Order identifier %s is still waiting for user approval. Skipping for this cycle.", dca_order.id)
                 return
 
-            if dca_order.order_status == AaveDcaOrderStatus.REJECTED:
+            if current_order_status == AaveDcaOrderStatus.REJECTED:
                 logger.warning("[AAVEDCA][MANAGER][APPROVAL] Order identifier %s was rejected. Skipping for this cycle.", dca_order.id)
                 return
 
             if dca_order.executed_source_asset_amount == 0.0:
                 logger.info("[AAVEDCA][MANAGER][PIPELINE] Execution bypass: Amount is 0 (Protection active). Finalizing accounting only.")
-                dca_order.order_status = AaveDcaOrderStatus.EXECUTED
-                dca_order.executed_at = get_current_local_datetime()
-                dca_order.executed_target_asset_amount = 0.0
-                dca_order.transaction_hash = "AVERAGE_PRICE_PROTECTION_BYPASS"
-
-                dca_strategy.available_dry_powder += dry_powder_delta
-                self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, 0.0, dca_order.actual_execution_price or 0.0)
-                self.dca_order_dao.save(dca_order)
+                self._finalize_skipped_order(
+                    dca_order=dca_order,
+                    dca_strategy=dca_strategy,
+                    dry_powder_delta=dry_powder_delta,
+                    status_note=(
+                        f"🛡️ <b>PRU Protection:</b> <code>{dca_order.planned_source_asset_amount:.2f}</code> "
+                        f"{dca_strategy.source_asset_symbol} routés vers Dry powder "
+                        f"(<code>+{dry_powder_delta:.2f}</code>, total <code>${dca_strategy.available_dry_powder:.2f}</code>)"
+                    ),
+                )
                 return
 
-            amount_in_base_units = int((dca_order.executed_source_asset_amount or 0) * (10 ** dca_strategy.source_asset_decimals))
+            amount_in_base_units: int = convert_token_amount_to_base_units(
+                token_amount=dca_order.executed_source_asset_amount or 0.0,
+                token_decimals=dca_strategy.source_asset_decimals,
+            )
+            blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
+            minimum_target_balance_wei: int = 1
 
-            if dca_order.order_status == AaveDcaOrderStatus.APPROVED:
-                logger.info("[AAVEDCA][MANAGER][PIPELINE] Step 1/3: Withdrawing %s liquidity from Aave lending pool", dca_strategy.source_asset_symbol)
-                blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
-                withdrawal_transaction_hash = await self.aave_executor.execute_withdrawal(
-                    blockchain,
-                    dca_strategy.source_asset_address,
-                    amount_in_base_units
-                )
+            await self._run_live_pipeline_preflight(
+                dca_order=dca_order,
+                dca_strategy=dca_strategy,
+                blockchain=blockchain,
+                amount_in_base_units=amount_in_base_units,
+                order_status=current_order_status,
+            )
+
+            if current_order_status == AaveDcaOrderStatus.AWAITING_WITHDRAW:
+                logger.debug("[AAVEDCA][MANAGER][PIPELINE] Step 1/3: Withdrawing %s liquidity from Aave lending pool", dca_strategy.source_asset_symbol)
+                try:
+                    withdrawal_transaction_hash = await self.aave_executor.execute_withdrawal(
+                        blockchain,
+                        dca_strategy.source_asset_address,
+                        amount_in_base_units,
+                    )
+                except Exception as onchain_error:
+                    raise AaveDcaBlockingPipelineError(
+                        AaveDcaPipelinePreflightFailureReason.ONCHAIN_EXECUTION_FAILED.value,
+                        str(onchain_error),
+                    ) from onchain_error
                 if not withdrawal_transaction_hash:
-                    raise RuntimeError("Aave withdrawal execution failed at protocol level")
+                    raise AaveDcaTransientPipelineError("Aave withdrawal transaction not confirmed")
 
-                dca_order.order_status = AaveDcaOrderStatus.WITHDRAWN_FROM_AAVE
+                self._record_pipeline_operation(
+                    dca_order=dca_order,
+                    pipeline_step=AaveDcaPipelineOperationStep.WITHDRAW,
+                    pipeline_status=AaveDcaPipelineOperationStatus.COMPLETED,
+                    transaction_hash=withdrawal_transaction_hash,
+                    source_amount_base_units=amount_in_base_units,
+                )
+
+                dca_order.order_status = AaveDcaOrderStatus.AWAITING_SWAP
+                current_order_status = AaveDcaOrderStatus.AWAITING_SWAP
                 self.dca_order_dao.save(dca_order)
                 self.database_session.commit()
                 cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
-                await asyncio.sleep(5)
+                self._publish_order_telegram_message(dca_order, dca_strategy)
 
-            if dca_order.order_status == AaveDcaOrderStatus.WITHDRAWN_FROM_AAVE:
-                logger.info("[AAVEDCA][MANAGER][PIPELINE] Step 2/3: Fetching LI.FI routing quote for optimal swap path")
-                blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
+            if current_order_status == AaveDcaOrderStatus.AWAITING_SWAP:
+                logger.debug(
+                    "[AAVEDCA][MANAGER][PIPELINE] Step 2/3: Ensuring LI.FI allowance, fetching reference price, then requesting a fresh swap quote"
+                )
                 await self.aave_executor._initialize_provider(blockchain)
                 current_wallet_address = self.aave_executor.get_wallet_address()
 
-                routing_quote = await asyncio.to_thread(
-                    generate_token_to_token_quote,
+                await self.aave_executor.ensure_erc20_allowance(
                     chain=blockchain,
-                    from_address=current_wallet_address,
-                    from_token_address=dca_strategy.source_asset_address,
-                    to_token_address=dca_strategy.target_asset_address,
-                    from_amount_wei=amount_in_base_units,
-                    slippage=dca_strategy.slippage_tolerance
+                    token_address=dca_strategy.source_asset_address,
+                    spender_address=LIFI_EVM_DIAMOND_CONTRACT_ADDRESS,
+                    required_amount_wei=amount_in_base_units,
                 )
 
-                minimum_expected_out_units = int(routing_quote["estimate"]["toAmountMin"])
-                logger.info("[AAVEDCA][MANAGER][PIPELINE] Guaranteed minimum output for swap: %d units", minimum_expected_out_units)
-
-                numeric_chain_identifier = resolve_lifi_chain_identifier(blockchain)
-                swap_transaction_hash = await self.aave_executor.approve_and_execute_raw_transaction(
-                    chain=blockchain,
-                    source_token=dca_strategy.source_asset_address,
-                    spender=routing_quote["transactionRequest"]["to"],
-                    amount_in_wei=amount_in_base_units,
-                    to_address=routing_quote["transactionRequest"]["to"],
-                    tx_data=routing_quote["transactionRequest"]["data"],
-                    tx_value=int(routing_quote["transactionRequest"].get("value", 0), 16) if isinstance(routing_quote["transactionRequest"].get("value"), str) else 0,
-                    gas_limit=int(routing_quote["transactionRequest"]["gasLimit"]),
-                    chain_id_numeric=numeric_chain_identifier
+                binance_market_data = await fetch_exponential_moving_average_and_price(
+                    dca_strategy.binance_trading_pair,
+                    "1h",
+                    2,
                 )
+
+                swap_route = await asyncio.to_thread(
+                    generate_token_to_token_route,
+                    chain=blockchain,
+                    source_address=current_wallet_address,
+                    source_token_address=dca_strategy.source_asset_address,
+                    destination_token_address=dca_strategy.target_asset_address,
+                    source_amount_wei=amount_in_base_units,
+                    slippage_tolerance=dca_strategy.slippage_tolerance,
+                )
+
+                minimum_expected_out_units: int = 0
+                expected_out_units: int = 0
+                selected_route_tool: Optional[str] = None
+                if swap_route.estimate is not None:
+                    selected_route_tool = swap_route.estimate.tool
+                    if swap_route.estimate.to_amount is not None:
+                        expected_out_units = parse_lifi_hex_or_decimal_integer(swap_route.estimate.to_amount)
+                    if swap_route.estimate.to_amount_min is not None:
+                        minimum_expected_out_units = parse_lifi_hex_or_decimal_integer(swap_route.estimate.to_amount_min)
+
+                if expected_out_units <= 0:
+                    raise AaveDcaTransientPipelineError("LI.FI routing quote returned no expected output amount")
+                if minimum_expected_out_units <= 0:
+                    raise AaveDcaTransientPipelineError("LI.FI routing quote returned no minimum output amount")
+
+                logger.debug(
+                    "[AAVEDCA][MANAGER][PIPELINE] Guaranteed minimum output for swap: %d units expected output: %d units tool=%s",
+                    minimum_expected_out_units,
+                    expected_out_units,
+                    selected_route_tool,
+                )
+
+                minimum_target_balance_wei = minimum_expected_out_units
+
+                swap_price_validation = validate_lifi_swap_price_against_binance_reference(
+                    binance_reference_price_usd=binance_market_data.latest_closing_price,
+                    lifi_expected_output_amount_base_units=expected_out_units,
+                    lifi_minimum_output_amount_base_units=minimum_expected_out_units,
+                    source_amount_base_units=amount_in_base_units,
+                    source_asset_decimals=dca_strategy.source_asset_decimals,
+                    target_asset_decimals=dca_strategy.target_asset_decimals,
+                    maximum_deviation_percent=settings.AAVE_DCA_SWAP_PRICE_DEVIATION_MAX_PERCENT,
+                )
+                if not swap_price_validation.is_acceptable:
+                    alternative_route_summaries: list[LifiAlternativeRouteSummary] = await asyncio.to_thread(
+                        fetch_alternative_token_to_token_route_summaries,
+                        blockchain,
+                        current_wallet_address,
+                        dca_strategy.source_asset_address,
+                        dca_strategy.target_asset_address,
+                        amount_in_base_units,
+                        dca_strategy.slippage_tolerance,
+                    )
+                    logger.warning(
+                        "[AAVEDCA][MANAGER][SWAP][PRICE] LI.FI quote rejected for order_id=%s tool=%s binance_price_usd=%s implied_expected_price_usd=%s implied_minimum_price_usd=%s deviation_expected_percent=%s deviation_minimum_percent=%s maximum_deviation_percent=%s alternative_route_count=%s",
+                        dca_order.id,
+                        selected_route_tool,
+                        swap_price_validation.binance_reference_price_usd,
+                        swap_price_validation.implied_expected_price_usd,
+                        swap_price_validation.implied_minimum_price_usd,
+                        swap_price_validation.deviation_expected_percent,
+                        swap_price_validation.deviation_minimum_percent,
+                        settings.AAVE_DCA_SWAP_PRICE_DEVIATION_MAX_PERCENT,
+                        len(alternative_route_summaries),
+                    )
+                    logger.debug(
+                        "[AAVEDCA][MANAGER][SWAP][PRICE] Alternative LI.FI routes for order_id=%s: %s",
+                        dca_order.id,
+                        alternative_route_summaries,
+                    )
+                    raise AaveDcaTransientPipelineError(
+                        f"LI.FI swap quote price deviation {swap_price_validation.deviation_expected_percent:.2f}% "
+                        f"exceeds maximum {settings.AAVE_DCA_SWAP_PRICE_DEVIATION_MAX_PERCENT:.2f}%"
+                    )
+
+                transaction_request = swap_route.transaction_request
+                if transaction_request is None:
+                    raise AaveDcaTransientPipelineError("LI.FI routing quote returned no EVM transaction request")
+
+                transaction_value_in_wei: int = 0
+                if transaction_request.value:
+                    transaction_value_in_wei = parse_lifi_hex_or_decimal_integer(transaction_request.value)
+
+                swap_gas_limit = resolve_lifi_transaction_gas_limit_in_units(transaction_request)
+
+                try:
+                    swap_transaction_hash = await self.aave_executor.execute_raw_evm_transaction(
+                        chain=blockchain,
+                        to_address=transaction_request.to,
+                        transaction_calldata=transaction_request.data,
+                        transaction_value_wei=transaction_value_in_wei,
+                        gas_limit=swap_gas_limit,
+                    )
+                except Exception as onchain_error:
+                    raise AaveDcaBlockingPipelineError(
+                        AaveDcaPipelinePreflightFailureReason.ONCHAIN_EXECUTION_FAILED.value,
+                        str(onchain_error),
+                    ) from onchain_error
                 if not swap_transaction_hash:
-                    raise RuntimeError("DeFi routed swap execution failed during transaction submission")
+                    raise AaveDcaTransientPipelineError("DeFi routed swap transaction not confirmed")
 
-                dca_order.order_status = AaveDcaOrderStatus.SWAPPED
+                self._record_pipeline_operation(
+                    dca_order=dca_order,
+                    pipeline_step=AaveDcaPipelineOperationStep.SWAP,
+                    pipeline_status=AaveDcaPipelineOperationStatus.COMPLETED,
+                    transaction_hash=swap_transaction_hash,
+                    route_tool=selected_route_tool,
+                    source_amount_base_units=amount_in_base_units,
+                    expected_output_base_units=expected_out_units,
+                    minimum_output_base_units=minimum_expected_out_units,
+                )
+
+                dca_order.order_status = AaveDcaOrderStatus.AWAITING_SUPPLY
+                current_order_status = AaveDcaOrderStatus.AWAITING_SUPPLY
                 self.dca_order_dao.save(dca_order)
                 self.database_session.commit()
                 cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
-                await asyncio.sleep(6)
+                self._publish_order_telegram_message(dca_order, dca_strategy)
 
-            if dca_order.order_status == AaveDcaOrderStatus.SWAPPED:
-                logger.info("[AAVEDCA][MANAGER][PIPELINE] Step 3/3: Supplying newly acquired asset back to Aave lending pool")
-                blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
-                target_asset_balance_wei = await self.aave_executor.fetch_erc20_balance(blockchain, dca_strategy.target_asset_address)
-
-                if target_asset_balance_wei <= 0:
-                    raise RuntimeError("On-chain balance check failed: target asset balance is zero post-swap")
-
-                supply_transaction_hash = await self.aave_executor.execute_supply(
-                    blockchain,
-                    dca_strategy.target_asset_address,
-                    target_asset_balance_wei
+            if current_order_status == AaveDcaOrderStatus.AWAITING_SUPPLY:
+                logger.debug("[AAVEDCA][MANAGER][PIPELINE] Step 3/3: Supplying newly acquired asset back to Aave lending pool")
+                target_asset_balance_wei = await poll_erc20_balance_until_minimum(
+                    aave_executor=self.aave_executor,
+                    blockchain=blockchain,
+                    token_address=dca_strategy.target_asset_address,
+                    minimum_balance_wei=minimum_target_balance_wei,
+                    poll_interval_seconds=settings.AAVE_DCA_SWAP_SETTLEMENT_POLL_INTERVAL_SECONDS,
+                    timeout_seconds=settings.AAVE_DCA_SWAP_SETTLEMENT_POLL_TIMEOUT_SECONDS,
                 )
+
+                if target_asset_balance_wei < minimum_target_balance_wei:
+                    raise AaveDcaTransientPipelineError(
+                        f"Target asset balance not reflected after swap "
+                        f"(balance_wei={target_asset_balance_wei}, minimum_wei={minimum_target_balance_wei})"
+                    )
+
+                try:
+                    supply_transaction_hash = await self.aave_executor.execute_supply(
+                        blockchain,
+                        dca_strategy.target_asset_address,
+                        target_asset_balance_wei,
+                    )
+                except Exception as onchain_error:
+                    raise AaveDcaBlockingPipelineError(
+                        AaveDcaPipelinePreflightFailureReason.ONCHAIN_EXECUTION_FAILED.value,
+                        str(onchain_error),
+                    ) from onchain_error
                 if not supply_transaction_hash:
-                    raise RuntimeError("Aave supply execution failed at protocol level")
+                    raise AaveDcaTransientPipelineError("Aave supply transaction not confirmed")
+
+                self._record_pipeline_operation(
+                    dca_order=dca_order,
+                    pipeline_step=AaveDcaPipelineOperationStep.SUPPLY,
+                    pipeline_status=AaveDcaPipelineOperationStatus.COMPLETED,
+                    transaction_hash=supply_transaction_hash,
+                )
 
                 dca_order.order_status = AaveDcaOrderStatus.EXECUTED
-                dca_order.transaction_hash = supply_transaction_hash
                 dca_order.executed_at = get_current_local_datetime()
-                dca_order.executed_target_asset_amount = target_asset_balance_wei / (10 ** 18)
+                dca_order.executed_target_asset_amount = target_asset_balance_wei / (10 ** dca_strategy.target_asset_decimals)
 
                 dca_strategy.available_dry_powder += dry_powder_delta
-                self.dca_strategy_dao.update_strategy_execution_metrics(dca_strategy, dca_order.executed_source_asset_amount or 0.0, dca_order.actual_execution_price or 0.0)
+                self.dca_strategy_dao.update_strategy_execution_metrics(
+                    dca_strategy=dca_strategy,
+                    last_execution_source_amount=dca_order.executed_source_asset_amount or 0.0,
+                    last_execution_target_asset_amount=dca_order.executed_target_asset_amount,
+                    last_execution_reference_price=dca_order.actual_execution_price,
+                )
+                self._reset_pipeline_recovery_state(dca_order)
                 self.dca_order_dao.save(dca_order)
                 cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+                self._publish_order_telegram_message(dca_order, dca_strategy)
 
-                display_title = self._resolve_action_display_title(dca_order.allocation_decision_description or "UNKNOWN")
-                send_alert(
-                    f"[{dca_strategy.target_asset_symbol}] : {display_title}",
-                    f"📊 Logique: {dca_order.allocation_decision_description}\n\n"
-                    f"🔄 Échange: {dca_order.executed_source_asset_amount:.2f} {dca_strategy.source_asset_symbol} ➔ {dca_strategy.target_asset_symbol}\n"
-                    f"💰 Prix: ${dca_order.actual_execution_price:.2f} (PRU: ${dca_strategy.average_purchase_price:.2f})\n"
-                    f"📦 Dry Powder: {dry_powder_delta >= 0 and '+' or ''}{dry_powder_delta:.2f} (${dca_strategy.available_dry_powder:.2f} total)\n"
-                    f"🌐 Réseau: {dca_strategy.blockchain_network.upper()}\n"
-                    f"🔗 Hash: {supply_transaction_hash[:10]}...",
-                    "✅"
-                )
-
-        except Exception as exception:
-            logger.exception(
-                "[AAVEDCA][MANAGER][ERROR] Pipeline execution failed at status %s. Halting for manual review.",
+        except AaveDcaBlockingPipelineError as blocking_error:
+            self._suspend_order(dca_order, dca_strategy, blocking_error.reason)
+        except AaveDcaTransientPipelineError as transient_error:
+            try:
+                self._schedule_transient_retry_with_strategy(dca_order, dca_strategy, str(transient_error))
+            except AaveDcaBlockingPipelineError as max_retries_error:
+                self._suspend_order(dca_order, dca_strategy, max_retries_error.reason)
+        except LifiQuoteUnavailableError as quote_unavailable_error:
+            logger.warning(
+                "[AAVEDCA][MANAGER][SWAP][LIFI] No LI.FI route for order_id=%s status=%s source_amount_base_units=%s message=%s",
+                dca_order.id,
                 dca_order.order_status,
-                exception
+                amount_in_base_units,
+                quote_unavailable_error.response_message or str(quote_unavailable_error),
             )
-            dca_order.order_status = AaveDcaOrderStatus.FAILED
-            self.dca_order_dao.save(dca_order)
-            cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
-            send_alert(
-                f"[{dca_strategy.target_asset_symbol}] Échec du Pipeline",
-                f"🆔 Ordre identifier: {dca_order.id}\n"
-                f"🛑 État Terminal: {dca_order.order_status}\n"
-                f"⚠️ Erreur: {str(exception)}",
-                "❌"
+            self._suspend_order(
+                dca_order,
+                dca_strategy,
+                AaveDcaPipelinePreflightFailureReason.LIFI_QUOTE_INVALID.value,
             )
-
-    def _send_approval_request(self, dca_order: AaveDcaOrder, dca_strategy: AaveDcaStrategy) -> None:
-        title = "DEMANDE D'APPROBATION"
-        message_body = build_approval_message_body(dca_order, dca_strategy)
-        footer = "Souhaitez-vous autoriser cette exécution ?"
-
-        buttons = [
-            [
-                TelegramInlineKeyboardButton(text="✅ Approuver", callback_data=f"approve_dca:{dca_order.id}"),
-                TelegramInlineKeyboardButton(text="❌ Rejeter", callback_data=f"reject_dca:{dca_order.id}")
-            ]
-        ]
-
-        reply_markup = TelegramInlineKeyboardMarkup(inline_keyboard=buttons)
-
-        send_alert(
-            title=title,
-            body=f"{message_body}{footer}",
-            emoji_indicator="🛡️",
-            reply_markup=reply_markup
-        )
-
-    def resync_waiting_approvals(self) -> None:
-        logger.info("[AAVEDCA][MANAGER][RESYNC] Resynchronizing pending approval requests after startup")
-
-        with get_database_session() as session_instance:
-            strategy_dao_instance = AaveDcaStrategyDao(session_instance)
-            order_dao_instance = AaveDcaOrderDao(session_instance)
-
-            waiting_orders_query = select(AaveDcaOrder).where(
-                AaveDcaOrder.order_status == AaveDcaOrderStatus.WAITING_USER_APPROVAL
+        except (ValidationError, LifiRouteNormalizationError, ValueError) as integration_error:
+            logger.warning(
+                "[AAVEDCA][MANAGER][INTEGRATION] Non-retryable LI.FI integration failure at status %s for order_id=%s: %s",
+                dca_order.order_status,
+                dca_order.id,
+                integration_error,
             )
-            waiting_orders = session_instance.execute(waiting_orders_query).scalars().all()
-
-            for order in waiting_orders:
-                strategy = strategy_dao_instance.retrieve_by_id(order.strategy_id)
-                if strategy:
-                    logger.info("[AAVEDCA][MANAGER][RESYNC] Re-sending approval request for order identifier %s", order.id)
-                    self._send_approval_request(order, strategy)
+            self._suspend_order(
+                dca_order,
+                dca_strategy,
+                AaveDcaPipelinePreflightFailureReason.LIFI_QUOTE_INVALID.value,
+            )
+        except Exception as unexpected_error:
+            logger.exception(
+                "[AAVEDCA][MANAGER][ERROR] Unexpected pipeline failure at status %s for order_id=%s",
+                dca_order.order_status,
+                dca_order.id,
+            )
+            self._suspend_order(
+                dca_order,
+                dca_strategy,
+                AaveDcaPipelinePreflightFailureReason.ONCHAIN_EXECUTION_FAILED.value,
+            )

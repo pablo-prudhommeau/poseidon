@@ -5,11 +5,13 @@ import { OptionalNumberPipe } from '../../../core/optional-number.pipe';
 import { DcaOrderPayload, DcaStrategyPayload, TradingEquityCurvePointPayload, YieldMetrics } from '../../../core/models';
 import { SparklineComponent } from '../../../widgets/sparkline/sparkline.component';
 import { hasExecutedDcaOrders } from '../dca-execution.utils';
+import { buildEffectiveSmartAverageUnitPriceSeries } from '../dca-strategy-path-projection/data/dca-strategy-path-projection-series-data.utils';
 import { resolveHistoricalBacktestStartExecutionPrice, resolveProjectedLivePriceMultiplier } from '../dca-price-scaling.utils';
 
 export interface DurationSummary {
     totalWeeks: number;
     totalMonths: number;
+    executedInstallments: number;
     totalInstallments: number;
     daysRemaining: number;
 }
@@ -197,14 +199,6 @@ export class DcaSynthesisComponent {
         };
     });
 
-    public readonly currentAveragePurchasePrice = computed<number | null>(() => {
-        if (!this.hasExecutedOrders()) {
-            return null;
-        }
-        const averagePurchasePrice: number = this.strategy().average_purchase_price;
-        return averagePurchasePrice > 0 ? averagePurchasePrice : null;
-    });
-
     public readonly deployedAmount = computed<number>(() => this.strategy().total_deployed_amount ?? 0);
 
     public readonly durationSummary = computed<DurationSummary>(() => {
@@ -219,9 +213,29 @@ export class DcaSynthesisComponent {
         return {
             totalWeeks: Math.ceil(diffMilliseconds / (1000 * 60 * 60 * 24 * 7)),
             totalMonths: Math.max(1, Math.round(diffMilliseconds / (1000 * 60 * 60 * 24 * 30.44))),
+            executedInstallments: (strat.execution_orders ?? []).filter((order) => order.order_status === 'EXECUTED' || order.order_status === 'SKIPPED')
+                .length,
             totalInstallments: strat.total_planned_executions,
             daysRemaining: Math.ceil(remainingMilliseconds / (1000 * 60 * 60 * 24))
         };
+    });
+
+    public readonly effectiveSmartAverageUnitPrice = computed<number | null>(() => {
+        const strategyEntity = this.strategy();
+        const effectiveSeries = buildEffectiveSmartAverageUnitPriceSeries(strategyEntity.execution_orders ?? []);
+        if (effectiveSeries.length === 0) {
+            return null;
+        }
+        const latestEffectivePoint = effectiveSeries[effectiveSeries.length - 1];
+        return latestEffectivePoint.value > 0 ? latestEffectivePoint.value : null;
+    });
+
+    public readonly effectiveSmartAverageUnitPriceSparkline = computed<TradingEquityCurvePointPayload[]>(() => {
+        const strategyEntity = this.strategy();
+        return buildEffectiveSmartAverageUnitPriceSeries(strategyEntity.execution_orders ?? []).map((effectivePoint) => ({
+            timestamp_milliseconds: effectivePoint.timestampMilliseconds,
+            total_equity_value: effectivePoint.value
+        }));
     });
 
     public readonly nominalMonthlyInstallment = computed<number>(() => {
@@ -232,21 +246,6 @@ export class DcaSynthesisComponent {
     public readonly progressPercentage = computed<number>(() => {
         const strat = this.strategy();
         return strat.total_allocated_budget > 0 ? (strat.total_deployed_amount / strat.total_allocated_budget) * 100 : 0;
-    });
-
-    public readonly purchasePriceSparkline = computed<TradingEquityCurvePointPayload[]>(() => {
-        const strat = this.strategy();
-        if (!strat.execution_orders) {
-            return [];
-        }
-
-        return strat.execution_orders
-            .filter((order: DcaOrderPayload) => order.order_status === 'EXECUTED' && order.actual_execution_price != null && order.executed_at != null)
-            .sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime())
-            .map((order: DcaOrderPayload) => ({
-                timestamp_milliseconds: new Date(order.executed_at!).getTime(),
-                total_equity_value: order.actual_execution_price as number
-            }));
     });
 
     public readonly totalBudget = computed<number>(() => this.strategy().total_allocated_budget ?? 0);

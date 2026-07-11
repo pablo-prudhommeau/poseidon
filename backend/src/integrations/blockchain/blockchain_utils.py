@@ -8,6 +8,14 @@ NON_RETRYABLE_BLOCKCHAIN_TRANSACTION_FAILURE_REASONS: frozenset[BlockchainTransa
 })
 
 
+def normalize_evm_transaction_hash(transaction_hash: str | bytes) -> str:
+    if isinstance(transaction_hash, bytes):
+        hex_value = transaction_hash.hex()
+    else:
+        hex_value = transaction_hash.strip().removeprefix("0x")
+    return f"0x{hex_value}"
+
+
 def is_non_retryable_blockchain_transaction_failure_reason(
         failure_reason: BlockchainTransactionFailureReason | None,
 ) -> bool:

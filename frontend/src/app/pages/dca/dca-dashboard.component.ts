@@ -39,7 +39,13 @@ export class DcaDashboardComponent implements OnInit {
     constructor() {
         effect(() => {
             const strategies = this.dcaStrategies();
-            if (strategies.length > 0 && this.selectedStrategyId() === null) {
+            if (strategies.length === 0) {
+                return;
+            }
+
+            const currentId = this.selectedStrategyId();
+            const selectedStrategyExists = currentId !== null && strategies.some((strategy) => strategy.id === currentId);
+            if (currentId === null || !selectedStrategyExists) {
                 this.selectedStrategyId.set(strategies[0].id);
             }
         });
@@ -53,5 +59,9 @@ export class DcaDashboardComponent implements OnInit {
                 }
             }
         });
+    }
+
+    public onSelectedStrategyIdChange(strategyId: number | null): void {
+        this.selectedStrategyId.set(strategyId);
     }
 }

@@ -2,9 +2,12 @@ import { CurrencyPipe, DatePipe, DecimalPipe, NgClass } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { CardModule } from 'primeng/card';
 import { PopoverModule } from 'primeng/popover';
-import { DcaOrderPayload, DcaStrategyPayload, OrderDueDateMarker, TimelineNode } from '../../../core/models';
+import { DcaAllocationDecision, DcaOrderPayload, DcaStrategyPayload, OrderDueDateMarker, TimelineNode } from '../../../core/models';
+import { normalizeEvmTransactionHash } from '../dca-execution.utils';
 
-const PROCESSING_STATUS_LIST: string[] = ['WAITING_USER_APPROVAL', 'APPROVED', 'WITHDRAWN_FROM_AAVE', 'SWAPPED', 'PROCESSING'];
+const PROCESSING_STATUS_LIST: string[] = ['WAITING_USER_APPROVAL', 'AWAITING_WITHDRAW', 'AWAITING_SWAP', 'AWAITING_SUPPLY', 'PROCESSING'];
+
+const TERMINAL_FAILURE_STATUS_LIST: string[] = ['FAILED', 'REJECTED', 'SUSPENDED'];
 
 @Component({
     standalone: true,
@@ -54,7 +57,10 @@ export class DcaStrategyExecutionTimelineComponent {
             (orderA, orderB) => new Date(orderA.planned_execution_date).getTime() - new Date(orderB.planned_execution_date).getTime()
         );
 
-        const rulerNodes = this.generateCalendarRulerNodes(startTimestamp, endTimestamp, totalDuration);
+        const lastOrderTimestamp = new Date(allOrders[allOrders.length - 1].planned_execution_date).getTime();
+        const strategyEndAnchorTimestamp = Math.max(startTimestamp, Math.min(endTimestamp, lastOrderTimestamp));
+
+        const rulerNodes = this.generateCalendarRulerNodes(startTimestamp, endTimestamp, totalDuration, strategyEndAnchorTimestamp);
 
         const nodesByIdentifier = new Map<string, TimelineNode>(rulerNodes.map((node) => [node.identifier, { ...node, orders: [] as DcaOrderPayload[] }]));
 
@@ -96,7 +102,7 @@ export class DcaStrategyExecutionTimelineComponent {
             enriched.periodLabel = enriched.periodStartDate === node.timestamp ? endLabel : `${startLabel} - ${endLabel}`;
 
             if (isBeforeFrontier) {
-                const previousOrders = allOrders.filter((o) => new Date(o.planned_execution_date).getTime() <= node.timestamp);
+                const previousOrders = allOrders.filter((order) => new Date(order.planned_execution_date).getTime() <= node.timestamp);
                 if (previousOrders.length > 0) {
                     enriched.representativeStatus = this.calculateSyntheticStatus(previousOrders);
                 } else if (enriched.orders.length === 0) {
@@ -119,9 +125,9 @@ export class DcaStrategyExecutionTimelineComponent {
         }
 
         let latestActiveIndex = 0;
-        for (let i = 0; i < nodes.length; i++) {
-            if (nodes[i].timestamp <= frontier) {
-                latestActiveIndex = i;
+        for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+            if (nodes[nodeIndex].timestamp <= frontier) {
+                latestActiveIndex = nodeIndex;
             }
         }
 
@@ -135,16 +141,43 @@ export class DcaStrategyExecutionTimelineComponent {
             return [];
         }
 
-        return strategyEntity.execution_orders.map((order) => {
+        const sortedOrders = [...strategyEntity.execution_orders].sort(
+            (orderA, orderB) => new Date(orderA.planned_execution_date).getTime() - new Date(orderB.planned_execution_date).getTime()
+        );
+
+        const strategyStartNode = nodes.find((node) => node.identifier === 'strategy-start');
+        const strategyEndNode = nodes.find((node) => node.identifier === 'strategy-end');
+
+        return sortedOrders.map((order, orderIndex) => {
             const orderTimestamp = new Date(order.planned_execution_date).getTime();
+            const isFirstOrder = orderIndex === 0;
+            const isLastOrder = orderIndex === sortedOrders.length - 1;
+
+            if (isLastOrder && strategyEndNode) {
+                return {
+                    orderId: order.id,
+                    leftPositionPercent: strategyEndNode.leftPositionPercent,
+                    status: this.resolveOrderVisualStatus(order),
+                    anchorsMajorNode: true
+                };
+            }
+
+            if (isFirstOrder && strategyStartNode) {
+                return {
+                    orderId: order.id,
+                    leftPositionPercent: strategyStartNode.leftPositionPercent,
+                    status: this.resolveOrderVisualStatus(order),
+                    anchorsMajorNode: true
+                };
+            }
 
             let segmentStartIndex = 0;
             let segmentEndIndex = 0;
 
-            for (let i = 0; i < nodes.length; i++) {
-                if (orderTimestamp <= nodes[i].timestamp) {
-                    segmentEndIndex = i;
-                    segmentStartIndex = Math.max(0, i - 1);
+            for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+                if (orderTimestamp <= nodes[nodeIndex].timestamp) {
+                    segmentEndIndex = nodeIndex;
+                    segmentStartIndex = Math.max(0, nodeIndex - 1);
                     break;
                 }
             }
@@ -156,13 +189,15 @@ export class DcaStrategyExecutionTimelineComponent {
             if (startNode !== endNode) {
                 const timeInSegment = orderTimestamp - startNode.timestamp;
                 const totalSegmentTime = endNode.timestamp - startNode.timestamp;
-                const fraction = Math.max(0, Math.min(1, timeInSegment / totalSegmentTime));
+                const fraction = totalSegmentTime > 0 ? Math.max(0, Math.min(1, timeInSegment / totalSegmentTime)) : 0;
                 position = startNode.leftPositionPercent + (endNode.leftPositionPercent - startNode.leftPositionPercent) * fraction;
             }
 
             return {
+                orderId: order.id,
                 leftPositionPercent: position,
-                status: order.order_status
+                status: this.resolveOrderVisualStatus(order),
+                anchorsMajorNode: false
             };
         });
     });
@@ -177,7 +212,7 @@ export class DcaStrategyExecutionTimelineComponent {
         const lastActiveNode = activeNodes[activeNodes.length - 1];
         const status = lastActiveNode.representativeStatus;
 
-        const hasHistory = activeNodes.some((node) => ['EXECUTED', 'SKIPPED', 'REJECTED'].includes(node.representativeStatus));
+        const hasHistory = activeNodes.some((node) => ['EXECUTED', 'SKIPPED', 'REJECTED', 'SUSPENDED'].includes(node.representativeStatus));
         const startColor = hasHistory ? 'emerald-500' : status === 'PENDING' ? 'slate-600' : 'blue-500';
 
         if (PROCESSING_STATUS_LIST.includes(status)) {
@@ -186,7 +221,7 @@ export class DcaStrategyExecutionTimelineComponent {
         if (status === 'EXECUTED') {
             return `from-${startColor} to-emerald-400`;
         }
-        if (status === 'FAILED' || status === 'REJECTED') {
+        if (TERMINAL_FAILURE_STATUS_LIST.includes(status)) {
             return `from-${startColor} via-rose-500 to-rose-400`;
         }
         if (status === 'SKIPPED') {
@@ -195,60 +230,174 @@ export class DcaStrategyExecutionTimelineComponent {
         return `from-${startColor} to-transparent`;
     });
 
+    public async copyToClipboard(value: string | undefined | null): Promise<void> {
+        if (!value) {
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(normalizeEvmTransactionHash(value));
+        } catch {
+            return;
+        }
+    }
+
+    public formatTransactionHashPreview(transactionHash: string): string {
+        const normalizedTransactionHash = normalizeEvmTransactionHash(transactionHash);
+        if (normalizedTransactionHash.length <= 36) {
+            return normalizedTransactionHash;
+        }
+        return `${normalizedTransactionHash.slice(0, 22)}...${normalizedTransactionHash.slice(-12)}`;
+    }
+
+    public isPrimaryMajorNode(timelineNode: TimelineNode): boolean {
+        return timelineNode.identifier.startsWith('month-') || (timelineNode.identifier === 'strategy-start' && timelineNode.isMonthBoundary);
+    }
+
     public isProtectedByPurchasePriceGuard(order: DcaOrderPayload): boolean {
+        return order.allocation_decision === 'AVERAGE_PRICE_PROTECTION_HALT';
+    }
+
+    public isSecondaryMajorNode(timelineNode: TimelineNode): boolean {
         return (
-            order.transaction_hash === 'AVERAGE_PRICE_PROTECTION_BYPASS' ||
-            (order.allocation_decision_description?.includes('AVERAGE_PRICE_PROTECTION') ?? false)
+            (timelineNode.identifier === 'strategy-start' && !timelineNode.isMonthBoundary) ||
+            timelineNode.identifier === 'strategy-end' ||
+            timelineNode.identifier.startsWith('week-')
         );
     }
 
-    public resolveAllocationDecisionColor(allocationDecision: string): string {
-        if (allocationDecision.includes('AGGRESSIVE_DIP_ACCUMULATION')) {
+    public isTerminalFailureStatus(status: string): boolean {
+        return TERMINAL_FAILURE_STATUS_LIST.includes(status);
+    }
+
+    public resolveAllocationDecisionColor(allocationDecision: DcaAllocationDecision): string {
+        if (allocationDecision === 'AGGRESSIVE_DIP_ACCUMULATION_SCALED') {
             return 'text-emerald-400';
         }
-        if (allocationDecision.includes('CONSERVATIVE_RETENTION')) {
+        if (allocationDecision === 'CONSERVATIVE_RETENTION_SCALED') {
             return 'text-amber-400';
         }
-        if (allocationDecision.includes('FINAL_FULL_DEPLOYMENT')) {
-            return 'text-purple-400';
+        if (allocationDecision === 'FALLBACK_NOMINAL_STRATEGY') {
+            return 'text-slate-400';
         }
-        if (allocationDecision.includes('AVERAGE_PRICE_PROTECTION')) {
+        if (allocationDecision === 'AVERAGE_PRICE_PROTECTION_HALT') {
             return 'text-rose-400';
         }
         return 'text-slate-400';
     }
 
-    public resolveAllocationDecisionLabel(allocationDecision: string): string {
-        if (allocationDecision.includes('AGGRESSIVE_DIP_ACCUMULATION')) {
-            return 'Aggressive Accumulation';
+    public resolveAllocationDecisionLabel(allocationDecision: DcaAllocationDecision, allocationMultiplier?: number | null): string {
+        if (allocationDecision === 'AGGRESSIVE_DIP_ACCUMULATION_SCALED') {
+            return allocationMultiplier && allocationMultiplier !== 1
+                ? `Aggressive accumulation (×${allocationMultiplier.toFixed(2)})`
+                : 'Aggressive accumulation';
         }
-        if (allocationDecision.includes('CONSERVATIVE_RETENTION')) {
-            return 'Conservative Retention';
+        if (allocationDecision === 'CONSERVATIVE_RETENTION_SCALED') {
+            return allocationMultiplier && allocationMultiplier !== 1
+                ? `Conservative retention (×${allocationMultiplier.toFixed(2)})`
+                : 'Conservative retention';
         }
-        if (allocationDecision.includes('FINAL_FULL_DEPLOYMENT')) {
-            return 'Final Deployment';
+        if (allocationDecision === 'FALLBACK_NOMINAL_STRATEGY') {
+            return allocationMultiplier && allocationMultiplier !== 1 ? `Nominal strategy (×${allocationMultiplier.toFixed(2)})` : 'Nominal strategy';
         }
-        if (allocationDecision.includes('FALLBACK_NOMINAL')) {
-            return 'Nominal Strategy';
-        }
-        if (allocationDecision.includes('AVERAGE_PRICE_PROTECTION')) {
-            return 'PRU Protection Halt';
+        if (allocationDecision === 'AVERAGE_PRICE_PROTECTION_HALT') {
+            return 'PRU protection halt';
         }
         return allocationDecision;
     }
 
+    public resolveNodeCircleClasses(timelineNode: TimelineNode): Record<string, boolean> {
+        const status = timelineNode.representativeStatus;
+        const isProcessing = timelineNode.isProcessing || PROCESSING_STATUS_LIST.includes(status);
+        const circleClasses: Record<string, boolean> = this.isPrimaryMajorNode(timelineNode) ? { 'h-4 w-4 border-2': true } : { 'h-2.5 w-2.5 border': true };
+
+        if (isProcessing) {
+            circleClasses['border-blue-500 bg-blue-500/30 shadow-blue-500/30'] = true;
+            return circleClasses;
+        }
+        if (status === 'EXECUTED') {
+            circleClasses['border-emerald-500 bg-emerald-500/20 shadow-emerald-500/20'] = true;
+            return circleClasses;
+        }
+        if (this.isTerminalFailureStatus(status)) {
+            circleClasses['border-rose-500 bg-rose-500/20 shadow-rose-500/20'] = true;
+            return circleClasses;
+        }
+        if (status === 'SKIPPED' || status === 'WAITING_USER_APPROVAL') {
+            circleClasses['border-amber-500 bg-amber-500/10'] = true;
+            return circleClasses;
+        }
+        if (this.isPrimaryMajorNode(timelineNode)) {
+            circleClasses['border-slate-400 bg-slate-800/20'] = true;
+            return circleClasses;
+        }
+        circleClasses['border-slate-500 bg-slate-900/30'] = true;
+        return circleClasses;
+    }
+
+    public resolveNodeLabelClasses(timelineNode: TimelineNode): Record<string, boolean> {
+        const status = timelineNode.representativeStatus;
+        const isProcessing = timelineNode.isProcessing || PROCESSING_STATUS_LIST.includes(status);
+
+        if (isProcessing) {
+            return { 'text-blue-500': true };
+        }
+        if (status === 'EXECUTED') {
+            return { 'text-emerald-500': true };
+        }
+        if (this.isTerminalFailureStatus(status)) {
+            return { 'text-rose-500': true };
+        }
+        if (status === 'SKIPPED' || status === 'WAITING_USER_APPROVAL') {
+            return { 'text-amber-500': true };
+        }
+        if (this.isPrimaryMajorNode(timelineNode)) {
+            return { 'text-slate-400': true };
+        }
+        return { 'text-slate-500': true };
+    }
+
+    public resolveOrderMarkerClasses(status: string): Record<string, boolean> {
+        if (status === 'EXECUTED') {
+            return { 'bg-emerald-500': true };
+        }
+        if (PROCESSING_STATUS_LIST.includes(status)) {
+            return { 'bg-blue-500': true };
+        }
+        if (status === 'SKIPPED') {
+            return { 'bg-amber-500': true };
+        }
+        if (this.isTerminalFailureStatus(status)) {
+            return { 'bg-rose-500': true };
+        }
+        return { 'bg-slate-600': true };
+    }
+
+    public resolveOrderVisualStatus(order: DcaOrderPayload): string {
+        if (order.suspension_reason) {
+            return 'SUSPENDED';
+        }
+        return order.order_status;
+    }
+
+    public resolveTransactionHashTitle(transactionHash: string): string {
+        return normalizeEvmTransactionHash(transactionHash);
+    }
+
     private calculateSyntheticStatus(orders: DcaOrderPayload[]): string {
-        if (orders.some((o) => PROCESSING_STATUS_LIST.includes(o.order_status))) {
+        if (orders.some((order) => order.suspension_reason)) {
+            return 'SUSPENDED';
+        }
+        if (orders.some((order) => PROCESSING_STATUS_LIST.includes(order.order_status))) {
             return 'PROCESSING';
         }
-        if (orders.some((o) => o.order_status === 'REJECTED' || o.order_status === 'FAILED')) {
+        if (orders.some((order) => order.order_status === 'REJECTED' || order.order_status === 'FAILED')) {
             return 'REJECTED';
         }
-        if (orders.some((o) => o.order_status === 'EXECUTED')) {
-            return 'EXECUTED';
-        }
-        if (orders.some((o) => o.order_status === 'SKIPPED')) {
+        if (orders.some((order) => order.order_status === 'SKIPPED')) {
             return 'SKIPPED';
+        }
+        if (orders.some((order) => order.order_status === 'EXECUTED')) {
+            return 'EXECUTED';
         }
         return 'PENDING';
     }
@@ -285,7 +434,7 @@ export class DcaStrategyExecutionTimelineComponent {
 
     private enrichTimelineNode(node: TimelineNode): TimelineNode {
         const totalPlannedAmount = node.orders.reduce((sum, order) => sum + (order.planned_source_asset_amount || 0), 0);
-        const executedOrders = node.orders.filter((order) => order.order_status === 'EXECUTED');
+        const executedOrders = node.orders.filter((order) => order.order_status === 'EXECUTED' && (order.executed_source_asset_amount ?? 0) > 0);
         const totalExecutedAmount = executedOrders.reduce((sum, order) => sum + (order.executed_source_asset_amount || 0), 0);
         const totalAcquiredTargetAssetAmount = executedOrders.reduce((sum, order) => sum + (order.executed_target_asset_amount || 0), 0);
         const protectedOrderCount = node.orders.filter((order) => this.isProtectedByPurchasePriceGuard(order)).length;
@@ -315,10 +464,15 @@ export class DcaStrategyExecutionTimelineComponent {
         return sortedRulerNodes[sortedRulerNodes.length - 1];
     }
 
-    private generateCalendarRulerNodes(startTimestamp: number, endTimestamp: number, totalDuration: number): TimelineNode[] {
+    private generateCalendarRulerNodes(
+        startTimestamp: number,
+        endTimestamp: number,
+        totalDuration: number,
+        strategyEndAnchorTimestamp: number
+    ): TimelineNode[] {
         const rulerNodes: TimelineNode[] = [];
         const startDate = new Date(startTimestamp);
-        const endDate = new Date(endTimestamp);
+        const endAnchorDate = new Date(strategyEndAnchorTimestamp);
 
         rulerNodes.push(
             this.createTimelineNode({
@@ -357,26 +511,26 @@ export class DcaStrategyExecutionTimelineComponent {
             currentMonthPointer = new Date(currentMonthPointer.getFullYear(), currentMonthPointer.getMonth() + 1, 1);
         }
 
-        if (!rulerNodes.some((n) => n.timestamp === endTimestamp)) {
+        if (strategyEndAnchorTimestamp > startTimestamp && !rulerNodes.some((node) => node.identifier === 'strategy-end')) {
             rulerNodes.push(
                 this.createTimelineNode({
                     identifier: 'strategy-end',
-                    timestamp: endTimestamp,
-                    leftPositionPercent: 100,
-                    isMajor: endDate.getDate() === 1,
-                    isMinor: endDate.getDate() !== 1,
-                    isMonthBoundary: endDate.getDate() === 1,
-                    label: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    timestamp: strategyEndAnchorTimestamp,
+                    leftPositionPercent: ((strategyEndAnchorTimestamp - startTimestamp) / totalDuration) * 100,
+                    isMajor: false,
+                    isMinor: true,
+                    isMonthBoundary: false,
+                    label: endAnchorDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                 })
             );
         }
 
-        const sortedNodes = [...rulerNodes].sort((a, b) => a.timestamp - b.timestamp);
+        const sortedNodes = [...rulerNodes].sort((nodeA, nodeB) => nodeA.timestamp - nodeB.timestamp);
         const finalNodes: TimelineNode[] = [];
 
-        for (let i = 0; i < sortedNodes.length - 1; i++) {
-            const current = sortedNodes[i];
-            const next = sortedNodes[i + 1];
+        for (let nodeIndex = 0; nodeIndex < sortedNodes.length - 1; nodeIndex++) {
+            const current = sortedNodes[nodeIndex];
+            const next = sortedNodes[nodeIndex + 1];
             finalNodes.push(current);
 
             const durationSegment = next.timestamp - current.timestamp;
@@ -389,8 +543,8 @@ export class DcaStrategyExecutionTimelineComponent {
                 const endWeek = isSameMonth ? Math.min(4, Math.floor(new Date(next.timestamp).getDate() / 7) + 1) : 5;
 
                 const missingWeeks: number[] = [];
-                for (let w = startWeek + 1; w < endWeek; w++) {
-                    missingWeeks.push(w);
+                for (let weekNumber = startWeek + 1; weekNumber < endWeek; weekNumber++) {
+                    missingWeeks.push(weekNumber);
                 }
 
                 if (missingWeeks.length > 0) {
@@ -417,7 +571,7 @@ export class DcaStrategyExecutionTimelineComponent {
 
         finalNodes.push(sortedNodes[sortedNodes.length - 1]);
 
-        finalNodes.sort((a, b) => a.timestamp - b.timestamp);
+        finalNodes.sort((nodeA, nodeB) => nodeA.timestamp - nodeB.timestamp);
         return finalNodes;
     }
 

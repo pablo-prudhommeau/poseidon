@@ -55,9 +55,17 @@ class AaveDcaScheduler:
                 executed_source_asset_amount=None,
                 executed_target_asset_amount=None,
                 order_status=AaveDcaOrderStatus.PENDING,
-                transaction_hash=None,
                 actual_execution_price=None,
-                executed_at=None
+                executed_at=None,
+                allocation_decision=None,
+                allocation_multiplier=None,
+                dry_powder_delta=None,
+                reference_market_price=None,
+                pipeline_operations=None,
+                pipeline_attempt_count=0,
+                next_attempt_at=None,
+                suspension_reason=None,
+                telegram_message_id=None,
             )
             scheduled_orders_collection.append(new_dca_order)
 

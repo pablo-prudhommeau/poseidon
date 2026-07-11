@@ -56,14 +56,14 @@ class AaveSentinelService:
             detailed_initial_snapshot = await self._notification_service.format_notification_message(initial_position_snapshot)
             await self._notification_service.send_alert(
                 "Sentinel démarré",
-                f"Mode : {operating_mode_label}\n\n{detailed_initial_snapshot}",
+                detailed_initial_snapshot,
                 AaveSentinelAlertSeverity.INFO,
             )
             self._notification_service.bootstrap_state_from_snapshot(initial_position_snapshot)
         else:
             await self._notification_service.send_alert(
                 "Sentinel démarré",
-                f"Mode : {operating_mode_label}\n\n⚠️ Impossible de récupérer le snapshot initial.",
+                "⚠️ Impossible de récupérer le snapshot initial.",
                 AaveSentinelAlertSeverity.WARNING,
             )
 

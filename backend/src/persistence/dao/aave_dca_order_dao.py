@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import select, desc
+from sqlalchemy import or_, select, desc
 from sqlalchemy.orm import Session
 
 from src.logging.logger import get_application_logger
@@ -41,10 +41,43 @@ class AaveDcaOrderDao:
         return list(self.database_session.execute(database_query).scalars().all())
 
     def retrieve_due_pending(self, current_timestamp: datetime) -> List[AaveDcaOrder]:
+        resumable_order_statuses = [
+            "PENDING",
+            "AWAITING_WITHDRAW",
+            "AWAITING_SWAP",
+            "AWAITING_SUPPLY",
+        ]
         database_query = (
             select(AaveDcaOrder)
-            .where(AaveDcaOrder.order_status.in_(["PENDING", "APPROVED"]))
+            .where(AaveDcaOrder.order_status.in_(resumable_order_statuses))
             .where(AaveDcaOrder.planned_execution_date <= current_timestamp)
+            .where(AaveDcaOrder.suspension_reason.is_(None))
+            .where(
+                or_(
+                    AaveDcaOrder.next_attempt_at.is_(None),
+                    AaveDcaOrder.next_attempt_at <= current_timestamp,
+                )
+            )
+            .order_by(AaveDcaOrder.id.asc())
+        )
+        return list(self.database_session.execute(database_query).scalars().all())
+
+    def retrieve_active_telegram_orders(self) -> List[AaveDcaOrder]:
+        active_order_statuses = [
+            "WAITING_USER_APPROVAL",
+            "AWAITING_WITHDRAW",
+            "AWAITING_SWAP",
+            "AWAITING_SUPPLY",
+        ]
+        database_query = (
+            select(AaveDcaOrder)
+            .where(
+                or_(
+                    AaveDcaOrder.order_status.in_(active_order_statuses),
+                    AaveDcaOrder.suspension_reason.is_not(None),
+                )
+            )
+            .order_by(AaveDcaOrder.id.asc())
         )
         return list(self.database_session.execute(database_query).scalars().all())
 

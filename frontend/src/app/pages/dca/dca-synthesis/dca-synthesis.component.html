@@ -18,11 +18,11 @@
         <div class="grid grid-cols-2 gap-2">
             <div class="p-2 rounded bg-black/20 border border-blue-500/20 flex flex-col gap-0.5">
                 <span class="text-[9px] uppercase font-bold text-blue-400/70 tracking-widest">Nominal Order</span>
-                <span class="text-sm font-semibold text-blue-100">{{ strategy().source_asset_currency_symbol }} {{ nominalMonthlyInstallment() | number: '1.0-0' }}</span>
+                <span class="text-sm font-semibold text-blue-100">{{ strategy().source_asset_currency_symbol }} {{ nominalMonthlyInstallment() | number: '1.2-2' }}</span>
             </div>
             <div class="p-2 rounded bg-black/20 border border-emerald-500/20 flex flex-col gap-0.5">
                 <span class="text-[9px] uppercase font-bold text-emerald-400/70 tracking-widest">Dry Powder</span>
-                <span class="text-sm font-semibold text-emerald-100">{{ strategy().source_asset_currency_symbol }} {{ availableDryPowder() | number: '1.0-0' }}</span>
+                <span class="text-sm font-semibold text-emerald-100">{{ strategy().source_asset_currency_symbol }} {{ availableDryPowder() | number: '1.2-2' }}</span>
             </div>
         </div>
 
@@ -38,6 +38,8 @@
                 </div>
                 <div class="flex items-center gap-1" title="Execution steps">
                     <i class="fa fa-repeat text-slate-700"></i>
+                    <span class="text-slate-300">{{ durationSummary().executedInstallments }}</span>
+                    <span class="text-slate-500">/</span>
                     <span class="text-slate-300">{{ durationSummary().totalInstallments }}</span>
                     <span class="text-slate-500">steps</span>
                 </div>
@@ -61,18 +63,23 @@
         </div>
     </ng-template>
     <div class="flex flex-col gap-4 mt-1">
-        <div class="flex flex-col">
-            <div class="text-3xl font-black text-white tracking-tight">{{ currentAveragePurchasePrice() | optionalNumber: '1.2-2' : strategy().source_asset_currency_symbol + ' ' }}</div>
+        <div class="flex flex-col gap-1">
+            <span class="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Effective Smart PRU</span>
+            <div class="text-3xl font-black text-white tracking-tight">{{ effectiveSmartAverageUnitPrice() | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</div>
         </div>
 
         <div class="h-8 py-1">
-            <sparkline *ngIf="(purchasePriceSparkline()?.length ?? 0) > 1" [points]="purchasePriceSparkline()"></sparkline>
+            <sparkline *ngIf="(effectiveSmartAverageUnitPriceSparkline()?.length ?? 0) > 0" [points]="effectiveSmartAverageUnitPriceSparkline()"></sparkline>
         </div>
 
         <div class="grid grid-cols-1 gap-1.5 border-t border-white/5 pt-3">
             <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400">Effective Smart PRU</span>
+                <span class="text-emerald-400 text-sm font-bold">{{ effectiveSmartAverageUnitPrice() | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px]">
                 <span class="text-slate-400">Projected Smart PRU</span>
-                <span class="text-emerald-400 text-sm font-bold">{{ finalProjections().smartAverageUnitPrice | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
+                <span class="text-white text-sm font-bold">{{ finalProjections().smartAverageUnitPrice | optionalNumber: '1.0-0' : strategy().source_asset_currency_symbol + ' ' }}</span>
             </div>
             <div class="flex items-center justify-between text-[11px]">
                 <span class="text-slate-600 italic">Comparison (Standard DCA)</span>

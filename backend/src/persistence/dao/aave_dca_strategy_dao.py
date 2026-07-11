@@ -33,19 +33,22 @@ class AaveDcaStrategyDao:
             self,
             dca_strategy: AaveDcaStrategy,
             last_execution_source_amount: float,
-            last_execution_price: float
+            last_execution_target_asset_amount: Optional[float] = None,
+            last_execution_reference_price: Optional[float] = None,
     ) -> None:
-        current_total_amount = dca_strategy.total_deployed_amount or 0.0
-        current_total_quantity = 0.0
+        current_total_amount: float = dca_strategy.total_deployed_amount or 0.0
+        current_total_quantity: float = 0.0
         if dca_strategy.average_purchase_price > 0:
             current_total_quantity = current_total_amount / dca_strategy.average_purchase_price
 
-        new_total_amount = current_total_amount + last_execution_source_amount
-        new_quantity = 0.0
-        if last_execution_price > 0:
-            new_quantity = last_execution_source_amount / last_execution_price
+        new_total_amount: float = current_total_amount + last_execution_source_amount
+        new_quantity: float = 0.0
+        if last_execution_target_asset_amount is not None and last_execution_target_asset_amount > 0:
+            new_quantity = last_execution_target_asset_amount
+        elif last_execution_reference_price is not None and last_execution_reference_price > 0:
+            new_quantity = last_execution_source_amount / last_execution_reference_price
 
-        new_total_quantity = current_total_quantity + new_quantity
+        new_total_quantity: float = current_total_quantity + new_quantity
 
         dca_strategy.total_deployed_amount = new_total_amount
         if new_total_quantity > 0:

@@ -96,7 +96,10 @@ class CacheInvalidator:
 
         try:
             logger.debug("[CACHE][REBUILD] realm=%s starting", realm_candidate.value)
-            rebuilt_payload = await asyncio.to_thread(rebuilder.rebuild)
+            if hasattr(rebuilder, "rebuild_async"):
+                rebuilt_payload = await rebuilder.rebuild_async()
+            else:
+                rebuilt_payload = await asyncio.to_thread(rebuilder.rebuild)
             rebuilder.apply_to_cache(rebuilt_payload)
             await rebuilder.notify_websocket(rebuilt_payload)
             logger.debug("[CACHE][REBUILD] realm=%s done", realm_candidate.value)

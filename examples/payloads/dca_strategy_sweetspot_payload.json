@@ -5,6 +5,7 @@
     "source_asset_decimals": 6,
     "target_asset_symbol": "BTC.b",
     "target_asset_address": "0x152b9d0FdC40C096757F570A51E494bd4b943E50",
+    "target_asset_decimals": 8,
     "binance_trading_pair": "BTCUSDT",
     "total_allocated_budget": 10000,
     "total_planned_executions": 200,

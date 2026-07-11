@@ -13,6 +13,8 @@ from src.api.http.api_schemas import (
     TradingEvaluationFundamentalsPayload,
     TradingEvaluationDecisionPayload,
     AaveDcaOrderPayload,
+    AaveDcaOrderPipelineOperationsPayload,
+    AaveDcaPipelineOperationPayload,
     AaveDcaStrategyPayload,
     TradingEvaluationShadowingDiagnosticsPayload,
     TradingScreenerEnvelopePayload,
@@ -270,6 +272,10 @@ def serialize_shadowing_verdict_as_trading_evaluation_payload(
 
 
 def serialize_aave_dca_order(order: AaveDcaOrder) -> AaveDcaOrderPayload:
+    serialized_pipeline_operations: Optional[AaveDcaOrderPipelineOperationsPayload] = None
+    if order.pipeline_operations is not None:
+        serialized_pipeline_operations = AaveDcaOrderPipelineOperationsPayload.model_validate(order.pipeline_operations)
+
     return AaveDcaOrderPayload(
         id=order.id,
         strategy_id=order.strategy_id,
@@ -278,10 +284,16 @@ def serialize_aave_dca_order(order: AaveDcaOrder) -> AaveDcaOrderPayload:
         executed_source_asset_amount=order.executed_source_asset_amount,
         executed_target_asset_amount=order.executed_target_asset_amount,
         order_status=order.order_status.value,
-        transaction_hash=order.transaction_hash,
         actual_execution_price=order.actual_execution_price,
         executed_at=format_datetime_to_local_iso(order.executed_at) if order.executed_at else None,
-        allocation_decision_description=order.allocation_decision_description,
+        allocation_decision=order.allocation_decision,
+        allocation_multiplier=order.allocation_multiplier,
+        dry_powder_delta=order.dry_powder_delta,
+        reference_market_price=order.reference_market_price,
+        pipeline_operations=serialized_pipeline_operations,
+        pipeline_attempt_count=order.pipeline_attempt_count,
+        next_attempt_at=format_datetime_to_local_iso(order.next_attempt_at) if order.next_attempt_at else None,
+        suspension_reason=order.suspension_reason,
     )
 
 
@@ -295,6 +307,7 @@ def serialize_aave_dca_strategy(strategy: AaveDcaStrategy, live_metrics: AaveLiv
         source_asset_currency_symbol=get_currency_symbol(strategy.source_asset_symbol),
         target_asset_symbol=strategy.target_asset_symbol,
         target_asset_address=strategy.target_asset_address,
+        target_asset_decimals=strategy.target_asset_decimals,
         target_asset_currency_symbol=get_currency_symbol(strategy.target_asset_symbol),
         binance_trading_pair=strategy.binance_trading_pair,
         total_allocated_budget=strategy.total_allocated_budget,

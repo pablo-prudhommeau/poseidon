@@ -19,9 +19,7 @@ import {
     DCA_STRATEGY_PATH_TIME_AXIS_IDS
 } from '../data/dca-strategy-path-projection-metrics.catalog';
 import { DCA_STRATEGY_PATH_SERIES } from '../data/dca-strategy-path-projection-series-names';
-import {
-    resolveDcaStrategyPathSeriesDefaultVisible
-} from '../data/dca-strategy-path-projection-metric-groups';
+import { resolveDcaStrategyPathSeriesDefaultVisible } from '../data/dca-strategy-path-projection-metric-groups';
 import {
     extractChartPointCoordinates,
     resolveBacktestReferenceVisibleRangeMilliseconds,
@@ -221,12 +219,8 @@ export class DcaStrategyPathProjectionSeriesBuilder {
 
         const strategyTimeAxisId: string = DCA_STRATEGY_PATH_TIME_AXIS_IDS.strategy;
         const backtestReferenceTimeAxisId: string = DCA_STRATEGY_PATH_TIME_AXIS_IDS.backtestReference;
-        const marketPriceExecutionBandDefaultVisible = resolveDcaStrategyPathSeriesDefaultVisible(
-            DCA_STRATEGY_PATH_SERIES.marketPriceExecutionBand
-        );
-        const smartVsProjectedEffectiveBandDefaultVisible = resolveDcaStrategyPathSeriesDefaultVisible(
-            DCA_STRATEGY_PATH_SERIES.smartVsProjectedEffectiveBand
-        );
+        const marketPriceExecutionBandDefaultVisible = resolveDcaStrategyPathSeriesDefaultVisible(DCA_STRATEGY_PATH_SERIES.marketPriceExecutionBand);
+        const smartVsProjectedEffectiveBandDefaultVisible = resolveDcaStrategyPathSeriesDefaultVisible(DCA_STRATEGY_PATH_SERIES.smartVsProjectedEffectiveBand);
 
         const marketPriceExecutionBandSegmentBundles = buildMarketPriceExecutionBandSegmentBundles(
             sciChartModule,

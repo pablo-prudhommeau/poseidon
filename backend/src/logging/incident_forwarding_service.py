@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import threading
 import time
@@ -35,7 +36,7 @@ def forward_incident_to_telegram(
         return
 
     normalized_title = title.strip()
-    normalized_body = _truncate_incident_body(body.strip())
+    normalized_body = _truncate_incident_body(_escape_html_incident_body(body.strip()))
     if not normalized_title or not normalized_body:
         return
 
@@ -192,3 +193,7 @@ def _truncate_incident_body(body: str) -> str:
     truncated_suffix = "\n\n[truncated]"
     keep_characters = maximum_characters - len(truncated_suffix)
     return body[:keep_characters] + truncated_suffix
+
+
+def _escape_html_incident_body(body: str) -> str:
+    return html.escape(body, quote=False)

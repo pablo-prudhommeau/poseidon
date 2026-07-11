@@ -122,11 +122,18 @@ class Settings:
     AAVE_SENTINEL_WALLET_MNEMONIC: str = os.getenv("AAVE_SENTINEL_WALLET_MNEMONIC", "")
 
     AAVE_DCA_EMA50_WARMUP_KLINES: int = int(os.getenv("AAVE_DCA_EMA50_WARMUP_KLINES", "150"))
-    AAVE_DCA_ENABLED: bool = _as_bool(os.getenv("AAVE_DCA_ENABLED"), True)
+    AAVE_DCA_ENABLED: bool = _as_bool(os.getenv("AAVE_DCA_ENABLED"), False)
     AAVE_DCA_PAPER_MODE: bool = _as_bool(os.getenv("AAVE_DCA_PAPER_MODE"), True)
     AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS: int = int(os.getenv("AAVE_DCA_PROCESS_TICKER_INTERVAL_SECONDS", "10"))
     AAVE_DCA_WALLET_DERIVATION_INDEX: int = int(os.getenv("AAVE_DCA_WALLET_DERIVATION_INDEX", "0"))
     AAVE_DCA_WALLET_MNEMONIC: str = os.getenv("AAVE_DCA_WALLET_MNEMONIC", "")
+    AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX: float = float(os.getenv("AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX", "0.05"))
+    AAVE_DCA_SWAP_PRICE_DEVIATION_MAX_PERCENT: float = float(os.getenv("AAVE_DCA_SWAP_PRICE_DEVIATION_MAX_PERCENT", "0.5"))
+    AAVE_DCA_PIPELINE_MAX_RETRY_ATTEMPTS: int = int(os.getenv("AAVE_DCA_PIPELINE_MAX_RETRY_ATTEMPTS", "4"))
+    AAVE_DCA_PIPELINE_BASE_BACKOFF_SECONDS: int = int(os.getenv("AAVE_DCA_PIPELINE_BASE_BACKOFF_SECONDS", "30"))
+    AAVE_DCA_PIPELINE_MAX_BACKOFF_SECONDS: int = int(os.getenv("AAVE_DCA_PIPELINE_MAX_BACKOFF_SECONDS", "900"))
+    AAVE_DCA_SWAP_SETTLEMENT_POLL_INTERVAL_SECONDS: float = float(os.getenv("AAVE_DCA_SWAP_SETTLEMENT_POLL_INTERVAL_SECONDS", "2.0"))
+    AAVE_DCA_SWAP_SETTLEMENT_POLL_TIMEOUT_SECONDS: float = float(os.getenv("AAVE_DCA_SWAP_SETTLEMENT_POLL_TIMEOUT_SECONDS", "60.0"))
 
     CHART_AI_CAPTURE_AFTER_RENDER_MS: int = int(os.getenv("CHART_AI_CAPTURE_AFTER_RENDER_MS", "900"))
     CHART_AI_CAPTURE_BROWSER: str = os.getenv("CHART_AI_CAPTURE_BROWSER", "chromium")
@@ -299,9 +306,11 @@ class Settings:
             validate_and_apply_trading_application_configuration,
             validate_live_wallet_configuration,
         )
+        from src.core.aavedca.aave_dca_configuration_service import validate_aave_dca_live_wallet_configuration
 
         validate_and_apply_trading_application_configuration(self)
         validate_live_wallet_configuration(self)
+        validate_aave_dca_live_wallet_configuration(self)
 
 
 settings: Settings = Settings()

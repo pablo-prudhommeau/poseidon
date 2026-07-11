@@ -9,6 +9,12 @@ from web3 import Web3
 from web3.types import TxParams
 
 from src.configuration.config import settings
+from src.integrations.blockchain.blockchain_execution_service import (
+    BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS,
+    EVM_FALLBACK_GAS_LIMIT,
+    EVM_GAS_ESTIMATION_BUFFER_MULTIPLIER,
+)
+from src.integrations.blockchain.blockchain_utils import normalize_evm_transaction_hash
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -84,13 +90,16 @@ class EvmSigner:
                     "data": transaction_payload["data"],
                     "value": transaction_payload["value"]
                 })
-                transaction_payload["gas"] = int(estimated_units * 1.1)
+                transaction_payload["gas"] = int(
+                    estimated_units * EVM_GAS_ESTIMATION_BUFFER_MULTIPLIER
+                )
             except Exception as exception:
                 logger.warning(
-                    "[BLOCKCHAIN][EVM][GAS] Gas estimation failed, falling back to static limit of 400,000 units: %s",
-                    exception
+                    "[BLOCKCHAIN][EVM][GAS] Gas estimation failed, falling back to static limit of %d units: %s",
+                    EVM_FALLBACK_GAS_LIMIT,
+                    exception,
                 )
-                transaction_payload["gas"] = 400000
+                transaction_payload["gas"] = EVM_FALLBACK_GAS_LIMIT
 
         logger.debug(
             "[BLOCKCHAIN][EVM][BUILD] Transaction skeleton prepared: Nonce=%s | GasLimit=%s | MaxFee=%s Gwei",
@@ -119,18 +128,19 @@ class EvmSigner:
 
         signed_transaction_envelope = self.local_account.sign_transaction(transaction_payload)
 
-        raw_transaction_bytes = signed_transaction_envelope.rawTransaction
+        raw_transaction_bytes = signed_transaction_envelope.raw_transaction
 
         if not raw_transaction_bytes:
             raise RuntimeError("[BLOCKCHAIN][EVM][SIGN] Critical error: Signed transaction contains no raw bytes")
 
         transaction_hash_bytes = self.web3_provider.eth.send_raw_transaction(raw_transaction_bytes)
-        transaction_hash_hex = transaction_hash_bytes.hex()
+        transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash_bytes)
 
         logger.info("[BLOCKCHAIN][EVM][BROADCAST] Transaction successfully broadcasted. Hash: %s", transaction_hash_hex)
         return transaction_hash_hex
 
-    def confirm_transaction(self, tx_hash_hex: str, timeout_seconds: int = 45) -> bool:
+    def confirm_transaction(self, tx_hash_hex: str) -> bool:
+        timeout_seconds = BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS
         try:
             receipt = self.web3_provider.eth.wait_for_transaction_receipt(tx_hash_hex, timeout=timeout_seconds)
             if receipt is not None:
