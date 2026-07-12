@@ -6,6 +6,7 @@ from typing import Awaitable, Callable, Optional
 import httpx
 
 from src.configuration.config import settings
+from src.core.aavesentinel.aave_sentinel_fiat_flow_service import AaveSentinelFiatFlowService
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelAlertSeverity,
     AaveSentinelPositionSnapshot,
@@ -32,11 +33,15 @@ SnapshotFetcher = Callable[[], Awaitable[Optional[AaveSentinelPositionSnapshot]]
 
 
 class AaveSentinelNotificationService:
-    def __init__(self, fetch_position_snapshot: SnapshotFetcher) -> None:
+    def __init__(
+            self,
+            fetch_position_snapshot: SnapshotFetcher,
+            fiat_flow_service: AaveSentinelFiatFlowService,
+    ) -> None:
         self._fetch_position_snapshot = fetch_position_snapshot
+        self._fiat_flow_service = fiat_flow_service
         self._http_client: Optional[httpx.AsyncClient] = None
         self._state = AaveSentinelState()
-        self._initial_basis_usd: Optional[float] = settings.AAVE_SENTINEL_INITIAL_DEPOSIT_USD
 
     async def close(self) -> None:
         if self._http_client is not None:
@@ -106,14 +111,26 @@ class AaveSentinelNotificationService:
             return f"{format_currency(amount_in_eur, 'EUR')} ({format_currency(amount_in_usd)})"
 
         performance_display_value = "N/A"
-        if self._initial_basis_usd is not None:
-            current_total_equity = position_snapshot.total_strategy_equity_usd
-            absolute_profit_and_loss = current_total_equity - self._initial_basis_usd
-            relative_profit_and_loss = 0.0
-            if self._initial_basis_usd != 0:
-                relative_profit_and_loss = absolute_profit_and_loss / abs(self._initial_basis_usd)
+        fiat_flow_summary = await self._fiat_flow_service.get_summary()
+        current_total_equity = position_snapshot.total_strategy_equity_usd
+        absolute_profit_and_loss = (
+                current_total_equity
+                - fiat_flow_summary.total_inflow_usd
+                + fiat_flow_summary.total_outflow_usd
+        )
+        relative_profit_and_loss = 0.0
+        net_capital_deployed_usd = fiat_flow_summary.net_capital_deployed_usd
+        if net_capital_deployed_usd != 0:
+            relative_profit_and_loss = absolute_profit_and_loss / abs(net_capital_deployed_usd)
 
-            performance_indicator = "🚀" if absolute_profit_and_loss >= 0 else "🔻"
+        performance_indicator = "🚀" if absolute_profit_and_loss >= 0 else "🔻"
+        if net_capital_deployed_usd == 0:
+            performance_display_value = (
+                f"{performance_indicator} "
+                f"{format_monetary_values(absolute_profit_and_loss)} "
+                f"(N/A)"
+            )
+        else:
             performance_display_value = (
                 f"{performance_indicator} "
                 f"{format_monetary_values(absolute_profit_and_loss)} "
@@ -213,10 +230,11 @@ class AaveSentinelNotificationService:
         ]
         message_sections.append(build_telegram_section_block("Wallet", wallet_section_lines))
 
-        initial_basis_display_value = self._initial_basis_usd or 0.0
         performance_section_lines: list[str] = [
-            f"📊 Net APY : <code>{format_percent(position_snapshot.weighted_net_apy)}</code>",
-            f"💰 Initial : <code>{format_monetary_values(initial_basis_display_value)}</code>",
+            f"📊 Net APY actuelle : <code>{format_percent(position_snapshot.weighted_net_apy)}</code>",
+            f"📥 Entrées : <code>{format_monetary_values(fiat_flow_summary.total_inflow_usd)}</code>",
+            f"📤 Sorties : <code>{format_monetary_values(fiat_flow_summary.total_outflow_usd)}</code>",
+            f"💼 Capital net : <code>{format_monetary_values(fiat_flow_summary.net_capital_deployed_usd)}</code>",
         ]
         message_sections.append(build_telegram_section_block("Performance", performance_section_lines))
 

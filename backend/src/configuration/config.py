@@ -89,6 +89,8 @@ class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
+    ROUTESCAN_API_KEY: str = os.getenv("ROUTESCAN_API_KEY", "")
+
     RPC_PREMIUM_URL_AVALANCHE: str = os.getenv("RPC_PREMIUM_URL_AVALANCHE", "")
     RPC_PREMIUM_URL_BASE: str = os.getenv("RPC_PREMIUM_URL_BASE", "")
     RPC_PREMIUM_URL_BSC: str = os.getenv("RPC_PREMIUM_URL_BSC", "")
@@ -108,7 +110,7 @@ class Settings:
     AAVE_SENTINEL_HEALTH_FACTOR_NEUTRAL_THRESHOLD: float = float(os.getenv("AAVE_SENTINEL_HEALTH_FACTOR_NEUTRAL_THRESHOLD", "1.35"))
     AAVE_SENTINEL_HEALTH_FACTOR_RELOOP_THRESHOLD: float = float(os.getenv("AAVE_SENTINEL_HEALTH_FACTOR_RELOOP_THRESHOLD", "1.45"))
     AAVE_SENTINEL_HEALTH_FACTOR_WARNING_THRESHOLD: float = float(os.getenv("AAVE_SENTINEL_HEALTH_FACTOR_WARNING_THRESHOLD", "1.25"))
-    AAVE_SENTINEL_INITIAL_DEPOSIT_USD: float = float(os.getenv("AAVE_SENTINEL_INITIAL_DEPOSIT_USD", "0.0"))
+    AAVE_SENTINEL_FIAT_FLOW_REFRESH_SECONDS: int = int(os.getenv("AAVE_SENTINEL_FIAT_FLOW_REFRESH_SECONDS", "600"))
     AAVE_SENTINEL_MAX_CONCURRENT_ASSET_SCANS: int = int(os.getenv("AAVE_SENTINEL_MAX_CONCURRENT_ASSET_SCANS", "5"))
     AAVE_SENTINEL_PAPER_MODE: bool = _as_bool(os.getenv("AAVE_SENTINEL_PAPER_MODE"), True)
     AAVE_SENTINEL_REPORTING_INTERVAL_SECONDS: int = int(os.getenv("AAVE_SENTINEL_REPORTING_INTERVAL_SECONDS", "60"))
@@ -307,10 +309,12 @@ class Settings:
             validate_live_wallet_configuration,
         )
         from src.core.aavedca.aave_dca_configuration_service import validate_aave_dca_live_wallet_configuration
+        from src.core.aavesentinel.aave_sentinel_configuration_service import validate_aave_sentinel_configuration
 
         validate_and_apply_trading_application_configuration(self)
         validate_live_wallet_configuration(self)
         validate_aave_dca_live_wallet_configuration(self)
+        validate_aave_sentinel_configuration(self)
 
 
 settings: Settings = Settings()

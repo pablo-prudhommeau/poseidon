@@ -126,7 +126,7 @@ def register_bot_commands(commands: list[dict[str, str]]) -> bool:
     if response_payload is None:
         return False
 
-    logger.info("[TELEGRAM][CLIENT][SUCCESS] Successfully registered Telegram bot commands")
+    logger.debug("[TELEGRAM][CLIENT][SUCCESS] Successfully registered Telegram bot commands")
     return True
 
 

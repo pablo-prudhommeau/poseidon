@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from src.configuration.config import settings
+from src.core.aavesentinel.aave_sentinel_fiat_flow_service import AaveSentinelFiatFlowService
 from src.core.aavesentinel.aave_sentinel_notification_service import AaveSentinelNotificationService
 from src.core.aavesentinel.aave_sentinel_snapshot_service import AaveSentinelSnapshotService
 from src.core.aavesentinel.aave_sentinel_structures import (
@@ -12,6 +13,7 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelRescueExecutionStatus,
 )
 from src.core.utils.date_utils import get_current_local_datetime
+from src.integrations.telegram.telegram_structures import TelegramMessage
 from src.integrations.telegram.telegram_update_registry import telegram_update_registry
 from src.logging.logger import get_application_logger
 
@@ -22,12 +24,13 @@ class AaveSentinelService:
     def __init__(self) -> None:
         self.is_running: bool = False
         self._snapshot_service = AaveSentinelSnapshotService()
-        self._notification_service = AaveSentinelNotificationService(
-            fetch_position_snapshot=self._snapshot_service.fetch_position_snapshot,
-        )
+        self._fiat_flow_service: Optional[AaveSentinelFiatFlowService] = None
+        self._notification_service: Optional[AaveSentinelNotificationService] = None
 
     @property
     def notification_service(self) -> AaveSentinelNotificationService:
+        if self._notification_service is None:
+            raise RuntimeError("Aave sentinel notification service is not initialized")
         return self._notification_service
 
     async def start(self) -> None:
@@ -42,6 +45,14 @@ class AaveSentinelService:
         self.is_running = True
         await self._snapshot_service.initialize()
 
+        self._fiat_flow_service = AaveSentinelFiatFlowService(
+            wallet_address=self._snapshot_service.wallet_address,
+        )
+        self._notification_service = AaveSentinelNotificationService(
+            fetch_position_snapshot=self._snapshot_service.fetch_position_snapshot,
+            fiat_flow_service=self._fiat_flow_service,
+        )
+
         operating_mode_label = "PAPER MODE" if settings.AAVE_SENTINEL_PAPER_MODE else "LIVE TRADING"
         logger.info(
             "[AAVESENTINEL][LIFECYCLE] Sentinel initialized in %s for wallet %s",
@@ -50,6 +61,7 @@ class AaveSentinelService:
         )
 
         await self._notification_service.register_bot_commands()
+        await self._fiat_flow_service.refresh_ledger()
 
         initial_position_snapshot = await self._snapshot_service.fetch_position_snapshot()
         if initial_position_snapshot is not None:
@@ -116,15 +128,24 @@ class AaveSentinelService:
 
     async def stop(self) -> None:
         self.is_running = False
-        await self._notification_service.close()
+        if self._notification_service is not None:
+            await self._notification_service.close()
+        if self._fiat_flow_service is not None:
+            await self._fiat_flow_service.close()
         logger.info("[AAVESENTINEL][LIFECYCLE] Sentinel shutdown sequence completed")
 
 
 sentinel = AaveSentinelService()
 
 
+async def _handle_sentinel_telegram_message(telegram_message: TelegramMessage) -> None:
+    if sentinel._notification_service is None:
+        logger.debug("[AAVESENTINEL][TELEGRAM] Message ignored because sentinel is not initialized")
+        return
+
+    await sentinel.notification_service.handle_telegram_message(telegram_message)
+
+
 def register_aave_sentinel_telegram_handlers() -> None:
-    telegram_update_registry.register_message_handler(
-        sentinel.notification_service.handle_telegram_message,
-    )
+    telegram_update_registry.register_message_handler(_handle_sentinel_telegram_message)
     logger.info("[AAVESENTINEL][TELEGRAM] Sentinel Telegram handlers registered")

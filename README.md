@@ -93,48 +93,37 @@ An autonomous monitoring brick dedicated to capital preservation and liquidation
 Create a `.env` file in the root directory. **Crucial keys are listed below:**
 
 ```bash
-# === API KEYS ===
-OPENAI_API_KEY=your_openai_key_here
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-
-# === WALLETS (one mnemonic per module, can be identical) ===
-TRADING_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
-AAVE_DCA_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
-AAVE_SENTINEL_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
-
-# === PAPER MODES (per module) ===
-TRADING_PAPER_MODE=true
-AAVE_DCA_PAPER_MODE=true
-AAVE_SENTINEL_PAPER_MODE=true
-
-# === BLOCKCHAIN RPCs ===
-EVM_RPC_URL=https://your-eth-rpc-url
-SOLANA_RPC_URL=https://your-solana-rpc-url
-
-# === DCA ===
-AAVE_SENTINEL_INITIAL_DEPOSIT_USD=10000
-
 # === DATABASE ===
 DATABASE_NAME=poseidon
 DATABASE_USER=poseidon
 DATABASE_PASSWORD=change_me
 DATABASE_URL="postgresql+psycopg://poseidon:<hostname>@postgres:5432/poseidon"
 
-# === RUNTIME FLAGS ===
-TRADING_ENABLED=false
-TRADING_SHADOWING_ENABLED=false
-AAVE_DCA_ENABLED=true
-AAVE_SENTINEL_ENABLED=false
-DATABASE_AUTO_MIGRATE=true
+# === TELEGRAM ===
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
 
-# === PATHS ===
-CHART_AI_SCREENSHOT_DIR="/app/data/screenshots"
+# === ROUTESCAN ===
+ROUTESCAN_API_KEY=your_routescan_api_key
+
+# === BLOCKCHAIN RPCs ===
+RPC_PREMIUM_URL_AVALANCHE=https://your-avalanche-rpc-url
+RPC_PREMIUM_URL_SOLANA=https://your-solana-rpc-url
+
+# === AAVE DCA ===
+AAVE_DCA_ENABLED=true
+AAVE_DCA_PAPER_MODE=true
+AAVE_DCA_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
+
+# === AAVE SENTINEL ===
+AAVE_SENTINEL_ENABLED=true
+AAVE_SENTINEL_PAPER_MODE=true
+AAVE_SENTINEL_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
 
 # === TRADING ===
-# ⚠️ DANGEROUS SECTION ⚠️
-# Activates the trading engine when needed
 TRADING_ENABLED=true
+TRADING_PAPER_MODE=true
+TRADING_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
 ```
 
 ### 2. Launch with docker

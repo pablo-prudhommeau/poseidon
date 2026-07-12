@@ -38,6 +38,10 @@ class AaveSentinelRescueExecutionStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class AaveSentinelConfigurationError(RuntimeError):
+    pass
+
+
 class AaveSentinelAssetSnapshot(BaseModel):
     symbol: str
     underlying_address: str
