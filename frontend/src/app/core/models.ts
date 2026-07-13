@@ -91,6 +91,9 @@ export interface DcaPipelineOperationPayload {
     source_amount_base_units?: number | null;
     expected_output_base_units?: number | null;
     minimum_output_base_units?: number | null;
+    failure_code?: string | null;
+    failure_message?: string | null;
+    pipeline_attempt_number?: number | null;
 }
 
 export interface DcaOrderPipelineOperationsPayload {

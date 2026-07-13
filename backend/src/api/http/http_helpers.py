@@ -24,8 +24,7 @@ from src.api.serializers import (
 )
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
-from src.core.aavedca.aave_dca_backtester import AaveDcaBacktester
-from src.core.aavedca.aave_dca_scheduler import AaveDcaScheduler
+from src.core.aavedca.aave_dca_helpers import generate_comparative_snapshot, generate_linear_execution_calendar
 from src.core.aavedca.aave_dca_structures import AaveDcaStrategyStatus
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.analytics.trading_analytics_helpers import (
@@ -255,7 +254,7 @@ async def create_aave_dca_strategy_from_payload(
     dca_strategy_dao = AaveDcaStrategyDao(database_session)
     dca_order_dao = AaveDcaOrderDao(database_session)
 
-    backtest_comparative_snapshot = await AaveDcaBacktester.generate_comparative_snapshot(
+    backtest_comparative_snapshot = await generate_comparative_snapshot(
         symbol=strategy_payload.binance_trading_pair,
         start_date=strategy_payload.bear_market_start_date,
         end_date=strategy_payload.bear_market_end_date,
@@ -272,7 +271,7 @@ async def create_aave_dca_strategy_from_payload(
     )
 
     saved_dca_strategy = dca_strategy_dao.save(new_dca_strategy)
-    scheduled_orders = AaveDcaScheduler.generate_linear_execution_calendar(saved_dca_strategy)
+    scheduled_orders = generate_linear_execution_calendar(saved_dca_strategy)
     dca_order_dao.bulk_save(scheduled_orders)
 
     cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)

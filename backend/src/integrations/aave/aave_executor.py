@@ -6,10 +6,17 @@ from eth_account import Account
 from eth_account.signers.local import LocalAccount
 from web3 import AsyncWeb3
 from web3.contract import AsyncContract
-from web3.exceptions import TimeExhausted
+from web3.exceptions import ContractLogicError, TimeExhausted
 from web3.types import TxParams
 
 from src.configuration.config import settings
+from src.integrations.aave.aave_structures import (
+    AaveEvmTransactionConfirmationFailureKind,
+    AaveEvmTransactionConfirmationOutcome,
+)
+from src.integrations.blockchain.evm.blockchain_evm_revert_utils import (
+    decode_evm_revert_reason_from_contract_logic_error,
+)
 from src.integrations.blockchain.blockchain_execution_service import (
     AAVE_EVM_APPROVE_GAS_LIMIT,
     AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
@@ -54,12 +61,12 @@ class AaveExecutor:
     def get_wallet_address(self) -> str:
         return self.wallet_address
 
-    async def confirm_transaction(
+    async def resolve_transaction_confirmation_outcome(
             self,
             chain: BlockchainNetwork,
             transaction_hash_hex: str,
             submitted_gas_limit: Optional[int] = None,
-    ) -> bool:
+    ) -> AaveEvmTransactionConfirmationOutcome:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         timeout_seconds = BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS
@@ -71,7 +78,11 @@ class AaveExecutor:
                 transaction_hash_hex,
                 timeout_seconds,
             )
-            return False
+            return AaveEvmTransactionConfirmationOutcome(
+                transaction_hash=transaction_hash_hex,
+                is_confirmed=False,
+                confirmation_failure_kind=AaveEvmTransactionConfirmationFailureKind.CONFIRMATION_TIMEOUT,
+            )
         except Exception as exception:
             logger.exception(
                 "[AAVE][EXECUTOR][CONFIRM] Error waiting for transaction receipt %s: %s",
@@ -83,23 +94,121 @@ class AaveExecutor:
             ) from exception
 
         receipt_status: Optional[int] = None
+        receipt_block_number: Optional[int] = None
         if receipt is not None and receipt.get("status") is not None:
             receipt_status = int(receipt["status"])
+        if receipt is not None and receipt.get("blockNumber") is not None:
+            receipt_block_number = int(receipt["blockNumber"])
+
         if receipt_status == 1:
             logger.debug("[AAVE][EXECUTOR][CONFIRM] Transaction confirmed: %s", transaction_hash_hex)
-            return True
+            return AaveEvmTransactionConfirmationOutcome(
+                transaction_hash=transaction_hash_hex,
+                is_confirmed=True,
+                block_number=receipt_block_number,
+            )
 
         gas_used: Optional[int] = None
         if receipt is not None and receipt.get("gasUsed") is not None:
             gas_used = int(receipt["gasUsed"])
+
+        onchain_revert_reason: Optional[str] = None
+        if receipt_block_number is not None:
+            onchain_revert_reason = await self._decode_reverted_transaction_reason(
+                chain=chain,
+                transaction_hash_hex=transaction_hash_hex,
+                receipt_block_number=receipt_block_number,
+            )
+
         logger.warning(
-            "[AAVE][EXECUTOR][CONFIRM] Transaction %s failed on-chain status=%s gas_used=%s submitted_gas_limit=%s",
+            "[AAVE][EXECUTOR][CONFIRM] Transaction %s failed on-chain status=%s gas_used=%s submitted_gas_limit=%s revert_reason=%s",
             transaction_hash_hex,
             receipt_status,
             gas_used,
             submitted_gas_limit,
+            onchain_revert_reason,
         )
-        return False
+        return AaveEvmTransactionConfirmationOutcome(
+            transaction_hash=transaction_hash_hex,
+            is_confirmed=False,
+            confirmation_failure_kind=AaveEvmTransactionConfirmationFailureKind.REVERTED,
+            onchain_revert_reason=onchain_revert_reason,
+            block_number=receipt_block_number,
+        )
+
+    async def _decode_reverted_transaction_reason(
+            self,
+            chain: BlockchainNetwork,
+            transaction_hash_hex: str,
+            receipt_block_number: int,
+    ) -> Optional[str]:
+        await self._initialize_provider(chain)
+        client = self.web3_clients[chain]
+        original_transaction = await client.eth.get_transaction(transaction_hash_hex)
+        simulation_block_number: int = max(receipt_block_number - 1, 0)
+        call_transaction: TxParams = {
+            "from": original_transaction["from"],
+            "to": original_transaction["to"],
+            "data": original_transaction["input"],
+            "value": original_transaction.get("value", 0),
+            "gas": original_transaction.get("gas", 0),
+        }
+        try:
+            await client.eth.call(call_transaction, simulation_block_number)
+            return None
+        except ContractLogicError as contract_logic_error:
+            revert_data_hex: Optional[str] = None
+            if contract_logic_error.data is not None:
+                revert_data_hex = str(contract_logic_error.data)
+            return decode_evm_revert_reason_from_contract_logic_error(
+                error_message=str(contract_logic_error),
+                revert_data_hex=revert_data_hex,
+            )
+        except Exception as exception:
+            logger.warning(
+                "[AAVE][EXECUTOR][CONFIRM] Failed to replay reverted transaction %s at block %s: %s",
+                transaction_hash_hex,
+                simulation_block_number,
+                exception,
+            )
+            return None
+
+    async def simulate_evm_transaction_before_broadcast(
+            self,
+            chain: BlockchainNetwork,
+            to_address: str,
+            transaction_calldata: str,
+            transaction_value_wei: int,
+            gas_limit: int,
+    ) -> Optional[str]:
+        await self._initialize_provider(chain)
+        client = self.web3_clients[chain]
+        checksum_to = AsyncWeb3.to_checksum_address(to_address)
+        call_transaction: TxParams = {
+            "from": self.wallet_address,
+            "to": checksum_to,
+            "data": transaction_calldata,
+            "value": transaction_value_wei,
+            "gas": gas_limit,
+        }
+        try:
+            await client.eth.call(call_transaction, "latest")
+            return None
+        except ContractLogicError as contract_logic_error:
+            revert_data_hex: Optional[str] = None
+            if contract_logic_error.data is not None:
+                revert_data_hex = str(contract_logic_error.data)
+            return decode_evm_revert_reason_from_contract_logic_error(
+                error_message=str(contract_logic_error),
+                revert_data_hex=revert_data_hex,
+            )
+        except Exception as exception:
+            logger.warning(
+                "[AAVE][EXECUTOR][SIMULATE] Pre-broadcast simulation failed for target=%s: %s",
+                checksum_to,
+                exception,
+            )
+            return str(exception)
 
     async def _initialize_provider(self, chain: BlockchainNetwork) -> None:
         if chain in self.web3_clients:
@@ -117,14 +226,14 @@ class AaveExecutor:
         self.wallet_address = account.address
 
         if chain == BlockchainNetwork.AVALANCHE:
-            from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
-            rpc_url = resolve_rpc_url_for_chain(BlockchainNetwork.AVALANCHE)
+            from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
+
             pool_address = settings.AAVE_POOL_V3_ADDRESS
         else:
             logger.error("[AAVE][EXECUTOR][INIT] Chain '%s' is not supported", chain.value)
             raise ValueError(f"Chain '{chain.value}' is not supported for Aave.")
 
-        client = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+        client = resolve_async_web3_provider_for_chain(chain)
         self.web3_clients[chain] = client
 
         pool_address_checksum = AsyncWeb3.to_checksum_address(pool_address)
@@ -215,11 +324,11 @@ class AaveExecutor:
         )
         signed_approval = client.eth.account.sign_transaction(approve_transaction, self.private_key)
         approval_transaction_hash = await client.eth.send_raw_transaction(signed_approval.raw_transaction)
-        approval_confirmed = await self.confirm_transaction(
+        approval_confirmation_outcome = await self.resolve_transaction_confirmation_outcome(
             chain,
             normalize_evm_transaction_hash(approval_transaction_hash),
         )
-        if not approval_confirmed:
+        if not approval_confirmation_outcome.is_confirmed:
             raise RuntimeError(f"ERC20 allowance approval not confirmed for spender {checksum_spender}")
 
     async def execute_raw_evm_transaction(
@@ -229,7 +338,7 @@ class AaveExecutor:
             transaction_calldata: str,
             transaction_value_wei: int,
             gas_limit: int,
-    ) -> Optional[str]:
+    ) -> AaveEvmTransactionConfirmationOutcome:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         checksum_to = AsyncWeb3.to_checksum_address(to_address)
@@ -254,14 +363,11 @@ class AaveExecutor:
         signed_transaction = client.eth.account.sign_transaction(raw_transaction, self.private_key)
         transaction_hash = await client.eth.send_raw_transaction(signed_transaction.raw_transaction)
         transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
-        is_confirmed = await self.confirm_transaction(
+        return await self.resolve_transaction_confirmation_outcome(
             chain,
             transaction_hash_hex,
             submitted_gas_limit=buffered_swap_gas_limit,
         )
-        if not is_confirmed:
-            return None
-        return transaction_hash_hex
 
     async def fetch_native_gas_balance_avax(self, chain: BlockchainNetwork) -> float:
         await self._initialize_provider(chain)
@@ -345,100 +451,96 @@ class AaveExecutor:
             logger.exception("[AAVE][EXECUTOR] Debt verification failed: %s", exception)
             return True
 
-    async def execute_withdrawal(self, chain: BlockchainNetwork, asset_address: str, amount_in_wei: int) -> Optional[str]:
+    async def execute_withdrawal(
+            self,
+            chain: BlockchainNetwork,
+            asset_address: str,
+            amount_in_wei: int,
+    ) -> AaveEvmTransactionConfirmationOutcome:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         pool = self.pool_contracts[chain]
 
         checksum_asset = AsyncWeb3.to_checksum_address(asset_address)
-        try:
-            nonce = await self._resolve_pending_transaction_nonce(chain)
+        nonce = await self._resolve_pending_transaction_nonce(chain)
 
-            withdraw_transaction: TxParams = await pool.functions.withdraw(
-                checksum_asset, amount_in_wei, self.wallet_address
-            ).build_transaction({
-                'from': self.wallet_address,
-                'nonce': nonce,
-            })
-            withdraw_transaction = await self._build_eip1559_transaction_parameters(
-                chain=chain,
-                transaction_parameters=withdraw_transaction,
-                gas_limit=AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
-            )
+        withdraw_transaction: TxParams = await pool.functions.withdraw(
+            checksum_asset, amount_in_wei, self.wallet_address
+        ).build_transaction({
+            'from': self.wallet_address,
+            'nonce': nonce,
+        })
+        withdraw_transaction = await self._build_eip1559_transaction_parameters(
+            chain=chain,
+            transaction_parameters=withdraw_transaction,
+            gas_limit=AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+        )
 
-            signed_transaction = client.eth.account.sign_transaction(withdraw_transaction, self.private_key)
-            transaction_hash = await client.eth.send_raw_transaction(signed_transaction.raw_transaction)
-            transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
+        signed_transaction = client.eth.account.sign_transaction(withdraw_transaction, self.private_key)
+        transaction_hash = await client.eth.send_raw_transaction(signed_transaction.raw_transaction)
+        transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
 
-            logger.info("[AAVE][EXECUTOR][WITHDRAW] Transaction sent: %s", transaction_hash_hex)
-            is_confirmed = await self.confirm_transaction(chain, transaction_hash_hex)
-            if not is_confirmed:
-                return None
-            return transaction_hash_hex
-        except Exception as exception:
-            logger.error("[AAVE][EXECUTOR][WITHDRAW] Withdrawal execution failed: %s", exception)
-            raise
+        logger.info("[AAVE][EXECUTOR][WITHDRAW] Transaction sent: %s", transaction_hash_hex)
+        return await self.resolve_transaction_confirmation_outcome(chain, transaction_hash_hex)
 
-    async def execute_supply(self, chain: BlockchainNetwork, asset_address: str, amount_in_wei: int) -> Optional[str]:
+    async def execute_supply(
+            self,
+            chain: BlockchainNetwork,
+            asset_address: str,
+            amount_in_wei: int,
+    ) -> AaveEvmTransactionConfirmationOutcome:
         await self._initialize_provider(chain)
         client = self.web3_clients[chain]
         pool = self.pool_contracts[chain]
 
         checksum_asset = AsyncWeb3.to_checksum_address(asset_address)
-        try:
-            token_contract = client.eth.contract(address=checksum_asset, abi=ERC20_ABI)
-            nonce = await self._resolve_pending_transaction_nonce(chain)
+        token_contract = client.eth.contract(address=checksum_asset, abi=ERC20_ABI)
+        nonce = await self._resolve_pending_transaction_nonce(chain)
 
-            allowance = await token_contract.functions.allowance(self.wallet_address, pool.address).call()
-            if allowance < amount_in_wei:
-                approve_transaction: TxParams = await token_contract.functions.approve(
-                    pool.address, amount_in_wei
-                ).build_transaction({
-                    'from': self.wallet_address,
-                    'nonce': nonce,
-                })
-                approve_transaction = await self._build_eip1559_transaction_parameters(
-                    chain=chain,
-                    transaction_parameters=approve_transaction,
-                    gas_limit=AAVE_EVM_APPROVE_GAS_LIMIT,
-                )
-                signed_approval = client.eth.account.sign_transaction(approve_transaction, self.private_key)
-                approval_transaction_hash = await client.eth.send_raw_transaction(signed_approval.raw_transaction)
-                approval_confirmed = await self.confirm_transaction(
-                    chain,
-                    normalize_evm_transaction_hash(approval_transaction_hash),
-                )
-                if not approval_confirmed:
-                    return None
-                nonce += 1
-
-            supply_transaction: TxParams = await pool.functions.supply(
-                checksum_asset, amount_in_wei, self.wallet_address, 0
+        allowance = await token_contract.functions.allowance(self.wallet_address, pool.address).call()
+        if allowance < amount_in_wei:
+            approve_transaction: TxParams = await token_contract.functions.approve(
+                pool.address, amount_in_wei
             ).build_transaction({
                 'from': self.wallet_address,
                 'nonce': nonce,
             })
-            supply_transaction = await self._build_eip1559_transaction_parameters(
+            approve_transaction = await self._build_eip1559_transaction_parameters(
                 chain=chain,
-                transaction_parameters=supply_transaction,
-                gas_limit=AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+                transaction_parameters=approve_transaction,
+                gas_limit=AAVE_EVM_APPROVE_GAS_LIMIT,
             )
+            signed_approval = client.eth.account.sign_transaction(approve_transaction, self.private_key)
+            approval_transaction_hash = await client.eth.send_raw_transaction(signed_approval.raw_transaction)
+            approval_confirmation_outcome = await self.resolve_transaction_confirmation_outcome(
+                chain,
+                normalize_evm_transaction_hash(approval_transaction_hash),
+            )
+            if not approval_confirmation_outcome.is_confirmed:
+                return approval_confirmation_outcome
+            nonce += 1
 
-            signed_supply = client.eth.account.sign_transaction(supply_transaction, self.private_key)
-            transaction_hash = await client.eth.send_raw_transaction(signed_supply.raw_transaction)
-            transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
-            is_confirmed = await self.confirm_transaction(chain, transaction_hash_hex)
-            if not is_confirmed:
-                return None
-            return transaction_hash_hex
-        except Exception as exception:
-            logger.error("[AAVE][EXECUTOR] Supply execution failed: %s", exception)
-            raise
+        supply_transaction: TxParams = await pool.functions.supply(
+            checksum_asset, amount_in_wei, self.wallet_address, 0
+        ).build_transaction({
+            'from': self.wallet_address,
+            'nonce': nonce,
+        })
+        supply_transaction = await self._build_eip1559_transaction_parameters(
+            chain=chain,
+            transaction_parameters=supply_transaction,
+            gas_limit=AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+        )
+
+        signed_supply = client.eth.account.sign_transaction(supply_transaction, self.private_key)
+        transaction_hash = await client.eth.send_raw_transaction(signed_supply.raw_transaction)
+        transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
+        return await self.resolve_transaction_confirmation_outcome(chain, transaction_hash_hex)
 
     async def approve_and_execute_raw_transaction(
             self, chain: BlockchainNetwork, source_token: str, spender: str, amount_in_wei: int,
             to_address: str, tx_data: str, tx_value: int, gas_limit: int,
-    ) -> Optional[str]:
+    ) -> AaveEvmTransactionConfirmationOutcome:
         await self.ensure_erc20_allowance(
             chain=chain,
             token_address=source_token,

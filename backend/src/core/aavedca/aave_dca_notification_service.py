@@ -9,12 +9,16 @@ from sqlalchemy.orm import Session
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
-from src.core.aavedca.aave_dca_helpers import (
-    deserialize_pipeline_operations,
+from src.core.aavedca.aave_dca_helpers import deserialize_pipeline_operations
+from src.core.aavedca.aave_dca_utils import (
     format_allocation_decision_label,
     resolve_pipeline_step_descriptor,
 )
-from src.core.aavedca.aave_dca_structures import AaveDcaAllocationDecision, AaveDcaOrderStatus
+from src.core.aavedca.aave_dca_structures import (
+    AaveDcaAllocationDecision,
+    AaveDcaOrderStatus,
+    AaveDcaPipelineOperationStatus,
+)
 from src.core.trading.trading_utils import get_currency_symbol
 from src.integrations.telegram.telegram_client import delete_message, edit_message_text, send_alert
 from src.integrations.telegram.telegram_format_utils import (
@@ -131,6 +135,25 @@ def build_dca_order_telegram_body(
 
     pipeline_operations_container = deserialize_pipeline_operations(dca_order.pipeline_operations)
     for pipeline_operation in pipeline_operations_container.pipeline_operations:
+        if pipeline_operation.status == AaveDcaPipelineOperationStatus.FAILED:
+            failed_operation_label: str = html.escape(pipeline_operation.step.value)
+            if pipeline_operation.failure_code is not None:
+                failed_operation_label = (
+                    f"{failed_operation_label} FAILED — "
+                    f"{html.escape(pipeline_operation.failure_code)}"
+                )
+            else:
+                failed_operation_label = f"{failed_operation_label} FAILED"
+            pipeline_section_lines.append(f"❌ <b>{failed_operation_label}</b>")
+            if pipeline_operation.failure_message is not None:
+                pipeline_section_lines.append(
+                    f"↳ <code>{html.escape(pipeline_operation.failure_message)}</code>"
+                )
+            if pipeline_operation.transaction_hash is not None:
+                pipeline_section_lines.append(
+                    f"🔗 <code>{html.escape(pipeline_operation.transaction_hash)}</code>"
+                )
+            continue
         if pipeline_operation.transaction_hash is not None:
             pipeline_section_lines.append(
                 f"🔗 <b>{html.escape(pipeline_operation.step.value)}:</b> "

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from web3 import AsyncWeb3, Web3
+from web3.middleware import ExtraDataToPOAMiddleware
 
 from src.configuration.config import settings
 from src.logging.logger import get_application_logger
@@ -38,6 +39,16 @@ _resolved_web3_provider_cache: dict[BlockchainNetwork, Web3] = {}
 _resolved_async_web3_provider_cache: dict[BlockchainNetwork, AsyncWeb3] = {}
 _resolved_rpc_url_cache: dict[BlockchainNetwork, str] = {}
 _blacklisted_rpc_urls: dict[str, float] = {}
+
+_POA_EVM_CHAINS: frozenset[BlockchainNetwork] = frozenset({
+    BlockchainNetwork.AVALANCHE,
+})
+
+
+def _inject_poa_middleware_if_required(chain: BlockchainNetwork, web3_client: Web3 | AsyncWeb3) -> None:
+    if chain not in _POA_EVM_CHAINS:
+        return
+    web3_client.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
 
 def _is_rpc_url_blacklisted(rpc_url: str) -> bool:
@@ -265,6 +276,7 @@ def resolve_web3_provider_for_chain(chain: BlockchainNetwork) -> Optional[Web3]:
         return None
 
     provider = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
+    _inject_poa_middleware_if_required(chain, provider)
     _resolved_web3_provider_cache[chain] = provider
     return provider
 
@@ -276,6 +288,7 @@ def resolve_async_web3_provider_for_chain(chain: BlockchainNetwork) -> AsyncWeb3
 
     rpc_url = resolve_rpc_url_for_chain(chain)
     provider = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+    _inject_poa_middleware_if_required(chain, provider)
     _resolved_async_web3_provider_cache[chain] = provider
     return provider
 

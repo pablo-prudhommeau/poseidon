@@ -97,7 +97,8 @@ class Settings:
     RPC_PREMIUM_URL_ETHEREUM: str = os.getenv("RPC_PREMIUM_URL_ETHEREUM", "")
     RPC_PREMIUM_URL_SOLANA: str = os.getenv("RPC_PREMIUM_URL_SOLANA", "")
 
-    LIFI_BASE_URL: str = os.getenv("LIFI_BASE_URL", "https://li.quest")
+    LIFI_API_KEY: str = os.getenv("LIFI_API_KEY", "")
+    LIFI_INTEGRATION_ID: str = os.getenv("LIFI_INTEGRATION_ID", "")
 
     AAVE_POOL_V3_ADDRESS: str = os.getenv("AAVE_POOL_V3_ADDRESS", "0x794a61358D6845594F94dc1DB02A252b5b4814aD")
     AAVE_USDC_ADDRESS: str = os.getenv("AAVE_USDC_ADDRESS", "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E")

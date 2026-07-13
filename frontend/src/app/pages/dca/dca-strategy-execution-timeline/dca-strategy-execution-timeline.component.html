@@ -203,8 +203,32 @@
                                             }
 
                                             @if (executionOrder.pipeline_operations; as pipelineOperationsPayload) {
-                                                @for (pipelineOperation of pipelineOperationsPayload.pipeline_operations; track pipelineOperation.step + (pipelineOperation.transaction_hash ?? '')) {
-                                                    @if (pipelineOperation.transaction_hash) {
+                                                @for (pipelineOperation of pipelineOperationsPayload.pipeline_operations; track pipelineOperation.step + pipelineOperation.status + (pipelineOperation.failure_code ?? '') + (pipelineOperation.transaction_hash ?? '') + (pipelineOperation.completed_at ?? '')) {
+                                                    @if (pipelineOperation.status === 'FAILED') {
+                                                        <div class="flex flex-col col-span-2 mt-1">
+                                                            <span class="text-rose-400 uppercase">{{ pipelineOperation.step }} failed</span>
+                                                            @if (pipelineOperation.failure_code) {
+                                                                <span class="font-semibold text-rose-300 font-mono text-[10px] truncate" [title]="pipelineOperation.failure_code">
+                                                                    {{ pipelineOperation.failure_code }}
+                                                                </span>
+                                                            }
+                                                            @if (pipelineOperation.failure_message) {
+                                                                <span class="text-slate-400 text-[10px] truncate" [title]="pipelineOperation.failure_message">
+                                                                    {{ pipelineOperation.failure_message }}
+                                                                </span>
+                                                            }
+                                                            @if (pipelineOperation.transaction_hash) {
+                                                                <div class="flex items-center gap-2 min-w-0 mt-0.5">
+                                                                    <span class="font-semibold text-slate-300 font-mono text-[10px] truncate" [title]="resolveTransactionHashTitle(pipelineOperation.transaction_hash)">
+                                                                        {{ formatTransactionHashPreview(pipelineOperation.transaction_hash) }}
+                                                                    </span>
+                                                                    <button type="button" class="shrink-0 cursor-pointer text-slate-400 transition-colors hover:text-slate-200" (click)="copyToClipboard(pipelineOperation.transaction_hash); $event.stopPropagation()">
+                                                                        <i class="far fa-copy text-[10px]"></i>
+                                                                    </button>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    } @else if (pipelineOperation.transaction_hash) {
                                                         <div class="flex flex-col col-span-2 mt-1">
                                                             <span class="text-slate-500 uppercase">{{ pipelineOperation.step }} Hash</span>
                                                             <div class="flex items-center gap-2 min-w-0">

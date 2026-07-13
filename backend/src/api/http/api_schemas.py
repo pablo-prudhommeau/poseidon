@@ -86,6 +86,9 @@ class AaveDcaPipelineOperationPayload(BaseModel):
     source_amount_base_units: Optional[int] = None
     expected_output_base_units: Optional[int] = None
     minimum_output_base_units: Optional[int] = None
+    failure_code: Optional[str] = None
+    failure_message: Optional[str] = None
+    pipeline_attempt_number: Optional[int] = None
 
 
 class AaveDcaOrderPipelineOperationsPayload(BaseModel):

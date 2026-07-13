@@ -17,6 +17,8 @@ AAVE_USDC_ADDRESS_ENVIRONMENT_VARIABLE = "AAVE_USDC_ADDRESS"
 AAVE_BTCB_ADDRESS_ENVIRONMENT_VARIABLE = "AAVE_BTCB_ADDRESS"
 AAVE_DCA_SWAP_PRICE_DEVIATION_MAX_PERCENT_ENVIRONMENT_VARIABLE = "AAVE_DCA_SWAP_PRICE_DEVIATION_MAX_PERCENT"
 AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX_ENVIRONMENT_VARIABLE = "AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX"
+LIFI_API_KEY_ENVIRONMENT_VARIABLE = "LIFI_API_KEY"
+LIFI_INTEGRATION_ID_ENVIRONMENT_VARIABLE = "LIFI_INTEGRATION_ID"
 
 Account.enable_unaudited_hdwallet_features()
 
@@ -67,6 +69,16 @@ def validate_aave_dca_live_wallet_configuration(configuration_settings: Settings
     if configuration_settings.AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX <= 0:
         raise AaveDcaConfigurationError(
             f"{AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX_ENVIRONMENT_VARIABLE} must be strictly positive when {AAVE_DCA_PAPER_MODE_ENVIRONMENT_VARIABLE}=false",
+        )
+
+    if not configuration_settings.LIFI_API_KEY.strip():
+        raise AaveDcaConfigurationError(
+            f"{LIFI_API_KEY_ENVIRONMENT_VARIABLE} is required when {AAVE_DCA_PAPER_MODE_ENVIRONMENT_VARIABLE}=false",
+        )
+
+    if not configuration_settings.LIFI_INTEGRATION_ID.strip():
+        raise AaveDcaConfigurationError(
+            f"{LIFI_INTEGRATION_ID_ENVIRONMENT_VARIABLE} is required when {AAVE_DCA_PAPER_MODE_ENVIRONMENT_VARIABLE}=false",
         )
 
     logger.info("[CONFIGURATION][AAVEDCA][WALLET] Live wallet configuration validated for Avalanche Aave DCA execution")

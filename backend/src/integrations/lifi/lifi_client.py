@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
+from src.integrations.lifi.lifi_constants import LIFI_API_BASE_URL
 from src.integrations.lifi.lifi_helpers import (
     build_lifi_route_from_evm_quote,
     build_lifi_route_from_solana_quote_payload,
@@ -36,13 +36,6 @@ def resolve_lifi_chain_identifier(chain: BlockchainNetwork) -> Optional[int]:
     return matched_chain.chain_identifier
 
 
-def _resolve_lifi_base_url() -> str:
-    lifi_base_url = str(settings.LIFI_BASE_URL).rstrip("/")
-    if not lifi_base_url:
-        raise ValueError("LI.FI base URL must be configured in settings.")
-    return lifi_base_url
-
-
 def generate_native_token_to_erc20_quote(
         chain: BlockchainNetwork,
         source_address: str,
@@ -63,7 +56,7 @@ def generate_native_token_to_erc20_quote(
         logger.error("[LIFI][CLIENT][QUOTE][EVM] Unsupported EVM chain %s", chain.value)
         raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain.value}'")
 
-    target_endpoint_url = f"{_resolve_lifi_base_url()}/v1/quote"
+    target_endpoint_url = f"{LIFI_API_BASE_URL}/v1/quote"
     query_parameters: dict[str, object] = {
         "fromChain": lifi_chain_identifier,
         "toChain": lifi_chain_identifier,
@@ -104,7 +97,7 @@ def generate_solana_native_to_token_quote(
         logger.error("[LIFI][CLIENT][QUOTE][SOLANA] Invalid source amount %d", source_amount_lamports)
         raise ValueError("Source amount in lamports must be strictly positive.")
 
-    target_endpoint_url = f"{_resolve_lifi_base_url()}/v1/quote"
+    target_endpoint_url = f"{LIFI_API_BASE_URL}/v1/quote"
     query_parameters: dict[str, object] = {
         "fromChain": SOLANA_CHAIN_IDENTIFIER,
         "toChain": SOLANA_CHAIN_IDENTIFIER,
@@ -197,7 +190,7 @@ def generate_token_to_token_quote(
         logger.error("[LIFI][CLIENT][QUOTE][TOKEN] Unsupported EVM chain %s", chain.value)
         raise ValueError(f"Unsupported EVM chain for LI.FI routing: '{chain.value}'")
 
-    target_endpoint_url = f"{_resolve_lifi_base_url()}/v1/quote"
+    target_endpoint_url = f"{LIFI_API_BASE_URL}/v1/quote"
     query_parameters: dict[str, object] = {
         "fromChain": lifi_chain_identifier,
         "toChain": lifi_chain_identifier,
@@ -242,7 +235,7 @@ def fetch_alternative_token_to_token_route_summaries(
     if lifi_chain_identifier is None:
         return []
 
-    target_endpoint_url = f"{_resolve_lifi_base_url()}/v1/advanced/routes"
+    target_endpoint_url = f"{LIFI_API_BASE_URL}/v1/advanced/routes"
     query_parameters: dict[str, object] = {
         "fromChain": lifi_chain_identifier,
         "toChain": lifi_chain_identifier,

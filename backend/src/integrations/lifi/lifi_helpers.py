@@ -82,16 +82,15 @@ def build_lifi_route_from_solana_quote_payload(payload: LifiSolanaQuotePayload) 
 
 
 def build_lifi_http_headers() -> dict[str, str]:
-    http_headers: dict[str, str] = {}
-    lifi_api_key = getattr(settings, "LIFI_API_KEY", None)
+    return {
+        "x-lifi-api-key": settings.LIFI_API_KEY.strip(),
+    }
 
-    if isinstance(lifi_api_key, str) and lifi_api_key.strip():
-        http_headers["x-lifi-api-key"] = lifi_api_key.strip()
-        logger.debug("[LIFI][HTTP][HEADERS] LI.FI API key successfully injected into HTTP headers")
-    else:
-        logger.debug("[LIFI][HTTP][HEADERS] No LI.FI API key found in configuration, proceeding without authentication headers")
 
-    return http_headers
+def enrich_lifi_query_parameters(query_parameters: dict[str, object]) -> dict[str, object]:
+    enriched_query_parameters: dict[str, object] = dict(query_parameters)
+    enriched_query_parameters["integrator"] = settings.LIFI_INTEGRATION_ID.strip()
+    return enriched_query_parameters
 
 
 def execute_http_get_json(endpoint_url: str, query_parameters: dict[str, object]) -> dict[str, object]:
@@ -101,7 +100,10 @@ def execute_http_get_json(endpoint_url: str, query_parameters: dict[str, object]
 
     try:
         with httpx.Client(timeout=request_timeout, headers=build_lifi_http_headers()) as http_client:
-            http_response = http_client.get(endpoint_url, params=query_parameters)
+            http_response = http_client.get(
+                endpoint_url,
+                params=enrich_lifi_query_parameters(query_parameters),
+            )
             http_response.raise_for_status()
             response_payload = http_response.json()
             logger.debug("[LIFI][HTTP][GET][SUCCESS] Successfully retrieved and parsed JSON payload from %s", endpoint_url)

@@ -54,7 +54,13 @@ class AaveDcaPipelinePreflightFailureReason(Enum):
     EMPTY_TARGET_BALANCE_POST_SWAP = "EMPTY_TARGET_BALANCE_POST_SWAP"
     LIFI_QUOTE_INVALID = "LIFI_QUOTE_INVALID"
     ONCHAIN_EXECUTION_FAILED = "ONCHAIN_EXECUTION_FAILED"
+    SWAP_AMOUNT_BELOW_ROUTE_MINIMUM = "SWAP_AMOUNT_BELOW_ROUTE_MINIMUM"
     MAX_RETRIES_EXCEEDED = "MAX_RETRIES_EXCEEDED"
+
+
+class AaveDcaPipelineOnchainFailureRetryPolicy(Enum):
+    TRANSIENT = "TRANSIENT"
+    BLOCKING = "BLOCKING"
 
 
 class AaveDcaTransientPipelineError(RuntimeError):
@@ -85,6 +91,18 @@ class AaveDcaSwapPriceValidationResult(BaseModel):
     implied_minimum_price_usd: float
 
 
+class AaveDcaPipelineOnchainFailureClassification(BaseModel):
+    onchain_revert_reason: Optional[str] = None
+    retry_policy: AaveDcaPipelineOnchainFailureRetryPolicy
+    suspension_reason: AaveDcaPipelinePreflightFailureReason
+
+
+class AaveDcaPipelineOnchainRevertRule(BaseModel):
+    onchain_revert_reason: str
+    retry_policy: AaveDcaPipelineOnchainFailureRetryPolicy
+    suspension_reason: AaveDcaPipelinePreflightFailureReason
+
+
 class AaveDcaPipelineOperation(BaseModel):
     step: AaveDcaPipelineOperationStep
     status: AaveDcaPipelineOperationStatus
@@ -95,6 +113,9 @@ class AaveDcaPipelineOperation(BaseModel):
     source_amount_base_units: Optional[int] = None
     expected_output_base_units: Optional[int] = None
     minimum_output_base_units: Optional[int] = None
+    failure_code: Optional[str] = None
+    failure_message: Optional[str] = None
+    pipeline_attempt_number: Optional[int] = None
 
 
 class AaveDcaOrderPipelineOperations(BaseModel):

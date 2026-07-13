@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from src.configuration.config import settings
-from src.core.aavedca.aave_dca_manager import AaveDcaManager
+from src.core.aavedca.aave_dca_service import AaveDcaService
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
@@ -51,7 +51,7 @@ class AaveDcaJob:
             with get_database_session() as database_session:
                 order_dao = AaveDcaOrderDao(database_session)
                 strategy_dao = AaveDcaStrategyDao(database_session)
-                manager = AaveDcaManager(database_session)
+                service = AaveDcaService(database_session)
 
                 order = order_dao.retrieve_by_id(order_id)
                 if not order:
@@ -59,7 +59,7 @@ class AaveDcaJob:
 
                 strategy = strategy_dao.retrieve_by_id(order.strategy_id)
                 if strategy and strategy.strategy_status.value == "ACTIVE":
-                    await manager.process_scheduled_dca_order(order, strategy)
+                    await service.process_scheduled_dca_order(order, strategy)
 
 
 aave_dca_job = AaveDcaJob()
