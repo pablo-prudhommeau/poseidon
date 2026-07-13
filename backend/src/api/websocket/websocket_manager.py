@@ -27,14 +27,14 @@ class WebsocketManager:
 
     def register_client_connection(self, websocket_client: WebSocket) -> None:
         self._connected_clients.add(websocket_client)
-        logger.info("[WEBSOCKET][MANAGER][CONNECT] Client connection registered. Total active connections: %s", len(self._connected_clients))
+        logger.debug("[WEBSOCKET][MANAGER][CONNECT] Client connection registered. Total active connections: %s", len(self._connected_clients))
 
     def unregister_client_connection(self, websocket_client: WebSocket) -> None:
         self._connected_clients.discard(websocket_client)
-        logger.info("[WEBSOCKET][MANAGER][DISCONNECT] Client connection unregistered. Total active connections: %s", len(self._connected_clients))
+        logger.debug("[WEBSOCKET][MANAGER][DISCONNECT] Client connection unregistered. Total active connections: %s", len(self._connected_clients))
 
     async def close_all_connections(self) -> None:
-        logger.info("[WEBSOCKET][MANAGER][SHUTDOWN] Closing all active websocket connections (%s clients)", len(self._connected_clients))
+        logger.debug("[WEBSOCKET][MANAGER][SHUTDOWN] Closing all active websocket connections (%s clients)", len(self._connected_clients))
         close_tasks = []
         for websocket_client in list(self._connected_clients):
             close_tasks.append(websocket_client.close())

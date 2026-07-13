@@ -89,7 +89,7 @@ async def send_websocket_handshake(websocket_connection: WebSocket) -> None:
         "type": WebsocketMessageType.INITIALIZATION.value,
         "payload": jsonable_encoder(handshake_payload),
     })
-    logger.info("[WEBSOCKET][HUB][HANDSHAKE] Handshake payload successfully transmitted to client")
+    logger.debug("[WEBSOCKET][HUB][HANDSHAKE] Handshake payload successfully transmitted to client")
 
 
 def trigger_background_state_sync(websocket_connection: WebSocket) -> None:
@@ -100,7 +100,7 @@ def trigger_background_state_sync(websocket_connection: WebSocket) -> None:
 async def handle_websocket_connection(websocket_connection: WebSocket) -> None:
     await websocket_connection.accept()
     websocket_manager.register_client_connection(websocket_connection)
-    logger.info("[WEBSOCKET][HUB][CONNECTION] New client successfully connected")
+    logger.debug("[WEBSOCKET][HUB][CONNECTION] New client successfully connected")
     try:
         await send_websocket_handshake(websocket_connection)
         trigger_background_state_sync(websocket_connection)

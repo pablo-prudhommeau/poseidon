@@ -4,13 +4,18 @@ import asyncio
 from datetime import datetime
 from typing import Optional
 
+from src.cache.cache_invalidator import cache_invalidator
+from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
-from src.core.aavesentinel.aave_sentinel_fiat_flow_service import AaveSentinelFiatFlowService
 from src.core.aavesentinel.aave_sentinel_notification_service import AaveSentinelNotificationService
-from src.core.aavesentinel.aave_sentinel_snapshot_service import AaveSentinelSnapshotService
-from src.core.aavesentinel.aave_sentinel_structures import (
-    AaveSentinelAlertSeverity,
-    AaveSentinelRescueExecutionStatus,
+from src.core.aavesentinel.aave_sentinel_structures import AaveSentinelAlertSeverity
+from src.core.aavesentinel.cache.aave_sentinel_cache import aave_sentinel_state_cache
+from src.core.aavesentinel.aave_sentinel_transaction_fingerprint_service import (
+    poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed,
+)
+from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import (
+    build_aave_sentinel_position_payload,
+    resolve_aave_sentinel_state_for_display,
 )
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.telegram.telegram_structures import TelegramMessage
@@ -23,8 +28,6 @@ logger = get_application_logger(__name__)
 class AaveSentinelService:
     def __init__(self) -> None:
         self.is_running: bool = False
-        self._snapshot_service = AaveSentinelSnapshotService()
-        self._fiat_flow_service: Optional[AaveSentinelFiatFlowService] = None
         self._notification_service: Optional[AaveSentinelNotificationService] = None
 
     @property
@@ -43,35 +46,32 @@ class AaveSentinelService:
             return
 
         self.is_running = True
-        await self._snapshot_service.initialize()
+        self._notification_service = AaveSentinelNotificationService()
 
-        self._fiat_flow_service = AaveSentinelFiatFlowService(
-            wallet_address=self._snapshot_service.wallet_address,
-        )
-        self._notification_service = AaveSentinelNotificationService(
-            fetch_position_snapshot=self._snapshot_service.fetch_position_snapshot,
-            fiat_flow_service=self._fiat_flow_service,
-        )
+        initial_sentinel_state = await resolve_aave_sentinel_state_for_display()
+        initial_position_snapshot = initial_sentinel_state.position_snapshot
+        wallet_address = ""
+        if initial_position_snapshot is not None:
+            wallet_address = "configured"
 
-        operating_mode_label = "PAPER MODE" if settings.AAVE_SENTINEL_PAPER_MODE else "LIVE TRADING"
         logger.info(
-            "[AAVESENTINEL][LIFECYCLE] Sentinel initialized in %s for wallet %s",
-            operating_mode_label,
-            self._snapshot_service.wallet_address,
+            "[AAVESENTINEL][LIFECYCLE] Sentinel initialized in read-only mode (wallet=%s)",
+            wallet_address,
         )
 
         await self._notification_service.register_bot_commands()
-        await self._fiat_flow_service.refresh_ledger()
 
-        initial_position_snapshot = await self._snapshot_service.fetch_position_snapshot()
         if initial_position_snapshot is not None:
-            detailed_initial_snapshot = await self._notification_service.format_notification_message(initial_position_snapshot)
+            detailed_initial_snapshot = await self._notification_service.format_notification_message(
+                position_snapshot=initial_position_snapshot,
+                capital_flow_summary=initial_sentinel_state.capital_flow_summary,
+            )
             await self._notification_service.send_alert(
                 "Sentinel démarré",
                 detailed_initial_snapshot,
                 AaveSentinelAlertSeverity.INFO,
             )
-            self._notification_service.bootstrap_state_from_snapshot(initial_position_snapshot)
+            self._notification_service.bootstrap_state_from_snapshot(position_snapshot=initial_position_snapshot)
         else:
             await self._notification_service.send_alert(
                 "Sentinel démarré",
@@ -86,11 +86,18 @@ class AaveSentinelService:
                 current_loop_timestamp = get_current_local_datetime()
                 should_run_monitoring_cycle = (
                         last_monitoring_cycle_timestamp is None
-                        or (current_loop_timestamp - last_monitoring_cycle_timestamp).total_seconds() > settings.AAVE_SENTINEL_REPORTING_INTERVAL_SECONDS
+                        or (
+                                current_loop_timestamp - last_monitoring_cycle_timestamp
+                        ).total_seconds() > settings.AAVE_SENTINEL_REPORTING_INTERVAL_SECONDS
                 )
 
                 if should_run_monitoring_cycle:
-                    current_position_snapshot = await self._snapshot_service.fetch_position_snapshot()
+                    await poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed()
+                    cache_invalidator.mark_dirty(CacheRealm.AAVE_SENTINEL_POSITION)
+
+                    current_position_snapshot = await build_aave_sentinel_position_payload()
+                    aave_sentinel_state_cache.update_position_snapshot(position_snapshot=current_position_snapshot)
+                    cache_invalidator.touch(CacheRealm.AAVE_SENTINEL_POSITION)
                     last_monitoring_cycle_timestamp = current_loop_timestamp
 
                     if current_position_snapshot is not None:
@@ -98,29 +105,9 @@ class AaveSentinelService:
                             "[AAVESENTINEL][LIFECYCLE] Monitoring cycle snapshot resolved with health_factor=%0.4f",
                             current_position_snapshot.health_factor,
                         )
-                        await self._notification_service.evaluate_risk_and_notify(current_position_snapshot)
-
-                        if current_position_snapshot.health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_EMERGENCY_THRESHOLD:
-                            rescue_result = await self._snapshot_service.trigger_emergency_rescue()
-                            if rescue_result.status == AaveSentinelRescueExecutionStatus.SIMULATED:
-                                await self._notification_service.send_alert(
-                                    "Simulation de sauvetage",
-                                    rescue_result.message,
-                                    AaveSentinelAlertSeverity.CRITICAL,
-                                )
-                            elif rescue_result.status == AaveSentinelRescueExecutionStatus.EXECUTED:
-                                await self._notification_service.send_alert(
-                                    "Sauvetage réussi",
-                                    rescue_result.message,
-                                    AaveSentinelAlertSeverity.SUCCESS,
-                                )
-                            elif rescue_result.status == AaveSentinelRescueExecutionStatus.FAILED:
-                                await self._notification_service.send_alert(
-                                    "Echec critique",
-                                    rescue_result.message,
-                                    AaveSentinelAlertSeverity.CRITICAL,
-                                )
-                            await asyncio.sleep(600)
+                        await self._notification_service.evaluate_risk_and_notify(
+                            position_snapshot=current_position_snapshot,
+                        )
             except Exception as exception:
                 logger.exception("[AAVESENTINEL][LIFECYCLE] Monitoring loop failed: %s", exception)
 
@@ -130,8 +117,6 @@ class AaveSentinelService:
         self.is_running = False
         if self._notification_service is not None:
             await self._notification_service.close()
-        if self._fiat_flow_service is not None:
-            await self._fiat_flow_service.close()
         logger.info("[AAVESENTINEL][LIFECYCLE] Sentinel shutdown sequence completed")
 
 

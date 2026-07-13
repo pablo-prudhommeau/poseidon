@@ -52,7 +52,7 @@ def send_alert(
         return None
 
     message_identifier: Optional[int] = _extract_message_identifier_from_response(response_payload)
-    logger.info(
+    logger.debug(
         "[TELEGRAM][CLIENT][SUCCESS] Successfully delivered Telegram alert message with title: %s message_id=%s",
         title,
         message_identifier,
@@ -109,7 +109,7 @@ def delete_message(message_id: int) -> bool:
     if response_payload is None:
         return False
 
-    logger.info("[TELEGRAM][CLIENT][SUCCESS] Successfully deleted Telegram message ID: %s", message_id)
+    logger.debug("[TELEGRAM][CLIENT][SUCCESS] Successfully deleted Telegram message ID: %s", message_id)
     return True
 
 

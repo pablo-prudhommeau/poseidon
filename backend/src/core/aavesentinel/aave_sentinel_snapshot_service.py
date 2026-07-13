@@ -1,45 +1,35 @@
 from __future__ import annotations
 
 import asyncio
-from decimal import Decimal
 from typing import Awaitable, Optional, TypeVar
 
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 from web3 import AsyncWeb3
 from web3.contract import AsyncContract
-from web3.types import TxParams
 
 from src.configuration.config import settings
-from src.integrations.blockchain.blockchain_execution_service import (
-    AAVE_EVM_APPROVE_GAS_LIMIT,
-    AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
-)
+from src.core.aavesentinel.aave_sentinel_helpers import resolve_strategy_snapshot_resolution
+from src.core.aavesentinel.aave_sentinel_reserve_registry_service import load_aave_sentinel_reserve_registry
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelAssetSnapshot,
     AaveSentinelPositionSnapshot,
-    AaveSentinelRescueExecutionResult,
-    AaveSentinelRescueExecutionStatus,
-    AaveSentinelStrategyDirection,
 )
+from src.core.aavesentinel.aave_sentinel_utils import convert_ray_to_annual_percentage_yield
 from src.core.structures.structures import BlockchainNetwork
 from src.integrations.aave.aave_abis import (
     ADDRESS_PROVIDER_ABI,
     AAVE_ORACLE_ABI,
     AAVE_POOL_ABI,
     ERC20_ABI,
-    RAY_UNITS,
-    SECONDS_PER_YEAR,
 )
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
-from src.integrations.blockchain.blockchain_utils import normalize_evm_transaction_hash
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
 Account.enable_unaudited_hdwallet_features()
 
-STABLECOIN_SYMBOLS: set[str] = {"USDC", "USDC.e", "USDT", "USDt", "DAI", "FRAX", "MIM", "BUSD"}
 ProtectedCallResult = TypeVar("ProtectedCallResult")
 
 
@@ -47,48 +37,68 @@ class AaveSentinelSnapshotService:
     def __init__(self) -> None:
         self._web3_client: Optional[AsyncWeb3] = None
         self._pool_contract: Optional[AsyncContract] = None
-        self._usdc_contract: Optional[AsyncContract] = None
         self._oracle_contract: Optional[AsyncContract] = None
         self._wallet_address: str = ""
-        self._private_key: str = ""
         self._scan_semaphore = asyncio.Semaphore(settings.AAVE_SENTINEL_MAX_CONCURRENT_ASSET_SCANS)
+        self._initialization_lock = asyncio.Lock()
 
     @property
     def wallet_address(self) -> str:
         return self._wallet_address
 
-    async def initialize(self) -> None:
-        if not self._private_key:
-            self._derive_credentials()
+    def _is_fully_initialized(self) -> bool:
+        return (
+            self._web3_client is not None
+            and self._pool_contract is not None
+            and self._oracle_contract is not None
+        )
 
-        if self._web3_client is not None:
+    @property
+    def is_initialized(self) -> bool:
+        return self._is_fully_initialized()
+
+    async def initialize(self) -> None:
+        if self._is_fully_initialized():
             return
 
-        self._web3_client = resolve_async_web3_provider_for_chain(BlockchainNetwork.AVALANCHE)
+        async with self._initialization_lock:
+            if self._is_fully_initialized():
+                return
 
-        pool_contract_address = AsyncWeb3.to_checksum_address(settings.AAVE_POOL_V3_ADDRESS)
-        self._pool_contract = self._web3_client.eth.contract(address=pool_contract_address, abi=AAVE_POOL_ABI)
+            if not self._wallet_address:
+                self._derive_wallet_address()
 
-        usdc_contract_address = AsyncWeb3.to_checksum_address(settings.AAVE_USDC_ADDRESS)
-        self._usdc_contract = self._web3_client.eth.contract(address=usdc_contract_address, abi=ERC20_ABI)
+            if self._web3_client is None:
+                self._web3_client = resolve_async_web3_provider_for_chain(BlockchainNetwork.AVALANCHE)
 
-        try:
-            addresses_provider_address = await self._pool_contract.functions.ADDRESSES_PROVIDER().call()
-            addresses_provider_contract = self._web3_client.eth.contract(
-                address=addresses_provider_address,
-                abi=ADDRESS_PROVIDER_ABI,
-            )
-            oracle_contract_address = await addresses_provider_contract.functions.getPriceOracle().call()
-            self._oracle_contract = self._web3_client.eth.contract(address=oracle_contract_address, abi=AAVE_ORACLE_ABI)
-            logger.debug("[AAVESENTINEL][INITIALIZATION] Oracle contract loaded at %s", oracle_contract_address)
-        except Exception as exception:
-            logger.exception("[AAVESENTINEL][INITIALIZATION] Failed to initialize oracle contract: %s", exception)
+            if self._pool_contract is None:
+                pool_contract_address = AsyncWeb3.to_checksum_address(settings.AAVE_POOL_V3_ADDRESS)
+                self._pool_contract = self._web3_client.eth.contract(
+                    address=pool_contract_address,
+                    abi=AAVE_POOL_ABI,
+                )
+
+            if self._oracle_contract is None:
+                addresses_provider_address = await self._pool_contract.functions.ADDRESSES_PROVIDER().call()
+                addresses_provider_contract = self._web3_client.eth.contract(
+                    address=addresses_provider_address,
+                    abi=ADDRESS_PROVIDER_ABI,
+                )
+                oracle_contract_address = await addresses_provider_contract.functions.getPriceOracle().call()
+                self._oracle_contract = self._web3_client.eth.contract(
+                    address=oracle_contract_address,
+                    abi=AAVE_ORACLE_ABI,
+                )
+                logger.debug(
+                    "[AAVESENTINEL][INITIALIZATION] Oracle contract loaded at %s",
+                    oracle_contract_address,
+                )
 
     async def fetch_position_snapshot(self) -> Optional[AaveSentinelPositionSnapshot]:
         try:
             await self.initialize()
-            if not self._wallet_address or self._pool_contract is None:
-                logger.error("[AAVESENTINEL][SNAPSHOT] Snapshot aborted because initialization is incomplete")
+            if not self._wallet_address or not self._is_fully_initialized():
+                logger.debug("[AAVESENTINEL][SNAPSHOT] Snapshot skipped because initialization is incomplete")
                 return None
 
             wallet_checksum_address = AsyncWeb3.to_checksum_address(self._wallet_address)
@@ -121,150 +131,27 @@ class AaveSentinelSnapshotService:
                 reverse=True,
             )
 
-            strategy_direction, main_asset_symbol, main_asset_price_usd, liquidation_price_usd = (
-                self._resolve_strategy_snapshot(active_assets, normalized_health_factor)
+            strategy_snapshot_resolution = resolve_strategy_snapshot_resolution(
+                detected_assets=active_assets,
+                current_health_factor=normalized_health_factor,
+                reserve_registry=await load_aave_sentinel_reserve_registry(),
             )
 
             return AaveSentinelPositionSnapshot(
                 health_factor=normalized_health_factor,
                 total_collateral_usd=total_collateral_usd,
                 total_debt_usd=total_debt_usd,
-                strategy_direction=strategy_direction,
-                main_asset_symbol=main_asset_symbol,
-                main_asset_price_usd=main_asset_price_usd,
-                liquidation_price_usd=liquidation_price_usd,
+                strategy_direction=strategy_snapshot_resolution.strategy_direction,
+                main_asset_symbol=strategy_snapshot_resolution.main_asset_symbol,
+                main_asset_price_usd=strategy_snapshot_resolution.main_asset_price_usd,
+                liquidation_price_usd=strategy_snapshot_resolution.liquidation_price_usd,
                 assets=active_assets,
             )
         except Exception as exception:
             logger.exception("[AAVESENTINEL][SNAPSHOT] Snapshot acquisition failed: %s", exception)
             return None
 
-    async def trigger_emergency_rescue(self) -> AaveSentinelRescueExecutionResult:
-        logger.critical("[AAVESENTINEL][RESCUE] Emergency rescue protocol requested")
-
-        if self._web3_client is None or self._usdc_contract is None or self._pool_contract is None:
-            await self.initialize()
-
-        if self._web3_client is None or self._usdc_contract is None or self._pool_contract is None:
-            logger.error("[AAVESENTINEL][RESCUE] Emergency rescue aborted because on-chain resources are unavailable")
-            return AaveSentinelRescueExecutionResult(
-                status=AaveSentinelRescueExecutionStatus.FAILED,
-                message="Emergency rescue aborted because on-chain resources are unavailable.",
-            )
-
-        if not self._private_key:
-            logger.warning("[AAVESENTINEL][RESCUE] Emergency rescue aborted because wallet credentials are missing")
-            return AaveSentinelRescueExecutionResult(
-                status=AaveSentinelRescueExecutionStatus.SKIPPED,
-                message="Emergency rescue aborted because wallet credentials are missing.",
-            )
-
-        rescue_signer_account: LocalAccount = self._web3_client.eth.account.from_key(self._private_key)
-        rescue_sender_address = rescue_signer_account.address
-
-        try:
-            account_metrics = await self._pool_contract.functions.getUserAccountData(rescue_sender_address).call()
-            total_liabilities_base_units = float(account_metrics[1])
-
-            available_usdc_balance_wei = await self._usdc_contract.functions.balanceOf(rescue_sender_address).call()
-            available_usdc_balance = available_usdc_balance_wei / 1e6
-
-            required_rescue_collateral_base_units = (settings.AAVE_SENTINEL_RESCUE_TARGET_HF_IMPROVEMENT * total_liabilities_base_units) / settings.AAVE_SENTINEL_RESCUE_USDC_LIQUIDATION_THRESHOLD
-            required_liquidity_injection_usdc = (required_rescue_collateral_base_units / 100.0) * 1.01
-            calculated_injection_amount_usdc = min(
-                required_liquidity_injection_usdc,
-                available_usdc_balance,
-                settings.AAVE_SENTINEL_RESCUE_MAX_CAP_USDC,
-            )
-
-            if calculated_injection_amount_usdc < settings.AAVE_SENTINEL_RESCUE_MIN_AMOUNT_USDC:
-                logger.warning(
-                    "[AAVESENTINEL][RESCUE] Rescue aborted because computed amount %0.2f USDC is below minimum threshold",
-                    calculated_injection_amount_usdc,
-                )
-                return AaveSentinelRescueExecutionResult(
-                    status=AaveSentinelRescueExecutionStatus.SKIPPED,
-                    message="Emergency rescue amount is below the configured minimum threshold.",
-                    amount_usdc=calculated_injection_amount_usdc,
-                )
-
-            injection_amount_wei = int(calculated_injection_amount_usdc * 1e6)
-
-            if settings.AAVE_SENTINEL_PAPER_MODE:
-                logger.info(
-                    "[AAVESENTINEL][RESCUE] Paper mode active, simulated injection amount=%0.2f available=%0.2f target_hf_delta=%0.2f",
-                    calculated_injection_amount_usdc,
-                    available_usdc_balance,
-                    settings.AAVE_SENTINEL_RESCUE_TARGET_HF_IMPROVEMENT,
-                )
-                return AaveSentinelRescueExecutionResult(
-                    status=AaveSentinelRescueExecutionStatus.SIMULATED,
-                    message=(
-                        "Paper mode active.\n"
-                        f"Injection calculée : <b>{calculated_injection_amount_usdc:.2f} USDC</b>\n"
-                        f"(Cible: +{settings.AAVE_SENTINEL_RESCUE_TARGET_HF_IMPROVEMENT} HF | "
-                        f"Dispo: {available_usdc_balance:.2f} USDC)"
-                    ),
-                    amount_usdc=calculated_injection_amount_usdc,
-                )
-
-            current_nonce = await self._web3_client.eth.get_transaction_count(rescue_sender_address)
-            market_gas_price = await self._web3_client.eth.gas_price
-            aggressive_gas_price = int(market_gas_price * 1.1)
-
-            approval_transaction: TxParams = await self._usdc_contract.functions.approve(
-                settings.AAVE_POOL_V3_ADDRESS,
-                injection_amount_wei,
-            ).build_transaction({
-                "from": rescue_sender_address,
-                "nonce": current_nonce,
-                "gas": AAVE_EVM_APPROVE_GAS_LIMIT,
-                "gasPrice": aggressive_gas_price,
-            })
-            signed_approval_transaction = self._web3_client.eth.account.sign_transaction(
-                approval_transaction,
-                self._private_key,
-            )
-            await self._web3_client.eth.send_raw_transaction(signed_approval_transaction.raw_transaction)
-
-            await asyncio.sleep(2)
-
-            supply_transaction: TxParams = await self._pool_contract.functions.supply(
-                settings.AAVE_USDC_ADDRESS,
-                injection_amount_wei,
-                rescue_sender_address,
-                0,
-            ).build_transaction({
-                "from": rescue_sender_address,
-                "nonce": current_nonce + 1,
-                "gas": AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
-                "gasPrice": aggressive_gas_price,
-            })
-            signed_supply_transaction = self._web3_client.eth.account.sign_transaction(
-                supply_transaction,
-                self._private_key,
-            )
-            transaction_hash = await self._web3_client.eth.send_raw_transaction(signed_supply_transaction.raw_transaction)
-            transaction_hash_hex = normalize_evm_transaction_hash(transaction_hash)
-
-            logger.info("[AAVESENTINEL][RESCUE] Rescue supply transaction broadcast: %s", transaction_hash_hex)
-            return AaveSentinelRescueExecutionResult(
-                status=AaveSentinelRescueExecutionStatus.EXECUTED,
-                message=(
-                    f"Injection de <b>{calculated_injection_amount_usdc:.2f} USDC</b> exécutée avec succès.\n"
-                    f"TX: <code>{transaction_hash_hex}</code>"
-                ),
-                amount_usdc=calculated_injection_amount_usdc,
-                transaction_hash=transaction_hash_hex,
-            )
-        except Exception as exception:
-            logger.exception("[AAVESENTINEL][RESCUE] Emergency rescue execution failed: %s", exception)
-            return AaveSentinelRescueExecutionResult(
-                status=AaveSentinelRescueExecutionStatus.FAILED,
-                message=f"Emergency rescue failed: {exception}",
-            )
-
-    def _derive_credentials(self) -> None:
+    def _derive_wallet_address(self) -> None:
         if not settings.AAVE_SENTINEL_WALLET_MNEMONIC:
             logger.warning("[AAVESENTINEL][CREDENTIALS] Wallet mnemonic is not configured, sentinel is read-only")
             return
@@ -274,18 +161,10 @@ class AaveSentinelSnapshotService:
                 mnemonic=settings.AAVE_SENTINEL_WALLET_MNEMONIC,
                 account_path=f"m/44'/60'/0'/0/{settings.AAVE_SENTINEL_WALLET_DERIVATION_INDEX}",
             )
-            self._private_key = account_instance.key.hex()
             self._wallet_address = account_instance.address
             logger.info("[AAVESENTINEL][CREDENTIALS] Wallet loaded for sentinel: %s", self._wallet_address)
         except Exception as exception:
             logger.exception("[AAVESENTINEL][CREDENTIALS] Wallet derivation failed: %s", exception)
-
-    def _convert_ray_to_annual_percentage_yield(self, ray_value: int) -> float:
-        if ray_value == 0:
-            return 0.0
-
-        interest_rate_per_second = Decimal(ray_value) / RAY_UNITS / Decimal(SECONDS_PER_YEAR)
-        return float((Decimal(1) + interest_rate_per_second) ** Decimal(SECONDS_PER_YEAR) - Decimal(1))
 
     async def _perform_protected_onchain_call(
             self,
@@ -307,7 +186,6 @@ class AaveSentinelSnapshotService:
         async with self._scan_semaphore:
             try:
                 if self._pool_contract is None or self._web3_client is None or self._oracle_contract is None:
-                    logger.error("[AAVESENTINEL][SCAN] Asset scan aborted because contracts are not initialized")
                     return None
 
                 asset_checksum_address = AsyncWeb3.to_checksum_address(asset_contract_address)
@@ -389,8 +267,8 @@ class AaveSentinelSnapshotService:
                     supply_value_usd=supply_value_usd,
                     debt_value_usd=debt_value_usd,
                     wallet_value_usd=wallet_value_usd,
-                    supply_annual_percentage_yield=self._convert_ray_to_annual_percentage_yield(liquidity_rate_ray),
-                    borrow_annual_percentage_yield=self._convert_ray_to_annual_percentage_yield(variable_borrow_rate_ray),
+                    supply_annual_percentage_yield=convert_ray_to_annual_percentage_yield(liquidity_rate_ray),
+                    borrow_annual_percentage_yield=convert_ray_to_annual_percentage_yield(variable_borrow_rate_ray),
                 )
             except Exception as exception:
                 logger.exception(
@@ -399,60 +277,3 @@ class AaveSentinelSnapshotService:
                     exception,
                 )
                 return None
-
-    def _resolve_strategy_snapshot(
-            self,
-            detected_assets: list[AaveSentinelAssetSnapshot],
-            current_health_factor: float,
-    ) -> tuple[AaveSentinelStrategyDirection, Optional[str], Optional[float], Optional[float]]:
-        aggregate_supply_value_usd = sum(asset.supply_value_usd for asset in detected_assets)
-        aggregate_debt_value_usd = sum(asset.debt_value_usd for asset in detected_assets)
-
-        if aggregate_supply_value_usd == 0 or aggregate_debt_value_usd == 0:
-            return AaveSentinelStrategyDirection.NEUTRAL, None, None, None
-
-        stablecoin_debt_value_usd = sum(
-            asset.debt_value_usd
-            for asset in detected_assets
-            if asset.symbol in STABLECOIN_SYMBOLS
-        )
-        volatile_asset_debt_value_usd = aggregate_debt_value_usd - stablecoin_debt_value_usd
-        is_long_biased_strategy = stablecoin_debt_value_usd > volatile_asset_debt_value_usd
-        strategy_direction = (
-            AaveSentinelStrategyDirection.LONG
-            if is_long_biased_strategy
-            else AaveSentinelStrategyDirection.SHORT
-        )
-
-        if is_long_biased_strategy:
-            eligible_assets = [
-                asset
-                for asset in detected_assets
-                if asset.symbol not in STABLECOIN_SYMBOLS and asset.supply_value_usd > 0
-            ]
-            if not eligible_assets:
-                return AaveSentinelStrategyDirection.NEUTRAL, None, None, None
-
-            main_asset = max(eligible_assets, key=lambda asset_snapshot: asset_snapshot.supply_value_usd)
-            if main_asset.supply_amount == 0:
-                return strategy_direction, main_asset.symbol, 0.0, 0.0
-
-            current_price_usd = main_asset.supply_value_usd / main_asset.supply_amount
-            liquidation_price_usd = current_price_usd / current_health_factor if current_health_factor > 0 else 0.0
-            return strategy_direction, main_asset.symbol, current_price_usd, liquidation_price_usd
-
-        eligible_assets = [
-            asset
-            for asset in detected_assets
-            if asset.symbol not in STABLECOIN_SYMBOLS and asset.debt_value_usd > 0
-        ]
-        if not eligible_assets:
-            return AaveSentinelStrategyDirection.NEUTRAL, None, None, None
-
-        main_asset = max(eligible_assets, key=lambda asset_snapshot: asset_snapshot.debt_value_usd)
-        if main_asset.debt_amount == 0:
-            return strategy_direction, main_asset.symbol, 0.0, 0.0
-
-        current_price_usd = main_asset.debt_value_usd / main_asset.debt_amount
-        liquidation_price_usd = current_price_usd * current_health_factor
-        return strategy_direction, main_asset.symbol, current_price_usd, liquidation_price_usd

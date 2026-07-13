@@ -26,6 +26,8 @@ class RoutescanInternalTransactionRecord(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     transaction_hash: str = Field(alias="hash")
+    block_number: str = Field(default="0", alias="blockNumber")
+    timestamp_seconds: str = Field(default="0", alias="timeStamp")
     sender_address: str = Field(alias="from")
     recipient_address: str = Field(alias="to")
     native_value_wei: str = Field(alias="value")

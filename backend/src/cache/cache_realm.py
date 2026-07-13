@@ -13,3 +13,5 @@ class CacheRealm(str, Enum):
     AAVE_DCA_STRATEGIES = "aave_dca_strategies"
     SHADOWING_SNAPSHOT = "shadowing_snapshot"
     SHADOWING_VERDICT_CHRONICLE = "shadowing_verdict_chronicle"
+    AAVE_SENTINEL_POSITION = "aave_sentinel_position"
+    AAVE_SENTINEL_CAPITAL_FLOW = "aave_sentinel_capital_flow"

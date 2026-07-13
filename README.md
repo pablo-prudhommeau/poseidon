@@ -117,7 +117,6 @@ AAVE_DCA_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
 
 # === AAVE SENTINEL ===
 AAVE_SENTINEL_ENABLED=true
-AAVE_SENTINEL_PAPER_MODE=true
 AAVE_SENTINEL_WALLET_MNEMONIC="twelve_or_twenty_four_words_wallet_mnemonic"
 
 # === TRADING ===
