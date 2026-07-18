@@ -7,14 +7,15 @@ import pytest
 
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
-from src.core.aavesentinel.aave_sentinel_snapshot_service import AaveSentinelSnapshotService
+from src.core.aavesentinel.position.aave_sentinel_position_snapshot_service import AaveSentinelSnapshotService
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelCapitalFlowSummary,
+    AaveSentinelPerformanceSummary,
     AaveSentinelPositionSnapshot,
     AaveSentinelTransactionHeadFingerprint,
 )
 from src.core.aavesentinel.cache.aave_sentinel_cache import aave_sentinel_state_cache
-from src.core.aavesentinel.aave_sentinel_transaction_fingerprint_service import (
+from src.core.aavesentinel.cache.aave_sentinel_cache_transaction_fingerprint_service import (
     poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed,
 )
 from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import resolve_aave_sentinel_state_for_display
@@ -26,6 +27,9 @@ def reset_sentinel_cache_state() -> None:
     aave_sentinel_state_cache.update_position_snapshot(position_snapshot=None)
     aave_sentinel_state_cache.update_capital_flow_summary(
         capital_flow_summary=AaveSentinelCapitalFlowSummary(is_available=False),
+    )
+    aave_sentinel_state_cache.update_performance_summary(
+        performance_summary=AaveSentinelPerformanceSummary(is_available=False),
     )
     aave_sentinel_state_cache.update_last_seen_transaction_fingerprint(
         transaction_fingerprint=AaveSentinelTransactionHeadFingerprint(
@@ -42,14 +46,15 @@ def test_snapshot_service_does_not_store_private_key() -> None:
     assert not hasattr(snapshot_service, "_private_key")
 
 
-def test_register_aave_sentinel_rebuilders_registers_two_realms() -> None:
+def test_register_aave_sentinel_rebuilders_registers_three_realms() -> None:
     register_aave_sentinel_rebuilders()
 
     assert CacheRealm.AAVE_SENTINEL_POSITION in cache_invalidator._rebuilders
     assert CacheRealm.AAVE_SENTINEL_CAPITAL_FLOW in cache_invalidator._rebuilders
+    assert CacheRealm.AAVE_SENTINEL_PERFORMANCE in cache_invalidator._rebuilders
 
 
-def test_transaction_fingerprint_change_marks_capital_flow_dirty() -> None:
+def test_transaction_fingerprint_change_marks_capital_flow_and_performance_dirty() -> None:
     async def run_test() -> None:
         initial_fingerprint = AaveSentinelTransactionHeadFingerprint(
             latest_normal_transaction_hash="0xoldnormal",
@@ -69,16 +74,18 @@ def test_transaction_fingerprint_change_marks_capital_flow_dirty() -> None:
         mock_snapshot_service.wallet_address = "0x1111111111111111111111111111111111111111"
 
         with patch(
-                "src.core.aavesentinel.aave_sentinel_transaction_fingerprint_service._ensure_snapshot_service",
+                "src.core.aavesentinel.cache.aave_sentinel_cache_transaction_fingerprint_service._ensure_snapshot_service",
                 return_value=mock_snapshot_service,
         ), patch(
-                "src.core.aavesentinel.aave_sentinel_transaction_fingerprint_service.fetch_transaction_head_fingerprint",
+                "src.core.aavesentinel.cache.aave_sentinel_cache_transaction_fingerprint_service.fetch_transaction_head_fingerprint",
                 return_value=updated_fingerprint,
         ), patch.object(cache_invalidator, "mark_dirty") as mark_dirty_mock:
             capital_flow_refresh_required = await poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed()
 
         assert capital_flow_refresh_required is True
-        mark_dirty_mock.assert_called_once_with(CacheRealm.AAVE_SENTINEL_CAPITAL_FLOW)
+        mark_dirty_mock.assert_any_call(CacheRealm.AAVE_SENTINEL_CAPITAL_FLOW)
+        mark_dirty_mock.assert_any_call(CacheRealm.AAVE_SENTINEL_PERFORMANCE)
+        assert mark_dirty_mock.call_count == 2
 
     asyncio.run(run_test())
 
@@ -94,10 +101,10 @@ def test_first_transaction_fingerprint_poll_seeds_without_marking_dirty() -> Non
         mock_snapshot_service.wallet_address = "0x1111111111111111111111111111111111111111"
 
         with patch(
-                "src.core.aavesentinel.aave_sentinel_transaction_fingerprint_service._ensure_snapshot_service",
+                "src.core.aavesentinel.cache.aave_sentinel_cache_transaction_fingerprint_service._ensure_snapshot_service",
                 return_value=mock_snapshot_service,
         ), patch(
-                "src.core.aavesentinel.aave_sentinel_transaction_fingerprint_service.fetch_transaction_head_fingerprint",
+                "src.core.aavesentinel.cache.aave_sentinel_cache_transaction_fingerprint_service.fetch_transaction_head_fingerprint",
                 return_value=initial_fingerprint,
         ), patch.object(
                 aave_sentinel_state_cache,
@@ -127,10 +134,16 @@ def test_five_snapshot_requests_trigger_single_position_rebuild_when_cache_empty
             net_capital_deployed_usd=80.0,
             is_available=True,
         )
+        cached_performance_summary = AaveSentinelPerformanceSummary(
+            global_pnl_usd=10.0,
+            is_available=True,
+        )
         aave_sentinel_state_cache.update_capital_flow_summary(capital_flow_summary=cached_capital_flow_summary)
+        aave_sentinel_state_cache.update_performance_summary(performance_summary=cached_performance_summary)
 
         build_position_mock = AsyncMock(return_value=cached_position_snapshot)
         build_capital_flow_mock = AsyncMock(return_value=cached_capital_flow_summary)
+        build_performance_mock = AsyncMock(return_value=cached_performance_summary)
 
         with patch(
                 "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_position_payload",
@@ -138,6 +151,9 @@ def test_five_snapshot_requests_trigger_single_position_rebuild_when_cache_empty
         ), patch(
                 "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_capital_flow_payload",
                 build_capital_flow_mock,
+        ), patch(
+                "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_performance_payload",
+                build_performance_mock,
         ):
             for _ in range(5):
                 sentinel_state = await resolve_aave_sentinel_state_for_display()
@@ -145,6 +161,7 @@ def test_five_snapshot_requests_trigger_single_position_rebuild_when_cache_empty
 
         build_position_mock.assert_called_once()
         build_capital_flow_mock.assert_not_called()
+        build_performance_mock.assert_not_called()
 
     asyncio.run(run_test())
 
@@ -160,11 +177,17 @@ def test_five_snapshot_requests_reuse_cached_position_when_available() -> None:
             net_capital_deployed_usd=80.0,
             is_available=True,
         )
+        cached_performance_summary = AaveSentinelPerformanceSummary(
+            global_pnl_usd=10.0,
+            is_available=True,
+        )
         aave_sentinel_state_cache.update_position_snapshot(position_snapshot=cached_position_snapshot)
         aave_sentinel_state_cache.update_capital_flow_summary(capital_flow_summary=cached_capital_flow_summary)
+        aave_sentinel_state_cache.update_performance_summary(performance_summary=cached_performance_summary)
 
         build_position_mock = AsyncMock(return_value=cached_position_snapshot)
         build_capital_flow_mock = AsyncMock(return_value=cached_capital_flow_summary)
+        build_performance_mock = AsyncMock(return_value=cached_performance_summary)
 
         with patch(
                 "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_position_payload",
@@ -172,6 +195,9 @@ def test_five_snapshot_requests_reuse_cached_position_when_available() -> None:
         ), patch(
                 "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_capital_flow_payload",
                 build_capital_flow_mock,
+        ), patch(
+                "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_performance_payload",
+                build_performance_mock,
         ):
             for _ in range(5):
                 sentinel_state = await resolve_aave_sentinel_state_for_display()
@@ -179,5 +205,6 @@ def test_five_snapshot_requests_reuse_cached_position_when_available() -> None:
 
         build_position_mock.assert_not_called()
         build_capital_flow_mock.assert_not_called()
+        build_performance_mock.assert_not_called()
 
     asyncio.run(run_test())

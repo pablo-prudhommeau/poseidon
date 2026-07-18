@@ -147,5 +147,5 @@ def _write_cached_snapshot(snapshot: SolanaMintFreezeAuthoritySnapshot) -> None:
     cache_ttl_seconds = settings.SOLANA_MINT_FREEZE_AUTHORITY_CACHE_TTL_SECONDS
     _cached_snapshots_by_mint_address[snapshot.mint_address] = snapshot
     _cached_snapshot_expires_at_monotonic_by_mint_address[snapshot.mint_address] = (
-        time.monotonic() + cache_ttl_seconds
+            time.monotonic() + cache_ttl_seconds
     )

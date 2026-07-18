@@ -20,13 +20,13 @@ from src.integrations.blockchain.solana.solana_rpc_rate_limiter_service import (
     register_rpc_failure_backoff,
     wait_before_rpc_request,
 )
-from src.integrations.blockchain.solana.solana_structures import SolanaRpcFailureReason
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_SPL_TOKEN_BALANCE_OFFSET,
     SOLANA_SPL_TOKEN_PROGRAM_ID,
     SOLANA_TOKEN_2022_PROGRAM_ID,
     SolanaWalletTokenAccountSnapshot,
 )
+from src.integrations.blockchain.solana.solana_structures import SolanaRpcFailureReason
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

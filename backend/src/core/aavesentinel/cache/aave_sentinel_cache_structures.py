@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelCapitalFlowSummary,
+    AaveSentinelPerformanceSummary,
     AaveSentinelPositionSnapshot,
     AaveSentinelTransactionHeadFingerprint,
 )
@@ -14,4 +15,5 @@ from src.core.aavesentinel.aave_sentinel_structures import (
 class AaveSentinelState(BaseModel):
     position_snapshot: Optional[AaveSentinelPositionSnapshot] = None
     capital_flow_summary: Optional[AaveSentinelCapitalFlowSummary] = None
+    performance_summary: Optional[AaveSentinelPerformanceSummary] = None
     last_seen_transaction_fingerprint: Optional[AaveSentinelTransactionHeadFingerprint] = None

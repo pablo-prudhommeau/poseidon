@@ -181,3 +181,31 @@ ERC20_ABI: Final[List[Any]] = [
         "type": "function",
     }
 ]
+
+AAVE_SCALED_BALANCE_TOKEN_ABI: Final[List[Any]] = [
+    {
+        "inputs": [{"internalType": "address", "name": "user", "type": "address"}],
+        "name": "scaledBalanceOf",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+AAVE_RESERVE_DATA_ABI_TYPES: Final[list[str]] = [
+    "uint256",
+    "uint128",
+    "uint128",
+    "uint128",
+    "uint128",
+    "uint128",
+    "uint40",
+    "uint16",
+    "address",
+    "address",
+    "address",
+    "address",
+    "uint128",
+    "uint128",
+    "uint128",
+]

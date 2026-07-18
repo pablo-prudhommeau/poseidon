@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Optional
 
 from src.configuration.config import settings
-from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingVerdictCycleStatistics
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_prices_for_tokens_with_metadata
@@ -126,7 +126,7 @@ class TradingShadowingVerdictTracker:
 
         freeze_authority_snapshots = self._resolve_solana_freeze_authority_snapshots_for_probes(
             probes=[verdict.probe for verdict, _ in resolving_candidates]
-            + [verdict.probe for verdict, _ in lethargic_candidates],
+                   + [verdict.probe for verdict, _ in lethargic_candidates],
         )
 
         if resolving_candidates:

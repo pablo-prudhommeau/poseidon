@@ -8,9 +8,9 @@ from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token, BlockchainNetwork
 from src.core.trading.execution.trading_execution_handler_service import resolve_execution_chain_handler_for_blockchain
+from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
 from src.core.trading.trading_structures import TradingOrderPayload
 from src.core.utils.date_utils import get_current_local_datetime
-from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
 from src.integrations.blockchain.blockchain_exceptions import BlockchainPriceUnavailableError
 from src.integrations.blockchain.blockchain_price_service import fetch_onchain_price_for_token
 from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute

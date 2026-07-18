@@ -16,7 +16,6 @@ from src.integrations.blockchain.solana.solana_rpc_client import (
 )
 from src.integrations.blockchain.solana.solana_structures import (
     SolanaWalletSnapshot,
-    SolanaWalletTokenAccountSnapshot,
 )
 from src.logging.logger import get_application_logger
 
@@ -39,7 +38,7 @@ def resolve_solana_wallet_snapshot(force_refresh: bool = False) -> SolanaWalletS
     global _cached_wallet_snapshot, _cached_wallet_snapshot_expires_at_monotonic
 
     now_monotonic = time.monotonic()
-    if (not force_refresh and _cached_wallet_snapshot is not None  and now_monotonic < _cached_wallet_snapshot_expires_at_monotonic):
+    if (not force_refresh and _cached_wallet_snapshot is not None and now_monotonic < _cached_wallet_snapshot_expires_at_monotonic):
         return _cached_wallet_snapshot
 
     signer = build_default_solana_signer()
@@ -57,7 +56,7 @@ def resolve_solana_wallet_snapshot(force_refresh: bool = False) -> SolanaWalletS
     )
     _cached_wallet_snapshot = snapshot
     _cached_wallet_snapshot_expires_at_monotonic = (
-        now_monotonic + settings.TRADING_SOLANA_WALLET_SNAPSHOT_TTL_SECONDS
+            now_monotonic + settings.TRADING_SOLANA_WALLET_SNAPSHOT_TTL_SECONDS
     )
     logger.debug(
         "[BLOCKCHAIN][SOL][WALLET][SNAPSHOT] Refreshed wallet snapshot — token_account_count=%d native_lamports=%d",
@@ -91,6 +90,6 @@ def resolve_cached_token_account_last_activity_datetime(
     if last_activity_datetime is not None:
         _token_account_activity_cache[token_account_address] = last_activity_datetime
         _token_account_activity_cache_expires_at_monotonic[token_account_address] = (
-            now_monotonic + settings.TRADING_SOLANA_TOKEN_ACCOUNT_ACTIVITY_CACHE_SECONDS
+                now_monotonic + settings.TRADING_SOLANA_TOKEN_ACCOUNT_ACTIVITY_CACHE_SECONDS
         )
     return last_activity_datetime

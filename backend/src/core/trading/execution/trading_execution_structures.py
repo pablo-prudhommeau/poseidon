@@ -4,8 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
 from src.integrations.blockchain.blockchain_execution_structures import BlockchainExecutionResult
+from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
 from src.persistence.models import TradingTrade
 
 

@@ -4,16 +4,16 @@ import asyncio
 import threading
 
 from src.configuration.config import settings
-from src.core.jobs.aave_sentinel_job import AaveSentinelJob
 from src.core.jobs.aave_dca_job import AaveDcaJob
+from src.core.jobs.aave_sentinel_job import AaveSentinelJob
 from src.core.jobs.job_structures import BackgroundJobsRuntimeStatus
 from src.core.jobs.telegram_polling_job import TelegramPollingJob
 from src.core.jobs.trading_cycle_job import TradingCycleJob
-from src.integrations.telegram.telegram_update_registry import telegram_update_registry
 from src.core.jobs.trading_position_guard_job import TradingPositionGuardJob
 from src.core.jobs.trading_shadowing_job import TradingShadowingJob
 from src.core.jobs.trading_wallet_maintenance_job import TradingWalletMaintenanceJob
 from src.core.structures.structures import Mode
+from src.integrations.telegram.telegram_update_registry import telegram_update_registry
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

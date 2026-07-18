@@ -33,16 +33,29 @@ def send_alert(
     header_text: str = f"{resolved_emoji_indicator} {title}".strip()
 
     formatted_message_text: str = f"<b>{html.escape(header_text)}</b>{title_body_separator}{body}"
+    return send_html_message(
+        text=formatted_message_text,
+        reply_markup=reply_markup,
+    )
+
+
+def send_html_message(
+        text: str,
+        reply_markup: Optional[TelegramInlineKeyboardMarkup] = None,
+) -> Optional[int]:
+    if not _has_telegram_credentials():
+        logger.debug("[TELEGRAM][CLIENT][SKIPPED] Telegram credentials missing from configuration, html message will not be sent")
+        return None
 
     message_payload = TelegramMessagePayload(
         chat_id=settings.TELEGRAM_CHAT_ID,
-        text=formatted_message_text,
+        text=text,
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=reply_markup,
     )
 
-    logger.debug("[TELEGRAM][CLIENT][PREPARATION] Preparing to send Telegram alert to configured chat identifier")
+    logger.debug("[TELEGRAM][CLIENT][PREPARATION] Preparing to send Telegram html message to configured chat identifier")
 
     response_payload = _call_telegram_method(
         method_name="sendMessage",
@@ -53,8 +66,7 @@ def send_alert(
 
     message_identifier: Optional[int] = _extract_message_identifier_from_response(response_payload)
     logger.debug(
-        "[TELEGRAM][CLIENT][SUCCESS] Successfully delivered Telegram alert message with title: %s message_id=%s",
-        title,
+        "[TELEGRAM][CLIENT][SUCCESS] Successfully delivered Telegram html message message_id=%s",
         message_identifier,
     )
     return message_identifier

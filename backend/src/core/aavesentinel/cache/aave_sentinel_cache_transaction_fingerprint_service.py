@@ -4,9 +4,10 @@ from typing import Optional
 
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
-from src.core.aavesentinel.aave_sentinel_snapshot_service import AaveSentinelSnapshotService
 from src.core.aavesentinel.aave_sentinel_structures import AaveSentinelTransactionHeadFingerprint
 from src.core.aavesentinel.cache.aave_sentinel_cache import aave_sentinel_state_cache
+from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import clear_shared_universal_ledger_cache
+from src.core.aavesentinel.position.aave_sentinel_position_snapshot_service import AaveSentinelSnapshotService
 from src.integrations.routescan.routescan_client import RoutescanClient
 from src.logging.logger import get_application_logger
 
@@ -59,6 +60,11 @@ async def poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed() 
     aave_sentinel_state_cache.update_last_seen_transaction_fingerprint(
         transaction_fingerprint=current_transaction_fingerprint,
     )
+    clear_shared_universal_ledger_cache()
     cache_invalidator.mark_dirty(CacheRealm.AAVE_SENTINEL_CAPITAL_FLOW)
-    logger.debug("[AAVESENTINEL][CACHE] Capital flow realm marked dirty after transaction fingerprint change")
+    cache_invalidator.mark_dirty(CacheRealm.AAVE_SENTINEL_PERFORMANCE)
+    logger.debug(
+        "[AAVESENTINEL][CACHE] Capital flow and performance realms marked dirty "
+        "after transaction fingerprint change",
+    )
     return True

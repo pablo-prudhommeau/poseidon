@@ -13,10 +13,9 @@ def format_currency(value: Optional[Union[float, int]], currency: str = "USD") -
 
         if currency == "USD":
             return f"${formatted}"
-        elif currency == "EUR":
+        if currency == "EUR":
             return f"{formatted} €"
-        else:
-            return f"{formatted} {currency}"
+        return f"{formatted} {currency}"
 
     except (ValueError, TypeError):
         return "N/A"

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from src.core.structures.structures import BlockchainNetwork, Token
-from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
+from src.core.trading.trading_structures import TradingCandidate
 from src.integrations.blockchain.blockchain_exceptions import BlockchainTradingNotSupportedError
 from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 

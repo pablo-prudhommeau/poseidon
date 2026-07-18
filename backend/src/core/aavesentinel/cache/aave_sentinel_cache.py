@@ -5,6 +5,7 @@ from typing import Optional
 
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelCapitalFlowSummary,
+    AaveSentinelPerformanceSummary,
     AaveSentinelPositionSnapshot,
     AaveSentinelTransactionHeadFingerprint,
 )
@@ -19,6 +20,7 @@ class AaveSentinelCache:
         self._lock = Lock()
         self._cached_position_snapshot: Optional[AaveSentinelPositionSnapshot] = None
         self._cached_capital_flow_summary: Optional[AaveSentinelCapitalFlowSummary] = None
+        self._cached_performance_summary: Optional[AaveSentinelPerformanceSummary] = None
         self._last_seen_transaction_fingerprint: Optional[AaveSentinelTransactionHeadFingerprint] = None
 
     def update_position_snapshot(self, position_snapshot: Optional[AaveSentinelPositionSnapshot]) -> None:
@@ -37,6 +39,17 @@ class AaveSentinelCache:
                 capital_flow_summary.net_capital_deployed_usd,
             )
 
+    def update_performance_summary(self, performance_summary: AaveSentinelPerformanceSummary) -> None:
+        with self._lock:
+            self._cached_performance_summary = performance_summary
+            logger.debug(
+                "[AAVESENTINEL][CACHE] Performance summary updated "
+                "realized_trading_usd=%0.2f latent_trading_usd=%0.2f net_interest_usd=%0.2f",
+                performance_summary.realized_trading_pnl_usd,
+                performance_summary.latent_trading_pnl_usd,
+                performance_summary.cumulative_net_interest_usd,
+            )
+
     def update_last_seen_transaction_fingerprint(
             self,
             transaction_fingerprint: AaveSentinelTransactionHeadFingerprint,
@@ -50,6 +63,7 @@ class AaveSentinelCache:
             return AaveSentinelState(
                 position_snapshot=self._cached_position_snapshot,
                 capital_flow_summary=self._cached_capital_flow_summary,
+                performance_summary=self._cached_performance_summary,
                 last_seen_transaction_fingerprint=self._last_seen_transaction_fingerprint,
             )
 

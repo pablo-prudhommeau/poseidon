@@ -32,7 +32,6 @@ from src.persistence.models import AaveDcaOrder, AaveDcaStrategy
 
 logger = get_application_logger(__name__)
 
-
 AAVE_DCA_PIPELINE_KNOWN_ONCHAIN_REVERT_RULES: tuple[AaveDcaPipelineOnchainRevertRule, ...] = (
     AaveDcaPipelineOnchainRevertRule(
         onchain_revert_reason="QUOTE_SWAP_AMOUNT_TOO_SMALL",
@@ -43,13 +42,13 @@ AAVE_DCA_PIPELINE_KNOWN_ONCHAIN_REVERT_RULES: tuple[AaveDcaPipelineOnchainRevert
 
 
 def validate_lifi_swap_price_against_binance_reference(
-    binance_reference_price_usd: float,
-    lifi_expected_output_amount_base_units: int,
-    lifi_minimum_output_amount_base_units: int,
-    source_amount_base_units: int,
-    source_asset_decimals: int,
-    target_asset_decimals: int,
-    maximum_deviation_percent: float,
+        binance_reference_price_usd: float,
+        lifi_expected_output_amount_base_units: int,
+        lifi_minimum_output_amount_base_units: int,
+        source_amount_base_units: int,
+        source_asset_decimals: int,
+        target_asset_decimals: int,
+        maximum_deviation_percent: float,
 ) -> AaveDcaSwapPriceValidationResult:
     if binance_reference_price_usd <= 0:
         return AaveDcaSwapPriceValidationResult(

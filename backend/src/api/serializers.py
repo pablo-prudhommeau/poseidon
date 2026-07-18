@@ -14,7 +14,6 @@ from src.api.http.api_schemas import (
     TradingEvaluationDecisionPayload,
     AaveDcaOrderPayload,
     AaveDcaOrderPipelineOperationsPayload,
-    AaveDcaPipelineOperationPayload,
     AaveDcaStrategyPayload,
     TradingEvaluationShadowingDiagnosticsPayload,
     TradingScreenerEnvelopePayload,
@@ -24,7 +23,7 @@ from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.screener.trading_screener_structures import TRADING_SCREENER_PROVIDER_DEXSCREENER
 from src.core.trading.screener.trading_screener_structures import TradingScreenerEnvelope
 from src.core.trading.trading_structures import TradingPortfolio
-from src.core.trading.trading_utils import get_currency_symbol
+from src.core.utils.symbol_utils import get_currency_symbol
 from src.core.utils.date_utils import format_datetime_to_local_iso
 from src.integrations.aave.aave_structures import AaveLiveMetrics
 from src.logging.logger import get_application_logger

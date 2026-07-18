@@ -9,7 +9,7 @@ from web3 import Web3
 from web3.types import TxParams
 
 from src.configuration.config import settings
-from src.integrations.blockchain.blockchain_execution_service import (
+from src.integrations.blockchain.blockchain_execution_constants import (
     BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS,
     EVM_FALLBACK_GAS_LIMIT,
     EVM_GAS_ESTIMATION_BUFFER_MULTIPLIER,

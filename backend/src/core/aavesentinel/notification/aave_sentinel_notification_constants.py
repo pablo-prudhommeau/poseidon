@@ -1,0 +1,12 @@
+from __future__ import annotations
+
+from typing import Final
+
+NON_TRADING_MOVEMENT_DISPLAY_EPSILON_USD: float = 0.50
+PNL_MOVEMENT_PAGE_MAX_ENTRIES: int = 12
+PNL_MOVEMENT_PAGE_MAX_CHARACTERS: int = 3000
+PNL_DETAIL_MAX_PAGE_COUNT: int = 5
+
+AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE: Final[str] = "Statut du portefeuille"
+AAVE_SENTINEL_PNL_NOTIFICATION_TITLE: Final[str] = "Détails du bilan trading et APY"
+AAVE_SENTINEL_TELEGRAM_TITLE_BODY_SEPARATOR: Final[str] = "\n\n"

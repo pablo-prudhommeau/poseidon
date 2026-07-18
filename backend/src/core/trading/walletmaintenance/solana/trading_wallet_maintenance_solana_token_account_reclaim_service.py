@@ -11,6 +11,7 @@ from solders.transaction import VersionedTransaction
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.execution.trading_execution_swap_service import SWAP_EXECUTION_LOCK
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_structures import (
     TradingWalletMaintenanceSolanaReclaimableTokenAccount,
 )
@@ -20,16 +21,15 @@ from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures im
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso, get_current_local_datetime
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
-from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
 from src.integrations.blockchain.solana.blockchain_solana_signer import SolanaSigner, build_default_solana_signer
+from src.integrations.blockchain.solana.solana_onchain_wallet_context_service import (
+    invalidate_solana_onchain_wallet_context_cache,
+)
 from src.integrations.blockchain.solana.solana_rpc_client import fetch_solana_native_balance_lamports
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS,
     SolanaWalletTokenAccountSnapshot,
-)
-from src.integrations.blockchain.solana.solana_onchain_wallet_context_service import (
-    invalidate_solana_onchain_wallet_context_cache,
 )
 from src.integrations.blockchain.solana.solana_wallet_snapshot_service import (
     invalidate_solana_wallet_snapshot_cache,
@@ -41,6 +41,8 @@ from src.logging.logger import get_application_logger
 logger = get_application_logger(__name__)
 
 SOLANA_CLOSE_ACCOUNT_INSTRUCTION_INDEX = 9
+
+
 def run_solana_dormant_token_account_reclaim() -> TradingWalletMaintenanceChainReclaimResult:
     blockchain_network = BlockchainNetwork.SOLANA
     try:

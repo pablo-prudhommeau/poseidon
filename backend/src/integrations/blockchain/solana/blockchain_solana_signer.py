@@ -3,9 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from src.integrations.blockchain.solana.blockchain_solana_wallet_derivation import (
-    derive_solana_keypair_from_mnemonic,
-)
 from solana.rpc.api import Client
 from solders.presigner import Presigner
 from solders.signature import Signature
@@ -13,6 +10,9 @@ from solders.transaction import VersionedTransaction
 
 from src.core.structures.structures import BlockchainNetwork
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
+from src.integrations.blockchain.solana.blockchain_solana_wallet_derivation import (
+    derive_solana_keypair_from_mnemonic,
+)
 
 try:
     from solders.rpc.responses import SendTransactionResp
@@ -20,7 +20,9 @@ except Exception:
     SendTransactionResp = object
 
 from src.configuration.config import settings
-from src.integrations.blockchain.blockchain_execution_service import BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS
+from src.integrations.blockchain.blockchain_execution_constants import (
+    BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS,
+)
 from src.integrations.blockchain.solana.solana_structures import (
     SolanaTransactionConfirmationResult,
     SolanaTransactionFeeBreakdown,

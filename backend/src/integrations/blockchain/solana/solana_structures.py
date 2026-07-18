@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
 from src.integrations.blockchain.blockchain_execution_structures import BlockchainTransactionFailureReason
 
 
@@ -43,6 +44,7 @@ class SolanaRpcEndpointRateLimitState(BaseModel):
     rpc_url: str
     cooldown_until_monotonic: float = 0.0
     request_timestamps_monotonic: list[float] = Field(default_factory=list)
+
 
 class SolanaTransactionFeeBreakdown(BaseModel):
     model_config = ConfigDict(extra="ignore")

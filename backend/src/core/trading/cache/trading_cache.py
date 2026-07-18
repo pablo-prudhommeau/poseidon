@@ -14,8 +14,8 @@ from src.api.http.api_schemas import (
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.core.trading.cache.trading_cache_structures import TradingState
-from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.core.utils.date_utils import get_current_local_datetime
+from src.integrations.blockchain.blockchain_price_structures import OnchainPricesByPairAddress
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

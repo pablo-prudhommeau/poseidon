@@ -10,16 +10,16 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.aavedca.aave_dca_helpers import deserialize_pipeline_operations
-from src.core.aavedca.aave_dca_utils import (
-    format_allocation_decision_label,
-    resolve_pipeline_step_descriptor,
-)
 from src.core.aavedca.aave_dca_structures import (
     AaveDcaAllocationDecision,
     AaveDcaOrderStatus,
     AaveDcaPipelineOperationStatus,
 )
-from src.core.trading.trading_utils import get_currency_symbol
+from src.core.aavedca.aave_dca_utils import (
+    format_allocation_decision_label,
+    resolve_pipeline_step_descriptor,
+)
+from src.core.utils.symbol_utils import get_currency_symbol
 from src.integrations.telegram.telegram_client import delete_message, edit_message_text, send_alert
 from src.integrations.telegram.telegram_format_utils import (
     TELEGRAM_MAIN_TITLE_BODY_SEPARATOR,
@@ -44,15 +44,15 @@ _TELEGRAM_RESYNC_PUBLISH_INTERVAL_SECONDS: float = 0.5
 
 
 def build_dca_order_telegram_body(
-    dca_order: AaveDcaOrder,
-    dca_strategy: AaveDcaStrategy,
-    status_note: Optional[str] = None,
+        dca_order: AaveDcaOrder,
+        dca_strategy: AaveDcaStrategy,
+        status_note: Optional[str] = None,
 ) -> str:
     average_purchase_price_difference_percentage: float = 0.0
     if dca_strategy.average_purchase_price > 0 and dca_order.actual_execution_price is not None:
         average_purchase_price_difference_percentage = (
-            dca_order.actual_execution_price / dca_strategy.average_purchase_price - 1
-        ) * 100
+                                                               dca_order.actual_execution_price / dca_strategy.average_purchase_price - 1
+                                                       ) * 100
 
     price_trend_indicator_emoji: str = "📈" if average_purchase_price_difference_percentage > 0 else "📉"
     order_status: AaveDcaOrderStatus = AaveDcaOrderStatus(dca_order.order_status)
@@ -211,9 +211,9 @@ def resolve_dca_order_telegram_reply_markup(dca_order: AaveDcaOrder) -> Optional
 
 
 def format_dca_order_telegram_message_text(
-    dca_order: AaveDcaOrder,
-    dca_strategy: AaveDcaStrategy,
-    status_note: Optional[str] = None,
+        dca_order: AaveDcaOrder,
+        dca_strategy: AaveDcaStrategy,
+        status_note: Optional[str] = None,
 ) -> str:
     title, emoji_indicator = resolve_dca_order_telegram_title_and_emoji(dca_order)
     header_text: str = f"{emoji_indicator} {title}".strip()
@@ -226,10 +226,10 @@ def format_dca_order_telegram_message_text(
 
 
 def publish_dca_order_telegram_message(
-    dca_order: AaveDcaOrder,
-    dca_strategy: AaveDcaStrategy,
-    order_dao: AaveDcaOrderDao,
-    status_note: Optional[str] = None,
+        dca_order: AaveDcaOrder,
+        dca_strategy: AaveDcaStrategy,
+        order_dao: AaveDcaOrderDao,
+        status_note: Optional[str] = None,
 ) -> None:
     title, emoji_indicator = resolve_dca_order_telegram_title_and_emoji(dca_order)
     message_text: str = format_dca_order_telegram_message_text(
@@ -285,8 +285,8 @@ def delete_dca_order_telegram_message(dca_order: AaveDcaOrder, order_dao: AaveDc
 
 def order_status_requires_approval_footer(dca_order: AaveDcaOrder) -> bool:
     return (
-        AaveDcaOrderStatus(dca_order.order_status) == AaveDcaOrderStatus.WAITING_USER_APPROVAL
-        and dca_order.suspension_reason is None
+            AaveDcaOrderStatus(dca_order.order_status) == AaveDcaOrderStatus.WAITING_USER_APPROVAL
+            and dca_order.suspension_reason is None
     )
 
 
@@ -342,9 +342,9 @@ class AaveDcaNotificationService:
             await self._handle_resume_callback(telegram_callback_query, interaction_callback_data)
 
     async def _handle_approval_callback(
-        self,
-        telegram_callback_query: TelegramCallbackQuery,
-        interaction_callback_data: str,
+            self,
+            telegram_callback_query: TelegramCallbackQuery,
+            interaction_callback_data: str,
     ) -> None:
         origin_message_identifier: int = telegram_callback_query.message.message_id
         target_order_identifier: int = int(interaction_callback_data.split(":")[1])
@@ -432,9 +432,9 @@ class AaveDcaNotificationService:
             )
 
     async def _handle_resume_callback(
-        self,
-        telegram_callback_query: TelegramCallbackQuery,
-        interaction_callback_data: str,
+            self,
+            telegram_callback_query: TelegramCallbackQuery,
+            interaction_callback_data: str,
     ) -> None:
         origin_message_identifier: int = telegram_callback_query.message.message_id
         target_order_identifier: int = int(interaction_callback_data.split(":")[1])

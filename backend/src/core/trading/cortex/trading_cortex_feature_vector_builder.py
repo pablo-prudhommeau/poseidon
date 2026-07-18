@@ -14,10 +14,6 @@ from src.core.trading.cortex.trading_cortex_feature_catalog import (
     trading_cortex_per_metric_feature_suffixes,
     trading_cortex_supported_metric_keys,
 )
-from src.core.trading.trading_chain_capability_service import (
-    resolve_trading_allowed_blockchain_network_identifiers,
-)
-from src.core.trading.trading_dex_capability_service import resolve_supported_trading_dex_identifiers
 from src.core.trading.cortex.trading_cortex_numerical_utils import (
     bounded_hyperbolic_signal,
     clamp,
@@ -32,6 +28,10 @@ from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexShadowingRegimeFeatureSnapshot,
     TradingCortexScoringRequest,
 )
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_network_identifiers,
+)
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_dex_identifiers
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

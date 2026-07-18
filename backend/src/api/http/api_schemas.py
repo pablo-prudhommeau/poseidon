@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict
 from pydantic import Field
 
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.trading_structures import GasRefillBudgetDetailScope
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
+from src.core.trading.trading_structures import GasRefillBudgetDetailScope
 
 
 class SystemHealthComponentPayload(BaseModel):

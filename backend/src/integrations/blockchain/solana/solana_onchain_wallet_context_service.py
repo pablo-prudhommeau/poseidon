@@ -5,16 +5,15 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.trading_chain_capability_service import (
-    resolve_trading_allowed_blockchain_networks,
-)
 from src.core.trading.portfolio.trading_portfolio_solana_wallet_auxiliary_service import (
     build_solana_token_account_rent_breakdown_from_wallet_snapshot,
     invalidate_solana_rent_breakdown_cache,
 )
-from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
 from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
-from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.solana.solana_structures import (
     SolanaOnchainWalletContext,
     SolanaRpcFailureReason,
@@ -24,6 +23,7 @@ from src.integrations.blockchain.solana.solana_wallet_snapshot_service import (
     invalidate_solana_wallet_snapshot_cache,
     resolve_solana_wallet_snapshot,
 )
+from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -81,7 +81,7 @@ def resolve_solana_onchain_wallet_context(force_refresh: bool = False) -> Solana
     )
     _cached_wallet_context = wallet_context
     _cached_wallet_context_expires_at_monotonic = (
-        now_monotonic + settings.TRADING_SOLANA_WALLET_SNAPSHOT_TTL_SECONDS
+            now_monotonic + settings.TRADING_SOLANA_WALLET_SNAPSHOT_TTL_SECONDS
     )
     logger.debug(
         "[BLOCKCHAIN][SOL][WALLET][CONTEXT] Refreshed on-chain wallet context — "

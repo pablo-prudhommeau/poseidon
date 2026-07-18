@@ -20,3 +20,27 @@ class AaveEvmTransactionConfirmationOutcome(BaseModel):
     confirmation_failure_kind: Optional[AaveEvmTransactionConfirmationFailureKind] = None
     onchain_revert_reason: Optional[str] = None
     block_number: Optional[int] = None
+
+
+class AaveReserveIndexSnapshot(BaseModel):
+    underlying_address: str
+    liquidity_index: float
+    variable_borrow_index: float
+
+
+class AaveScaledBalanceSnapshot(BaseModel):
+    underlying_address: str
+    scaled_supply_balance: float
+    scaled_debt_balance: float
+
+
+class AaveAssetPriceUsdSnapshot(BaseModel):
+    contract_address: str
+    asset_price_usd: float
+
+
+class AaveScaledBalanceBatchRequest(BaseModel):
+    underlying_address: str
+    a_token_address: str
+    variable_debt_token_address: str
+    decimal_count: int

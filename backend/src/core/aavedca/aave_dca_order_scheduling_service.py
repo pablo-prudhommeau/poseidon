@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.aavedca.aave_dca_helpers import calculate_dynamic_allocation, create_empty_pipeline_operations
 from src.core.aavedca.aave_dca_notification_service import publish_dca_order_telegram_message
 from src.core.aavedca.aave_dca_pipeline_service import AaveDcaPipelineService
 from src.core.aavedca.aave_dca_structures import (
@@ -14,7 +15,6 @@ from src.core.aavedca.aave_dca_structures import (
     AaveDcaOrderStatus,
     AaveDcaStrategyStatus,
 )
-from src.core.aavedca.aave_dca_helpers import calculate_dynamic_allocation, create_empty_pipeline_operations
 from src.core.structures.structures import BlockchainNetwork
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_executor import AaveExecutor

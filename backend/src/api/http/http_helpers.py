@@ -34,20 +34,20 @@ from src.core.trading.analytics.trading_analytics_helpers import (
 )
 from src.core.trading.analytics.trading_analytics_service import build_analytics_response
 from src.core.trading.cache.trading_cache import trading_cache
-from src.core.utils.date_utils import get_current_local_datetime
-from src.integrations.aave.aave_executor import AaveExecutor
-from src.logging.logger import get_application_logger
 from src.core.trading.trading_service import (
     compute_position_realized_profit_and_loss_usd,
     group_trades_by_evaluation_id,
 )
+from src.core.utils.date_utils import get_current_local_datetime
+from src.integrations.aave.aave_executor import AaveExecutor
+from src.logging.logger import get_application_logger
 from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
 from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
 from src.persistence.dao.trading_evaluation_dao import TradingEvaluationDao
 from src.persistence.dao.trading_position_dao import TradingPositionDao
-from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
+from src.persistence.dao.trading_trade_dao import TradingTradeDao
 from src.persistence.models import AaveDcaStrategy, PositionPhase, TradingEvaluation
 
 logger = get_application_logger(__name__)

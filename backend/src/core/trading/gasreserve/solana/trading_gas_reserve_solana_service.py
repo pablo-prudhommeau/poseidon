@@ -24,12 +24,12 @@ from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana
 from src.core.utils.math_utils import decimal_from_primitive, quantize_2dp
 from src.integrations.blockchain.blockchain_rpc_registry import resolve_rpc_url_for_chain
 from src.integrations.blockchain.solana.blockchain_solana_signer import build_default_solana_signer
-from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.integrations.blockchain.solana.solana_rpc_client import (
     fetch_solana_native_balance_lamports,
     format_lamports_as_sol_text,
 )
 from src.integrations.blockchain.solana.solana_structures import SolanaOnchainWalletContext
+from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

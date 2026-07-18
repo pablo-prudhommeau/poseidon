@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.aavedca.aave_dca_helpers import (
+    append_pipeline_operation,
+    classify_aave_dca_pipeline_onchain_failure,
+)
 from src.core.aavedca.aave_dca_notification_service import publish_dca_order_telegram_message
 from src.core.aavedca.aave_dca_structures import (
     AaveDcaBlockingPipelineError,
@@ -16,10 +20,6 @@ from src.core.aavedca.aave_dca_structures import (
     AaveDcaPipelineOperationStep,
     AaveDcaPipelinePreflightFailureReason,
     AaveDcaTransientPipelineError,
-)
-from src.core.aavedca.aave_dca_helpers import (
-    append_pipeline_operation,
-    classify_aave_dca_pipeline_onchain_failure,
 )
 from src.core.aavedca.aave_dca_utils import (
     build_aave_dca_pipeline_step_failure_message,

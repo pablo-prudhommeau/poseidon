@@ -9,13 +9,16 @@ from web3 import AsyncWeb3
 from web3.contract import AsyncContract
 
 from src.configuration.config import settings
-from src.core.aavesentinel.aave_sentinel_helpers import resolve_strategy_snapshot_resolution
-from src.core.aavesentinel.aave_sentinel_reserve_registry_service import load_aave_sentinel_reserve_registry
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelAssetSnapshot,
     AaveSentinelPositionSnapshot,
 )
-from src.core.aavesentinel.aave_sentinel_utils import convert_ray_to_annual_percentage_yield
+from src.core.aavesentinel.aave_sentinel_utils import (
+    convert_ray_to_annual_percentage_yield,
+    decode_aave_reserve_liquidation_threshold,
+)
+from src.core.aavesentinel.position.aave_sentinel_position_reserve_registry_service import load_aave_sentinel_reserve_registry
+from src.core.aavesentinel.position.aave_sentinel_position_strategy_helpers import resolve_active_strategies
 from src.core.structures.structures import BlockchainNetwork
 from src.integrations.aave.aave_abis import (
     ADDRESS_PROVIDER_ABI,
@@ -48,9 +51,9 @@ class AaveSentinelSnapshotService:
 
     def _is_fully_initialized(self) -> bool:
         return (
-            self._web3_client is not None
-            and self._pool_contract is not None
-            and self._oracle_contract is not None
+                self._web3_client is not None
+                and self._pool_contract is not None
+                and self._oracle_contract is not None
         )
 
     @property
@@ -131,9 +134,8 @@ class AaveSentinelSnapshotService:
                 reverse=True,
             )
 
-            strategy_snapshot_resolution = resolve_strategy_snapshot_resolution(
+            active_strategies = resolve_active_strategies(
                 detected_assets=active_assets,
-                current_health_factor=normalized_health_factor,
                 reserve_registry=await load_aave_sentinel_reserve_registry(),
             )
 
@@ -141,10 +143,7 @@ class AaveSentinelSnapshotService:
                 health_factor=normalized_health_factor,
                 total_collateral_usd=total_collateral_usd,
                 total_debt_usd=total_debt_usd,
-                strategy_direction=strategy_snapshot_resolution.strategy_direction,
-                main_asset_symbol=strategy_snapshot_resolution.main_asset_symbol,
-                main_asset_price_usd=strategy_snapshot_resolution.main_asset_price_usd,
-                liquidation_price_usd=strategy_snapshot_resolution.liquidation_price_usd,
+                strategies=active_strategies,
                 assets=active_assets,
             )
         except Exception as exception:
@@ -152,19 +151,20 @@ class AaveSentinelSnapshotService:
             return None
 
     def _derive_wallet_address(self) -> None:
-        if not settings.AAVE_SENTINEL_WALLET_MNEMONIC:
-            logger.warning("[AAVESENTINEL][CREDENTIALS] Wallet mnemonic is not configured, sentinel is read-only")
-            return
+        wallet_mnemonic: str = settings.AAVE_SENTINEL_WALLET_MNEMONIC.strip()
+        if not wallet_mnemonic:
+            raise RuntimeError("AAVE_SENTINEL_WALLET_MNEMONIC is required to derive the sentinel wallet address")
 
         try:
             account_instance: LocalAccount = Account.from_mnemonic(
-                mnemonic=settings.AAVE_SENTINEL_WALLET_MNEMONIC,
+                mnemonic=wallet_mnemonic,
                 account_path=f"m/44'/60'/0'/0/{settings.AAVE_SENTINEL_WALLET_DERIVATION_INDEX}",
             )
             self._wallet_address = account_instance.address
             logger.info("[AAVESENTINEL][CREDENTIALS] Wallet loaded for sentinel: %s", self._wallet_address)
         except Exception as exception:
             logger.exception("[AAVESENTINEL][CREDENTIALS] Wallet derivation failed: %s", exception)
+            raise RuntimeError("Failed to derive the Aave sentinel wallet address from mnemonic") from exception
 
     async def _perform_protected_onchain_call(
             self,
@@ -190,10 +190,14 @@ class AaveSentinelSnapshotService:
 
                 asset_checksum_address = AsyncWeb3.to_checksum_address(asset_contract_address)
                 reserve_configuration = await self._pool_contract.functions.getReserveData(asset_checksum_address).call()
+                reserve_configuration_bitmap = int(reserve_configuration[0])
                 liquidity_rate_ray = reserve_configuration[2]
                 variable_borrow_rate_ray = reserve_configuration[4]
                 a_token_contract_address = reserve_configuration[8]
                 variable_debt_token_contract_address = reserve_configuration[10]
+                liquidation_threshold = decode_aave_reserve_liquidation_threshold(
+                    configuration_bitmap=reserve_configuration_bitmap,
+                )
 
                 underlying_token_contract = self._web3_client.eth.contract(address=asset_checksum_address, abi=ERC20_ABI)
                 a_token_contract = self._web3_client.eth.contract(address=a_token_contract_address, abi=ERC20_ABI)
@@ -269,6 +273,7 @@ class AaveSentinelSnapshotService:
                     wallet_value_usd=wallet_value_usd,
                     supply_annual_percentage_yield=convert_ray_to_annual_percentage_yield(liquidity_rate_ray),
                     borrow_annual_percentage_yield=convert_ray_to_annual_percentage_yield(variable_borrow_rate_ray),
+                    liquidation_threshold=liquidation_threshold,
                 )
             except Exception as exception:
                 logger.exception(

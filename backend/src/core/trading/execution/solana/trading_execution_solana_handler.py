@@ -9,8 +9,8 @@ from src.core.trading.execution.solana.trading_execution_solana_service import (
     run_solana_live_buy_blocking,
     run_solana_live_sell_blocking,
 )
-from src.core.trading.trading_structures import TradingCandidate
 from src.core.trading.execution.trading_execution_structures import TradingLiveSellExecutionOutcome
+from src.core.trading.trading_structures import TradingCandidate
 from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 
 

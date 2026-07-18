@@ -6,9 +6,8 @@ from datetime import timedelta
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_helpers import resolve_token_account_rent_lamports
-from src.core.trading.portfolio.trading_portfolio_structures import LiveLiquiditySnapshotUnavailableError
-from src.core.utils.date_utils import get_current_local_datetime
 from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
+from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.blockchain.solana.solana_structures import (
     SOLANA_SUPPORTED_TOKEN_ACCOUNT_OWNER_PROGRAM_IDS,
     SolanaTokenAccountRentBreakdown,
@@ -50,7 +49,7 @@ def resolve_solana_token_account_rent_breakdown() -> SolanaTokenAccountRentBreak
 
     _cached_rent_breakdown = rent_breakdown
     _cached_rent_breakdown_expires_at_monotonic = (
-        now_monotonic + settings.TRADING_SOLANA_RENT_BREAKDOWN_CACHE_TTL_SECONDS
+            now_monotonic + settings.TRADING_SOLANA_RENT_BREAKDOWN_CACHE_TTL_SECONDS
     )
     return rent_breakdown
 
@@ -95,8 +94,8 @@ def build_solana_token_account_rent_breakdown_from_wallet_snapshot(
     pending_reclaim_account_count = 0
     for token_account in wallet_snapshot.token_accounts:
         if not _is_wallet_token_account_eligible_for_rent_tracking(
-            token_account=token_account,
-            stablecoin_mint_address=stablecoin_mint_address,
+                token_account=token_account,
+                stablecoin_mint_address=stablecoin_mint_address,
         ):
             continue
         if token_account.balance_raw != 0:

@@ -45,9 +45,9 @@ class WalletAuxiliaryAssetsSnapshot(BaseModel):
     @property
     def total_wallet_auxiliary_assets_usd(self) -> float:
         return (
-            self.native_token_balance_usd
-            + self.gas_refill_locked_stablecoin_usd
-            + self.recoverable_wallet_capital_usd
+                self.native_token_balance_usd
+                + self.gas_refill_locked_stablecoin_usd
+                + self.recoverable_wallet_capital_usd
         )
 
 

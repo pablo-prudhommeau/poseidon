@@ -5,11 +5,11 @@ from typing import Optional, Protocol
 import requests
 
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.core.trading.trading_dex_capability_service import (
     TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS,
     is_supported_trading_solana_dex_id,
 )
-from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainPriceUnavailableError,
     BlockchainRpcUnavailableError,

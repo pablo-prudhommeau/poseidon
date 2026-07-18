@@ -22,7 +22,6 @@ from src.api.http.http_helpers import (
 )
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
-from src.core.trading.trading_paper_service import reset_trading_paper_state
 from src.core.trading.execution.trading_execution_position_service import (
     PositionCloseConflictError,
     PositionCloseNotFoundError,
@@ -32,6 +31,7 @@ from src.core.trading.execution.trading_execution_position_service import (
     kill_staled_position,
     reopen_staled_position,
 )
+from src.core.trading.trading_paper_service import reset_trading_paper_state
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_fastapi_database_session
 

@@ -7,13 +7,13 @@ from pydantic import BaseModel
 from web3 import Web3
 
 from src.configuration.config import settings
+from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.trading_chain_capability_service import (
     resolve_trading_allowed_blockchain_networks,
 )
-from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.trading_structures import TradingConfigurationError
 from src.core.trading.trading_configuration_service import require_stablecoin_address_for_blockchain
-from src.core.trading.trading_utils import get_currency_symbol
+from src.core.trading.trading_structures import TradingConfigurationError
+from src.core.utils.symbol_utils import get_currency_symbol
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_rpc_registry import (
     invalidate_rpc_cache_for_chain,

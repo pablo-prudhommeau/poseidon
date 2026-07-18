@@ -120,28 +120,6 @@ def is_native_symbol(symbol: str, chain_key: BlockchainNetwork) -> bool:
     return symbol.upper() in native_synonyms(chain_key)
 
 
-def get_currency_symbol(asset_symbol: str) -> str:
-    if not asset_symbol:
-        return ""
-
-    symbol_upper = asset_symbol.upper()
-
-    if any(sub in symbol_upper for sub in ["USD", "DAI", "USDT", "USDC"]):
-        return "$"
-    if "EUR" in symbol_upper:
-        return "€"
-    if "BTC" in symbol_upper:
-        return "₿"
-    if "ETH" in symbol_upper:
-        return "Ξ"
-    if "SOL" in symbol_upper:
-        return "◎"
-    if "LINK" in symbol_upper:
-        return "⬡"
-
-    return asset_symbol
-
-
 def resolve_spendable_cash_usd(available_cash_usd: float) -> float:
     return max(0.0, available_cash_usd)
 
@@ -153,4 +131,3 @@ def is_buy_notional_executable(
     if order_notional_usd <= 0.0:
         return False
     return order_notional_usd <= resolve_spendable_cash_usd(available_cash_usd)
-

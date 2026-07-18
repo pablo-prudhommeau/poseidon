@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.aavesentinel.aave_sentinel_helpers import (
+from src.core.aavesentinel.capitalflow.aave_sentinel_capital_flow_helpers import (
     aggregate_capital_flow_summary,
-    build_universal_ledger,
     collect_pure_capital_flow_events,
     convert_raw_capital_flow_events_to_classified_flows,
     is_fiat_stablecoin_symbol,
     resolve_asset_symbol_for_contract,
     resolve_stablecoin_symbols,
+)
+from src.core.aavesentinel.capitalflow.aave_sentinel_capital_flow_ledger_helpers import (
+    build_universal_ledger,
 )
 from src.core.aavesentinel.aave_sentinel_constants import WAVAX_CONTRACT_ADDRESS
 from src.core.aavesentinel.aave_sentinel_structures import (

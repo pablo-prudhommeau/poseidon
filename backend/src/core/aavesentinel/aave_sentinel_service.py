@@ -7,16 +7,19 @@ from typing import Optional
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
-from src.core.aavesentinel.aave_sentinel_notification_service import AaveSentinelNotificationService
 from src.core.aavesentinel.aave_sentinel_structures import AaveSentinelAlertSeverity
 from src.core.aavesentinel.cache.aave_sentinel_cache import aave_sentinel_state_cache
-from src.core.aavesentinel.aave_sentinel_transaction_fingerprint_service import (
-    poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed,
-)
 from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import (
     build_aave_sentinel_position_payload,
     resolve_aave_sentinel_state_for_display,
 )
+from src.core.aavesentinel.cache.aave_sentinel_cache_transaction_fingerprint_service import (
+    poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed,
+)
+from src.core.aavesentinel.notification.aave_sentinel_notification_constants import (
+    AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
+)
+from src.core.aavesentinel.notification.aave_sentinel_notification_service import AaveSentinelNotificationService
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.telegram.telegram_structures import TelegramMessage
 from src.integrations.telegram.telegram_update_registry import telegram_update_registry
@@ -50,34 +53,24 @@ class AaveSentinelService:
 
         initial_sentinel_state = await resolve_aave_sentinel_state_for_display()
         initial_position_snapshot = initial_sentinel_state.position_snapshot
-        wallet_address = ""
-        if initial_position_snapshot is not None:
-            wallet_address = "configured"
+        if initial_position_snapshot is None:
+            raise RuntimeError("Aave sentinel initial position snapshot could not be resolved")
 
-        logger.info(
-            "[AAVESENTINEL][LIFECYCLE] Sentinel initialized in read-only mode (wallet=%s)",
-            wallet_address,
-        )
+        logger.info("[AAVESENTINEL][LIFECYCLE] Sentinel initialized")
 
         await self._notification_service.register_bot_commands()
 
-        if initial_position_snapshot is not None:
-            detailed_initial_snapshot = await self._notification_service.format_notification_message(
-                position_snapshot=initial_position_snapshot,
-                capital_flow_summary=initial_sentinel_state.capital_flow_summary,
-            )
-            await self._notification_service.send_alert(
-                "Sentinel démarré",
-                detailed_initial_snapshot,
-                AaveSentinelAlertSeverity.INFO,
-            )
-            self._notification_service.bootstrap_state_from_snapshot(position_snapshot=initial_position_snapshot)
-        else:
-            await self._notification_service.send_alert(
-                "Sentinel démarré",
-                "⚠️ Impossible de récupérer le snapshot initial.",
-                AaveSentinelAlertSeverity.WARNING,
-            )
+        detailed_initial_snapshot = await self._notification_service.format_notification_message(
+            position_snapshot=initial_position_snapshot,
+            capital_flow_summary=initial_sentinel_state.capital_flow_summary,
+            performance_summary=initial_sentinel_state.performance_summary,
+        )
+        await self._notification_service.send_alert(
+            AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
+            detailed_initial_snapshot,
+            AaveSentinelAlertSeverity.INFO,
+        )
+        self._notification_service.bootstrap_state_from_snapshot(position_snapshot=initial_position_snapshot)
 
         last_monitoring_cycle_timestamp: Optional[datetime] = None
 

@@ -45,7 +45,7 @@ def _format_cortex_gate_criteria_summary(model_version: Optional[str], feature_s
     )
 
 
-def sort_trading_candidates_by_cortex_final_trade_score(candidates: list[TradingCandidate],descending: bool) -> list[TradingCandidate]:
+def sort_trading_candidates_by_cortex_final_trade_score(candidates: list[TradingCandidate], descending: bool) -> list[TradingCandidate]:
     return sorted(
         candidates,
         key=lambda candidate: candidate.cortex_diagnostics.inference_snapshot.final_trade_score,

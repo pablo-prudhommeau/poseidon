@@ -4,10 +4,7 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
-from src.core.trading.trading_chain_capability_service import (
-    resolve_trading_allowed_blockchain_networks,
-)
+from src.core.trading.cache.trading_cache import trading_cache
 from src.core.trading.evaluators.trading_age_filter import apply_age_filter
 from src.core.trading.evaluators.trading_ai_scorer import apply_ai_scorer
 from src.core.trading.evaluators.trading_contradictions_filter import apply_contradictions_filter
@@ -20,37 +17,40 @@ from src.core.trading.evaluators.trading_momentum_filter import apply_momentum_f
 from src.core.trading.evaluators.trading_price_deviation_filter import apply_price_deviation_filter
 from src.core.trading.evaluators.trading_quality_scorer import compute_quality_scores, apply_quality_gate
 from src.core.trading.evaluators.trading_risk_filter import apply_risk_filter
+from src.core.trading.evaluators.trading_shadowing_notional_booster import apply_shadowing_notional_boost
+from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
 from src.core.trading.evaluators.trading_solana_mint_freeze_authority_filter import (
     evaluate_solana_mint_freeze_authority_for_buy,
 )
-from src.core.trading.evaluators.trading_shadowing_notional_booster import apply_shadowing_notional_boost
-from src.core.trading.evaluators.trading_shadowing_toxic_exposure_filter import apply_shadowing_toxic_exposure_filter
 from src.core.trading.evaluators.trading_volume_filter import apply_volume_filter
-from src.core.trading.execution.trading_execution_swap_service import execute_buy
 from src.core.trading.execution.trading_execution_blockchain_route_service import build_route_for_live_execution
-from src.core.trading.cache.trading_cache import trading_cache
-from src.integrations.blockchain.blockchain_exceptions import (
-    BlockchainExecutionRouteBuildError,
-    BlockchainTradingNotSupportedError,
-)
-from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
+from src.core.trading.execution.trading_execution_swap_service import execute_buy
+from src.core.trading.gasreserve.trading_gas_reserve_service import is_gas_reserve_sufficient_for_buy
 from src.core.trading.shadowing.cache.trading_shadowing_cache import trading_shadowing_cache
 from src.core.trading.shadowing.trading_shadowing_snapshot_service import evaluate_candidate_shadowing
 from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingSnapshot,
     TradingShadowingPhase,
 )
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.trading.trading_service import (
     count_positions_consuming_max_open_slots,
     fetch_trading_candidates_sync,
     record_skipped_trading_evaluation,
     record_trading_evaluation,
 )
-from src.core.trading.trading_utils import is_buy_notional_executable, resolve_spendable_cash_usd
 from src.core.trading.trading_structures import TradingCandidate, TradingOrderPayload
+from src.core.trading.trading_utils import is_buy_notional_executable, resolve_spendable_cash_usd
 from src.core.trading.trading_utils import refresh_candidates_from_screener
-from src.core.trading.gasreserve.trading_gas_reserve_service import is_gas_reserve_sufficient_for_buy
 from src.core.utils.format_utils import tail
+from src.integrations.blockchain.blockchain_exceptions import (
+    BlockchainExecutionRouteBuildError,
+    BlockchainTradingNotSupportedError,
+)
+from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_portfolio_snapshot_dao import TradingPortfolioSnapshotDao
 from src.persistence.database_session_manager import get_database_session
@@ -405,9 +405,9 @@ class TradingPipeline:
                 continue
 
             order_notional = (
-                sizing_capital_usd
-                * per_buy_capital_fraction
-                * candidate.shadowing_diagnostics.notional_boost_factor
+                    sizing_capital_usd
+                    * per_buy_capital_fraction
+                    * candidate.shadowing_diagnostics.notional_boost_factor
             )
             spendable_cash_usd = resolve_spendable_cash_usd(available_cash_usd)
 

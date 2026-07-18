@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.aavedca.aave_dca_helpers import validate_lifi_swap_price_against_binance_reference
 from src.core.aavedca.aave_dca_notification_service import publish_dca_order_telegram_message
 from src.core.aavedca.aave_dca_pipeline_preflight_service import AaveDcaPipelinePreflightService
 from src.core.aavedca.aave_dca_pipeline_recovery_service import AaveDcaPipelineRecoveryService
@@ -21,7 +22,6 @@ from src.core.aavedca.aave_dca_structures import (
     AaveDcaPipelinePreflightFailureReason,
     AaveDcaTransientPipelineError,
 )
-from src.core.aavedca.aave_dca_helpers import validate_lifi_swap_price_against_binance_reference
 from src.core.aavedca.aave_dca_utils import (
     convert_token_amount_to_base_units,
     resolve_allocation_decision_display_title,

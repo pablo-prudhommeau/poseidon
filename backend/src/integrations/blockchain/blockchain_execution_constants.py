@@ -1,0 +1,12 @@
+from __future__ import annotations
+
+from typing import Final
+
+BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS: Final[int] = 45
+
+EVM_FALLBACK_GAS_LIMIT: Final[int] = 400_000
+EVM_GAS_ESTIMATION_BUFFER_MULTIPLIER: Final[float] = 1.1
+EVM_SWAP_GAS_BUFFER_MULTIPLIER: Final[float] = 1.35
+
+AAVE_EVM_APPROVE_GAS_LIMIT: Final[int] = 80_000
+AAVE_EVM_POOL_OPERATION_GAS_LIMIT: Final[int] = 350_000

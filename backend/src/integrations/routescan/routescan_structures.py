@@ -20,6 +20,8 @@ class RoutescanNormalTransactionRecord(BaseModel):
     sender_address: str = Field(alias="from")
     recipient_address: str = Field(alias="to")
     native_value_wei: str = Field(alias="value")
+    gas_used: str = Field(default="0", alias="gasUsed")
+    gas_price_wei: str = Field(default="0", alias="gasPrice")
 
 
 class RoutescanInternalTransactionRecord(BaseModel):

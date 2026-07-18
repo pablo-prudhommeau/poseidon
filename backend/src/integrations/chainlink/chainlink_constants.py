@@ -1,0 +1,3 @@
+from __future__ import annotations
+
+AVALANCHE_EURC_USD_CHAINLINK_FEED_ADDRESS: str = "0x59728a5067d519b5F169c824c965eD684d5E5170"

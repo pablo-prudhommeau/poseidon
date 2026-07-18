@@ -97,9 +97,9 @@ def build_regime_gate_timeline_for_metric_timestamps(
 
     regime_gate_points: list[TradingShadowingVerdictChronicleRegimeGatePoint] = []
     for metric_timestamp_milliseconds, sample_timestamp_milliseconds in zip(
-        metric_timestamps_milliseconds,
-        sample_timestamps_milliseconds,
-        strict=True,
+            metric_timestamps_milliseconds,
+            sample_timestamps_milliseconds,
+            strict=True,
     ):
         regime_profit_factor_sma = _compute_rolling_regime_sma_at_timestamp(
             timestamped_sparse_values=profit_factor_sparse_bucket_values,
@@ -116,12 +116,12 @@ def build_regime_gate_timeline_for_metric_timestamps(
             moving_average_period=sparse_expected_value_moving_average_period,
         )
         profit_factor_gate_open = (
-            regime_profit_factor_sma is not None
-            and regime_profit_factor_sma >= profit_factor_threshold
+                regime_profit_factor_sma is not None
+                and regime_profit_factor_sma >= profit_factor_threshold
         )
         sparse_expected_value_gate_open = (
-            regime_sparse_expected_value_usd_sma is not None
-            and regime_sparse_expected_value_usd_sma >= sparse_expected_value_threshold
+                regime_sparse_expected_value_usd_sma is not None
+                and regime_sparse_expected_value_usd_sma >= sparse_expected_value_threshold
         )
         regime_gate_points.append(TradingShadowingVerdictChronicleRegimeGatePoint(
             timestamp_milliseconds=metric_timestamp_milliseconds,
@@ -154,7 +154,7 @@ def _bucket_to_datetime_for_sparse_series(
 ) -> datetime:
     trailing_bucket_count = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
     bucket_to_milliseconds = max(latest_sample_milliseconds, series_end_milliseconds) + (
-        granularity_seconds * max(0, trailing_bucket_count) * 1000
+            granularity_seconds * max(0, trailing_bucket_count) * 1000
     )
     bucket_to_datetime = ensure_timezone_aware(datetime.fromtimestamp(bucket_to_milliseconds / 1000.0))
     assert bucket_to_datetime is not None

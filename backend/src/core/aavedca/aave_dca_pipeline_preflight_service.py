@@ -23,13 +23,13 @@ class AaveDcaPipelinePreflightService:
         self.aave_executor = aave_executor
 
     async def run_live_pipeline_preflight_checks(
-        self,
-        blockchain: BlockchainNetwork,
-        order_status: AaveDcaOrderStatus,
-        source_asset_address: str,
-        source_asset_decimals: int,
-        required_execution_amount_base_units: int,
-        minimum_native_gas_reserve_avax: float,
+            self,
+            blockchain: BlockchainNetwork,
+            order_status: AaveDcaOrderStatus,
+            source_asset_address: str,
+            source_asset_decimals: int,
+            required_execution_amount_base_units: int,
+            minimum_native_gas_reserve_avax: float,
     ) -> AaveDcaPipelinePreflightResult:
         if required_execution_amount_base_units <= 0:
             return AaveDcaPipelinePreflightResult(
@@ -143,12 +143,12 @@ class AaveDcaPipelinePreflightService:
         )
 
     async def poll_target_asset_balance_after_swap(
-        self,
-        blockchain: BlockchainNetwork,
-        token_address: str,
-        minimum_balance_wei: int,
-        poll_interval_seconds: float,
-        timeout_seconds: float,
+            self,
+            blockchain: BlockchainNetwork,
+            token_address: str,
+            minimum_balance_wei: int,
+            poll_interval_seconds: float,
+            timeout_seconds: float,
     ) -> int:
         deadline_timestamp: float = time.monotonic() + timeout_seconds
         poll_attempt_count: int = 0

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 import sys
-from types import TracebackType
-from typing import Optional
 
 from src.configuration.config import settings
 from src.logging.incident_forwarding_service import (

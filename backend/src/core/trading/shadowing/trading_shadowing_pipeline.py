@@ -6,10 +6,6 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.trading_chain_capability_service import (
-    resolve_trading_allowed_blockchain_networks,
-)
-from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.trading.analytics.trading_analytics_helpers import MINIMUM_POINTS_PER_BUCKET
 from src.core.trading.cortex.trading_cortex_inference_provider import get_trading_cortex_inference_service
 from src.core.trading.cortex.trading_cortex_request_builder import TradingCortexRequestBuilder
@@ -24,6 +20,10 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingPhase,
     TradingShadowingSnapshot,
 )
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
+from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.trading.trading_service import fetch_trading_candidates_sync
 from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot, TradingFilterVerdict
 from src.core.utils.date_utils import get_current_local_datetime

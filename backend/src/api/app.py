@@ -16,8 +16,8 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.configuration.config import settings
 from src.core.aavedca.aave_dca_notification_service import register_aave_dca_telegram_handlers
 from src.core.aavedca.cache.aave_dca_cache_rebuilders import register_aave_dca_rebuilders
-from src.core.aavesentinel.cache.aave_sentinel_cache_rebuilders import register_aave_sentinel_rebuilders
 from src.core.aavesentinel.aave_sentinel_service import register_aave_sentinel_telegram_handlers, sentinel
+from src.core.aavesentinel.cache.aave_sentinel_cache_rebuilders import register_aave_sentinel_rebuilders
 from src.core.jobs.job_structures import ApiStatusResponse
 from src.core.jobs.orchestrator import read_background_jobs_runtime_status, start_background_jobs, stop_background_jobs
 from src.core.trading.cache.trading_cache_rebuilders import register_trading_rebuilders

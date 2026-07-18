@@ -5,8 +5,6 @@ from typing import List
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.cache.cache_invalidator import cache_invalidator
-from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.structures.structures import Token
 from src.core.trading.execution.trading_execution_position_service import (

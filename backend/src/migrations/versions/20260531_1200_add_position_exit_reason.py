@@ -25,8 +25,7 @@ def _backfill_position_exit_reasons(connection) -> None:
         SELECT exit_reason
         FROM trading_outcomes
         WHERE evaluation_id = :evaluation_id
-        ORDER BY occurred_at DESC, id DESC
-        LIMIT 1
+        ORDER BY occurred_at DESC, id DESC LIMIT 1
         """,
     )
     update_query = schema.text(
@@ -59,8 +58,7 @@ def _backfill_outcome_exit_reasons(connection) -> None:
         schema.text(
             """
             UPDATE trading_outcomes AS outcome
-            SET exit_reason = position.exit_reason
-            FROM trading_positions AS position
+            SET exit_reason = position.exit_reason FROM trading_positions AS position
             WHERE position.evaluation_id = outcome.evaluation_id
               AND position.exit_reason IS NOT NULL
             """,

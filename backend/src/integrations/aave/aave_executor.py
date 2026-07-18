@@ -10,20 +10,6 @@ from web3.exceptions import ContractLogicError, TimeExhausted
 from web3.types import TxParams
 
 from src.configuration.config import settings
-from src.integrations.aave.aave_structures import (
-    AaveEvmTransactionConfirmationFailureKind,
-    AaveEvmTransactionConfirmationOutcome,
-)
-from src.integrations.blockchain.evm.blockchain_evm_revert_utils import (
-    decode_evm_revert_reason_from_contract_logic_error,
-)
-from src.integrations.blockchain.blockchain_execution_service import (
-    AAVE_EVM_APPROVE_GAS_LIMIT,
-    AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
-    BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS,
-    EVM_SWAP_GAS_BUFFER_MULTIPLIER,
-)
-from src.integrations.blockchain.blockchain_utils import normalize_evm_transaction_hash
 from src.core.structures.structures import BlockchainNetwork
 from src.integrations.aave.aave_abis import (
     AAVE_POOL_ABI,
@@ -31,7 +17,21 @@ from src.integrations.aave.aave_abis import (
     ADDRESS_PROVIDER_ABI,
     AAVE_ORACLE_ABI
 )
+from src.integrations.aave.aave_structures import (
+    AaveEvmTransactionConfirmationFailureKind,
+    AaveEvmTransactionConfirmationOutcome,
+)
 from src.integrations.aave.aave_structures import AaveLiveMetrics
+from src.integrations.blockchain.blockchain_execution_constants import (
+    AAVE_EVM_APPROVE_GAS_LIMIT,
+    AAVE_EVM_POOL_OPERATION_GAS_LIMIT,
+    BLOCKCHAIN_TRANSACTION_CONFIRMATION_TIMEOUT_SECONDS,
+    EVM_SWAP_GAS_BUFFER_MULTIPLIER,
+)
+from src.integrations.blockchain.blockchain_utils import normalize_evm_transaction_hash
+from src.integrations.blockchain.evm.blockchain_evm_revert_utils import (
+    decode_evm_revert_reason_from_contract_logic_error,
+)
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

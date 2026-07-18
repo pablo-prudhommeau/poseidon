@@ -7,6 +7,7 @@ from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.execution.trading_execution_swap_service import (
     SWAP_EXECUTION_LOCK,
 )
+from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
 from src.core.trading.walletmaintenance.solana.trading_wallet_maintenance_solana_gas_budget_service import (
     build_solana_gas_budget_snapshot,
 )
@@ -14,7 +15,7 @@ from src.core.trading.walletmaintenance.trading_wallet_maintenance_structures im
     TradingWalletMaintenanceChainGasResult,
     TradingWalletMaintenanceOperationStatus,
 )
-from src.core.trading.trading_configuration_service import resolve_stablecoin_address_for_blockchain
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.blockchain_free_cash_service import (
     _fetch_solana_stablecoin_balance,
 )
@@ -24,15 +25,14 @@ from src.integrations.blockchain.blockchain_rpc_registry import (
 from src.integrations.blockchain.solana.blockchain_solana_signer import (
     build_default_solana_signer,
 )
-from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.integrations.blockchain.solana.solana_rpc_client import (
     fetch_solana_native_balance_lamports,
     format_lamports_as_sol_text,
     poll_solana_native_balance_after_increase,
 )
 from src.integrations.blockchain.solana.solana_structures import SOLANA_WRAPPED_SOL_MINT
-from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.jupiter.jupiter_client import generate_jupiter_swap_transaction
+from src.integrations.jupiter.jupiter_client import resolve_sol_usd_price
 from src.integrations.jupiter.jupiter_structures import JupiterApiUnavailableError
 from src.logging.logger import get_application_logger
 
@@ -42,7 +42,7 @@ SOLANA_STABLECOIN_DECIMALS = 6
 
 
 def _format_stablecoin_raw_as_usd_text(stablecoin_raw: int) -> str:
-    stablecoin_amount = float(stablecoin_raw) / float(10**SOLANA_STABLECOIN_DECIMALS)
+    stablecoin_amount = float(stablecoin_raw) / float(10 ** SOLANA_STABLECOIN_DECIMALS)
     return f"{stablecoin_amount:.4f} {settings.TRADING_STABLECOIN_SYMBOL}"
 
 
@@ -105,7 +105,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
         )
 
     refill_delta_lamports = (
-        budget_snapshot.refill_target_lamports - native_balance_before_lamports
+            budget_snapshot.refill_target_lamports - native_balance_before_lamports
     )
     if refill_delta_lamports <= 0:
         logger.debug(
@@ -161,10 +161,10 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
         )
 
     required_stablecoin_usd = (
-        float(refill_delta_lamports) / 1_000_000_000.0
-    ) * sol_usd_price
+                                      float(refill_delta_lamports) / 1_000_000_000.0
+                              ) * sol_usd_price
     stablecoin_spend_usd = min(required_stablecoin_usd, stablecoin_balance)
-    stablecoin_spend_raw = int(stablecoin_spend_usd * (10**SOLANA_STABLECOIN_DECIMALS))
+    stablecoin_spend_raw = int(stablecoin_spend_usd * (10 ** SOLANA_STABLECOIN_DECIMALS))
     if stablecoin_spend_raw <= 0:
         logger.warning(
             "[TRADING][WALLETMAINTENANCE][SOLANA][GAS][REFILL] Refill blocked — "
@@ -269,7 +269,7 @@ def run_solana_native_gas_refill() -> TradingWalletMaintenanceChainGasResult:
         native_balance_after_lamports = native_balance_before_lamports
 
     native_balance_delta_lamports = (
-        native_balance_after_lamports - native_balance_before_lamports
+            native_balance_after_lamports - native_balance_before_lamports
     )
     if native_balance_delta_lamports <= 0:
         logger.warning(

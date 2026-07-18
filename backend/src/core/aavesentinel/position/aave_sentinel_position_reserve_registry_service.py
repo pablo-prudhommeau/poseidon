@@ -14,7 +14,6 @@ from src.core.aavesentinel.aave_sentinel_structures import (
 )
 from src.core.structures.structures import BlockchainNetwork
 from src.integrations.aave.aave_abis import (
-    ADDRESS_PROVIDER_ABI,
     AAVE_POOL_ABI,
     ERC20_ABI,
 )
