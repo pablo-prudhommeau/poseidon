@@ -3,29 +3,35 @@ from __future__ import annotations
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.trading_structures import (
     GasRefillBudgetDetailScope,
+    TradingCapabilitiesSnapshot,
     TradingConfigurationError,
 )
 
 TRADING_APPLICATION_SUPPORTED_BLOCKCHAIN_NETWORKS: tuple[BlockchainNetwork, ...] = (
     BlockchainNetwork.SOLANA,
+    BlockchainNetwork.ROBINHOOD,
+    BlockchainNetwork.BASE,
+    BlockchainNetwork.BSC,
 )
 
-_effective_trading_allowed_blockchain_networks: tuple[BlockchainNetwork, ...] | None = None
+_trading_capabilities_snapshot: TradingCapabilitiesSnapshot | None = None
 
 
-def apply_trading_allowed_blockchain_network_configuration(
-        blockchain_networks: list[BlockchainNetwork],
-) -> None:
-    global _effective_trading_allowed_blockchain_networks
-    _effective_trading_allowed_blockchain_networks = tuple(blockchain_networks)
+def apply_trading_capabilities_snapshot(snapshot: TradingCapabilitiesSnapshot) -> None:
+    global _trading_capabilities_snapshot
+    _trading_capabilities_snapshot = snapshot
+
+
+def resolve_trading_capabilities_snapshot() -> TradingCapabilitiesSnapshot:
+    if _trading_capabilities_snapshot is None:
+        raise TradingConfigurationError(
+            "Trading capabilities snapshot has not been applied — application startup validation must run first",
+        )
+    return _trading_capabilities_snapshot
 
 
 def resolve_trading_allowed_blockchain_networks() -> list[BlockchainNetwork]:
-    if _effective_trading_allowed_blockchain_networks is None:
-        raise TradingConfigurationError(
-            "Trading blockchain configuration has not been applied — application startup validation must run first",
-        )
-    return list(_effective_trading_allowed_blockchain_networks)
+    return list(resolve_trading_capabilities_snapshot().allowed_blockchain_networks)
 
 
 def resolve_trading_allowed_blockchain_network_identifiers() -> tuple[str, ...]:
@@ -33,6 +39,14 @@ def resolve_trading_allowed_blockchain_network_identifiers() -> tuple[str, ...]:
         blockchain_network.value
         for blockchain_network in resolve_trading_allowed_blockchain_networks()
     )
+
+
+def is_trading_evm_blockchain_network(blockchain_network: BlockchainNetwork) -> bool:
+    return blockchain_network in {
+        BlockchainNetwork.ROBINHOOD,
+        BlockchainNetwork.BASE,
+        BlockchainNetwork.BSC,
+    }
 
 
 def resolve_gas_refill_budget_detail_scope(

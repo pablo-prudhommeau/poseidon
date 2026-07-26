@@ -13,6 +13,8 @@ class BlockchainSolanaRoute(BaseModel):
 
 class BlockchainEvmRoute(BaseModel):
     transaction_request: LifiTransactionRequest
+    approval_token_address: Optional[str] = None
+    approval_required_amount_wei: int = 0
 
 
 class BlockchainExecutionRoute(BaseModel):

@@ -23,6 +23,7 @@ _EVM_CHAIN_REGISTRY: dict[BlockchainNetwork, EvmChain] = {
     BlockchainNetwork.BASE: EvmChain(dexscreener_chain_identifier="base", chain_identifier=8453, native_token_symbol="ETH"),
     BlockchainNetwork.BSC: EvmChain(dexscreener_chain_identifier="bsc", chain_identifier=56, native_token_symbol="BNB"),
     BlockchainNetwork.AVALANCHE: EvmChain(dexscreener_chain_identifier="avalanche", chain_identifier=43114, native_token_symbol="AVAX"),
+    BlockchainNetwork.ROBINHOOD: EvmChain(dexscreener_chain_identifier="robinhood", chain_identifier=4663, native_token_symbol="ETH"),
 }
 
 

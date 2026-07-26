@@ -11,6 +11,7 @@ class BlockchainNetwork(str, Enum):
     BSC = "bsc"
     BASE = "base"
     AVALANCHE = "avalanche"
+    ROBINHOOD = "robinhood"
 
 
 class Token(BaseModel):

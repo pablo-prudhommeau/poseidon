@@ -6,7 +6,6 @@ import sys
 import time
 from typing import Optional
 
-from src.configuration.config import settings
 from src.logging.logging_gzip_timed_rotating_handler import PoseidonGzipTimedRotatingFileHandler
 
 console_color_codes = {
@@ -146,8 +145,14 @@ class PoseidonColorFormatter(logging.Formatter):
         return formatted_line
 
 
+def _resolve_application_settings():
+    from src.configuration.config import settings
+    return settings
+
+
 def install_console_handler(root_logger: logging.Logger) -> None:
-    console_logging_level = get_logging_level_from_string(settings.LOGGING_LEVEL_CONSOLE)
+    application_settings = _resolve_application_settings()
+    console_logging_level = get_logging_level_from_string(application_settings.LOGGING_LEVEL_CONSOLE)
 
     for handler in root_logger.handlers:
         if isinstance(handler, PoseidonStreamHandler):
@@ -161,31 +166,33 @@ def install_console_handler(root_logger: logging.Logger) -> None:
 
 
 def install_timed_rotating_file_handler(application_logger: logging.Logger) -> None:
-    if not settings.LOGGING_TO_FILE_ENABLED:
+    application_settings = _resolve_application_settings()
+    if not application_settings.LOGGING_TO_FILE_ENABLED:
         return
 
     for handler in application_logger.handlers:
         if isinstance(handler, PoseidonGzipTimedRotatingFileHandler):
             return
 
-    log_directory_path = settings.LOGGING_DIRECTORY
+    log_directory_path = application_settings.LOGGING_DIRECTORY
     os.makedirs(log_directory_path, exist_ok=True)
     log_file_path = os.path.join(log_directory_path, application_log_file_name)
 
     file_handler = PoseidonGzipTimedRotatingFileHandler(
         filename=log_file_path,
-        when=settings.LOGGING_FILE_ROTATION_WHEN,
-        backupCount=settings.LOGGING_FILE_BACKUP_COUNT,
+        when=application_settings.LOGGING_FILE_ROTATION_WHEN,
+        backupCount=application_settings.LOGGING_FILE_BACKUP_COUNT,
         encoding="utf-8",
     )
-    file_handler.setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_FILE))
+    file_handler.setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_FILE))
     file_handler.setFormatter(PoseidonColorFormatter(enable_color=False))
     application_logger.addHandler(file_handler)
 
 
 def initialize_application_logging() -> None:
+    application_settings = _resolve_application_settings()
     root_logger = logging.getLogger()
-    root_logger.setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL))
+    root_logger.setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL))
     install_console_handler(root_logger)
 
     from src.logging.application_exception_hooks import install_application_exception_hooks
@@ -195,19 +202,19 @@ def initialize_application_logging() -> None:
     install_application_exception_hooks()
 
     application_logger = logging.getLogger(application_namespace)
-    application_logger.setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_FILE))
+    application_logger.setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_FILE))
     install_timed_rotating_file_handler(application_logger)
 
-    logging.getLogger("requests").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_REQUESTS))
-    logging.getLogger("urllib3").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_URLLIB3))
-    logging.getLogger("websockets").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_WEBSOCKETS))
-    logging.getLogger("httpx").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_HTTPX))
-    logging.getLogger("httpcore").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_HTTPCORE))
-    logging.getLogger("asyncio").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_ASYNCIO))
-    logging.getLogger("anyio").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_ANYIO))
-    logging.getLogger("openai").setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_OPENAI))
+    logging.getLogger("requests").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_REQUESTS))
+    logging.getLogger("urllib3").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_URLLIB3))
+    logging.getLogger("websockets").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_WEBSOCKETS))
+    logging.getLogger("httpx").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_HTTPX))
+    logging.getLogger("httpcore").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_HTTPCORE))
+    logging.getLogger("asyncio").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_ASYNCIO))
+    logging.getLogger("anyio").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_ANYIO))
+    logging.getLogger("openai").setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_OPENAI))
 
-    websocket_logging_level = get_logging_level_from_string(settings.LOGGING_LEVEL_LIB_WEBSOCKETS)
+    websocket_logging_level = get_logging_level_from_string(application_settings.LOGGING_LEVEL_LIB_WEBSOCKETS)
     silence_specific_logger("websockets", websocket_logging_level)
     silence_specific_logger("websockets.server", websocket_logging_level)
     silence_specific_logger("websockets.client", websocket_logging_level)
@@ -226,7 +233,7 @@ def initialize_application_logging() -> None:
     for uvicorn_logger_name in uvicorn_loggers:
         uvicorn_logger_instance = logging.getLogger(uvicorn_logger_name)
         uvicorn_logger_instance.handlers.clear()
-        uvicorn_logger_instance.setLevel(get_logging_level_from_string(settings.LOGGING_LEVEL))
+        uvicorn_logger_instance.setLevel(get_logging_level_from_string(application_settings.LOGGING_LEVEL))
         uvicorn_logger_instance.propagate = True
 
 

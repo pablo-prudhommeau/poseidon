@@ -409,14 +409,36 @@ class TradingPipeline:
                     * per_buy_capital_fraction
                     * candidate.shadowing_diagnostics.notional_boost_factor
             )
-            spendable_cash_usd = resolve_spendable_cash_usd(available_cash_usd)
+            chain_deployable_cash_usd = available_cash_usd
+            if not settings.TRADING_PAPER_MODE and candidate.token.chain is not None:
+                try:
+                    from src.integrations.blockchain.blockchain_free_cash_service import (
+                        fetch_stablecoin_balance_for_blockchain,
+                    )
 
-            if not is_buy_notional_executable(order_notional, available_cash_usd):
+                    chain_cash_balance = fetch_stablecoin_balance_for_blockchain(candidate.token.chain)
+                    chain_deployable_cash_usd = float(chain_cash_balance.balance_raw)
+                except Exception:
+                    logger.exception(
+                        "[TRADING][PIPELINE][EXECUTE] Per-chain capital lookup failed for %s on %s",
+                        candidate.token.symbol,
+                        candidate.token.chain.value,
+                    )
+                    record_skipped_trading_evaluation(candidate, rank, "NO_CHAIN_CASH")
+                    continue
+
+            effective_available_cash_usd = min(available_cash_usd, chain_deployable_cash_usd)
+            spendable_cash_usd = resolve_spendable_cash_usd(effective_available_cash_usd)
+
+            if not is_buy_notional_executable(order_notional, effective_available_cash_usd):
                 logger.info(
-                    "[TRADING][PIPELINE][EXECUTE] Skip %s — order notional %.4f exceeds deployable cash %.4f",
+                    "[TRADING][PIPELINE][EXECUTE] Skip %s — order notional %.4f exceeds deployable cash %.4f "
+                    "(global=%.4f chain=%.4f)",
                     candidate.token.symbol,
                     order_notional,
                     spendable_cash_usd,
+                    available_cash_usd,
+                    chain_deployable_cash_usd,
                 )
                 record_skipped_trading_evaluation(candidate, rank, "NO_CASH")
                 continue

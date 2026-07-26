@@ -5,6 +5,8 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.gasreserve.trading_gas_reserve_chain_handler import TradingGasReserveChainHandler
+from src.core.trading.trading_structures import TradingConfigurationError
 from src.integrations.blockchain.solana.solana_structures import SolanaTokenAccountRentBreakdown
 
 
@@ -63,3 +65,18 @@ class BlockchainCashBalanceGasReserveEnrichment(BaseModel):
         return BlockchainCashBalanceGasReserveEnrichment(
             gas_refill_locked_stablecoin_usd=0.0,
         )
+
+
+class TradingGasReserveChainHandlerRegistry(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    handlers: list[TradingGasReserveChainHandler]
+
+    def resolve_handler(self, blockchain_network: BlockchainNetwork) -> TradingGasReserveChainHandler:
+        for handler in self.handlers:
+            if handler.blockchain_network() == blockchain_network:
+                return handler
+        raise TradingConfigurationError(
+            f"No gas reserve chain handler registered for blockchain '{blockchain_network.value}'",
+        )
+

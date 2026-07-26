@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from src.core.structures.structures import BlockchainNetwork
-from src.core.trading.gasreserve.trading_gas_reserve_structures import (
-    BlockchainCashBalanceGasReserveEnrichment,
-    GasRefillLockedStablecoinSnapshot,
-    WalletAuxiliaryAssetsSnapshot,
-)
+
+if TYPE_CHECKING:
+    from src.core.trading.gasreserve.trading_gas_reserve_structures import (
+        BlockchainCashBalanceGasReserveEnrichment,
+        GasRefillLockedStablecoinSnapshot,
+        WalletAuxiliaryAssetsSnapshot,
+    )
 
 
 class TradingGasReserveChainHandler(ABC):

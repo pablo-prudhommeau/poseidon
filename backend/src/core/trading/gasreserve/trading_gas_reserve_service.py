@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.gasreserve.evm.trading_gas_reserve_evm_handler import TradingGasReserveEvmHandler
+from src.core.trading.gasreserve.evm.trading_gas_reserve_evm_service import (
+    is_evm_gas_reserve_sufficient_for_buy_on_blockchain,
+    resolve_evm_onchain_wallet_context,
+)
 from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_handler import TradingGasReserveSolanaHandler
 from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_service import (
     is_solana_gas_reserve_sufficient_for_buy,
@@ -9,30 +14,44 @@ from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_service impor
 from src.core.trading.gasreserve.trading_gas_reserve_chain_handler import TradingGasReserveChainHandler
 from src.core.trading.gasreserve.trading_gas_reserve_structures import (
     GasRefillLockedStablecoinSnapshot,
+    TradingGasReserveChainHandlerRegistry,
     WalletAuxiliaryAssetsSnapshot,
 )
 from src.core.trading.trading_chain_capability_service import (
+    is_trading_evm_blockchain_network,
     resolve_trading_allowed_blockchain_networks,
 )
 from src.core.trading.trading_structures import TradingConfigurationError
 from src.core.utils.math_utils import decimal_from_primitive, quantize_2dp
 from src.integrations.blockchain.solana.solana_onchain_wallet_context_service import (
-    resolve_required_solana_onchain_wallet_context_for_live_portfolio,
     resolve_solana_onchain_wallet_context_for_live_trading,
 )
-from src.integrations.blockchain.solana.solana_structures import SolanaOnchainWalletContext
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
 
 
-def resolve_gas_reserve_chain_handlers(
-        solana_wallet_context: SolanaOnchainWalletContext,
-) -> list[TradingGasReserveChainHandler]:
+def resolve_gas_reserve_chain_handlers() -> list[TradingGasReserveChainHandler]:
     handlers: list[TradingGasReserveChainHandler] = []
     for blockchain_network in resolve_trading_allowed_blockchain_networks():
         if blockchain_network == BlockchainNetwork.SOLANA:
+            solana_wallet_context = resolve_solana_onchain_wallet_context_for_live_trading()
             handlers.append(TradingGasReserveSolanaHandler(wallet_context=solana_wallet_context))
+        elif is_trading_evm_blockchain_network(blockchain_network):
+            try:
+                evm_wallet_context = resolve_evm_onchain_wallet_context(blockchain_network)
+            except Exception:
+                logger.exception(
+                    "[TRADING][GASRESERVE][SERVICE] Failed to resolve EVM wallet context — blockchain_network=%s",
+                    blockchain_network.value,
+                )
+                raise
+            handlers.append(
+                TradingGasReserveEvmHandler(
+                    blockchain_network=blockchain_network,
+                    wallet_context=evm_wallet_context,
+                ),
+            )
     return handlers
 
 
@@ -43,49 +62,29 @@ def is_gas_reserve_sufficient_for_buy(blockchain_network: BlockchainNetwork) -> 
     if blockchain_network == BlockchainNetwork.SOLANA:
         return is_solana_gas_reserve_sufficient_for_buy()
 
+    if is_trading_evm_blockchain_network(blockchain_network):
+        return is_evm_gas_reserve_sufficient_for_buy_on_blockchain(blockchain_network)
+
     raise TradingConfigurationError(
         f"No gas reserve buy guard registered for configured blockchain '{blockchain_network.value}'",
     )
 
 
-def _is_solana_gas_reserve_chain_enabled() -> bool:
-    for blockchain_network in resolve_trading_allowed_blockchain_networks():
-        if blockchain_network == BlockchainNetwork.SOLANA:
-            return True
-    return False
+def _is_any_live_gas_reserve_chain_enabled() -> bool:
+    return len(resolve_trading_allowed_blockchain_networks()) > 0
 
 
-def _resolve_solana_wallet_context_for_live_gas_reserve() -> SolanaOnchainWalletContext:
-    wallet_context = resolve_solana_onchain_wallet_context_for_live_trading()
-    logger.debug(
-        "[TRADING][GASRESERVE][SERVICE] Resolved Solana wallet context for live gas reserve — "
-        "blockchain_network=%s native_sol=%.6f stablecoin_balance=%.2f",
-        BlockchainNetwork.SOLANA.value,
-        wallet_context.native_token_balance_raw,
-        wallet_context.stablecoin_balance_raw,
+def resolve_gas_reserve_chain_handlers_for_liquidity_payload() -> TradingGasReserveChainHandlerRegistry:
+    return TradingGasReserveChainHandlerRegistry(
+        handlers=resolve_gas_reserve_chain_handlers(),
     )
-    return wallet_context
-
-
-def resolve_gas_reserve_chain_handlers_for_liquidity_payload() -> dict[BlockchainNetwork, TradingGasReserveChainHandler]:
-    solana_wallet_context = resolve_required_solana_onchain_wallet_context_for_live_portfolio()
-    chain_handlers = resolve_gas_reserve_chain_handlers(
-        solana_wallet_context=solana_wallet_context,
-    )
-    chain_handler_by_blockchain_network: dict[BlockchainNetwork, TradingGasReserveChainHandler] = {}
-    for chain_handler in chain_handlers:
-        chain_handler_by_blockchain_network[chain_handler.blockchain_network()] = chain_handler
-    return chain_handler_by_blockchain_network
 
 
 def resolve_gas_refill_locked_stablecoin_snapshots() -> list[GasRefillLockedStablecoinSnapshot]:
-    if settings.TRADING_PAPER_MODE or not _is_solana_gas_reserve_chain_enabled():
+    if settings.TRADING_PAPER_MODE or not _is_any_live_gas_reserve_chain_enabled():
         return []
 
-    solana_wallet_context = _resolve_solana_wallet_context_for_live_gas_reserve()
-    chain_handlers = resolve_gas_reserve_chain_handlers(
-        solana_wallet_context=solana_wallet_context,
-    )
+    chain_handlers = resolve_gas_reserve_chain_handlers()
     snapshots: list[GasRefillLockedStablecoinSnapshot] = []
     for chain_handler in chain_handlers:
         snapshots.append(chain_handler.compute_gas_refill_locked_stablecoin_snapshot())
@@ -93,13 +92,10 @@ def resolve_gas_refill_locked_stablecoin_snapshots() -> list[GasRefillLockedStab
 
 
 def resolve_wallet_auxiliary_assets_snapshots() -> list[WalletAuxiliaryAssetsSnapshot]:
-    if settings.TRADING_PAPER_MODE or not _is_solana_gas_reserve_chain_enabled():
+    if settings.TRADING_PAPER_MODE or not _is_any_live_gas_reserve_chain_enabled():
         return []
 
-    solana_wallet_context = _resolve_solana_wallet_context_for_live_gas_reserve()
-    chain_handlers = resolve_gas_reserve_chain_handlers(
-        solana_wallet_context=solana_wallet_context,
-    )
+    chain_handlers = resolve_gas_reserve_chain_handlers()
     snapshots: list[WalletAuxiliaryAssetsSnapshot] = []
     for chain_handler in chain_handlers:
         snapshots.append(chain_handler.compute_wallet_auxiliary_assets_snapshot())

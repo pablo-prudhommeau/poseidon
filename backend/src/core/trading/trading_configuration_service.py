@@ -1,35 +1,45 @@
 from __future__ import annotations
 
-import logging
-
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.trading_chain_capability_service import (
     TRADING_APPLICATION_SUPPORTED_BLOCKCHAIN_NETWORKS,
-    apply_trading_allowed_blockchain_network_configuration,
+    apply_trading_capabilities_snapshot,
+    is_trading_evm_blockchain_network,
     resolve_trading_allowed_blockchain_networks,
+    resolve_trading_capabilities_snapshot,
 )
 from src.core.trading.trading_dex_capability_service import (
     TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS,
-    apply_supported_trading_solana_dex_configuration,
 )
 from src.core.trading.trading_structures import (
     TradingApplicationBootConfigurationSettings,
+    TradingCapabilitiesSnapshot,
     TradingConfigurationError,
+    TradingStablecoinAddressBinding,
 )
 from src.integrations.blockchain.solana.blockchain_solana_wallet_derivation import (
     derive_solana_keypair_from_mnemonic,
 )
+from src.integrations.blockchain.solana.solana_dex_pool_parser_registry import (
+    has_onchain_pool_price_parser_for_dex_id,
+    resolve_onchain_pool_price_parser_dex_ids,
+)
+from src.logging.logger import get_application_logger
 
-logger = logging.getLogger(__name__)
+logger = get_application_logger(__name__)
 
 TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE = "TRADING_ALLOWED_CHAINS"
 TRADING_SOLANA_SUPPORTED_DEX_IDS_ENVIRONMENT_VARIABLE = "TRADING_SOLANA_SUPPORTED_DEX_IDS"
 TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE = "TRADING_WALLET_MNEMONIC"
+LIFI_API_KEY_ENVIRONMENT_VARIABLE = "LIFI_API_KEY"
+LIFI_INTEGRATION_ID_ENVIRONMENT_VARIABLE = "LIFI_INTEGRATION_ID"
 
 
 def validate_and_apply_trading_application_configuration(
         configuration_settings: TradingApplicationBootConfigurationSettings,
 ) -> None:
+    from src.configuration.config import MAX_TRADING_ALLOWED_CHAIN_COUNT
+
     configured_chain_identifiers = _normalize_unique_identifiers(configuration_settings.TRADING_ALLOWED_CHAINS)
     configured_dex_identifiers = _normalize_unique_identifiers(
         configuration_settings.TRADING_SOLANA_SUPPORTED_DEX_IDS,
@@ -39,6 +49,11 @@ def validate_and_apply_trading_application_configuration(
         raise TradingConfigurationError(
             f"{TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE} resolved to an empty list — "
             f"configure at least one application-supported blockchain",
+        )
+    if len(configured_chain_identifiers) > MAX_TRADING_ALLOWED_CHAIN_COUNT:
+        raise TradingConfigurationError(
+            f"{TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE} contains {len(configured_chain_identifiers)} blockchains — "
+            f"maximum allowed is {MAX_TRADING_ALLOWED_CHAIN_COUNT}",
         )
     if not configured_dex_identifiers:
         raise TradingConfigurationError(
@@ -70,10 +85,34 @@ def validate_and_apply_trading_application_configuration(
                 f"{TRADING_SOLANA_SUPPORTED_DEX_IDS_ENVIRONMENT_VARIABLE} contains unsupported dex id '{dex_identifier}' — "
                 f"application-supported Solana dex ids: {application_supported_dex_labels}",
             )
+        if not has_onchain_pool_price_parser_for_dex_id(dex_identifier):
+            parser_dex_labels = ", ".join(resolve_onchain_pool_price_parser_dex_ids())
+            raise TradingConfigurationError(
+                f"{TRADING_SOLANA_SUPPORTED_DEX_IDS_ENVIRONMENT_VARIABLE} contains dex id '{dex_identifier}' "
+                f"without an on-chain pool price parser — parsers available: {parser_dex_labels}",
+            )
         effective_dex_identifiers.append(dex_identifier)
 
-    apply_trading_allowed_blockchain_network_configuration(effective_blockchain_networks)
-    apply_supported_trading_solana_dex_configuration(effective_dex_identifiers)
+    stablecoin_address_bindings: list[TradingStablecoinAddressBinding] = []
+    for blockchain_network in effective_blockchain_networks:
+        stablecoin_address = resolve_stablecoin_address_for_blockchain_from_settings(
+            blockchain_network,
+            configuration_settings,
+        )
+        stablecoin_address_bindings.append(
+            TradingStablecoinAddressBinding(
+                blockchain_network=blockchain_network,
+                address=stablecoin_address,
+            ),
+        )
+
+    apply_trading_capabilities_snapshot(
+        TradingCapabilitiesSnapshot(
+            allowed_blockchain_networks=tuple(effective_blockchain_networks),
+            supported_solana_dex_identifiers=tuple(effective_dex_identifiers),
+            stablecoin_address_bindings=stablecoin_address_bindings,
+        ),
+    )
 
     logger.info(
         "[CONFIGURATION][TRADING][APPLICATION] Effective trading capabilities — blockchains=%s solana_dex_ids=%s "
@@ -109,6 +148,7 @@ def validate_live_wallet_configuration(
             f"{TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is required when TRADING_PAPER_MODE=false",
         )
 
+    requires_lifi = False
     for blockchain_network in resolve_trading_allowed_blockchain_networks():
         stablecoin_address_environment_variable = resolve_stablecoin_address_environment_variable_name(
             blockchain_network,
@@ -127,6 +167,23 @@ def validate_live_wallet_configuration(
             _validate_solana_wallet_derivation(
                 wallet_mnemonic=wallet_mnemonic,
                 wallet_derivation_index=configuration_settings.TRADING_WALLET_DERIVATION_INDEX,
+            )
+        elif is_trading_evm_blockchain_network(blockchain_network):
+            requires_lifi = True
+            _validate_evm_wallet_derivation(
+                wallet_mnemonic=wallet_mnemonic,
+                wallet_derivation_index=configuration_settings.TRADING_WALLET_DERIVATION_INDEX,
+                blockchain_network=blockchain_network,
+            )
+
+    if requires_lifi:
+        if not configuration_settings.LIFI_API_KEY.strip():
+            raise TradingConfigurationError(
+                f"{LIFI_API_KEY_ENVIRONMENT_VARIABLE} is required when live EVM trading chains are enabled",
+            )
+        if not configuration_settings.LIFI_INTEGRATION_ID.strip():
+            raise TradingConfigurationError(
+                f"{LIFI_INTEGRATION_ID_ENVIRONMENT_VARIABLE} is required when live EVM trading chains are enabled",
             )
 
     logger.info(
@@ -147,6 +204,24 @@ def _validate_solana_wallet_derivation(wallet_mnemonic: str, wallet_derivation_i
         ) from exception
 
 
+def _validate_evm_wallet_derivation(
+        wallet_mnemonic: str,
+        wallet_derivation_index: int,
+        blockchain_network: BlockchainNetwork,
+) -> None:
+    try:
+        from eth_account import Account
+
+        Account.enable_unaudited_hdwallet_features()
+        derivation_path = f"m/44'/60'/0'/0/{wallet_derivation_index}"
+        Account.from_mnemonic(mnemonic=wallet_mnemonic, account_path=derivation_path)
+    except Exception as exception:
+        raise TradingConfigurationError(
+            f"{TRADING_WALLET_MNEMONIC_ENVIRONMENT_VARIABLE} is invalid for EVM wallet derivation "
+            f"on '{blockchain_network.value}' — {exception}",
+        ) from exception
+
+
 def resolve_stablecoin_address_environment_variable_name(blockchain_network: BlockchainNetwork) -> str:
     if blockchain_network == BlockchainNetwork.SOLANA:
         return "TRADING_STABLECOIN_ADDRESS_SOLANA"
@@ -156,6 +231,8 @@ def resolve_stablecoin_address_environment_variable_name(blockchain_network: Blo
         return "TRADING_STABLECOIN_ADDRESS_BASE"
     if blockchain_network == BlockchainNetwork.AVALANCHE:
         return "TRADING_STABLECOIN_ADDRESS_AVALANCHE"
+    if blockchain_network == BlockchainNetwork.ROBINHOOD:
+        return "TRADING_STABLECOIN_ADDRESS_ROBINHOOD"
     raise TradingConfigurationError(
         f"No stablecoin address environment variable configured for blockchain '{blockchain_network.value}'",
     )
@@ -173,15 +250,15 @@ def resolve_stablecoin_address_for_blockchain_from_settings(
         return configuration_settings.TRADING_STABLECOIN_ADDRESS_BASE.strip()
     if blockchain_network == BlockchainNetwork.AVALANCHE:
         return configuration_settings.TRADING_STABLECOIN_ADDRESS_AVALANCHE.strip()
+    if blockchain_network == BlockchainNetwork.ROBINHOOD:
+        return configuration_settings.TRADING_STABLECOIN_ADDRESS_ROBINHOOD.strip()
     raise TradingConfigurationError(
         f"No stablecoin address configured for blockchain '{blockchain_network.value}'",
     )
 
 
 def resolve_stablecoin_address_for_blockchain(blockchain_network: BlockchainNetwork) -> str:
-    from src.configuration.config import settings
-
-    return resolve_stablecoin_address_for_blockchain_from_settings(blockchain_network, settings)
+    return resolve_trading_capabilities_snapshot().resolve_stablecoin_address(blockchain_network)
 
 
 def require_stablecoin_address_for_blockchain(blockchain_network: BlockchainNetwork) -> str:

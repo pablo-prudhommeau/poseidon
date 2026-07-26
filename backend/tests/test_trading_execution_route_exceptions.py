@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from src.core.structures.structures import BlockchainNetwork, Token
@@ -26,7 +25,6 @@ from src.core.trading.trading_structures import (
 from src.integrations.blockchain.blockchain_exceptions import (
     BlockchainExecutionRouteBuildError,
     BlockchainRpcUnavailableError,
-    BlockchainTradingNotSupportedError,
 )
 from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute, BlockchainSolanaRoute
 from src.integrations.blockchain.solana.solana_structures import SolanaRpcFailureReason
@@ -72,25 +70,78 @@ def _build_candidate() -> TradingCandidate:
     )
 
 
-def test_evm_build_buy_route_raises_not_supported() -> None:
+@patch("src.core.trading.execution.evm.trading_execution_evm_handler.build_evm_buy_route")
+def test_evm_handler_build_buy_route_delegates_to_service(
+        build_evm_buy_route_mock: MagicMock,
+) -> None:
+    expected_route = BlockchainExecutionRoute()
+    build_evm_buy_route_mock.return_value = expected_route
     handler = TradingExecutionEvmHandler(blockchain_network=BlockchainNetwork.BSC)
+    candidate = _build_candidate()
+    candidate.token.chain = BlockchainNetwork.BSC
 
-    with pytest.raises(BlockchainTradingNotSupportedError):
-        handler.build_buy_route(_build_candidate(), 10.0)
+    result = handler.build_buy_route(candidate, 10.0)
+
+    assert result is expected_route
+    build_evm_buy_route_mock.assert_called_once_with(
+        blockchain_network=BlockchainNetwork.BSC,
+        candidate=candidate,
+        order_notional_usd=10.0,
+    )
 
 
-def test_evm_build_sell_route_raises_not_supported() -> None:
+@patch("src.core.trading.execution.evm.trading_execution_evm_handler.build_evm_sell_route")
+def test_evm_handler_build_sell_route_delegates_to_service(
+        build_evm_sell_route_mock: MagicMock,
+) -> None:
+    expected_route = BlockchainExecutionRoute()
+    build_evm_sell_route_mock.return_value = expected_route
     handler = TradingExecutionEvmHandler(blockchain_network=BlockchainNetwork.BASE)
 
-    with pytest.raises(BlockchainTradingNotSupportedError):
-        handler.build_sell_route("token-mint", 1.0, 6)
+    result = handler.build_sell_route("token-mint", 1.0, 6)
+
+    assert result is expected_route
+    build_evm_sell_route_mock.assert_called_once_with(
+        blockchain_network=BlockchainNetwork.BASE,
+        token_address="token-mint",
+        token_quantity=1.0,
+        token_decimals=6,
+    )
 
 
-def test_evm_resolve_sell_token_decimals_raises_not_supported() -> None:
+@patch("src.core.trading.execution.evm.trading_execution_evm_handler.build_evm_buy_route")
+def test_evm_handler_build_buy_route_propagates_route_build_error(
+        build_evm_buy_route_mock: MagicMock,
+) -> None:
+    build_evm_buy_route_mock.side_effect = BlockchainExecutionRouteBuildError(
+        "LiFi quote unavailable",
+        blockchain_network=BlockchainNetwork.BSC,
+        is_transient=True,
+    )
+    handler = TradingExecutionEvmHandler(blockchain_network=BlockchainNetwork.BSC)
+    candidate = _build_candidate()
+    candidate.token.chain = BlockchainNetwork.BSC
+
+    with pytest.raises(BlockchainExecutionRouteBuildError) as route_build_error:
+        handler.build_buy_route(candidate, 10.0)
+
+    assert route_build_error.value.is_transient is True
+
+
+@patch("src.core.trading.execution.evm.trading_execution_evm_handler.resolve_evm_sell_token_decimals")
+def test_evm_handler_resolve_sell_token_decimals_delegates_to_service(
+        resolve_evm_sell_token_decimals_mock: MagicMock,
+) -> None:
+    resolve_evm_sell_token_decimals_mock.return_value = 18
     handler = TradingExecutionEvmHandler(blockchain_network=BlockchainNetwork.AVALANCHE)
 
-    with pytest.raises(BlockchainTradingNotSupportedError):
-        handler.resolve_sell_token_decimals("token-mint")
+    result = handler.resolve_sell_token_decimals("token-mint")
+
+    assert result == 18
+    resolve_evm_sell_token_decimals_mock.assert_called_once_with(
+        BlockchainNetwork.AVALANCHE,
+        "token-mint",
+    )
 
 
 @patch("src.core.trading.execution.trading_execution_blockchain_route_service.resolve_execution_chain_handler_for_blockchain")

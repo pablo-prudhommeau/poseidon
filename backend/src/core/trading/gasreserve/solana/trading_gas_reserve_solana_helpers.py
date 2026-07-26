@@ -19,7 +19,6 @@ logger = get_application_logger(__name__)
 
 DEFAULT_TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280
 POSITION_LIFECYCLE_TRADE_COUNT = 3
-BUY_GUARD_RESERVE_CYCLE_COUNT = 1
 
 _cached_solana_gas_reserve_cost_snapshot: TradingGasReserveSolanaCostSnapshot | None = None
 _cost_snapshot_cache_lock = threading.Lock()

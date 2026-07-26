@@ -11,6 +11,10 @@ from src.integrations.blockchain.solana.blockchain_solana_price_reader import (
     read_solana_pool_price_usd,
     read_solana_pool_prices_usd_batch,
 )
+from src.integrations.blockchain.solana.solana_structures import (
+    SolanaPoolParsedPrice,
+    SolanaPoolPriceRequest,
+)
 
 
 @patch("src.integrations.blockchain.solana.blockchain_solana_price_reader.get_solana_rpc_url")
@@ -23,20 +27,85 @@ def test_read_solana_pool_prices_usd_batch_raises_when_rpc_unavailable(
 
     with pytest.raises(BlockchainPriceUnavailableError) as raised_error:
         read_solana_pool_prices_usd_batch([
-            ("token-address", "pair-address", "pumpswap"),
+            SolanaPoolPriceRequest(
+                token_address="token-address",
+                pair_address="pair-address",
+                dex_id="pumpswap",
+            ),
         ])
 
     assert raised_error.value.blockchain_network == BlockchainNetwork.SOLANA
 
 
-def test_read_solana_pool_price_usd_skips_unsupported_dex_without_rpc() -> None:
+@patch(
+    "src.integrations.blockchain.solana.blockchain_solana_price_reader.is_supported_trading_solana_dex_id",
+    return_value=True,
+)
+@patch(
+    "src.integrations.blockchain.solana.blockchain_solana_price_reader.has_onchain_pool_price_parser_for_dex_id",
+    return_value=False,
+)
+def test_read_solana_pool_price_usd_returns_none_when_no_onchain_parser(
+        _has_parser_mock: MagicMock,
+        _is_supported_mock: MagicMock,
+) -> None:
     price_usd = read_solana_pool_price_usd(
         pool_address="pair-address",
         target_token_address="token-address",
-        dex_id="raydium",
+        dex_id="jupiter",
     )
 
     assert price_usd is None
+
+
+@patch("src.integrations.blockchain.solana.blockchain_solana_price_reader.convert_price_to_usd", return_value=1.25)
+@patch("src.integrations.blockchain.solana.blockchain_solana_price_reader.rpc_get_account_info")
+@patch("src.integrations.blockchain.solana.blockchain_solana_price_reader.get_solana_rpc_url", return_value="https://rpc.example")
+@patch(
+    "src.integrations.blockchain.solana.blockchain_solana_price_reader.resolve_onchain_pool_price_parser_for_dex_id",
+)
+@patch(
+    "src.integrations.blockchain.solana.blockchain_solana_price_reader.has_onchain_pool_price_parser_for_dex_id",
+    return_value=True,
+)
+@patch(
+    "src.integrations.blockchain.solana.blockchain_solana_price_reader.is_supported_trading_solana_dex_id",
+    return_value=True,
+)
+def test_read_solana_pool_price_usd_uses_onchain_parser(
+        _is_supported_mock: MagicMock,
+        _has_parser_mock: MagicMock,
+        resolve_parser_mock: MagicMock,
+        _get_rpc_url_mock: MagicMock,
+        rpc_get_account_info_mock: MagicMock,
+        _convert_price_to_usd_mock: MagicMock,
+) -> None:
+    parser_mock = MagicMock()
+    parser_mock.parse_pool_price.return_value = SolanaPoolParsedPrice(
+        price_in_quote_token=1.0,
+        quote_token_mint="Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    )
+    resolve_parser_mock.return_value = parser_mock
+    rpc_get_account_info_mock.return_value = {
+        "data": ["AAAA", "base64"],
+        "owner": "program",
+    }
+
+    with patch(
+            "src.integrations.blockchain.solana.blockchain_solana_price_reader.decode_account_data",
+            return_value=b"\x00" * 64,
+    ), patch(
+            "src.integrations.blockchain.solana.blockchain_solana_price_reader.extract_owner_program",
+            return_value="program",
+    ):
+        price_usd = read_solana_pool_price_usd(
+            pool_address="pair-address",
+            target_token_address="token-address",
+            dex_id="raydium",
+        )
+
+    assert price_usd == 1.25
+    parser_mock.parse_pool_price.assert_called_once()
 
 
 @patch("src.integrations.blockchain.blockchain_price_service.read_solana_pool_price_usd")
@@ -110,7 +179,11 @@ def test_fetch_solana_pool_prices_resilient_falls_back_to_per_token(
     read_solana_single_mock.return_value = 0.42
 
     prices, had_infrastructure_failure = _fetch_solana_pool_prices_resilient([
-        ("token-address", "pair-address", "raydium"),
+        SolanaPoolPriceRequest(
+            token_address="token-address",
+            pair_address="pair-address",
+            dex_id="raydium",
+        ),
     ])
 
     assert prices == {"token-address": 0.42}

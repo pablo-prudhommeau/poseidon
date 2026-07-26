@@ -5,7 +5,6 @@ from typing import Optional
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.gasreserve.solana.trading_gas_reserve_solana_helpers import (
-    BUY_GUARD_RESERVE_CYCLE_COUNT,
     build_solana_gas_reserve_cost_snapshot,
     compute_per_position_cost_lamports,
     compute_reserve_lamports,
@@ -39,7 +38,7 @@ def is_solana_gas_reserve_sufficient_for_buy() -> bool:
     cost_snapshot = build_solana_gas_reserve_cost_snapshot()
     required_native_reserve_raw = compute_reserve_lamports(
         cycle_cost_lamports=cost_snapshot.cycle_cost_lamports,
-        cycle_count=BUY_GUARD_RESERVE_CYCLE_COUNT,
+        cycle_count=settings.TRADING_GAS_MINIMUM_CYCLE_NUMBER,
     )
 
     native_balance_raw = _fetch_solana_native_balance_raw()

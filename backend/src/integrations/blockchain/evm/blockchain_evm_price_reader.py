@@ -3,10 +3,18 @@ from __future__ import annotations
 from typing import Optional
 
 from web3 import Web3
+from web3.exceptions import ContractLogicError
 
+from src.core.structures.structures import BlockchainNetwork
+from src.integrations.blockchain.evm.blockchain_evm_structures import (
+    EVM_CHAIN_PRICE_METADATA_REGISTRY,
+    EvmPoolPriceInQuote,
+)
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
+
+NATIVE_CURRENCY_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 UNISWAP_V2_PAIR_ABI = [
     {
@@ -59,65 +67,293 @@ UNISWAP_V3_POOL_ABI = [
             {"name": "observationCardinality", "type": "uint16"},
             {"name": "observationCardinalityNext", "type": "uint16"},
             {"name": "feeProtocol", "type": "uint8"},
-            {"name": "unlocked", "type": "bool"}
+            {"name": "unlocked", "type": "bool"},
         ],
     },
 ]
 
-from src.core.structures.structures import BlockchainNetwork
-
-KNOWN_STABLECOINS: dict[BlockchainNetwork, set[str]] = {
-    BlockchainNetwork.BSC: {
-        "0x55d398326f99059ff775485246999027b3197955",
-        "0xe9e7cea3dedca5984780bafc599bd69add087d56",
-        "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+UNISWAP_V4_STATE_VIEW_ABI = [
+    {
+        "name": "getSlot0",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [{"name": "poolId", "type": "bytes32"}],
+        "outputs": [
+            {"name": "sqrtPriceX96", "type": "uint160"},
+            {"name": "tick", "type": "int24"},
+            {"name": "protocolFee", "type": "uint24"},
+            {"name": "lpFee", "type": "uint24"},
+        ],
     },
-    BlockchainNetwork.BASE: {
-        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-        "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",
+]
+
+UNISWAP_V4_POSITION_MANAGER_ABI = [
+    {
+        "name": "poolKeys",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [{"name": "poolId", "type": "bytes25"}],
+        "outputs": [
+            {"name": "currency0", "type": "address"},
+            {"name": "currency1", "type": "address"},
+            {"name": "fee", "type": "uint24"},
+            {"name": "tickSpacing", "type": "int24"},
+            {"name": "hooks", "type": "address"},
+        ],
     },
-}
+]
 
-KNOWN_NATIVE_WRAPPED_TOKENS: dict[BlockchainNetwork, str] = {
-    BlockchainNetwork.BSC: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
-    BlockchainNetwork.BASE: "0x4200000000000000000000000000000000000006",
-}
 
-NATIVE_TOKEN_REFERENCE_STABLECOIN_PAIRS: dict[BlockchainNetwork, str] = {
-    BlockchainNetwork.BSC: "0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae",
-    BlockchainNetwork.BASE: "0xd0b53d9277642d899df5c87a3966a349a798f224",
-}
-
-_decimals_cache: dict[str, int] = {}
+def _is_native_currency_address(token_address: str) -> bool:
+    return token_address.lower() == NATIVE_CURRENCY_ADDRESS
 
 
 def _is_stablecoin(chain: BlockchainNetwork, token_address: str) -> bool:
-    normalized_address = token_address.lower()
-    chain_stablecoins = KNOWN_STABLECOINS.get(chain, set())
-    return normalized_address in chain_stablecoins
+    chain_price_metadata = EVM_CHAIN_PRICE_METADATA_REGISTRY.resolve(chain)
+    return token_address.lower() in chain_price_metadata.stablecoin_addresses
 
 
 def _is_native_wrapped_token(chain: BlockchainNetwork, token_address: str) -> bool:
-    normalized_address = token_address.lower()
-    known_native = KNOWN_NATIVE_WRAPPED_TOKENS.get(chain)
-    return known_native is not None and normalized_address == known_native
+    chain_price_metadata = EVM_CHAIN_PRICE_METADATA_REGISTRY.resolve(chain)
+    return token_address.lower() == chain_price_metadata.native_wrapped_token_address
+
+
+def _is_native_gas_token_quote(chain: BlockchainNetwork, token_address: str) -> bool:
+    return _is_native_currency_address(token_address) or _is_native_wrapped_token(chain, token_address)
+
+
+def _is_uniswap_v4_pool_identifier(pair_address: str) -> bool:
+    normalized_pair_address = pair_address.strip().lower()
+    if not normalized_pair_address.startswith("0x"):
+        return False
+    hexadecimal_body = normalized_pair_address[2:]
+    if len(hexadecimal_body) != 64:
+        return False
+    try:
+        int(hexadecimal_body, 16)
+    except ValueError:
+        return False
+    return not Web3.is_address(pair_address)
+
+
+def _truncate_pool_identifier_to_bytes25(pool_identifier: str) -> bytes:
+    normalized_pool_identifier = pool_identifier.strip().lower()
+    pool_identifier_bytes = bytes.fromhex(normalized_pool_identifier[2:])
+    return pool_identifier_bytes[:25]
+
+
+def _resolve_price_in_quote_from_square_root_price_x96(
+        square_root_price_x96: int,
+        target_is_currency_zero: bool,
+        currency_zero_decimals: int,
+        currency_one_decimals: int,
+) -> Optional[float]:
+    if square_root_price_x96 <= 0:
+        return None
+
+    price_of_currency_one_in_currency_zero = (square_root_price_x96 / (2 ** 96)) ** 2
+    if price_of_currency_one_in_currency_zero <= 0.0:
+        return None
+
+    if target_is_currency_zero:
+        return price_of_currency_one_in_currency_zero * (10 ** (currency_zero_decimals - currency_one_decimals))
+
+    return (1.0 / price_of_currency_one_in_currency_zero) * (10 ** (currency_one_decimals - currency_zero_decimals))
 
 
 def _fetch_token_decimals(web3_provider: Web3, token_address: str) -> int:
-    cache_key = f"{web3_provider.eth.chain_id}:{token_address.lower()}"
-    cached_value = _decimals_cache.get(cache_key)
-    if cached_value is not None:
-        return cached_value
+    if _is_native_currency_address(token_address):
+        return 18
 
     if not Web3.is_address(token_address):
-        return 18
+        raise ValueError(f"Invalid token address for decimals lookup: {token_address}")
 
     checksum_address = Web3.to_checksum_address(token_address)
     token_contract = web3_provider.eth.contract(address=checksum_address, abi=ERC20_DECIMALS_ABI)
     decimals_value = token_contract.functions.decimals().call()
-    _decimals_cache[cache_key] = decimals_value
     logger.debug("[BLOCKCHAIN][PRICE][EVM] Fetched decimals for %s = %d", token_address[:10], decimals_value)
     return decimals_value
+
+
+def _fetch_uniswap_v4_pool_price_in_quote(
+        web3_provider: Web3,
+        chain: BlockchainNetwork,
+        pool_identifier: str,
+        target_token_address: str,
+) -> Optional[EvmPoolPriceInQuote]:
+    chain_price_metadata = EVM_CHAIN_PRICE_METADATA_REGISTRY.resolve(chain)
+    state_view_contract_address = chain_price_metadata.uniswap_v4_state_view_contract_address
+    position_manager_contract_address = chain_price_metadata.uniswap_v4_position_manager_contract_address
+    if state_view_contract_address is None or position_manager_contract_address is None:
+        logger.debug(
+            "[BLOCKCHAIN][PRICE][EVM][V4] No StateView/PositionManager configured for chain %s",
+            chain.value,
+        )
+        return None
+
+    if not Web3.is_address(target_token_address):
+        logger.debug(
+            "[BLOCKCHAIN][PRICE][EVM][V4] Invalid target token address %s on %s",
+            target_token_address[:10],
+            chain.value,
+        )
+        return None
+
+    try:
+        position_manager_contract = web3_provider.eth.contract(
+            address=Web3.to_checksum_address(position_manager_contract_address),
+            abi=UNISWAP_V4_POSITION_MANAGER_ABI,
+        )
+        truncated_pool_identifier = _truncate_pool_identifier_to_bytes25(pool_identifier)
+        pool_key = position_manager_contract.functions.poolKeys(truncated_pool_identifier).call()
+        currency_zero_address = pool_key[0]
+        currency_one_address = pool_key[1]
+        tick_spacing = pool_key[3]
+
+        if tick_spacing == 0:
+            logger.debug(
+                "[BLOCKCHAIN][PRICE][EVM][V4] PoolKey missing for pool_identifier=%s on %s",
+                pool_identifier[:10],
+                chain.value,
+            )
+            return None
+
+        state_view_contract = web3_provider.eth.contract(
+            address=Web3.to_checksum_address(state_view_contract_address),
+            abi=UNISWAP_V4_STATE_VIEW_ABI,
+        )
+        normalized_pool_identifier = pool_identifier.strip().lower()
+        pool_identifier_bytes32 = bytes.fromhex(normalized_pool_identifier[2:])
+        slot0 = state_view_contract.functions.getSlot0(pool_identifier_bytes32).call()
+        square_root_price_x96 = slot0[0]
+
+        currency_zero_decimals = _fetch_token_decimals(web3_provider, currency_zero_address)
+        currency_one_decimals = _fetch_token_decimals(web3_provider, currency_one_address)
+
+        target_is_currency_zero = currency_zero_address.lower() == target_token_address.lower()
+        target_is_currency_one = currency_one_address.lower() == target_token_address.lower()
+        if not target_is_currency_zero and not target_is_currency_one:
+            logger.debug(
+                "[BLOCKCHAIN][PRICE][EVM][V4] Target token %s not in pool currencies on %s",
+                target_token_address[:10],
+                chain.value,
+            )
+            return None
+
+        price_in_quote_token = _resolve_price_in_quote_from_square_root_price_x96(
+            square_root_price_x96=square_root_price_x96,
+            target_is_currency_zero=target_is_currency_zero,
+            currency_zero_decimals=currency_zero_decimals,
+            currency_one_decimals=currency_one_decimals,
+        )
+        if price_in_quote_token is None or price_in_quote_token <= 0.0:
+            return None
+
+        quote_token_address = currency_one_address if target_is_currency_zero else currency_zero_address
+        logger.debug(
+            "[BLOCKCHAIN][PRICE][EVM][V4] Resolved pool_identifier=%s price_in_quote=%.12f quote=%s on %s",
+            pool_identifier[:10],
+            price_in_quote_token,
+            quote_token_address[:10],
+            chain.value,
+        )
+        return EvmPoolPriceInQuote(
+            price_in_quote_token=price_in_quote_token,
+            quote_token_address=quote_token_address,
+        )
+    except Exception:
+        logger.exception(
+            "[BLOCKCHAIN][PRICE][EVM][V4] Failed to read pool_identifier=%s on %s",
+            pool_identifier[:10],
+            chain.value,
+        )
+        return None
+
+
+def _fetch_uniswap_v2_or_v3_pool_price_in_quote(
+        web3_provider: Web3,
+        chain: BlockchainNetwork,
+        pair_address: str,
+        target_token_address: str,
+) -> Optional[EvmPoolPriceInQuote]:
+    if not Web3.is_address(pair_address) or not Web3.is_address(target_token_address):
+        logger.debug(
+            "[BLOCKCHAIN][PRICE][EVM] Invalid address format for pair=%s token=%s on %s",
+            pair_address[:10],
+            target_token_address[:10],
+            chain.value,
+        )
+        return None
+
+    checksum_pair = Web3.to_checksum_address(pair_address)
+    pair_contract = web3_provider.eth.contract(address=checksum_pair, abi=UNISWAP_V2_PAIR_ABI)
+
+    currency_zero_address = pair_contract.functions.token0().call()
+    currency_one_address = pair_contract.functions.token1().call()
+
+    currency_zero_decimals = _fetch_token_decimals(web3_provider, currency_zero_address)
+    currency_one_decimals = _fetch_token_decimals(web3_provider, currency_one_address)
+
+    target_is_currency_zero = currency_zero_address.lower() == target_token_address.lower()
+    target_is_currency_one = currency_one_address.lower() == target_token_address.lower()
+    if not target_is_currency_zero and not target_is_currency_one:
+        logger.debug(
+            "[BLOCKCHAIN][PRICE][EVM] Target token %s is not in V2/V3 pool %s on %s",
+            target_token_address[:10],
+            pair_address[:10],
+            chain.value,
+        )
+        return None
+
+    quote_token_address = currency_one_address if target_is_currency_zero else currency_zero_address
+
+    try:
+        reserves = pair_contract.functions.getReserves().call()
+        reserve_zero = reserves[0]
+        reserve_one = reserves[1]
+
+        if reserve_zero <= 0 or reserve_one <= 0:
+            return None
+
+        adjusted_reserve_zero = reserve_zero / (10 ** currency_zero_decimals)
+        adjusted_reserve_one = reserve_one / (10 ** currency_one_decimals)
+
+        if target_is_currency_zero:
+            base_reserve = adjusted_reserve_zero
+            quote_reserve = adjusted_reserve_one
+        else:
+            base_reserve = adjusted_reserve_one
+            quote_reserve = adjusted_reserve_zero
+
+        if base_reserve <= 0.0:
+            return None
+
+        return EvmPoolPriceInQuote(
+            price_in_quote_token=quote_reserve / base_reserve,
+            quote_token_address=quote_token_address,
+        )
+
+    except Exception as exception:
+        if not isinstance(exception, ContractLogicError):
+            raise
+
+    v3_contract = web3_provider.eth.contract(address=checksum_pair, abi=UNISWAP_V3_POOL_ABI)
+    slot0 = v3_contract.functions.slot0().call()
+    square_root_price_x96 = slot0[0]
+
+    price_in_quote_token = _resolve_price_in_quote_from_square_root_price_x96(
+        square_root_price_x96=square_root_price_x96,
+        target_is_currency_zero=target_is_currency_zero,
+        currency_zero_decimals=currency_zero_decimals,
+        currency_one_decimals=currency_one_decimals,
+    )
+    if price_in_quote_token is None or price_in_quote_token <= 0.0:
+        return None
+
+    return EvmPoolPriceInQuote(
+        price_in_quote_token=price_in_quote_token,
+        quote_token_address=quote_token_address,
+    )
 
 
 def _fetch_pool_price_in_quote(
@@ -125,88 +361,42 @@ def _fetch_pool_price_in_quote(
         chain: BlockchainNetwork,
         pair_address: str,
         target_token_address: str,
-) -> tuple[Optional[float], Optional[str]]:
-    if not Web3.is_address(pair_address) or not Web3.is_address(target_token_address):
-        logger.debug("[BLOCKCHAIN][PRICE][EVM] Invalid address format for pair=%s token=%s on %s", pair_address[:10], target_token_address[:10], chain.value)
-        return None, None
+) -> Optional[EvmPoolPriceInQuote]:
+    if _is_uniswap_v4_pool_identifier(pair_address):
+        return _fetch_uniswap_v4_pool_price_in_quote(
+            web3_provider=web3_provider,
+            chain=chain,
+            pool_identifier=pair_address,
+            target_token_address=target_token_address,
+        )
 
-    checksum_pair = Web3.to_checksum_address(pair_address)
-    pair_contract = web3_provider.eth.contract(address=checksum_pair, abi=UNISWAP_V2_PAIR_ABI)
-
-    token0_address = pair_contract.functions.token0().call()
-    token1_address = pair_contract.functions.token1().call()
-
-    token0_decimals = _fetch_token_decimals(web3_provider, token0_address)
-    token1_decimals = _fetch_token_decimals(web3_provider, token1_address)
-
-    target_is_token0 = token0_address.lower() == target_token_address.lower()
-    quote_address = token1_address if target_is_token0 else token0_address
-
-    try:
-        reserves = pair_contract.functions.getReserves().call()
-        reserve0 = reserves[0]
-        reserve1 = reserves[1]
-
-        if reserve0 <= 0 or reserve1 <= 0:
-            return None, None
-
-        adjusted_reserve0 = reserve0 / (10 ** token0_decimals)
-        adjusted_reserve1 = reserve1 / (10 ** token1_decimals)
-
-        if target_is_token0:
-            base_reserve = adjusted_reserve0
-            quote_reserve = adjusted_reserve1
-        else:
-            base_reserve = adjusted_reserve1
-            quote_reserve = adjusted_reserve0
-
-        if base_reserve <= 0.0:
-            return None, None
-
-        price_in_quote = quote_reserve / base_reserve
-        return price_in_quote, quote_address
-
-    except Exception as exception:
-        from web3.exceptions import ContractLogicError
-        if not isinstance(exception, ContractLogicError):
-            raise
-
-    v3_contract = web3_provider.eth.contract(address=checksum_pair, abi=UNISWAP_V3_POOL_ABI)
-    slot0 = v3_contract.functions.slot0().call()
-    sqrt_price_x96 = slot0[0]
-
-    if sqrt_price_x96 <= 0:
-        return None, None
-
-    raw_ratio_1_over_0 = (sqrt_price_x96 / (2 ** 96)) ** 2
-
-    if target_is_token0:
-        price_in_quote = raw_ratio_1_over_0 * (10 ** (token0_decimals - token1_decimals))
-    else:
-        price_in_quote = (1.0 / raw_ratio_1_over_0) * (10 ** (token1_decimals - token0_decimals))
-
-    return price_in_quote, quote_address
+    return _fetch_uniswap_v2_or_v3_pool_price_in_quote(
+        web3_provider=web3_provider,
+        chain=chain,
+        pair_address=pair_address,
+        target_token_address=target_token_address,
+    )
 
 
 def _read_native_token_usd_price(web3_provider: Web3, chain: BlockchainNetwork) -> Optional[float]:
-    reference_pair_address = NATIVE_TOKEN_REFERENCE_STABLECOIN_PAIRS.get(chain)
-    if reference_pair_address is None:
-        logger.debug("[BLOCKCHAIN][PRICE][EVM] No reference pair configured for native token on chain %s", chain.value)
-        return None
+    chain_price_metadata = EVM_CHAIN_PRICE_METADATA_REGISTRY.resolve(chain)
 
     try:
-        native_address = KNOWN_NATIVE_WRAPPED_TOKENS.get(chain, "")
-        if not native_address:
-            return None
-
-        price_in_quote, quote_address = _fetch_pool_price_in_quote(
-            web3_provider, chain, reference_pair_address, native_address
+        pool_price_in_quote = _fetch_pool_price_in_quote(
+            web3_provider=web3_provider,
+            chain=chain,
+            pair_address=chain_price_metadata.native_token_reference_stablecoin_pair_address,
+            target_token_address=chain_price_metadata.native_wrapped_token_address,
         )
-        if price_in_quote is None or price_in_quote <= 0.0:
+        if pool_price_in_quote is None or pool_price_in_quote.price_in_quote_token <= 0.0:
             return None
 
-        logger.debug("[BLOCKCHAIN][PRICE][EVM] Native token price on %s = %.4f USD", chain.value, price_in_quote)
-        return price_in_quote
+        logger.debug(
+            "[BLOCKCHAIN][PRICE][EVM] Native token price on %s = %.4f USD",
+            chain.value,
+            pool_price_in_quote.price_in_quote_token,
+        )
+        return pool_price_in_quote.price_in_quote_token
     except Exception:
         logger.exception("[BLOCKCHAIN][PRICE][EVM] Failed to read native token price on %s", chain.value)
         return None
@@ -223,42 +413,55 @@ def read_evm_pair_price_usd(
         target_token_address: str,
 ) -> Optional[float]:
     try:
-        price_in_quote, quote_address = _fetch_pool_price_in_quote(
-            web3_provider, chain, pair_address, target_token_address
+        pool_price_in_quote = _fetch_pool_price_in_quote(
+            web3_provider=web3_provider,
+            chain=chain,
+            pair_address=pair_address,
+            target_token_address=target_token_address,
         )
-        if price_in_quote is None or quote_address is None:
+        if pool_price_in_quote is None:
             return None
 
-        if _is_stablecoin(chain, quote_address):
+        price_in_quote_token = pool_price_in_quote.price_in_quote_token
+        quote_token_address = pool_price_in_quote.quote_token_address
+
+        if _is_stablecoin(chain, quote_token_address):
             logger.debug(
                 "[BLOCKCHAIN][PRICE][EVM] Pair %s — price %.12f (quote is stablecoin)",
-                pair_address[:10], price_in_quote,
+                pair_address[:10],
+                price_in_quote_token,
             )
-            return price_in_quote
+            return price_in_quote_token
 
-        if _is_native_wrapped_token(chain, quote_address):
+        if _is_native_gas_token_quote(chain, quote_token_address):
             native_usd_price = _read_native_token_usd_price(web3_provider, chain)
             if native_usd_price is None or native_usd_price <= 0.0:
-                logger.debug("[BLOCKCHAIN][PRICE][EVM] Cannot resolve native USD price on %s for pair %s", chain.value, pair_address[:10])
+                logger.debug(
+                    "[BLOCKCHAIN][PRICE][EVM] Cannot resolve native USD price on %s for pair %s",
+                    chain.value,
+                    pair_address[:10],
+                )
                 return None
-            price_usd = price_in_quote * native_usd_price
+            price_usd = price_in_quote_token * native_usd_price
             logger.debug(
                 "[BLOCKCHAIN][PRICE][EVM] Pair %s — price %.12f USD (via native at %.2f)",
-                pair_address[:10], price_usd, native_usd_price,
+                pair_address[:10],
+                price_usd,
+                native_usd_price,
             )
             return price_usd
 
         logger.debug(
             "[BLOCKCHAIN][PRICE][EVM] Pair %s — unknown quote token %s, cannot convert to USD",
-            pair_address[:10], quote_address[:10],
+            pair_address[:10],
+            quote_token_address[:10],
         )
         return None
 
-    except Exception as read_exception:
-        logger.debug(
-            "[BLOCKCHAIN][PRICE][EVM] Failed to read price for pair %s on %s — %s",
+    except Exception:
+        logger.exception(
+            "[BLOCKCHAIN][PRICE][EVM] Failed to read price for pair %s on %s",
             pair_address[:10],
             chain.value,
-            read_exception,
         )
         return None

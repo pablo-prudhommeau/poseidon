@@ -1,4 +1,3 @@
-import logging
 import os
 from pathlib import Path
 
@@ -95,6 +94,7 @@ class Settings:
     RPC_PREMIUM_URL_BASE: str = os.getenv("RPC_PREMIUM_URL_BASE", "")
     RPC_PREMIUM_URL_BSC: str = os.getenv("RPC_PREMIUM_URL_BSC", "")
     RPC_PREMIUM_URL_ETHEREUM: str = os.getenv("RPC_PREMIUM_URL_ETHEREUM", "")
+    RPC_PREMIUM_URL_ROBINHOOD: str = os.getenv("RPC_PREMIUM_URL_ROBINHOOD", "")
     RPC_PREMIUM_URL_SOLANA: str = os.getenv("RPC_PREMIUM_URL_SOLANA", "")
 
     LIFI_API_KEY: str = os.getenv("LIFI_API_KEY", "")
@@ -146,7 +146,7 @@ class Settings:
     CHART_AI_VISION_MIN_CACHE_SECONDS: int = int(os.getenv("CHART_AI_VISION_MIN_CACHE_SECONDS", "60"))
     CHART_AI_VISION_SAVE_SCREENSHOTS: bool = _as_bool(os.getenv("CHART_AI_VISION_SAVE_SCREENSHOTS"), True)
 
-    TRADING_ALLOWED_CHAINS: list[str] = _parse_csv_values(os.getenv("TRADING_ALLOWED_CHAINS", "solana"))
+    TRADING_ALLOWED_CHAINS: list[str] = _parse_csv_values(os.getenv("TRADING_ALLOWED_CHAINS", "solana,robinhood,base,bsc"))
     TRADING_BLOCKCHAIN_CIRCUIT_BREAKER_ENABLED: bool = _as_bool(os.getenv("TRADING_BLOCKCHAIN_CIRCUIT_BREAKER_ENABLED"), True)
     TRADING_BLOCKCHAIN_CIRCUIT_BREAKER_MAX_CONSECUTIVE_EXIT_FAILURES: int = int(os.getenv("TRADING_BLOCKCHAIN_CIRCUIT_BREAKER_MAX_CONSECUTIVE_EXIT_FAILURES", "3"))
     TRADING_CHART_AI_VISION_DELTA_MULTIPLIER: float = float(os.getenv("TRADING_CHART_AI_VISION_DELTA_MULTIPLIER", "1.0"))
@@ -178,6 +178,7 @@ class Settings:
     TRADING_CORTEX_TRAINING_VALIDATION_FRACTION: float = float(os.getenv("TRADING_CORTEX_TRAINING_VALIDATION_FRACTION", "0.2"))
     TRADING_CORTEX_XGBOOST_TRAINING_DEVICE: str = os.getenv("TRADING_CORTEX_XGBOOST_TRAINING_DEVICE", "cpu")
     TRADING_ENABLED: bool = _as_bool(os.getenv("TRADING_ENABLED"), False)
+    TRADING_EVM_GAS_AVERAGE_SWAP_FEE_WEI: int = int(os.getenv("TRADING_EVM_GAS_AVERAGE_SWAP_FEE_WEI", "800000000000000"))
     TRADING_GAS_MINIMUM_CYCLE_NUMBER: int = int(os.getenv("TRADING_GAS_MINIMUM_CYCLE_NUMBER", "2"))
     TRADING_GAS_REFILL_TARGET_CYCLE_NUMBER: int = int(os.getenv("TRADING_GAS_REFILL_TARGET_CYCLE_NUMBER", "4"))
     TRADING_GATE_CORTEX_ENABLED: bool = _as_bool(os.getenv("TRADING_GATE_CORTEX_ENABLED"), True)
@@ -270,7 +271,7 @@ class Settings:
     TRADING_SLIPPAGE_TOLERANCE: float = float(os.getenv("TRADING_SLIPPAGE_TOLERANCE", "0.03"))
     TRADING_SOLANA_GAS_AVERAGE_SWAP_FEE_LAMPORTS: int = int(os.getenv("TRADING_SOLANA_GAS_AVERAGE_SWAP_FEE_LAMPORTS", "500000"))
     TRADING_SOLANA_RENT_BREAKDOWN_CACHE_TTL_SECONDS: float = float(os.getenv("TRADING_SOLANA_RENT_BREAKDOWN_CACHE_TTL_SECONDS", "30.0"))
-    TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str] = _parse_csv_values(os.getenv("TRADING_SOLANA_SUPPORTED_DEX_IDS", "pumpfun,pumpswap"))
+    TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str] = _parse_csv_values(os.getenv("TRADING_SOLANA_SUPPORTED_DEX_IDS", "pumpfun,pumpswap,raydium,raydium-cpmm,raydium-clmm,orca,meteora"))
     TRADING_SOLANA_TOKEN_ACCOUNT_ACTIVITY_CACHE_SECONDS: float = float(os.getenv("TRADING_SOLANA_TOKEN_ACCOUNT_ACTIVITY_CACHE_SECONDS", "3600"))
     TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_BATCH_SIZE: int = int(os.getenv("TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_BATCH_SIZE", "8"))
     TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS: float = float(os.getenv("TRADING_SOLANA_TOKEN_ACCOUNT_RECLAIM_INACTIVE_HOURS", "72"))
@@ -279,6 +280,7 @@ class Settings:
     TRADING_STABLECOIN_ADDRESS_BASE: str = os.getenv("TRADING_STABLECOIN_ADDRESS_BASE", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
     TRADING_STABLECOIN_ADDRESS_BSC: str = os.getenv("TRADING_STABLECOIN_ADDRESS_BSC", "0x55d398326f99059fF775485246999027B3197955")
     TRADING_STABLECOIN_ADDRESS_ETHEREUM: str = os.getenv("TRADING_STABLECOIN_ADDRESS_ETHEREUM", "0xdAC17F958D2ee523a2206206994597C13D831ec7")
+    TRADING_STABLECOIN_ADDRESS_ROBINHOOD: str = os.getenv("TRADING_STABLECOIN_ADDRESS_ROBINHOOD", "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168")
     TRADING_STABLECOIN_ADDRESS_SOLANA: str = os.getenv("TRADING_STABLECOIN_ADDRESS_SOLANA", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB")
     TRADING_STABLECOIN_SYMBOL: str = os.getenv("TRADING_STABLECOIN_SYMBOL", "USDT")
     TRADING_STOP_LOSS_FRACTION: float = float(os.getenv("TRADING_STOP_LOSS_FRACTION", "0.20"))
@@ -291,16 +293,6 @@ class Settings:
     TRADING_WALLET_MNEMONIC: str = os.getenv("TRADING_WALLET_MNEMONIC", "")
 
     def __init__(self) -> None:
-        if len(self.TRADING_ALLOWED_CHAINS) > MAX_TRADING_ALLOWED_CHAIN_COUNT:
-            ignored_chains = self.TRADING_ALLOWED_CHAINS[MAX_TRADING_ALLOWED_CHAIN_COUNT:]
-            self.TRADING_ALLOWED_CHAINS = self.TRADING_ALLOWED_CHAINS[:MAX_TRADING_ALLOWED_CHAIN_COUNT]
-            logging.getLogger(__name__).warning(
-                "[CONFIGURATION][TRADING][CHAINS] Ignoring %d configured chains beyond hard limit %d: %s",
-                len(ignored_chains),
-                MAX_TRADING_ALLOWED_CHAIN_COUNT,
-                ", ".join(ignored_chains),
-            )
-
         from src.core.trading.trading_configuration_service import (
             validate_and_apply_trading_application_configuration,
             validate_live_wallet_configuration,

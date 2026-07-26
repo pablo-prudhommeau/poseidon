@@ -49,6 +49,7 @@ def _reset_jupiter_sol_usd_reference_cache() -> None:
     jupiter_client_module._cached_sol_usd_reference_timestamp = 0.0
 
 
+@patch("src.integrations.jupiter.jupiter_client.resolve_rpc_url_for_chain", return_value="https://example-solana-rpc.test")
 @patch("src.integrations.jupiter.jupiter_client.get_spl_token_decimals", return_value=6)
 @patch(
     "src.integrations.jupiter.jupiter_client.resolve_stablecoin_address_for_blockchain",
@@ -59,6 +60,7 @@ def test_resolve_sol_usd_price_uses_jupiter_quote(
         fetch_jupiter_quote_mock: MagicMock,
         resolve_stablecoin_address_mock: MagicMock,
         get_spl_token_decimals_mock: MagicMock,
+        resolve_rpc_url_for_chain_mock: MagicMock,
 ) -> None:
     _reset_jupiter_sol_usd_reference_cache()
     fetch_jupiter_quote_mock.return_value = JupiterQuoteResponse.model_validate({

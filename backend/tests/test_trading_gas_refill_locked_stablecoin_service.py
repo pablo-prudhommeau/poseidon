@@ -177,9 +177,6 @@ def test_compute_net_deployable_cash_usd_subtracts_locked_total() -> None:
     ) as mock_settings, patch(
         "src.core.trading.gasreserve.trading_gas_reserve_service.resolve_gas_reserve_chain_handlers",
         return_value=[TradingGasReserveSolanaHandler(wallet_context=wallet_context)],
-    ), patch(
-        "src.core.trading.gasreserve.trading_gas_reserve_service._resolve_solana_wallet_context_for_live_gas_reserve",
-        return_value=wallet_context,
     ), patch.object(
         TradingGasReserveSolanaHandler,
         "compute_gas_refill_locked_stablecoin_snapshot",

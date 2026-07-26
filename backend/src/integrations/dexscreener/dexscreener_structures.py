@@ -132,7 +132,9 @@ class DexscreenerTokenInformation(_DexscreenerBaseModel):
     @classmethod
     def _parse_chain_id(cls, data: object) -> object:
         if isinstance(data, dict) and "chain_id" in data:
-            data["chain_id"] = parse_dexscreener_chain(str(data["chain_id"]))
+            raw_chain_id = data["chain_id"]
+            if not isinstance(raw_chain_id, BlockchainNetwork):
+                data["chain_id"] = parse_dexscreener_chain(str(raw_chain_id))
         return data
 
     @property
@@ -156,6 +158,8 @@ def parse_dexscreener_chain(chain_id: str) -> Optional[BlockchainNetwork]:
         return BlockchainNetwork.BASE
     if normalized in {"avalanche", "avax", "avalanche-c"}:
         return BlockchainNetwork.AVALANCHE
+    if normalized in {"robinhood", "robinhood-chain"}:
+        return BlockchainNetwork.ROBINHOOD
     return None
 
 

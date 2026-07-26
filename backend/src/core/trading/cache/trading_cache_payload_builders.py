@@ -450,10 +450,10 @@ def _defer_live_liquidity_rebuild_during_closing() -> None:
 def _build_live_blockchain_balance_payloads(
         blockchain_balances_raw: list[BlockchainCashBalance],
 ) -> list[BlockchainCashBalancePayload]:
-    chain_handler_by_blockchain_network = resolve_gas_reserve_chain_handlers_for_liquidity_payload()
+    chain_handler_registry = resolve_gas_reserve_chain_handlers_for_liquidity_payload()
     blockchain_balance_payloads: list[BlockchainCashBalancePayload] = []
     for balance in blockchain_balances_raw:
-        chain_handler = chain_handler_by_blockchain_network[balance.blockchain_network]
+        chain_handler = chain_handler_registry.resolve_handler(balance.blockchain_network)
         gas_reserve_enrichment = chain_handler.build_blockchain_cash_balance_gas_reserve_enrichment()
         blockchain_balance_payloads.append(
             _convert_blockchain_cash_balance_to_payload(

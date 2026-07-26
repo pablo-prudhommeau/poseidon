@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Union
 
 from src.core.structures.structures import BlockchainNetwork, Token
-from src.core.trading.trading_structures import TradingDexMarketSnapshot
 from src.integrations.dexscreener.dexscreener_constants import JSON
 from src.integrations.dexscreener.dexscreener_structures import (
     DexscreenerLiquidityStatistics,
@@ -18,14 +17,6 @@ from src.integrations.dexscreener.dexscreener_structures import (
 def chunk_strings(items: List[str], size: int) -> List[List[str]]:
     limit = max(1, int(size or 1))
     return [items[index: index + limit] for index in range(0, len(items), limit)]
-
-
-def split_tokens_into_address_chunks(tokens: List[Token], chunk_size: int) -> List[List[str]]:
-    chunks: List[List[str]] = []
-    for index in range(0, len(tokens), chunk_size):
-        chunk = [token.token_address for token in tokens[index: index + chunk_size]]
-        chunks.append(chunk)
-    return chunks
 
 
 def split_token_addresses_into_chunks(items: List[str], chunk_size: int) -> List[List[str]]:
@@ -173,45 +164,3 @@ def resolve_dexscreener_token_information_for_token(
         if lookup_key[0] == token.chain and lookup_key[1] == token.token_address:
             return token_information
     return None
-
-
-def map_token_information_to_trading_market_snapshot(
-        token_information: DexscreenerTokenInformation,
-) -> TradingDexMarketSnapshot:
-    if token_information.pair_created_at is None or token_information.pair_created_at <= 0:
-        raise ValueError("Missing pair_created_at for token_age_hours")
-
-    volume, liquidity, price_change, transactions = require_dexscreener_market_statistics(token_information)
-
-    return TradingDexMarketSnapshot(
-        price_usd=require_float(token_information.price_usd, "price_usd"),
-        price_native=require_float(token_information.price_native, "price_native"),
-        token_age_hours=token_information.age_hours,
-        volume_m5_usd=require_float(volume.m5, "volume_m5_usd"),
-        volume_h1_usd=require_float(volume.h1, "volume_h1_usd"),
-        volume_h6_usd=require_float(volume.h6, "volume_h6_usd"),
-        volume_h24_usd=require_float(volume.h24, "volume_h24_usd"),
-        liquidity_usd=require_float(liquidity.usd, "liquidity_usd"),
-        price_change_percentage_m5=require_float(price_change.m5, "price_change_percentage_m5"),
-        price_change_percentage_h1=require_float(price_change.h1, "price_change_percentage_h1"),
-        price_change_percentage_h6=require_float(price_change.h6, "price_change_percentage_h6"),
-        price_change_percentage_h24=require_float(price_change.h24, "price_change_percentage_h24"),
-        transaction_count_m5=require_transaction_count(transactions.m5, "transaction_count_m5"),
-        transaction_count_h1=require_transaction_count(transactions.h1, "transaction_count_h1"),
-        transaction_count_h6=require_transaction_count(transactions.h6, "transaction_count_h6"),
-        transaction_count_h24=require_transaction_count(transactions.h24, "transaction_count_h24"),
-        buy_to_sell_ratio=compute_buy_to_sell_ratio_from_transactions(transactions),
-        market_cap_usd=require_float(token_information.market_cap, "market_cap_usd"),
-        fully_diluted_valuation_usd=require_float(token_information.fully_diluted_valuation, "fully_diluted_valuation_usd"),
-        promotion_score=token_information.boost,
-    )
-
-
-def map_token_information_to_trading_token(token_information: DexscreenerTokenInformation) -> Token:
-    return Token(
-        symbol=token_information.base_token.symbol,
-        chain=token_information.chain_id,
-        token_address=token_information.base_token.address,
-        pair_address=token_information.pair_address,
-        dex_id=token_information.dex_id,
-    )

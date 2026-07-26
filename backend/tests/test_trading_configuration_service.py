@@ -32,6 +32,9 @@ class _SettingsStub:
     TRADING_STABLECOIN_ADDRESS_BSC: str = ""
     TRADING_STABLECOIN_ADDRESS_BASE: str = ""
     TRADING_STABLECOIN_ADDRESS_AVALANCHE: str = ""
+    TRADING_STABLECOIN_ADDRESS_ROBINHOOD: str = ""
+    LIFI_API_KEY: str = ""
+    LIFI_INTEGRATION_ID: str = ""
 
     def __init__(
             self,
@@ -47,6 +50,8 @@ class _LiveWalletSettingsStub(_SettingsStub):
     TRADING_WALLET_MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
     TRADING_WALLET_DERIVATION_INDEX = 0
     TRADING_STABLECOIN_ADDRESS_SOLANA = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+    LIFI_API_KEY = ""
+    LIFI_INTEGRATION_ID = ""
 
     def __init__(self) -> None:
         super().__init__(
@@ -66,6 +71,8 @@ def test_validate_and_apply_trading_application_configuration_applies_defaults()
     assert resolve_trading_allowed_blockchain_networks() == [BlockchainNetwork.SOLANA]
     assert resolve_supported_trading_solana_dex_ids() == ["pumpfun", "pumpswap"]
 
+    validate_and_apply_trading_application_configuration(settings)
+
 
 def test_validate_and_apply_trading_application_configuration_accepts_supported_subset() -> None:
     validate_and_apply_trading_application_configuration(
@@ -80,14 +87,32 @@ def test_validate_and_apply_trading_application_configuration_accepts_supported_
     validate_and_apply_trading_application_configuration(settings)
 
 
+def test_validate_and_apply_trading_application_configuration_accepts_quartet_blockchains() -> None:
+    validate_and_apply_trading_application_configuration(
+        _SettingsStub(
+            allowed_chains=["solana", "robinhood", "base", "bsc"],
+            supported_dex_ids=["pumpfun", "pumpswap"],
+        ),
+    )
+
+    assert resolve_trading_allowed_blockchain_networks() == [
+        BlockchainNetwork.SOLANA,
+        BlockchainNetwork.ROBINHOOD,
+        BlockchainNetwork.BASE,
+        BlockchainNetwork.BSC,
+    ]
+
+    validate_and_apply_trading_application_configuration(settings)
+
+
 def test_validate_and_apply_trading_application_configuration_rejects_unsupported_blockchain() -> None:
     with pytest.raises(
             TradingConfigurationError,
-            match=f"{TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE} contains unsupported blockchain 'bsc'",
+            match=f"{TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE} contains unsupported blockchain 'avalanche'",
     ):
         validate_and_apply_trading_application_configuration(
             _SettingsStub(
-                allowed_chains=["bsc"],
+                allowed_chains=["avalanche"],
                 supported_dex_ids=["pumpfun"],
             ),
         )
@@ -96,12 +121,12 @@ def test_validate_and_apply_trading_application_configuration_rejects_unsupporte
 def test_validate_and_apply_trading_application_configuration_rejects_unsupported_dex_id() -> None:
     with pytest.raises(
             TradingConfigurationError,
-            match=f"{TRADING_SOLANA_SUPPORTED_DEX_IDS_ENVIRONMENT_VARIABLE} contains unsupported dex id 'raydium'",
+            match=f"{TRADING_SOLANA_SUPPORTED_DEX_IDS_ENVIRONMENT_VARIABLE} contains unsupported dex id 'unknown-dex'",
     ):
         validate_and_apply_trading_application_configuration(
             _SettingsStub(
                 allowed_chains=["solana"],
-                supported_dex_ids=["raydium"],
+                supported_dex_ids=["unknown-dex"],
             ),
         )
 
@@ -114,6 +139,19 @@ def test_validate_and_apply_trading_application_configuration_rejects_empty_bloc
         validate_and_apply_trading_application_configuration(
             _SettingsStub(
                 allowed_chains=[],
+                supported_dex_ids=["pumpfun"],
+            ),
+        )
+
+
+def test_validate_and_apply_trading_application_configuration_rejects_too_many_blockchains() -> None:
+    with pytest.raises(
+            TradingConfigurationError,
+            match=f"{TRADING_ALLOWED_CHAINS_ENVIRONMENT_VARIABLE} contains 5 blockchains — maximum allowed is 4",
+    ):
+        validate_and_apply_trading_application_configuration(
+            _SettingsStub(
+                allowed_chains=["solana", "robinhood", "base", "bsc", "avalanche"],
                 supported_dex_ids=["pumpfun"],
             ),
         )
@@ -133,8 +171,16 @@ def test_validate_and_apply_trading_application_configuration_rejects_empty_dex_
 
 
 def test_application_supported_constants_define_application_ceiling() -> None:
-    assert TRADING_APPLICATION_SUPPORTED_BLOCKCHAIN_NETWORKS == (BlockchainNetwork.SOLANA,)
-    assert TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS == ("pumpfun", "pumpswap")
+    assert TRADING_APPLICATION_SUPPORTED_BLOCKCHAIN_NETWORKS == (
+        BlockchainNetwork.SOLANA,
+        BlockchainNetwork.ROBINHOOD,
+        BlockchainNetwork.BASE,
+        BlockchainNetwork.BSC,
+    )
+    assert "pumpfun" in TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS
+    assert "jupiter" not in TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS
+    assert "*" not in TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS
+    assert "moonshot" not in TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS
 
 
 def test_validate_live_wallet_configuration_skips_paper_mode() -> None:

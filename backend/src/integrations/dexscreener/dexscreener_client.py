@@ -7,6 +7,9 @@ import httpx
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork, Token
+from src.core.trading.trading_chain_capability_service import (
+    resolve_trading_allowed_blockchain_networks,
+)
 from src.core.utils.format_utils import tail
 from src.integrations.dexscreener.dexscreener_constants import (
     COMMUNITY_TAKEOVERS_ENDPOINT,
@@ -22,6 +25,7 @@ from src.integrations.dexscreener.dexscreener_constants import (
     TOTAL_ADDRESS_HARD_CAP,
 )
 from src.integrations.dexscreener.dexscreener_helpers import (
+    apply_per_chain_trending_quota,
     calculate_trending_rank_score,
     extract_pair_payloads_from_token_batch_response,
     map_pairs_list_payload_to_token_information_list,
@@ -290,9 +294,13 @@ async def fetch_token_information_by_token_addresses(
 
 
 async def fetch_trending_candidates() -> List[DexscreenerTokenInformation]:
-    logger.info("[DEX][HTTP][TREND] Collecting trending candidates from public endpoints.")
+    logger.debug("[DEX][HTTP][TREND] Collecting trending candidates from public endpoints.")
+
+    allowed_blockchain_networks = resolve_trading_allowed_blockchain_networks()
+    allowed_blockchain_network_set = set(allowed_blockchain_networks)
 
     collected_addresses: List[str] = []
+    endpoint_address_counts: dict[str, int] = {}
     endpoints: List[str] = [
         TOKEN_BOOSTS_LATEST_ENDPOINT,
         TOKEN_BOOSTS_TOP_ENDPOINT,
@@ -303,38 +311,85 @@ async def fetch_trending_candidates() -> List[DexscreenerTokenInformation]:
 
     async with httpx.AsyncClient() as client:
         for url in endpoints:
+            endpoint_label = "/".join(url.rsplit("/", 2)[-2:])
             try:
                 payload = await _http_get_json(client, url)
                 extracted = extract_addresses(payload if isinstance(payload, (dict, list)) else None)
                 collected_addresses.extend(extracted)
+                endpoint_address_counts[endpoint_label] = len(extracted)
 
                 payload_size = len(payload) if isinstance(payload, list) else len(payload or {})
                 logger.debug(
                     "[DEX][HTTP][TREND] Fetched %s → payload_items=%s, extracted_addresses=%s.",
-                    "/".join(url.rsplit("/", 2)[-2:]),
+                    endpoint_label,
                     payload_size,
                     len(extracted),
                 )
             except httpx.HTTPError as error:
+                endpoint_address_counts[endpoint_label] = 0
                 logger.warning("[DEX][HTTP][TREND] Read failed for '%s' (%s).", url, error)
 
-    if not collected_addresses:
+    unique_collected_addresses = deduplicate_token_addresses_preserving_order(collected_addresses)
+    logger.info(
+        "[DEX][HTTP][TREND][FUNNEL] Source extraction — endpoints=%s unique_addresses=%d raw_addresses=%d",
+        ",".join(f"{label}={count}" for label, count in sorted(endpoint_address_counts.items())),
+        len(unique_collected_addresses),
+        len(collected_addresses),
+    )
+
+    if not unique_collected_addresses:
         logger.info("[DEX][HTTP][TREND] No addresses collected from trending sources.")
         return []
 
-    pairs_by_address = await fetch_token_information_by_token_addresses(collected_addresses)
+    pairs_by_address = await fetch_token_information_by_token_addresses(unique_collected_addresses)
     if not any(pairs_by_address.values()):
         logger.info("[DEX][HTTP][TREND] Pairs empty for collected addresses.")
         return []
 
     token_information: List[DexscreenerTokenInformation] = []
+    addresses_without_pairs = 0
+    filtered_disallowed_chain_count = 0
+    dex_counts: dict[str, int] = {}
+    chain_counts: dict[str, int] = {}
     for address, pairs in pairs_by_address.items():
         best_pair = select_best_pair(pairs)
         if best_pair is None:
+            addresses_without_pairs += 1
+            continue
+        if best_pair.chain_id not in allowed_blockchain_network_set:
+            filtered_disallowed_chain_count += 1
             continue
         token_information.append(best_pair)
+        dex_key = (best_pair.dex_id or "unknown").strip().lower()
+        chain_key = best_pair.chain_id.value
+        dex_counts[dex_key] = dex_counts.get(dex_key, 0) + 1
+        chain_counts[chain_key] = chain_counts.get(chain_key, 0) + 1
+
+    logger.info(
+        "[DEX][HTTP][TREND][FUNNEL] Pair hydration — hydrated=%d without_pairs=%d "
+        "filtered_disallowed_chains=%d chains=%s top_dexes=%s",
+        len(token_information),
+        addresses_without_pairs,
+        filtered_disallowed_chain_count,
+        ",".join(f"{chain}={count}" for chain, count in sorted(chain_counts.items())),
+        ",".join(
+            f"{dex_id}={count}"
+            for dex_id, count in sorted(dex_counts.items(), key=lambda item: item[1], reverse=True)[:8]
+        ),
+    )
 
     token_information.sort(key=calculate_trending_rank_score, reverse=True)
-    limited_rows = token_information[:settings.DEXSCREENER_TRENDING_PAGE_SIZE]
-    logger.info("[DEX][HTTP][TREND] Returning %d trending candidates.", len(limited_rows))
+
+    limited_rows = apply_per_chain_trending_quota(
+        ranked_token_information=token_information,
+        page_size=settings.DEXSCREENER_TRENDING_PAGE_SIZE,
+        allowed_blockchain_networks=allowed_blockchain_networks,
+    )
+
+    logger.info(
+        "[DEX][HTTP][TREND][FUNNEL] Returning %d trending candidates (ranked=%d page_size=%d).",
+        len(limited_rows),
+        len(token_information),
+        settings.DEXSCREENER_TRENDING_PAGE_SIZE,
+    )
     return limited_rows

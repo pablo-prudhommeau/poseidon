@@ -11,13 +11,16 @@ from src.integrations.dexscreener.dexscreener_client import (
     fetch_dexscreener_token_information_list_sync,
     fetch_trending_candidates,
 )
+from src.integrations.dexscreener.dexscreener_helpers import (
+    map_token_information_to_trading_market_snapshot,
+    map_token_information_to_trading_token,
+)
 from src.integrations.dexscreener.dexscreener_structures import DexscreenerTokenInformation
 from src.integrations.dexscreener.dexscreener_utils import (
     index_dexscreener_token_information_list,
-    map_token_information_to_trading_market_snapshot,
-    map_token_information_to_trading_token,
     resolve_dexscreener_token_information_for_token,
 )
+
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)

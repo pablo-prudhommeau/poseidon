@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from src.core.structures.structures import BlockchainNetwork
+from src.core.trading.gasreserve.evm.trading_gas_reserve_evm_service import (
+    build_evm_blockchain_cash_balance_gas_reserve_enrichment,
+    compute_evm_gas_refill_locked_stablecoin_snapshot,
+    compute_evm_wallet_auxiliary_assets_snapshot,
+    is_evm_gas_reserve_sufficient_for_buy,
+)
 from src.core.trading.gasreserve.evm.trading_gas_reserve_evm_structures import EvmOnchainWalletContext
 from src.core.trading.gasreserve.trading_gas_reserve_chain_handler import TradingGasReserveChainHandler
 from src.core.trading.gasreserve.trading_gas_reserve_structures import (
@@ -28,21 +34,13 @@ class TradingGasReserveEvmHandler(TradingGasReserveChainHandler):
         return self._blockchain_network
 
     def is_gas_reserve_sufficient_for_buy(self) -> bool:
-        raise NotImplementedError(
-            f"Gas reserve buy guard is not implemented for blockchain '{self._blockchain_network.value}'",
-        )
+        return is_evm_gas_reserve_sufficient_for_buy(self._wallet_context)
 
     def compute_gas_refill_locked_stablecoin_snapshot(self) -> GasRefillLockedStablecoinSnapshot:
-        raise NotImplementedError(
-            f"Gas reserve locked stablecoin snapshot is not implemented for blockchain '{self._blockchain_network.value}'",
-        )
+        return compute_evm_gas_refill_locked_stablecoin_snapshot(self._wallet_context)
 
     def compute_wallet_auxiliary_assets_snapshot(self) -> WalletAuxiliaryAssetsSnapshot:
-        raise NotImplementedError(
-            f"Wallet auxiliary assets snapshot is not implemented for blockchain '{self._blockchain_network.value}'",
-        )
+        return compute_evm_wallet_auxiliary_assets_snapshot(self._wallet_context)
 
     def build_blockchain_cash_balance_gas_reserve_enrichment(self) -> BlockchainCashBalanceGasReserveEnrichment:
-        raise NotImplementedError(
-            f"Blockchain cash balance gas reserve enrichment is not implemented for blockchain '{self._blockchain_network.value}'",
-        )
+        return build_evm_blockchain_cash_balance_gas_reserve_enrichment(self._wallet_context)

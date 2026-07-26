@@ -46,6 +46,7 @@ def _get_native_token_symbol_for_blockchain(blockchain: BlockchainNetwork) -> st
         BlockchainNetwork.BSC: "BNB",
         BlockchainNetwork.BASE: "ETH",
         BlockchainNetwork.AVALANCHE: "AVAX",
+        BlockchainNetwork.ROBINHOOD: "ETH",
     }
     if blockchain not in mapping:
         raise ValueError(f"No native token symbol configured for blockchain {blockchain.value}")

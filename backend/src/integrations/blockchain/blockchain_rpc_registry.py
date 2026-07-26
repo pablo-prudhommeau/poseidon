@@ -2,16 +2,15 @@ from __future__ import annotations
 
 from typing import Optional
 
+import time
+
 from web3 import AsyncWeb3, Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 
-from src.configuration.config import settings
+from src.core.structures.structures import BlockchainNetwork
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
-
-from src.core.structures.structures import BlockchainNetwork
-import time
 
 FREE_RPC_ENDPOINTS: dict[BlockchainNetwork, list[str]] = {
     BlockchainNetwork.SOLANA: [
@@ -32,6 +31,9 @@ FREE_RPC_ENDPOINTS: dict[BlockchainNetwork, list[str]] = {
     BlockchainNetwork.AVALANCHE: [
         "https://api.avax.network/ext/bc/C/rpc",
         "https://rpc.ankr.com/avalanche",
+    ],
+    BlockchainNetwork.ROBINHOOD: [
+        "https://rpc.mainnet.chain.robinhood.com",
     ],
 }
 
@@ -82,10 +84,13 @@ _PREMIUM_RPC_SETTING_NAME_BY_CHAIN: dict[BlockchainNetwork, str] = {
     BlockchainNetwork.BSC: "RPC_PREMIUM_URL_BSC",
     BlockchainNetwork.BASE: "RPC_PREMIUM_URL_BASE",
     BlockchainNetwork.AVALANCHE: "RPC_PREMIUM_URL_AVALANCHE",
+    BlockchainNetwork.ROBINHOOD: "RPC_PREMIUM_URL_ROBINHOOD",
 }
 
 
 def _get_premium_rpc_url(chain: BlockchainNetwork) -> str:
+    from src.configuration.config import settings
+
     setting_name = _PREMIUM_RPC_SETTING_NAME_BY_CHAIN.get(chain)
     if setting_name is None:
         return ""

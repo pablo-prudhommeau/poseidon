@@ -66,7 +66,17 @@ def test_is_gas_reserve_sufficient_for_buy_when_blockchain_not_allowed() -> None
     with patch("src.core.trading.gasreserve.trading_gas_reserve_service.settings") as mock_settings:
         mock_settings.TRADING_PAPER_MODE = False
         with pytest.raises(TradingConfigurationError):
-            is_gas_reserve_sufficient_for_buy(BlockchainNetwork.BSC)
+            is_gas_reserve_sufficient_for_buy(BlockchainNetwork.PAPER)
+
+
+def test_is_gas_reserve_sufficient_for_buy_on_evm_chain() -> None:
+    with patch("src.core.trading.gasreserve.trading_gas_reserve_service.settings") as mock_settings:
+        mock_settings.TRADING_PAPER_MODE = False
+        with patch(
+            "src.core.trading.gasreserve.trading_gas_reserve_service.is_evm_gas_reserve_sufficient_for_buy_on_blockchain",
+            return_value=True,
+        ):
+            assert is_gas_reserve_sufficient_for_buy(BlockchainNetwork.BASE) is True
 
 
 def test_is_solana_gas_reserve_sufficient_for_buy_when_balance_unavailable() -> None:

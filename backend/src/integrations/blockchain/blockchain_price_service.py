@@ -16,6 +16,7 @@ from src.integrations.blockchain.solana.blockchain_solana_price_reader import (
     read_solana_pool_price_usd,
     read_solana_pool_prices_usd_batch,
 )
+from src.integrations.blockchain.solana.solana_structures import SolanaPoolPriceRequest
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -32,6 +33,7 @@ def fetch_onchain_price_for_token(token: Token) -> float:
             blockchain_network=chain or BlockchainNetwork.SOLANA,
         )
 
+    price_usd: float | None = None
     if chain == BlockchainNetwork.SOLANA:
         price_usd = read_solana_pool_price_usd(pair_address, token_address, token.dex_id)
     elif chain in get_supported_evm_chains():
@@ -50,7 +52,8 @@ def fetch_onchain_price_for_token(token: Token) -> float:
 
     if price_usd is None or price_usd <= 0.0:
         raise BlockchainPriceUnavailableError(
-            f"[BLOCKCHAIN][PRICE][SERVICE] No valid on-chain price for {token.symbol} ({pair_address[:10]}) on {chain.value}",
+            f"[BLOCKCHAIN][PRICE][SERVICE] No valid on-chain price for {token.symbol} "
+            f"({pair_address[:10]}) on {chain.value}",
             blockchain_network=chain,
         )
 
@@ -67,27 +70,27 @@ SOLANA_PRICE_BATCH_FALLBACK_CHUNK_SIZE = 20
 
 
 def _fetch_solana_pool_prices_resilient(
-        pool_descriptors: list[tuple[str, str, str]],
+        pool_price_requests: list[SolanaPoolPriceRequest],
 ) -> tuple[dict[str, float], bool]:
-    if not pool_descriptors:
+    if not pool_price_requests:
         return {}, False
 
     encountered_infrastructure_failure = False
 
     try:
-        return read_solana_pool_prices_usd_batch(pool_descriptors), False
+        return read_solana_pool_prices_usd_batch(pool_price_requests), False
     except BlockchainPriceUnavailableError:
         encountered_infrastructure_failure = True
         logger.warning(
             "[BLOCKCHAIN][PRICE][SERVICE] Batch Solana price fetch failed — falling back to chunked/per-token fetch (%d pools)",
-            len(pool_descriptors),
+            len(pool_price_requests),
         )
 
     resolved_prices_by_token_address: dict[str, float] = {}
     chunk_size = SOLANA_PRICE_BATCH_FALLBACK_CHUNK_SIZE
 
-    for chunk_start_index in range(0, len(pool_descriptors), chunk_size):
-        chunk = pool_descriptors[chunk_start_index:chunk_start_index + chunk_size]
+    for chunk_start_index in range(0, len(pool_price_requests), chunk_size):
+        chunk = pool_price_requests[chunk_start_index:chunk_start_index + chunk_size]
         try:
             chunk_prices = read_solana_pool_prices_usd_batch(chunk)
             resolved_prices_by_token_address.update(chunk_prices)
@@ -95,16 +98,20 @@ def _fetch_solana_pool_prices_resilient(
         except BlockchainPriceUnavailableError:
             encountered_infrastructure_failure = True
 
-        for token_address, pair_address, dex_id in chunk:
-            if token_address in resolved_prices_by_token_address:
+        for pool_price_request in chunk:
+            if pool_price_request.token_address in resolved_prices_by_token_address:
                 continue
             try:
-                price_usd = read_solana_pool_price_usd(pair_address, token_address, dex_id)
+                price_usd = read_solana_pool_price_usd(
+                    pool_price_request.pair_address,
+                    pool_price_request.token_address,
+                    pool_price_request.dex_id,
+                )
             except BlockchainPriceUnavailableError:
                 encountered_infrastructure_failure = True
                 continue
             if price_usd is not None and price_usd > 0.0:
-                resolved_prices_by_token_address[token_address] = price_usd
+                resolved_prices_by_token_address[pool_price_request.token_address] = price_usd
 
     had_infrastructure_failure = encountered_infrastructure_failure and not resolved_prices_by_token_address
     return resolved_prices_by_token_address, had_infrastructure_failure
@@ -176,36 +183,31 @@ def _build_onchain_prices_for_tokens(
 
     if solana_tokens:
         seen_solana_pair_addresses: set[str] = set()
-        pool_descriptors: list[tuple[str, str, str]] = []
+        pool_price_requests: list[SolanaPoolPriceRequest] = []
         for solana_token in solana_tokens:
             if solana_token.pair_address not in seen_solana_pair_addresses:
                 seen_solana_pair_addresses.add(solana_token.pair_address)
-                pool_descriptors.append((
-                    solana_token.token_address,
-                    solana_token.pair_address,
-                    solana_token.dex_id,
-                ))
+                pool_price_requests.append(
+                    SolanaPoolPriceRequest(
+                        token_address=solana_token.token_address,
+                        pair_address=solana_token.pair_address,
+                        dex_id=solana_token.dex_id,
+                    ),
+                )
 
         solana_prices_by_token_address, solana_had_infrastructure_failure = _fetch_solana_pool_prices_resilient(
-            pool_descriptors,
+            pool_price_requests,
         )
         had_infrastructure_failure = had_infrastructure_failure or solana_had_infrastructure_failure
 
         for solana_token in solana_tokens:
             if solana_token.pair_address in seen_pair_addresses:
                 continue
-            if solana_token.token_address not in solana_prices_by_token_address:
+            price_usd = solana_prices_by_token_address.get(solana_token.token_address)
+            if price_usd is None or price_usd <= 0.0:
                 if require_all_prices:
                     raise BlockchainPriceUnavailableError(
                         f"[BLOCKCHAIN][PRICE][SERVICE] No valid Solana on-chain price for {solana_token.symbol}",
-                        blockchain_network=BlockchainNetwork.SOLANA,
-                    )
-                continue
-            price_usd = solana_prices_by_token_address[solana_token.token_address]
-            if price_usd <= 0.0:
-                if require_all_prices:
-                    raise BlockchainPriceUnavailableError(
-                        f"[BLOCKCHAIN][PRICE][SERVICE] Non-positive Solana on-chain price for {solana_token.symbol}",
                         blockchain_network=BlockchainNetwork.SOLANA,
                     )
                 continue
@@ -254,7 +256,8 @@ def _build_onchain_prices_for_tokens(
         if price_usd is None or price_usd <= 0.0:
             if require_all_prices:
                 raise BlockchainPriceUnavailableError(
-                    f"[BLOCKCHAIN][PRICE][SERVICE] No valid on-chain price for {token.symbol} ({token.pair_address[:10]}) on {token.chain.value}",
+                    f"[BLOCKCHAIN][PRICE][SERVICE] No valid on-chain price for {token.symbol} "
+                    f"({token.pair_address[:10]}) on {token.chain.value}",
                     blockchain_network=token.chain,
                 )
             continue

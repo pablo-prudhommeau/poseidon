@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Optional, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,17 +17,6 @@ class SolanaRpcFailureReason(str, Enum):
     NETWORK_ERROR = "NETWORK_ERROR"
     MISSING_ACCOUNT = "MISSING_ACCOUNT"
     INVALID_ACCOUNT_DATA = "INVALID_ACCOUNT_DATA"
-
-
-class SolanaPriceParseResources(BaseModel):
-    vault_balances_by_address: dict[str, int]
-    mint_decimals_by_address: dict[str, int]
-
-    def resolve_vault_balance_raw(self, vault_address: str) -> int | None:
-        return self.vault_balances_by_address.get(vault_address)
-
-    def resolve_mint_decimals(self, mint_address: str) -> int | None:
-        return self.mint_decimals_by_address.get(mint_address)
 
 
 class SolanaTransactionConfirmationResult(BaseModel):
@@ -57,12 +46,69 @@ class SolanaTransactionFeeBreakdown(BaseModel):
     swap_fee_usd: float
 
 
-class SolanaPoolPriceResult(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+class SolanaPoolParsedPrice(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     price_in_quote_token: float
     quote_token_mint: str
+
+
+class SolanaDexPoolPriceParser(Protocol):
+    def parse_pool_price(
+            self,
+            rpc_url: str,
+            account_data: bytes,
+            target_token_address: str,
+            owner_program: str,
+    ) -> Optional[SolanaPoolParsedPrice]:
+        ...
+
+
+class SolanaOnchainPoolPriceParserBinding(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True, arbitrary_types_allowed=True)
+
     dex_identifier: str
+    parser: object
+
+
+class SolanaOnchainPoolPriceParserRegistry(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True, arbitrary_types_allowed=True)
+
+    bindings: list[SolanaOnchainPoolPriceParserBinding]
+
+    def dex_identifiers(self) -> tuple[str, ...]:
+        return tuple(binding.dex_identifier for binding in self.bindings)
+
+    def has_parser(self, dex_identifier: str) -> bool:
+        normalized_dex_identifier = dex_identifier.strip().lower()
+        for binding in self.bindings:
+            if binding.dex_identifier == normalized_dex_identifier:
+                return True
+        return False
+
+    def resolve_parser(self, dex_identifier: str) -> Optional[SolanaDexPoolPriceParser]:
+        normalized_dex_identifier = dex_identifier.strip().lower()
+        for binding in self.bindings:
+            if binding.dex_identifier == normalized_dex_identifier:
+                return cast(SolanaDexPoolPriceParser, binding.parser)
+        return None
+
+
+class SolanaVaultBalanceDecimalsSnapshot(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    vault_balance_a_raw: int
+    vault_balance_b_raw: int
+    decimals_a: int
+    decimals_b: int
+
+
+class SolanaPoolPriceRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    token_address: str
+    pair_address: str
+    dex_id: str
 
 
 class SolanaMintFreezeAuthoritySnapshot(BaseModel):

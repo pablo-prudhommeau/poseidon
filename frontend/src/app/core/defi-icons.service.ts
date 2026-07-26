@@ -52,14 +52,33 @@ const CHAIN_TO_TRUST_WALLET_FOLDER: Record<string, string> = {
     optimism: 'optimism',
     fantom: 'fantom',
     base: 'base',
+    robinhood: 'ethereum',
     sol: 'solana',
     solana: 'solana'
+};
+
+const CHAIN_TO_DEFILLAMA_SLUG: Record<string, string> = {
+    eth: 'ethereum',
+    ethereum: 'ethereum',
+    bsc: 'bsc',
+    bnb: 'bsc',
+    robinhood: 'ethereum',
+    sol: 'solana',
+    solana: 'solana',
+    avax: 'avalanche',
+    avalanche: 'avalanche'
 };
 
 const DEXSCREENER_ID_TO_DEFILLAMA_SLUG: Record<string, string> = {
     pumpfun: 'pump.fun',
     'pump-fun': 'pump.fun',
+    pumpswap: 'pumpswap',
+    raydium: 'raydium',
     'raydium-amm': 'raydium',
+    'raydium-clmm': 'raydium',
+    'raydium-cpmm': 'raydium',
+    orca: 'orca',
+    meteora: 'meteora',
     'uniswap-v2': 'uniswap',
     'uniswap-v3': 'uniswap',
     'uniswap-v4': 'uniswap',
@@ -155,9 +174,17 @@ export class DefiIconsService {
 
     private buildChainIconCandidates(chainName: string): string[] {
         const candidates: string[] = [];
+        const slugVariants = new Set<string>();
         if (chainName) {
+            slugVariants.add(chainName);
+            const mappedSlug = CHAIN_TO_DEFILLAMA_SLUG[chainName];
+            if (mappedSlug) {
+                slugVariants.add(mappedSlug);
+            }
+        }
+        for (const slug of slugVariants) {
             for (const extension of ICON_EXTENSIONS) {
-                candidates.push(`https://icons.llamao.fi/icons/chains/rsz_${chainName}${extension}`);
+                candidates.push(`https://icons.llamao.fi/icons/chains/rsz_${slug}${extension}`);
             }
         }
         candidates.push('https://icons.llamao.fi/icons/chains/rsz_unknown.jpg');

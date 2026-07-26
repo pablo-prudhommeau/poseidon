@@ -6,7 +6,7 @@ from typing import Optional, List, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.structures.structures import Token
+from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.screener.trading_screener_structures import TradingScreenerEnvelope
 from src.core.trading.shadowing.trading_shadowing_structures import TradingCandidateShadowingDiagnostics
 from src.integrations.blockchain.blockchain_structures import BlockchainExecutionRoute
@@ -133,6 +133,25 @@ class GasRefillBudgetDetailScope(str, enum.Enum):
     EVM_SWAP_FEES_ONLY = "evm_swap_fees_only"
 
 
+class TradingStablecoinAddressBinding(BaseModel):
+    blockchain_network: BlockchainNetwork
+    address: str
+
+
+class TradingCapabilitiesSnapshot(BaseModel):
+    allowed_blockchain_networks: tuple[BlockchainNetwork, ...]
+    supported_solana_dex_identifiers: tuple[str, ...]
+    stablecoin_address_bindings: list[TradingStablecoinAddressBinding]
+
+    def resolve_stablecoin_address(self, blockchain_network: BlockchainNetwork) -> str:
+        for stablecoin_address_binding in self.stablecoin_address_bindings:
+            if stablecoin_address_binding.blockchain_network == blockchain_network:
+                return stablecoin_address_binding.address
+        raise TradingConfigurationError(
+            f"No stablecoin address binding configured for blockchain '{blockchain_network.value}'",
+        )
+
+
 class TradingApplicationBootConfigurationSettings(Protocol):
     TRADING_ALLOWED_CHAINS: list[str]
     TRADING_SOLANA_SUPPORTED_DEX_IDS: list[str]
@@ -143,3 +162,6 @@ class TradingApplicationBootConfigurationSettings(Protocol):
     TRADING_STABLECOIN_ADDRESS_BSC: str
     TRADING_STABLECOIN_ADDRESS_BASE: str
     TRADING_STABLECOIN_ADDRESS_AVALANCHE: str
+    TRADING_STABLECOIN_ADDRESS_ROBINHOOD: str
+    LIFI_API_KEY: str
+    LIFI_INTEGRATION_ID: str

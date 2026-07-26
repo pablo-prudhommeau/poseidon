@@ -1,26 +1,20 @@
 from __future__ import annotations
 
-from src.core.trading.trading_structures import TradingConfigurationError
+from src.core.trading.trading_chain_capability_service import resolve_trading_capabilities_snapshot
 
 TRADING_APPLICATION_SUPPORTED_SOLANA_DEX_IDS: tuple[str, ...] = (
     "pumpfun",
     "pumpswap",
+    "raydium",
+    "raydium-clmm",
+    "raydium-cpmm",
+    "orca",
+    "meteora",
 )
-
-_effective_supported_trading_solana_dex_ids: tuple[str, ...] | None = None
-
-
-def apply_supported_trading_solana_dex_configuration(supported_dex_ids: list[str]) -> None:
-    global _effective_supported_trading_solana_dex_ids
-    _effective_supported_trading_solana_dex_ids = tuple(supported_dex_ids)
 
 
 def resolve_supported_trading_solana_dex_ids() -> list[str]:
-    if _effective_supported_trading_solana_dex_ids is None:
-        raise TradingConfigurationError(
-            "Trading Solana dex configuration has not been applied — application startup validation must run first",
-        )
-    return list(_effective_supported_trading_solana_dex_ids)
+    return list(resolve_trading_capabilities_snapshot().supported_solana_dex_identifiers)
 
 
 def resolve_supported_trading_dex_identifiers() -> tuple[str, ...]:
@@ -29,6 +23,8 @@ def resolve_supported_trading_dex_identifiers() -> tuple[str, ...]:
 
 def is_supported_trading_solana_dex_id(dex_id: str) -> bool:
     normalized_dex_id = dex_id.strip().lower()
+    if not normalized_dex_id:
+        return False
     for supported_dex_id in resolve_supported_trading_solana_dex_ids():
         if supported_dex_id == normalized_dex_id:
             return True
