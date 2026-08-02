@@ -8,6 +8,7 @@ def test_trading_shadowing_verdict_cycle_statistics_merge_aggregates_counters() 
         pending_verdict_count=100,
         resolved_verdict_count=12,
         resolved_honeypot_count=2,
+        resolved_staled_persistent_slippage_count=7,
         deferred_onchain_price_unavailable_count=3,
     )
     second_batch = TradingShadowingVerdictCycleStatistics(
@@ -25,6 +26,7 @@ def test_trading_shadowing_verdict_cycle_statistics_merge_aggregates_counters() 
     assert cycle_statistics.resolved_verdict_count == 16
     assert cycle_statistics.resolved_honeypot_count == 2
     assert cycle_statistics.resolved_lethargic_count == 1
+    assert cycle_statistics.resolved_staled_persistent_slippage_count == 7
     assert cycle_statistics.deferred_onchain_price_unavailable_count == 3
     assert cycle_statistics.deferred_transient_slippage_count == 5
 
@@ -32,12 +34,14 @@ def test_trading_shadowing_verdict_cycle_statistics_merge_aggregates_counters() 
 def test_trading_shadowing_verdict_cycle_statistics_format_non_zero_breakdown() -> None:
     cycle_statistics = TradingShadowingVerdictCycleStatistics(
         resolved_honeypot_count=2,
+        resolved_staled_persistent_slippage_count=4,
         deferred_onchain_price_unavailable_count=3,
     )
 
     breakdown = cycle_statistics.format_non_zero_breakdown()
 
     assert "honeypot=2" in breakdown
+    assert "staled_persistent_slippage=4" in breakdown
     assert "deferred_onchain=3" in breakdown
     assert "lethargic=" not in breakdown
 

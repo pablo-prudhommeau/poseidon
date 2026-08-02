@@ -244,6 +244,7 @@ class TradingShadowingVerdict(DatabaseBaseModel):
     stop_loss_hit_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     post_take_profit_tier_1_breakeven_touched_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     post_take_profit_tier_1_lowest_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    transient_slippage_first_deferred_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     exit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     realized_pnl_percentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     realized_pnl_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

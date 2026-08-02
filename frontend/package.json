@@ -69,7 +69,7 @@
         "eslint": "9.39.4",
         "eslint-plugin-perfectionist": "5.9.0",
         "jiti": "2.7.0",
-        "postcss": "8.5.14",
+        "postcss": "8.5.25",
         "prettier": "3.8.3",
         "tailwindcss": "4.3.0",
         "typescript": "5.9.3",

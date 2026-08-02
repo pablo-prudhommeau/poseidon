@@ -222,6 +222,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
     resolved_staled_missing_dex_price_count: int = 0
     resolved_staled_aberrant_onchain_dex_price_count: int = 0
     resolved_staled_unrecoverable_onchain_price_count: int = 0
+    resolved_staled_persistent_slippage_count: int = 0
     resolved_honeypot_count: int = 0
     resolved_lethargic_count: int = 0
     resolved_take_profit_2_count: int = 0
@@ -238,6 +239,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
         self.resolved_staled_missing_dex_price_count += other.resolved_staled_missing_dex_price_count
         self.resolved_staled_aberrant_onchain_dex_price_count += other.resolved_staled_aberrant_onchain_dex_price_count
         self.resolved_staled_unrecoverable_onchain_price_count += other.resolved_staled_unrecoverable_onchain_price_count
+        self.resolved_staled_persistent_slippage_count += other.resolved_staled_persistent_slippage_count
         self.resolved_honeypot_count += other.resolved_honeypot_count
         self.resolved_lethargic_count += other.resolved_lethargic_count
         self.resolved_take_profit_2_count += other.resolved_take_profit_2_count
@@ -257,6 +259,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
             ("staled_missing_dex", self.resolved_staled_missing_dex_price_count),
             ("staled_aberrant_onchain_dex", self.resolved_staled_aberrant_onchain_dex_price_count),
             ("staled_unrecoverable_onchain", self.resolved_staled_unrecoverable_onchain_price_count),
+            ("staled_persistent_slippage", self.resolved_staled_persistent_slippage_count),
             ("honeypot", self.resolved_honeypot_count),
             ("lethargic", self.resolved_lethargic_count),
             ("take_profit_2", self.resolved_take_profit_2_count),

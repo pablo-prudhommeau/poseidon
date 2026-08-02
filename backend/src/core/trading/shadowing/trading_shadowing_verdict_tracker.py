@@ -120,6 +120,7 @@ class TradingShadowingVerdictTracker:
             if current_price >= verdict.take_profit_tier_2_price or current_price <= verdict.stop_loss_price:
                 resolving_candidates.append((verdict, current_price))
             else:
+                verdict.transient_slippage_first_deferred_at = None
                 aware_probed_at = ensure_timezone_aware(probe.probed_at) or current_time
                 age_hours = (current_time - aware_probed_at).total_seconds() / 3600.0
 
@@ -193,6 +194,7 @@ class TradingShadowingVerdictTracker:
 
                 maximum_slippage = settings.TRADING_MAX_SLIPPAGE
                 aberrant_price_tolerance = settings.TRADING_SHADOWING_DEXSCREENER_ABERRANT_PRICE_TOLERANCE
+                transient_slippage_max_hours = settings.TRADING_SHADOWING_TRANSIENT_SLIPPAGE_MAX_HOURS
 
                 for verdict, dex_price in onchain_resolvable_candidates:
                     probe = verdict.probe
@@ -232,13 +234,47 @@ class TradingShadowingVerdictTracker:
                         continue
 
                     if relative_deviation > maximum_slippage:
-                        batch_statistics.deferred_transient_slippage_count += 1
-                        logger.debug(
-                            "[TRADING][SHADOWING][VERDICT] Skipping %s — transient slippage %.1f%% (onchain=%.12f dex=%.12f), will retry next cycle",
-                            probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price,
+                        if verdict.transient_slippage_first_deferred_at is None:
+                            verdict.transient_slippage_first_deferred_at = current_time
+                            batch_statistics.deferred_transient_slippage_count += 1
+                            logger.debug(
+                                "[TRADING][SHADOWING][VERDICT] Skipping %s — transient slippage %.1f%% (onchain=%.12f dex=%.12f), will retry next cycle",
+                                probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price,
+                            )
+                            continue
+
+                        aware_first_deferred_at = (
+                                ensure_timezone_aware(verdict.transient_slippage_first_deferred_at)
+                                or current_time
                         )
+                        episode_hours = (current_time - aware_first_deferred_at).total_seconds() / 3600.0
+                        if episode_hours < transient_slippage_max_hours:
+                            batch_statistics.deferred_transient_slippage_count += 1
+                            logger.debug(
+                                "[TRADING][SHADOWING][VERDICT] Skipping %s — transient slippage %.1f%% for %.1fh (onchain=%.12f dex=%.12f), will retry next cycle",
+                                probe.token_symbol,
+                                relative_deviation * 100.0,
+                                episode_hours,
+                                onchain_price,
+                                dex_price,
+                            )
+                            continue
+
+                        logger.info(
+                            "[TRADING][SHADOWING][VERDICT] %s marked as STALED — persistent slippage %.1f%% for %.1fh "
+                            "(onchain=%.12f dex=%.12f), probe entry price untrustworthy, stopping retries",
+                            probe.token_symbol,
+                            relative_deviation * 100.0,
+                            episode_hours,
+                            onchain_price,
+                            dex_price,
+                        )
+                        self._attach_stale_verdict(verdict, probe, current_time)
+                        batch_statistics.resolved_verdict_count += 1
+                        batch_statistics.resolved_staled_persistent_slippage_count += 1
                         continue
 
+                    verdict.transient_slippage_first_deferred_at = None
                     if self._evaluate_price_against_thresholds(verdict, probe, onchain_price, current_time):
                         batch_statistics.resolved_verdict_count += 1
                         if verdict.exit_reason == "TAKE_PROFIT_2":

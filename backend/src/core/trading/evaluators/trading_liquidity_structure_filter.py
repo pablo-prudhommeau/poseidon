@@ -57,6 +57,12 @@ def apply_liquidity_structure_filter(candidates: list[TradingCandidate]) -> list
             rejected_inflated_valuation_count += 1
             continue
 
+        logger.debug(
+            "[TRADING][FILTER][LIQUIDITY_STRUCTURE] %s (%s) retained — market cap / liquidity %.2f in [%.2f, %.2f] (market_cap=%.0f liquidity=%.0f)",
+            symbol, short_address, market_cap_to_liquidity_ratio,
+            minimum_market_cap_to_liquidity_ratio, maximum_market_cap_to_liquidity_ratio,
+            market_cap_usd, liquidity_usd,
+        )
         retained.append(candidate)
 
     logger.info(
