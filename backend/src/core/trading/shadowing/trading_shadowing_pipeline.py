@@ -160,6 +160,7 @@ class TradingShadowingPipeline:
                                 and scoring_response.toxicity_probability is not None
                                 and scoring_response.expected_profit_and_loss_percentage is not None
                                 and scoring_response.predicted_holding_time_minutes is not None
+                                and scoring_response.fragility_probability is not None
                                 and scoring_response.final_trade_score is not None
                         ):
                             candidate.cortex_diagnostics.inference_snapshot = TradingCortexInferenceSnapshot(
@@ -167,6 +168,7 @@ class TradingShadowingPipeline:
                                 toxicity_probability=scoring_response.toxicity_probability,
                                 expected_profit_and_loss_percentage=scoring_response.expected_profit_and_loss_percentage,
                                 predicted_holding_time_minutes=scoring_response.predicted_holding_time_minutes,
+                                fragility_probability=scoring_response.fragility_probability,
                                 final_trade_score=scoring_response.final_trade_score,
                                 model_version=scoring_response.model_version,
                                 model_ready=scoring_response.model_ready,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
+import numpy
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.configuration.config import settings
@@ -37,7 +38,6 @@ class TradingCortexCandidateFeatureSnapshot(BaseModel):
     transaction_count_6h: float
     transaction_count_24h: float
     buy_to_sell_ratio: float
-    order_notional_value_usd: Optional[float] = None
 
 
 class TradingCortexShadowingRegimeFeatureSnapshot(BaseModel):
@@ -83,6 +83,7 @@ class TradingCortexPrediction(BaseModel):
     toxicity_probability: float
     expected_profit_and_loss_percentage: float
     predicted_holding_time_minutes: float
+    fragility_probability: float
     used_model_names: list[str] = Field(default_factory=list)
 
 
@@ -110,6 +111,24 @@ class TradingCortexFeatureVectorSnapshot(BaseModel):
         return ordered_feature_values
 
 
+class TradingCortexBatchPrediction(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    success_probabilities: numpy.ndarray
+    toxicity_probabilities: numpy.ndarray
+    expected_profit_and_loss_percentages: numpy.ndarray
+    predicted_holding_time_minutes: numpy.ndarray
+    fragility_probabilities: numpy.ndarray
+
+
+class TradingCortexGateThresholds(BaseModel):
+    success_probability_threshold: float
+    toxicity_probability_threshold: float
+    fragility_probability_threshold: float
+    derived_from_quantiles: bool
+    sample_count: int
+
+
 class TradingCortexFinalScoreBreakdown(BaseModel):
     success_signal: float
     toxicity_signal: float
@@ -133,6 +152,7 @@ class TradingCortexScoringResponse(BaseModel):
     toxicity_probability: Optional[float] = None
     expected_profit_and_loss_percentage: Optional[float] = None
     predicted_holding_time_minutes: Optional[float] = None
+    fragility_probability: Optional[float] = None
     final_trade_score: Optional[float] = None
     score_breakdown: Optional[TradingCortexFinalScoreBreakdown] = None
     feature_count: int

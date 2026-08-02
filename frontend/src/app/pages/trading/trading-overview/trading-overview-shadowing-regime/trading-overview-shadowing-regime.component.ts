@@ -105,6 +105,8 @@ export class TradingOverviewShadowingRegimeComponent {
     readonly cortexingProgressVisible = computed(() => this.cortexGateEnabled() && this.shadowingLearningProgressVisible());
     readonly formatMultiplier = formatMultiplier;
     readonly fundamentalsGateEnabled = computed(() => this.shadowingRegime()?.fundamentals_gate_enabled ?? false);
+
+    readonly liquidityStructureGateEnabled = computed(() => this.shadowingRegime()?.liquidity_structure_gate_enabled ?? false);
     readonly openChronicle = output<void>();
 
     readonly phasePalette = computed(() => resolvePhasePalette(this.shadowingPhase()));
@@ -369,6 +371,7 @@ export class TradingOverviewShadowingRegimeComponent {
                 edgeGateSatisfied: this.shadowingEdgeGateSatisfied(),
                 cortexGateEnabled: this.cortexGateEnabled(),
                 fundamentalsGateEnabled: this.fundamentalsGateEnabled(),
+                liquidityStructureGateEnabled: this.liquidityStructureGateEnabled(),
                 toxicMetricsGateEnabled: this.toxicMetricsGateEnabled()
             }
         })

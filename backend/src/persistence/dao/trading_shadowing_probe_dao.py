@@ -1,8 +1,9 @@
 from datetime import datetime
 
 from sqlalchemy import select, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
+from src.core.trading.trading_structures import TradingCortexInferenceSnapshot
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingShadowingProbe
 
@@ -58,6 +59,38 @@ class TradingShadowingProbeDao:
         except Exception as error:
             logger.exception("[DAO][SHADOWING_PROBE] Failed to retrieve recent probes by tokens — %s", error)
             raise
+
+    def retrieve_cortex_inference_summaries_since(
+            self,
+            since: datetime,
+            model_version: str,
+            limit_count: int,
+    ) -> list[TradingCortexInferenceSnapshot]:
+        try:
+            probes = self.database_session.execute(
+                select(TradingShadowingProbe)
+                .options(
+                    load_only(
+                        TradingShadowingProbe.id,
+                        TradingShadowingProbe.cortex_inference_summary,
+                    )
+                )
+                .where(TradingShadowingProbe.probed_at >= since)
+                .where(TradingShadowingProbe.cortex_inference_summary.is_not(None))
+                .order_by(TradingShadowingProbe.probed_at.desc())
+                .limit(limit_count)
+            ).scalars().all()
+        except Exception as error:
+            logger.exception("[DAO][SHADOWING_PROBE] Failed to retrieve cortex inference summaries — %s", error)
+            raise
+
+        inference_summaries: list[TradingCortexInferenceSnapshot] = []
+        for probe in probes:
+            inference_summary = probe.cortex_inference_summary
+            if inference_summary is None or inference_summary.model_version != model_version:
+                continue
+            inference_summaries.append(inference_summary)
+        return inference_summaries
 
     def retrieve_recent_probes(self, limit_count: int) -> list[TradingShadowingProbe]:
         try:

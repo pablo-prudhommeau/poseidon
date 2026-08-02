@@ -115,6 +115,8 @@ class TradingShadowingVerdictTracker:
                 verdict.take_profit_tier_1_hit_at = current_time
                 logger.debug("[TRADING][SHADOWING][VERDICT] %s touched TP1 at %.4f", probe.token_symbol, current_price)
 
+            self._record_post_take_profit_tier_1_retrace(verdict, probe, current_price, current_time)
+
             if current_price >= verdict.take_profit_tier_2_price or current_price <= verdict.stop_loss_price:
                 resolving_candidates.append((verdict, current_price))
             else:
@@ -286,6 +288,33 @@ class TradingShadowingVerdictTracker:
                 )
 
         return batch_statistics
+
+    def _record_post_take_profit_tier_1_retrace(
+            self,
+            verdict: TradingShadowingVerdict,
+            probe: TradingShadowingProbe,
+            current_price: float,
+            current_time: datetime,
+    ) -> None:
+        if verdict.take_profit_tier_1_hit_at is None:
+            return
+
+        previous_lowest_price: Optional[float] = verdict.post_take_profit_tier_1_lowest_price
+        if previous_lowest_price is None or current_price < previous_lowest_price:
+            verdict.post_take_profit_tier_1_lowest_price = current_price
+
+        entry_price: float = probe.entry_price_usd
+        if entry_price <= 0.0 or verdict.post_take_profit_tier_1_breakeven_touched_at is not None:
+            return
+
+        if current_price <= entry_price:
+            verdict.post_take_profit_tier_1_breakeven_touched_at = current_time
+            logger.debug(
+                "[TRADING][SHADOWING][VERDICT][RETRACE] %s fell back to entry after TP1 at %.12f (entry=%.12f)",
+                probe.token_symbol,
+                current_price,
+                entry_price,
+            )
 
     def _evaluate_price_against_thresholds(
             self,

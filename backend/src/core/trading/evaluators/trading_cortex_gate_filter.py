@@ -9,7 +9,9 @@ from src.core.trading.cortex.trading_cortex_inference_provider import (
 from src.core.trading.cortex.trading_cortex_request_builder import (
     TradingCortexRequestBuilder,
 )
+from src.core.trading.cortex.trading_cortex_quantile_gate_service import trading_cortex_quantile_gate_service
 from src.core.trading.cortex.trading_cortex_structures import (
+    TradingCortexGateThresholds,
     TradingCortexScoringBatchRequest,
     TradingCortexScoringResponse,
 )
@@ -31,14 +33,34 @@ def _cortex_holding_time_max_minutes() -> float:
     return settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS * 60.0
 
 
-def _format_cortex_gate_criteria_summary(model_version: Optional[str], feature_set_version: str) -> str:
+def _cortex_holding_time_min_minutes() -> float:
+    return settings.TRADING_CORTEX_HOLDING_TIME_MIN_HOURS * 60.0
+
+
+def is_predicted_holding_time_within_window(predicted_holding_time_minutes: float) -> bool:
     return (
-            "criteria(Win>=%.1f%%, Tox<=%.1f%%, PnL>=%.2f%%, Hold<=%.1fh) model=%s feature_set=%s"
+            _cortex_holding_time_min_minutes() <= predicted_holding_time_minutes <= _cortex_holding_time_max_minutes()
+    )
+
+
+def _format_cortex_gate_criteria_summary(
+        model_version: Optional[str],
+        feature_set_version: str,
+        gate_thresholds: TradingCortexGateThresholds,
+) -> str:
+    threshold_origin: str = (
+        f"quantiles/{gate_thresholds.sample_count} samples" if gate_thresholds.derived_from_quantiles else "absolute"
+    )
+    return (
+            "criteria(Win>=%.1f%%, Tox<=%.1f%%, Frag<=%.1f%%, PnL>=%.2f%%, %.1fh<=Hold<=%.1fh) thresholds=%s model=%s feature_set=%s"
             % (
-                settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD * 100.0,
-                settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD * 100.0,
+                gate_thresholds.success_probability_threshold * 100.0,
+                gate_thresholds.toxicity_probability_threshold * 100.0,
+                gate_thresholds.fragility_probability_threshold * 100.0,
                 settings.TRADING_CORTEX_PNL_THRESHOLD,
+                settings.TRADING_CORTEX_HOLDING_TIME_MIN_HOURS,
                 settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS,
+                threshold_origin,
                 model_version,
                 feature_set_version,
             )
@@ -125,6 +147,10 @@ def apply_trading_cortex_gate_filter(
         if scoring_response.request_identifier
     }
 
+    gate_thresholds: TradingCortexGateThresholds = trading_cortex_quantile_gate_service.resolve_gate_thresholds(
+        first_response.model_version
+    )
+
     retained: list[TradingCandidate] = []
     rejected: list[TradingCandidate] = []
 
@@ -143,7 +169,7 @@ def apply_trading_cortex_gate_filter(
                 retained.append(candidate)
             continue
 
-        gate_verdict = _evaluate_gate_verdict(scoring_response)
+        gate_verdict = _evaluate_gate_verdict(scoring_response, gate_thresholds)
         candidate.cortex_diagnostics.inference_snapshot = _build_inference_snapshot(
             scoring_response=scoring_response,
             gate_verdict=gate_verdict,
@@ -154,11 +180,12 @@ def apply_trading_cortex_gate_filter(
         else:
             rejected.append(candidate)
 
-    _log_cortex_evaluation_details(retained=retained, rejected=rejected)
+    _log_cortex_evaluation_details(retained=retained, rejected=rejected, gate_thresholds=gate_thresholds)
 
     gate_criteria_summary: str = _format_cortex_gate_criteria_summary(
         first_response.model_version,
         first_response.feature_set_version,
+        gate_thresholds,
     )
 
     if rejected:
@@ -181,6 +208,7 @@ def apply_trading_cortex_gate_filter(
 def _log_cortex_evaluation_details(
         retained: list[TradingCandidate],
         rejected: list[TradingCandidate],
+        gate_thresholds: TradingCortexGateThresholds,
 ) -> None:
     red: str = console_color_codes["RED"]
     green: str = console_color_codes["GREEN"]
@@ -199,7 +227,7 @@ def _log_cortex_evaluation_details(
         visual_length: int = get_visual_width(prefix)
         padding: str = " " * max(0, 45 - visual_length)
 
-        metrics_table: str = _format_cortex_metrics_table(snapshot)
+        metrics_table: str = _format_cortex_metrics_table(snapshot, gate_thresholds)
         logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Reasons: %s", prefix, padding, metrics_table)
 
     for candidate in retained_by_score_ascending:
@@ -211,57 +239,70 @@ def _log_cortex_evaluation_details(
         visual_length: int = get_visual_width(prefix)
         padding: str = " " * max(0, 45 - visual_length)
 
-        metrics_table: str = _format_cortex_metrics_table(snapshot)
+        metrics_table: str = _format_cortex_metrics_table(snapshot, gate_thresholds)
         logger.debug("[TRADING][PIPELINE][TRADING][CORTEX][GATE] %s%s Reasons: %s", prefix, padding, metrics_table)
 
 
-def _format_cortex_metrics_table(snapshot: TradingCortexInferenceSnapshot) -> str:
+def _format_cortex_metrics_table(
+        snapshot: TradingCortexInferenceSnapshot,
+        gate_thresholds: TradingCortexGateThresholds,
+) -> str:
     red: str = console_color_codes["RED"]
     grey: str = console_color_codes["GREY"]
     reset: str = console_color_codes["RESET"]
 
     score_str: str = f"{snapshot.final_trade_score:>6.2f}"
 
-    wr_color: str = red if snapshot.success_probability < settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD else grey
+    wr_color: str = red if snapshot.success_probability < gate_thresholds.success_probability_threshold else grey
     wr_str: str = f"{snapshot.success_probability * 100:>5.1f}%"
 
-    tox_color: str = red if snapshot.toxicity_probability > settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD else grey
+    tox_color: str = red if snapshot.toxicity_probability > gate_thresholds.toxicity_probability_threshold else grey
     tox_str: str = f"{snapshot.toxicity_probability * 100:>5.1f}%"
+
+    fragility_color: str = (
+        red if snapshot.fragility_probability > gate_thresholds.fragility_probability_threshold else grey
+    )
+    fragility_str: str = f"{snapshot.fragility_probability * 100:>5.1f}%"
 
     pnl_color: str = red if snapshot.expected_profit_and_loss_percentage < settings.TRADING_CORTEX_PNL_THRESHOLD else grey
     pnl_str: str = f"{snapshot.expected_profit_and_loss_percentage:>7.2f}%"
     holding_value = snapshot.predicted_holding_time_minutes
-    holding_color: str = red if holding_value > _cortex_holding_time_max_minutes() else grey
+    holding_color: str = grey if is_predicted_holding_time_within_window(holding_value) else red
     holding_str: str = f"{holding_value:>6.1f}m"
 
     return (
         f"{grey}Score:{reset} {score_str} {grey}|{reset} "
         f"{grey}Win:{reset} {wr_color}{wr_str}{reset} {grey}|{reset} "
         f"{grey}Tox:{reset} {tox_color}{tox_str}{reset} {grey}|{reset} "
+        f"{grey}Frag:{reset} {fragility_color}{fragility_str}{reset} {grey}|{reset} "
         f"{grey}PnL:{reset} {pnl_color}{pnl_str}{reset} {grey}|{reset} "
         f"{grey}Hold:{reset} {holding_color}{holding_str}{reset}"
     )
 
 
-def _evaluate_gate_verdict(scoring_response: TradingCortexScoringResponse) -> TradingFilterVerdict:
+def _evaluate_gate_verdict(
+        scoring_response: TradingCortexScoringResponse,
+        gate_thresholds: TradingCortexGateThresholds,
+) -> TradingFilterVerdict:
     if (
             scoring_response.success_probability is None
             or scoring_response.toxicity_probability is None
             or scoring_response.expected_profit_and_loss_percentage is None
             or scoring_response.predicted_holding_time_minutes is None
+            or scoring_response.fragility_probability is None
     ):
         raise ValueError("Cannot evaluate cortex gate from incomplete scoring response")
 
     rejection_reasons: list[str] = []
 
-    if scoring_response.success_probability < settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD:
+    if scoring_response.success_probability < gate_thresholds.success_probability_threshold:
         rejection_reasons.append(
-            f"success_probability {scoring_response.success_probability:.3f} < {settings.TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD:.3f}"
+            f"success_probability {scoring_response.success_probability:.3f} < {gate_thresholds.success_probability_threshold:.3f}"
         )
 
-    if scoring_response.toxicity_probability > settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD:
+    if scoring_response.toxicity_probability > gate_thresholds.toxicity_probability_threshold:
         rejection_reasons.append(
-            f"toxicity_probability {scoring_response.toxicity_probability:.3f} > {settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD:.3f}"
+            f"toxicity_probability {scoring_response.toxicity_probability:.3f} > {gate_thresholds.toxicity_probability_threshold:.3f}"
         )
 
     if scoring_response.expected_profit_and_loss_percentage < settings.TRADING_CORTEX_PNL_THRESHOLD:
@@ -273,6 +314,17 @@ def _evaluate_gate_verdict(scoring_response: TradingCortexScoringResponse) -> Tr
     if scoring_response.predicted_holding_time_minutes > holding_time_max_minutes:
         rejection_reasons.append(
             f"predicted_holding_time_minutes {scoring_response.predicted_holding_time_minutes:.1f} > {holding_time_max_minutes:.1f} ({settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS:.1f}h)"
+        )
+
+    holding_time_min_minutes = _cortex_holding_time_min_minutes()
+    if scoring_response.predicted_holding_time_minutes < holding_time_min_minutes:
+        rejection_reasons.append(
+            f"predicted_holding_time_minutes {scoring_response.predicted_holding_time_minutes:.1f} < {holding_time_min_minutes:.1f} ({settings.TRADING_CORTEX_HOLDING_TIME_MIN_HOURS:.1f}h)"
+        )
+
+    if scoring_response.fragility_probability > gate_thresholds.fragility_probability_threshold:
+        rejection_reasons.append(
+            f"fragility_probability {scoring_response.fragility_probability:.3f} > {gate_thresholds.fragility_probability_threshold:.3f}"
         )
 
     return TradingFilterVerdict(
@@ -290,6 +342,7 @@ def _build_inference_snapshot(
             or scoring_response.toxicity_probability is None
             or scoring_response.expected_profit_and_loss_percentage is None
             or scoring_response.predicted_holding_time_minutes is None
+            or scoring_response.fragility_probability is None
             or scoring_response.final_trade_score is None
             or scoring_response.model_version is None
     ):
@@ -299,6 +352,7 @@ def _build_inference_snapshot(
         toxicity_probability=scoring_response.toxicity_probability,
         expected_profit_and_loss_percentage=scoring_response.expected_profit_and_loss_percentage,
         predicted_holding_time_minutes=scoring_response.predicted_holding_time_minutes,
+        fragility_probability=scoring_response.fragility_probability,
         final_trade_score=scoring_response.final_trade_score,
         model_version=scoring_response.model_version,
         model_ready=scoring_response.model_ready,

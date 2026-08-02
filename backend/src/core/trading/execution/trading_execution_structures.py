@@ -21,3 +21,10 @@ class TradingPositionClosingSellResult(BaseModel):
 
     trading_trade: Optional[TradingTrade] = None
     stablecoin_swap_settled_on_chain: bool = False
+
+
+class TradingPositionThresholdEvaluationResult(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    created_trades: list[TradingTrade] = []
+    position_mutated: bool = False

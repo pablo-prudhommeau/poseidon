@@ -25,6 +25,9 @@ class TradingCortexInferenceService:
         self._feature_vector_builder = feature_vector_builder
         self._final_score_service = final_score_service
 
+    def reload_models(self) -> None:
+        self._model_registry_service.reload_models()
+
     def score_trade(self, scoring_request: TradingCortexScoringRequest) -> TradingCortexScoringResponse:
         feature_vector_snapshot = self._feature_vector_builder.build_feature_vector(scoring_request)
 
@@ -39,6 +42,7 @@ class TradingCortexInferenceService:
                 toxicity_probability=None,
                 expected_profit_and_loss_percentage=None,
                 predicted_holding_time_minutes=None,
+                fragility_probability=None,
                 final_trade_score=None,
                 score_breakdown=None,
                 feature_count=len(feature_vector_snapshot.named_feature_values),
@@ -73,6 +77,7 @@ class TradingCortexInferenceService:
             toxicity_probability=model_prediction.toxicity_probability,
             expected_profit_and_loss_percentage=model_prediction.expected_profit_and_loss_percentage,
             predicted_holding_time_minutes=model_prediction.predicted_holding_time_minutes,
+            fragility_probability=model_prediction.fragility_probability,
             final_trade_score=final_score_breakdown.final_trade_score,
             score_breakdown=final_score_breakdown,
             feature_count=len(feature_vector_snapshot.named_feature_values),

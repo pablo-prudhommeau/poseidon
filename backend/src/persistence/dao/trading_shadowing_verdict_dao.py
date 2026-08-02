@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Iterator
+from typing import Iterator, Optional
 
 from sqlalchemy import select, Select
 from sqlalchemy.orm import Session, contains_eager, joinedload, load_only
@@ -99,8 +99,12 @@ class TradingShadowingVerdictDao:
             )
             raise
 
-    def _resolved_for_cortex_training_statement(self) -> Select:
-        return (
+    def _resolved_for_cortex_training_statement(
+            self,
+            include_staled_verdicts: bool,
+            resolved_since: Optional[datetime] = None,
+    ) -> Select:
+        statement = (
             select(TradingShadowingVerdict)
             .join(TradingShadowingProbe)
             .options(
@@ -150,22 +154,53 @@ class TradingShadowingVerdictDao:
             .where(TradingShadowingVerdict.holding_duration_minutes.is_not(None))
             .where(TradingShadowingVerdict.is_profitable.is_not(None))
             .where(TradingShadowingVerdict.exit_reason.is_not(None))
-            .where(TradingShadowingVerdict.exit_reason != "STALED")
             .where(TradingShadowingVerdict.resolved_at.is_not(None))
             .where(TradingShadowingProbe.shadowing_regime.is_not(None))
             .where(TradingShadowingProbe.shadowing_metrics.is_not(None))
-            .order_by(TradingShadowingVerdict.resolved_at.asc())
         )
+        if not include_staled_verdicts:
+            statement = statement.where(TradingShadowingVerdict.exit_reason != "STALED")
+        if resolved_since is not None:
+            statement = statement.where(TradingShadowingVerdict.resolved_at >= resolved_since)
+        return statement.order_by(TradingShadowingVerdict.resolved_at.asc())
 
-    def stream_resolved_for_cortex_training(self, batch_size: int) -> Iterator[TradingShadowingVerdict]:
+    def stream_resolved_for_cortex_training(
+            self,
+            batch_size: int,
+            include_staled_verdicts: bool,
+    ) -> Iterator[TradingShadowingVerdict]:
         try:
             result = self.database_session.scalars(
-                self._resolved_for_cortex_training_statement()
+                self._resolved_for_cortex_training_statement(include_staled_verdicts=include_staled_verdicts)
                 .execution_options(stream_results=True, yield_per=batch_size)
             )
             yield from result
         except Exception as error:
             logger.exception("[DAO][SHADOWING_VERDICT] Failed to stream cortex training verdicts — %s", error)
+            raise
+
+    def stream_resolved_for_cortex_evaluation(
+            self,
+            batch_size: int,
+            resolved_since: datetime,
+            limit_count: int,
+    ) -> Iterator[TradingShadowingVerdict]:
+        try:
+            result = self.database_session.scalars(
+                self._resolved_for_cortex_training_statement(
+                    include_staled_verdicts=True,
+                    resolved_since=resolved_since,
+                )
+                .limit(limit_count)
+                .execution_options(stream_results=True, yield_per=batch_size)
+            )
+            yield from result
+        except Exception as error:
+            logger.exception(
+                "[DAO][SHADOWING_VERDICT] Failed to stream cortex evaluation verdicts since %s — %s",
+                resolved_since,
+                error,
+            )
             raise
 
     def count_staled_verdicts(self) -> int:
@@ -218,6 +253,7 @@ class TradingShadowingVerdictDao:
                         TradingShadowingProbe.buy_to_sell_ratio,
                         TradingShadowingProbe.fully_diluted_valuation_usd,
                         TradingShadowingProbe.promotion_score,
+                        TradingShadowingProbe.cortex_inference_summary,
                     ),
                 )
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
@@ -318,7 +354,7 @@ class TradingShadowingVerdictDao:
             )
             raise
 
-    def count_resolved_shadowing_and_cortex_inference_aware_outcomes(self) -> int:
+    def count_resolved_shadowing_and_cortex_inference_aware_outcomes(self, include_staled_verdicts: bool = False) -> int:
         from sqlalchemy import func
         try:
             statement = (
@@ -328,9 +364,10 @@ class TradingShadowingVerdictDao:
                 .where(TradingShadowingVerdict.holding_duration_minutes.is_not(None))
                 .where(TradingShadowingVerdict.is_profitable.is_not(None))
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))
-                .where(TradingShadowingVerdict.exit_reason != "STALED")
                 .where(TradingShadowingVerdict.resolved_at.is_not(None))
             )
+            if not include_staled_verdicts:
+                statement = statement.where(TradingShadowingVerdict.exit_reason != "STALED")
             statement = self._apply_shadow_gate_eligibility_requirements(statement)
             return self.database_session.execute(statement).scalar_one_or_none() or 0
         except Exception as error:

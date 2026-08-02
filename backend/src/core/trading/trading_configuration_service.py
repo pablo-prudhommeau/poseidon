@@ -17,6 +17,9 @@ from src.core.trading.trading_structures import (
     TradingConfigurationError,
     TradingStablecoinAddressBinding,
 )
+from src.integrations.blockchain.evm.blockchain_evm_structures import (
+    EVM_CHAIN_PRICE_METADATA_REGISTRY,
+)
 from src.integrations.blockchain.solana.blockchain_solana_wallet_derivation import (
     derive_solana_keypair_from_mnemonic,
 )
@@ -99,6 +102,10 @@ def validate_and_apply_trading_application_configuration(
             blockchain_network,
             configuration_settings,
         )
+        _validate_configured_evm_stablecoin_against_price_metadata_registry(
+            blockchain_network=blockchain_network,
+            stablecoin_address=stablecoin_address,
+        )
         stablecoin_address_bindings.append(
             TradingStablecoinAddressBinding(
                 blockchain_network=blockchain_network,
@@ -134,6 +141,36 @@ def _normalize_unique_identifiers(raw_identifiers: list[str]) -> list[str]:
         seen_identifiers.add(normalized_identifier)
         normalized_identifiers.append(normalized_identifier)
     return normalized_identifiers
+
+
+def _validate_configured_evm_stablecoin_against_price_metadata_registry(
+        blockchain_network: BlockchainNetwork,
+        stablecoin_address: str,
+) -> None:
+    if not is_trading_evm_blockchain_network(blockchain_network):
+        return
+
+    normalized_stablecoin_address = stablecoin_address.strip().lower()
+    if not normalized_stablecoin_address:
+        return
+
+    stablecoin_address_environment_variable = resolve_stablecoin_address_environment_variable_name(
+        blockchain_network,
+    )
+
+    try:
+        chain_price_metadata = EVM_CHAIN_PRICE_METADATA_REGISTRY.resolve(blockchain_network)
+    except ValueError as exception:
+        raise TradingConfigurationError(
+            f"{stablecoin_address_environment_variable} is configured for blockchain "
+            f"'{blockchain_network.value}' but no EVM chain price metadata is registered",
+        ) from exception
+
+    if normalized_stablecoin_address not in chain_price_metadata.stablecoin_addresses:
+        raise TradingConfigurationError(
+            f"{stablecoin_address_environment_variable} value '{stablecoin_address}' is not registered "
+            f"as a USD-convertible stablecoin in EVM chain price metadata for '{blockchain_network.value}'",
+        )
 
 
 def validate_live_wallet_configuration(

@@ -7,6 +7,7 @@ from typing import Optional
 
 import numpy
 import xgboost
+from sqlalchemy import select, update
 
 from src.configuration.config import settings
 from src.core.trading.cortex.trading_cortex_feature_catalog import trading_cortex_xgboost_ordered_feature_names
@@ -24,7 +25,7 @@ from src.core.trading.cortex.training.trading_cortex_training_structures import 
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_database_session
-from src.persistence.models import TradingCortexModelManifest
+from src.persistence.models import TradingCortexModelManifest, TradingCortexModelRole
 
 logger = get_application_logger(__name__)
 
@@ -91,6 +92,14 @@ class TradingCortexTrainingService:
             validation_targets=prepared_training_dataset.validation_holding_duration_minutes,
             preferred_training_device=training_run_request.preferred_training_device,
         )
+        fragility_probability_booster, fragility_training_device = self._train_binary_probability_model(
+            training_feature_matrix=prepared_training_dataset.training_fragility_feature_matrix,
+            training_labels=prepared_training_dataset.training_fragility_labels,
+            validation_feature_matrix=prepared_training_dataset.validation_fragility_feature_matrix,
+            validation_labels=prepared_training_dataset.validation_fragility_labels,
+            preferred_training_device=training_run_request.preferred_training_device,
+            evaluation_metric_name="logloss",
+        )
 
         success_probability_predictions = success_probability_booster.inplace_predict(
             prepared_training_dataset.validation_feature_matrix
@@ -103,6 +112,9 @@ class TradingCortexTrainingService:
         )
         predicted_holding_time_minutes_predictions = predicted_holding_time_minutes_booster.inplace_predict(
             prepared_training_dataset.validation_feature_matrix
+        )
+        fragility_probability_predictions = fragility_probability_booster.inplace_predict(
+            prepared_training_dataset.validation_fragility_feature_matrix
         )
 
         model_evaluation_metrics = TradingCortexModelEvaluationMetrics(
@@ -132,6 +144,14 @@ class TradingCortexTrainingService:
                 prepared_training_dataset.validation_holding_duration_minutes,
                 predicted_holding_time_minutes_predictions,
             ),
+            fragility_probability_log_loss=self._compute_binary_log_loss(
+                prepared_training_dataset.validation_fragility_labels,
+                fragility_probability_predictions,
+            ),
+            fragility_probability_accuracy=self._compute_binary_accuracy(
+                prepared_training_dataset.validation_fragility_labels,
+                fragility_probability_predictions,
+            ),
         )
 
         model_version = datetime.now().astimezone().strftime("%Y-%m-%dT%H-%M-%S")
@@ -142,19 +162,23 @@ class TradingCortexTrainingService:
         toxicity_model_path = model_output_directory / "toxicity_probability.ubj"
         expected_profit_and_loss_model_path = model_output_directory / "expected_profit_and_loss_percentage.ubj"
         predicted_holding_time_minutes_model_path = model_output_directory / "predicted_holding_time_minutes.ubj"
+        fragility_probability_model_path = model_output_directory / "fragility_probability.ubj"
 
         success_probability_booster.save_model(success_model_path)
         toxicity_probability_booster.save_model(toxicity_model_path)
         expected_profit_and_loss_percentage_booster.save_model(expected_profit_and_loss_model_path)
         predicted_holding_time_minutes_booster.save_model(predicted_holding_time_minutes_model_path)
+        fragility_probability_booster.save_model(fragility_probability_model_path)
 
         training_summary = self._build_training_summary(
             success_probability_booster=success_probability_booster,
             toxicity_probability_booster=toxicity_probability_booster,
             expected_profit_and_loss_percentage_booster=expected_profit_and_loss_percentage_booster,
             predicted_holding_time_minutes_booster=predicted_holding_time_minutes_booster,
+            fragility_probability_booster=fragility_probability_booster,
             training_success_labels=prepared_training_dataset.training_success_labels,
             training_toxicity_labels=prepared_training_dataset.training_toxicity_labels,
+            training_fragility_labels=prepared_training_dataset.training_fragility_labels,
             training_expected_profit_and_loss_percentages=prepared_training_dataset.training_expected_profit_and_loss_percentages,
             training_holding_duration_minutes=prepared_training_dataset.training_holding_duration_minutes,
             exit_reasons=prepared_training_dataset.training_exit_reasons,
@@ -163,15 +187,30 @@ class TradingCortexTrainingService:
             toxicity_training_device=toxicity_training_device,
             expected_profit_and_loss_training_device=regression_training_device,
             holding_time_training_device=holding_time_training_device,
+            fragility_training_device=fragility_training_device,
             excluded_staled_verdict_count=prepared_training_dataset.excluded_staled_verdict_count,
         )
 
         with get_database_session() as session:
-            from sqlalchemy import update
+            existing_champion_manifest = session.execute(
+                select(TradingCortexModelManifest)
+                .where(TradingCortexModelManifest.model_role == TradingCortexModelRole.CHAMPION)
+                .limit(1)
+            ).scalar_one_or_none()
+
+            new_model_role: TradingCortexModelRole = self._resolve_new_model_role(
+                existing_champion_manifest=existing_champion_manifest,
+                feature_set_version=training_run_request.feature_set_version,
+            )
+
+            retired_roles: list[TradingCortexModelRole] = [TradingCortexModelRole.CHALLENGER]
+            if new_model_role == TradingCortexModelRole.CHAMPION:
+                retired_roles.append(TradingCortexModelRole.CHAMPION)
+
             session.execute(
                 update(TradingCortexModelManifest)
-                .where(TradingCortexModelManifest.is_active == True)
-                .values(is_active=False)
+                .where(TradingCortexModelManifest.model_role.in_(retired_roles))
+                .values(model_role=TradingCortexModelRole.RETIRED, is_active=False)
             )
 
             new_manifest = TradingCortexModelManifest(
@@ -182,6 +221,7 @@ class TradingCortexTrainingService:
                 toxicity_probability_model_path=str(toxicity_model_path),
                 expected_profit_and_loss_model_path=str(expected_profit_and_loss_model_path),
                 predicted_holding_time_minutes_model_path=str(predicted_holding_time_minutes_model_path),
+                fragility_probability_model_path=str(fragility_probability_model_path),
                 training_record_count=model_evaluation_metrics.training_record_count,
                 validation_record_count=model_evaluation_metrics.validation_record_count,
                 training_duration_seconds=time.perf_counter() - training_start_time,
@@ -193,18 +233,25 @@ class TradingCortexTrainingService:
                 toxicity_probability_accuracy=model_evaluation_metrics.toxicity_probability_accuracy,
                 expected_profit_and_loss_root_mean_squared_error=model_evaluation_metrics.expected_profit_and_loss_root_mean_squared_error,
                 predicted_holding_time_root_mean_squared_error=model_evaluation_metrics.predicted_holding_time_root_mean_squared_error,
+                fragility_probability_log_loss=model_evaluation_metrics.fragility_probability_log_loss,
+                fragility_probability_accuracy=model_evaluation_metrics.fragility_probability_accuracy,
                 training_summary=training_summary.model_dump(),
-                is_active=True,
+                is_active=new_model_role == TradingCortexModelRole.CHAMPION,
+                model_role=new_model_role,
+                promoted_at=get_current_local_datetime() if new_model_role == TradingCortexModelRole.CHAMPION else None,
                 created_at=get_current_local_datetime(),
             )
             session.add(new_manifest)
             session.commit()
 
         logger.info(
-            "[TRADING][CORTEX][TRAINING] Completed training version=%s train=%d validation=%d staled_excluded=%d",
+            "[TRADING][CORTEX][TRAINING] Completed training version=%s role=%s train=%d validation=%d fragility_train=%d fragility_validation=%d staled_total=%d",
             model_version,
+            new_model_role.value,
             prepared_training_dataset.training_record_count,
             prepared_training_dataset.validation_record_count,
+            prepared_training_dataset.fragility_training_record_count,
+            prepared_training_dataset.fragility_validation_record_count,
             prepared_training_dataset.excluded_staled_verdict_count,
         )
 
@@ -213,11 +260,32 @@ class TradingCortexTrainingService:
             toxicity_probability_model_path=str(toxicity_model_path),
             expected_profit_and_loss_percentage_model_path=str(expected_profit_and_loss_model_path),
             predicted_holding_time_minutes_model_path=str(predicted_holding_time_minutes_model_path),
+            fragility_probability_model_path=str(fragility_probability_model_path),
             model_version=model_version,
             feature_set_version=training_run_request.feature_set_version,
             ordered_feature_names=ordered_feature_names,
             metrics=model_evaluation_metrics,
         )
+
+    def _resolve_new_model_role(
+            self,
+            existing_champion_manifest: Optional[TradingCortexModelManifest],
+            feature_set_version: str,
+    ) -> TradingCortexModelRole:
+        if existing_champion_manifest is None:
+            return TradingCortexModelRole.CHAMPION
+
+        if existing_champion_manifest.feature_set_version != feature_set_version:
+            logger.info(
+                "[TRADING][CORTEX][TRAINING] Champion %s was trained on feature set %s, "
+                "the new %s model takes the crown directly instead of challenging",
+                existing_champion_manifest.model_version,
+                existing_champion_manifest.feature_set_version,
+                feature_set_version,
+            )
+            return TradingCortexModelRole.CHAMPION
+
+        return TradingCortexModelRole.CHALLENGER
 
     def _resolve_ordered_feature_names(self, feature_set_version: str) -> list[str]:
         if feature_set_version == settings.TRADING_CORTEX_FEATURE_SET_VERSION:
@@ -392,8 +460,10 @@ class TradingCortexTrainingService:
             toxicity_probability_booster: xgboost.Booster,
             expected_profit_and_loss_percentage_booster: xgboost.Booster,
             predicted_holding_time_minutes_booster: xgboost.Booster,
+            fragility_probability_booster: xgboost.Booster,
             training_success_labels: numpy.ndarray,
             training_toxicity_labels: numpy.ndarray,
+            training_fragility_labels: numpy.ndarray,
             training_expected_profit_and_loss_percentages: numpy.ndarray,
             training_holding_duration_minutes: numpy.ndarray,
             exit_reasons: list[str],
@@ -402,6 +472,7 @@ class TradingCortexTrainingService:
             toxicity_training_device: str,
             expected_profit_and_loss_training_device: str,
             holding_time_training_device: str,
+            fragility_training_device: str,
             excluded_staled_verdict_count: int,
     ) -> TradingCortexTrainingSummary:
         feature_importance_entries = self._extract_feature_importance(
@@ -411,6 +482,7 @@ class TradingCortexTrainingService:
 
         success_label_distribution = self._build_label_distribution(training_success_labels)
         toxicity_label_distribution = self._build_label_distribution(training_toxicity_labels)
+        fragility_label_distribution = self._build_label_distribution(training_fragility_labels)
         pnl_target_distribution = self._build_target_distribution(training_expected_profit_and_loss_percentages)
         holding_duration_target_distribution = self._build_target_distribution(training_holding_duration_minutes)
         exit_reason_distribution = self._build_exit_reason_distribution(exit_reasons)
@@ -422,8 +494,10 @@ class TradingCortexTrainingService:
             best_iteration_toxicity_probability=self._extract_best_iteration(toxicity_probability_booster),
             best_iteration_expected_profit_and_loss=self._extract_best_iteration(expected_profit_and_loss_percentage_booster),
             best_iteration_predicted_holding_time=self._extract_best_iteration(predicted_holding_time_minutes_booster),
+            best_iteration_fragility_probability=self._extract_best_iteration(fragility_probability_booster),
             success_label_distribution=success_label_distribution,
             toxicity_label_distribution=toxicity_label_distribution,
+            fragility_label_distribution=fragility_label_distribution,
             expected_profit_and_loss_target_distribution=pnl_target_distribution,
             predicted_holding_time_target_distribution=holding_duration_target_distribution,
             exit_reason_distribution=exit_reason_distribution,
@@ -434,6 +508,7 @@ class TradingCortexTrainingService:
                 "toxicity_probability": toxicity_training_device,
                 "expected_profit_and_loss_percentage": expected_profit_and_loss_training_device,
                 "predicted_holding_time_minutes": holding_time_training_device,
+                "fragility_probability": fragility_training_device,
             },
         )
 

@@ -37,6 +37,12 @@ class ExecutionStatus(Enum):
     LIVE = "LIVE"
 
 
+class TradingCortexModelRole(Enum):
+    CHAMPION = "CHAMPION"
+    CHALLENGER = "CHALLENGER"
+    RETIRED = "RETIRED"
+
+
 class TradingPosition(DatabaseBaseModel):
     __tablename__ = "trading_positions"
 
@@ -54,6 +60,7 @@ class TradingPosition(DatabaseBaseModel):
     take_profit_tier_2_price: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss_price: Mapped[float] = mapped_column(Float, nullable=False)
     position_phase: Mapped[PositionPhase] = mapped_column(SQLAlchemyEnum(PositionPhase, name="positionphase", native_enum=False, length=50), nullable=False)
+    breakeven_stop_armed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     exit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     opened_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(onupdate=get_current_local_datetime, nullable=False)
@@ -235,6 +242,8 @@ class TradingShadowingVerdict(DatabaseBaseModel):
     take_profit_tier_1_hit_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     take_profit_tier_2_hit_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     stop_loss_hit_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    post_take_profit_tier_1_breakeven_touched_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    post_take_profit_tier_1_lowest_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     exit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     realized_pnl_percentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     realized_pnl_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -349,14 +358,19 @@ class TradingCortexModelManifest(DatabaseBaseModel):
     toxicity_probability_accuracy: Mapped[float] = mapped_column(Float, nullable=False)
     expected_profit_and_loss_root_mean_squared_error: Mapped[float] = mapped_column(Float, nullable=False)
     predicted_holding_time_root_mean_squared_error: Mapped[float] = mapped_column(Float, nullable=False)
+    fragility_probability_log_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    fragility_probability_accuracy: Mapped[float] = mapped_column(Float, nullable=False)
     success_probability_model_path: Mapped[str] = mapped_column(String(512), nullable=False)
     toxicity_probability_model_path: Mapped[str] = mapped_column(String(512), nullable=False)
     expected_profit_and_loss_model_path: Mapped[str] = mapped_column(String(512), nullable=False)
     predicted_holding_time_minutes_model_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    fragility_probability_model_path: Mapped[str] = mapped_column(String(512), nullable=False)
     ordered_feature_names: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     training_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    model_role: Mapped[TradingCortexModelRole] = mapped_column(SQLAlchemyEnum(TradingCortexModelRole, name="tradingcortexmodelrole", native_enum=False, length=32), nullable=False,index=True)
+    promoted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
 
     def __repr__(self) -> str:
-        return f"<TradingCortexModelManifest version={self.model_version} active={self.is_active}>"
+        return f"<TradingCortexModelManifest version={self.model_version} role={self.model_role} active={self.is_active}>"

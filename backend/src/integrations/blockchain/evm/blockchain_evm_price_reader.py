@@ -122,6 +122,25 @@ def _is_native_gas_token_quote(chain: BlockchainNetwork, token_address: str) -> 
     return _is_native_currency_address(token_address) or _is_native_wrapped_token(chain, token_address)
 
 
+def is_evm_quote_token_usd_convertible(
+        blockchain_network: BlockchainNetwork,
+        quote_token_address: str,
+) -> bool:
+    normalized_quote_token_address = quote_token_address.strip()
+    if not normalized_quote_token_address:
+        return False
+
+    try:
+        EVM_CHAIN_PRICE_METADATA_REGISTRY.resolve(blockchain_network)
+    except ValueError:
+        return False
+
+    return (
+            _is_stablecoin(blockchain_network, normalized_quote_token_address)
+            or _is_native_gas_token_quote(blockchain_network, normalized_quote_token_address)
+    )
+
+
 def _is_uniswap_v4_pool_identifier(pair_address: str) -> bool:
     normalized_pair_address = pair_address.strip().lower()
     if not normalized_pair_address.startswith("0x"):

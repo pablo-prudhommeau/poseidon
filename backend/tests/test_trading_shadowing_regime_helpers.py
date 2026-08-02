@@ -13,6 +13,7 @@ def _derive(**overrides):
         "toxic_metrics_gate_enabled": False,
         "cortex_gate_enabled": False,
         "fundamentals_gate_enabled": False,
+        "liquidity_structure_gate_enabled": False,
         "shadowing_snapshot_ready": True,
         "edge_gate_satisfied": True,
     }
@@ -27,6 +28,11 @@ def test_disabled_when_all_trading_gates_off() -> None:
 
 def test_tradable_when_only_cortex_gate_enabled_and_warmup_complete() -> None:
     phase = _derive(cortex_gate_enabled=True)
+    assert phase == TradingShadowingPhase.TRADABLE
+
+
+def test_tradable_when_only_liquidity_structure_gate_enabled() -> None:
+    phase = _derive(liquidity_structure_gate_enabled=True)
     assert phase == TradingShadowingPhase.TRADABLE
 
 

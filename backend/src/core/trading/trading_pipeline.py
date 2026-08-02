@@ -11,8 +11,12 @@ from src.core.trading.evaluators.trading_contradictions_filter import apply_cont
 from src.core.trading.evaluators.trading_cooldown_filter import apply_cooldown_filter
 from src.core.trading.evaluators.trading_cortex_gate_filter import apply_trading_cortex_gate_filter
 from src.core.trading.evaluators.trading_deduplication_filter import apply_deduplication_filter
+from src.core.trading.evaluators.trading_evm_usd_convertible_quote_filter import (
+    apply_evm_usd_convertible_quote_filter,
+)
 from src.core.trading.evaluators.trading_fundamentals_filter import apply_fundamentals_filter
 from src.core.trading.evaluators.trading_liquidity_filter import apply_liquidity_filter
+from src.core.trading.evaluators.trading_liquidity_structure_filter import apply_liquidity_structure_filter
 from src.core.trading.evaluators.trading_momentum_filter import apply_momentum_filter
 from src.core.trading.evaluators.trading_price_deviation_filter import apply_price_deviation_filter
 from src.core.trading.evaluators.trading_quality_scorer import compute_quality_scores, apply_quality_gate
@@ -89,6 +93,10 @@ class TradingPipeline:
         if not candidates:
             return
 
+        candidates = self._step_filter_evm_usd_convertible_quote(candidates)
+        if not candidates:
+            return
+
         if not settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED:
             logger.debug("[TRADING][PIPELINE][GATE][SHADOWING_TOXIC] Shadowing toxic metrics gate is disabled")
         if not settings.TRADING_GATE_SHADOWING_EDGE_ENABLED:
@@ -97,6 +105,13 @@ class TradingPipeline:
             logger.debug("[TRADING][PIPELINE][GATE][CORTEX] Cortex gate is disabled")
         if not settings.TRADING_GATE_FUNDAMENTALS_ENABLED:
             logger.debug("[TRADING][PIPELINE][GATE][FUNDAMENTALS] Fundamentals gate is disabled")
+        if not settings.TRADING_GATE_LIQUIDITY_STRUCTURE_ENABLED:
+            logger.debug("[TRADING][PIPELINE][GATE][LIQUIDITY_STRUCTURE] Liquidity structure gate is disabled")
+
+        if settings.TRADING_GATE_LIQUIDITY_STRUCTURE_ENABLED:
+            candidates = self._step_filter_liquidity_structure(candidates)
+            if not candidates:
+                return
 
         shadow_snapshot: Optional[TradingShadowingSnapshot] = None
         shadow_snapshot_active = False
@@ -312,6 +327,12 @@ class TradingPipeline:
 
     def _step_deduplication(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_deduplication_filter(candidates)
+
+    def _step_filter_evm_usd_convertible_quote(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        return apply_evm_usd_convertible_quote_filter(candidates)
+
+    def _step_filter_liquidity_structure(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
+        return apply_liquidity_structure_filter(candidates)
 
     def _step_contradictions(self, candidates: list[TradingCandidate]) -> list[TradingCandidate]:
         return apply_contradictions_filter(candidates)

@@ -255,6 +255,7 @@ export interface TradingShadowingRegimePayload {
     edge_gate_enabled: boolean;
     cortex_gate_enabled: boolean;
     fundamentals_gate_enabled: boolean;
+    liquidity_structure_gate_enabled: boolean;
     toxic_metrics_gate_enabled: boolean;
     resolved_outcome_count?: number | null;
     required_outcome_count?: number | null;
@@ -397,6 +398,7 @@ export interface TradingCortexInferenceSnapshotPayload {
     toxicity_probability: number;
     expected_profit_and_loss_percentage: number;
     predicted_holding_time_minutes: number;
+    fragility_probability: number;
     final_trade_score: number;
     model_version: string;
     model_ready: boolean;

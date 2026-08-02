@@ -35,6 +35,7 @@ class TradingCortexInferenceSnapshot(BaseModel):
     toxicity_probability: float
     expected_profit_and_loss_percentage: float
     predicted_holding_time_minutes: float
+    fragility_probability: float
     final_trade_score: float
     model_version: str
     model_ready: bool

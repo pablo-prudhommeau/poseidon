@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import Optional
 
+from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
 from src.integrations.blockchain.solana.dex_parsers.solana_dex_pool_price_utils import (
     ensure_account_data_length,
     read_pubkey_base58_at_offset,
     read_unsigned_128_at_offset,
+    resolve_spl_token_decimals_pair_or_none,
     resolve_sqrt_price_x64_pool_price,
 )
-from src.integrations.blockchain.solana.solana_rpc_client import get_spl_token_decimals
 from src.integrations.blockchain.solana.solana_structures import SolanaPoolParsedPrice
 from src.logging.logger import get_application_logger
 
@@ -40,16 +41,14 @@ class OrcaWhirlpoolPoolParser:
             token_mint_b = read_pubkey_base58_at_offset(account_data, self.TOKEN_MINT_B_BYTE_OFFSET)
             sqrt_price_x64 = read_unsigned_128_at_offset(account_data, self.SQRT_PRICE_BYTE_OFFSET)
 
-            try:
-                decimals_token_a = get_spl_token_decimals(rpc_url, token_mint_a)
-                decimals_token_b = get_spl_token_decimals(rpc_url, token_mint_b)
-            except Exception:
-                logger.exception(
-                    "[BLOCKCHAIN][PRICE][SOL][ORCA] Failed to fetch mint decimals — mint_a=%s mint_b=%s",
-                    token_mint_a[:12],
-                    token_mint_b[:12],
-                )
+            mint_decimals = resolve_spl_token_decimals_pair_or_none(
+                rpc_url=rpc_url,
+                mint_address_a=token_mint_a,
+                mint_address_b=token_mint_b,
+            )
+            if mint_decimals is None:
                 return None
+            decimals_token_a, decimals_token_b = mint_decimals
 
             return resolve_sqrt_price_x64_pool_price(
                 target_token_address=target_token_address,
@@ -59,6 +58,8 @@ class OrcaWhirlpoolPoolParser:
                 decimals_token0=decimals_token_a,
                 decimals_token1=decimals_token_b,
             )
+        except BlockchainRpcUnavailableError:
+            raise
         except Exception:
             logger.exception("[BLOCKCHAIN][PRICE][SOL][ORCA] Error parsing pool data")
             return None

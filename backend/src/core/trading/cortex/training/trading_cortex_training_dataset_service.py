@@ -4,9 +4,11 @@ from datetime import datetime
 
 import numpy
 
+from src.configuration.config import settings
 from src.core.trading.cortex.trading_cortex_feature_vector_builder import TradingCortexFeatureVectorBuilder
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexCandidateFeatureSnapshot,
+    TradingCortexFeatureVectorSnapshot,
     TradingCortexScoringRequest,
     TradingCortexShadowingMetricFeatureSnapshot,
     TradingCortexShadowingRegimeFeatureSnapshot,
@@ -25,6 +27,7 @@ logger = get_application_logger(__name__)
 
 _TRAINING_STREAM_BATCH_SIZE = 2000
 _TRAINING_STREAM_PROGRESS_LOG_INTERVAL = 20000
+_STALED_EXIT_REASON = "STALED"
 
 
 class TradingCortexTrainingDatasetService:
@@ -42,46 +45,66 @@ class TradingCortexTrainingDatasetService:
         with get_database_session() as database_session:
             verdict_dao = TradingShadowingVerdictDao(database_session)
             excluded_staled_count = verdict_dao.count_staled_verdicts()
-            eligible_record_count = verdict_dao.count_resolved_shadowing_and_cortex_inference_aware_outcomes()
-            if eligible_record_count < minimum_labeled_record_count:
+            outcome_record_count = verdict_dao.count_resolved_shadowing_and_cortex_inference_aware_outcomes()
+            if outcome_record_count < minimum_labeled_record_count:
                 raise TradingCortexInsufficientTrainingDataError(
                     required_count=minimum_labeled_record_count,
-                    found_count=eligible_record_count,
+                    found_count=outcome_record_count,
                 )
 
+            fragility_eligible_record_count = verdict_dao.count_resolved_shadowing_and_cortex_inference_aware_outcomes(
+                include_staled_verdicts=True,
+            )
+
             logger.info(
-                "[TRADING][CORTEX][TRAINING][DATASET] Streaming %d eligible shadowing rows (batch=%d)",
-                eligible_record_count,
+                "[TRADING][CORTEX][TRAINING][DATASET] Streaming %d eligible shadowing rows including %d STALED (batch=%d)",
+                fragility_eligible_record_count,
+                fragility_eligible_record_count - outcome_record_count,
                 _TRAINING_STREAM_BATCH_SIZE,
             )
 
-            feature_matrix = numpy.empty((eligible_record_count, feature_count), dtype=numpy.float32)
-            success_label_array = numpy.empty(eligible_record_count, dtype=numpy.float32)
-            toxicity_label_array = numpy.empty(eligible_record_count, dtype=numpy.float32)
-            expected_profit_and_loss_percentage_array = numpy.empty(eligible_record_count, dtype=numpy.float32)
-            holding_duration_minutes_array = numpy.empty(eligible_record_count, dtype=numpy.float32)
+            fragility_feature_matrix = numpy.empty((fragility_eligible_record_count, feature_count), dtype=numpy.float32)
+            fragility_label_array = numpy.empty(fragility_eligible_record_count, dtype=numpy.float32)
+            feature_matrix = numpy.empty((outcome_record_count, feature_count), dtype=numpy.float32)
+            success_label_array = numpy.empty(outcome_record_count, dtype=numpy.float32)
+            toxicity_label_array = numpy.empty(outcome_record_count, dtype=numpy.float32)
+            expected_profit_and_loss_percentage_array = numpy.empty(outcome_record_count, dtype=numpy.float32)
+            holding_duration_minutes_array = numpy.empty(outcome_record_count, dtype=numpy.float32)
             exit_reasons: list[str] = []
 
             filled_record_count = 0
+            filled_fragility_record_count = 0
             streamed_record_count = 0
             dataset_window_start_at: datetime | None = None
             dataset_window_end_at: datetime | None = None
 
-            for verdict in verdict_dao.stream_resolved_for_cortex_training(batch_size=_TRAINING_STREAM_BATCH_SIZE):
+            for verdict in verdict_dao.stream_resolved_for_cortex_training(
+                    batch_size=_TRAINING_STREAM_BATCH_SIZE,
+                    include_staled_verdicts=True,
+            ):
                 probe = verdict.probe
-                feature_values = self._build_feature_values(verdict, training_run_request, ordered_feature_names)
+                feature_values = self.build_feature_values(
+                    verdict=verdict,
+                    feature_set_version=training_run_request.feature_set_version,
+                    ordered_feature_names=ordered_feature_names,
+                )
                 if feature_values is not None:
-                    feature_matrix[filled_record_count] = feature_values
-                    success_label_array[filled_record_count] = 1.0 if verdict.is_profitable else 0.0
-                    toxicity_label_array[filled_record_count] = 1.0 if verdict.exit_reason in ("STOP_LOSS", "HONEYPOT") else 0.0
-                    expected_profit_and_loss_percentage_array[filled_record_count] = verdict.realized_pnl_percentage
-                    holding_duration_minutes_array[filled_record_count] = verdict.holding_duration_minutes
-                    exit_reasons.append(verdict.exit_reason)
+                    fragility_feature_matrix[filled_fragility_record_count] = feature_values
+                    fragility_label_array[filled_fragility_record_count] = self._resolve_fragility_label(verdict)
+                    filled_fragility_record_count += 1
 
-                    if dataset_window_start_at is None:
-                        dataset_window_start_at = verdict.resolved_at
-                    dataset_window_end_at = verdict.resolved_at
-                    filled_record_count += 1
+                    if verdict.exit_reason != _STALED_EXIT_REASON and filled_record_count < outcome_record_count:
+                        feature_matrix[filled_record_count] = feature_values
+                        success_label_array[filled_record_count] = 1.0 if verdict.is_profitable else 0.0
+                        toxicity_label_array[filled_record_count] = 1.0 if verdict.exit_reason in ("STOP_LOSS", "HONEYPOT") else 0.0
+                        expected_profit_and_loss_percentage_array[filled_record_count] = verdict.realized_pnl_percentage
+                        holding_duration_minutes_array[filled_record_count] = verdict.holding_duration_minutes
+                        exit_reasons.append(verdict.exit_reason)
+
+                        if dataset_window_start_at is None:
+                            dataset_window_start_at = verdict.resolved_at
+                        dataset_window_end_at = verdict.resolved_at
+                        filled_record_count += 1
 
                 database_session.expunge(verdict)
                 if probe is not None:
@@ -90,15 +113,17 @@ class TradingCortexTrainingDatasetService:
                 streamed_record_count += 1
                 if streamed_record_count % _TRAINING_STREAM_PROGRESS_LOG_INTERVAL == 0:
                     logger.info(
-                        "[TRADING][CORTEX][TRAINING][DATASET] Streamed %d/%d rows (%d labeled)",
+                        "[TRADING][CORTEX][TRAINING][DATASET] Streamed %d/%d rows (%d outcome-labeled, %d fragility-labeled)",
                         streamed_record_count,
-                        eligible_record_count,
+                        fragility_eligible_record_count,
                         filled_record_count,
+                        filled_fragility_record_count,
                     )
 
         logger.info(
-            "[TRADING][CORTEX][TRAINING][DATASET] Loaded %d shadowing rows from database (%d STALED excluded)",
+            "[TRADING][CORTEX][TRAINING][DATASET] Loaded %d outcome rows and %d fragility rows from database (%d STALED total)",
             filled_record_count,
+            filled_fragility_record_count,
             excluded_staled_count,
         )
 
@@ -114,6 +139,8 @@ class TradingCortexTrainingDatasetService:
         toxicity_label_array = toxicity_label_array[:labeled_record_count]
         expected_profit_and_loss_percentage_array = expected_profit_and_loss_percentage_array[:labeled_record_count]
         holding_duration_minutes_array = holding_duration_minutes_array[:labeled_record_count]
+        fragility_feature_matrix = fragility_feature_matrix[:filled_fragility_record_count]
+        fragility_label_array = fragility_label_array[:filled_fragility_record_count]
 
         latest_resolved_at = dataset_window_end_at
 
@@ -122,9 +149,15 @@ class TradingCortexTrainingDatasetService:
         if training_record_count <= 0:
             raise ValueError("Validation fraction leaves no records for training")
 
+        fragility_validation_record_count = max(1, int(filled_fragility_record_count * training_run_request.validation_fraction))
+        fragility_training_record_count = filled_fragility_record_count - fragility_validation_record_count
+        if fragility_training_record_count <= 0:
+            raise ValueError("Validation fraction leaves no records for fragility training")
+
         logger.info(
-            "[TRADING][CORTEX][TRAINING][DATASET] Prepared %d labeled records with %d selected features",
+            "[TRADING][CORTEX][TRAINING][DATASET] Prepared %d outcome records and %d fragility records with %d selected features",
             labeled_record_count,
+            filled_fragility_record_count,
             feature_count,
         )
 
@@ -141,21 +174,43 @@ class TradingCortexTrainingDatasetService:
             validation_expected_profit_and_loss_percentages=expected_profit_and_loss_percentage_array[training_record_count:],
             training_holding_duration_minutes=holding_duration_minutes_array[:training_record_count],
             validation_holding_duration_minutes=holding_duration_minutes_array[training_record_count:],
+            training_fragility_feature_matrix=fragility_feature_matrix[:fragility_training_record_count],
+            validation_fragility_feature_matrix=fragility_feature_matrix[fragility_training_record_count:],
+            training_fragility_labels=fragility_label_array[:fragility_training_record_count],
+            validation_fragility_labels=fragility_label_array[fragility_training_record_count:],
             training_exit_reasons=exit_reasons[:training_record_count],
             training_record_count=training_record_count,
             validation_record_count=validation_record_count,
+            fragility_training_record_count=fragility_training_record_count,
+            fragility_validation_record_count=fragility_validation_record_count,
             excluded_staled_verdict_count=excluded_staled_count,
             dataset_window_start_at=dataset_window_start_at,
             dataset_window_end_at=dataset_window_end_at,
         )
         return prepared_training_dataset, latest_resolved_at
 
-    def _build_feature_values(
+    def _resolve_fragility_label(self, verdict: TradingShadowingVerdict) -> float:
+        if verdict.exit_reason == _STALED_EXIT_REASON:
+            return 1.0
+        catastrophic_threshold: float = settings.TRADING_CORTEX_FRAGILITY_CATASTROPHIC_PNL_PERCENTAGE_THRESHOLD
+        return 1.0 if verdict.realized_pnl_percentage <= catastrophic_threshold else 0.0
+
+    def build_feature_values(
             self,
             verdict: TradingShadowingVerdict,
-            training_run_request: TradingCortexTrainingRunRequest,
+            feature_set_version: str,
             ordered_feature_names: list[str],
     ) -> list[float] | None:
+        feature_vector_snapshot = self.build_feature_vector_snapshot(verdict, feature_set_version)
+        if feature_vector_snapshot is None:
+            return None
+        return feature_vector_snapshot.extract_ordered_feature_values(ordered_feature_names)
+
+    def build_feature_vector_snapshot(
+            self,
+            verdict: TradingShadowingVerdict,
+            feature_set_version: str,
+    ) -> TradingCortexFeatureVectorSnapshot | None:
         probe = verdict.probe
         if verdict.resolved_at is None:
             return None
@@ -199,7 +254,7 @@ class TradingCortexTrainingDatasetService:
 
         scoring_request = TradingCortexScoringRequest.model_construct(
             request_identifier=str(probe.id),
-            feature_set_version=training_run_request.feature_set_version,
+            feature_set_version=feature_set_version,
             candidate_features=TradingCortexCandidateFeatureSnapshot.model_construct(
                 token_symbol=probe.token_symbol,
                 blockchain_network=probe.blockchain_network,
@@ -224,10 +279,8 @@ class TradingCortexTrainingDatasetService:
                 transaction_count_6h=float(probe.transaction_count_h6),
                 transaction_count_24h=float(probe.transaction_count_h24),
                 buy_to_sell_ratio=probe.buy_to_sell_ratio,
-                order_notional_value_usd=probe.order_notional_value_usd,
             ),
             regime_features=regime_features,
             metric_features=metric_features,
         )
-        feature_vector_snapshot = self._feature_vector_builder.build_feature_vector(scoring_request)
-        return feature_vector_snapshot.extract_ordered_feature_values(ordered_feature_names)
+        return self._feature_vector_builder.build_feature_vector(scoring_request)

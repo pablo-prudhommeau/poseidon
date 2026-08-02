@@ -163,6 +163,7 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
             toxic_metrics_gate_enabled=settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED,
             cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
             fundamentals_gate_enabled=settings.TRADING_GATE_FUNDAMENTALS_ENABLED,
+            liquidity_structure_gate_enabled=settings.TRADING_GATE_LIQUIDITY_STRUCTURE_ENABLED,
             shadowing_snapshot_ready=shadowing_snapshot_ready,
             edge_gate_satisfied=edge_gate_satisfied,
         )
@@ -191,6 +192,7 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
                 edge_gate_enabled=settings.TRADING_GATE_SHADOWING_EDGE_ENABLED,
                 cortex_gate_enabled=settings.TRADING_GATE_CORTEX_ENABLED,
                 fundamentals_gate_enabled=settings.TRADING_GATE_FUNDAMENTALS_ENABLED,
+                liquidity_structure_gate_enabled=settings.TRADING_GATE_LIQUIDITY_STRUCTURE_ENABLED,
                 toxic_metrics_gate_enabled=settings.TRADING_GATE_SHADOWING_TOXIC_METRICS_ENABLED,
                 resolved_outcome_count=resolved_count,
                 required_outcome_count=minimum_outcomes_for_shadowing,

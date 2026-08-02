@@ -11,6 +11,7 @@ def derive_trading_shadowing_phase(
         toxic_metrics_gate_enabled: bool,
         cortex_gate_enabled: bool,
         fundamentals_gate_enabled: bool,
+        liquidity_structure_gate_enabled: bool,
         shadowing_snapshot_ready: bool,
         edge_gate_satisfied: bool,
 ) -> TradingShadowingPhase:
@@ -19,6 +20,7 @@ def derive_trading_shadowing_phase(
             or toxic_metrics_gate_enabled
             or cortex_gate_enabled
             or fundamentals_gate_enabled
+            or liquidity_structure_gate_enabled
     )
     if not any_gate_enabled:
         return TradingShadowingPhase.DISABLED

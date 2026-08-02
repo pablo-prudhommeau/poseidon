@@ -18,6 +18,7 @@ export interface ShadowingRegimeGatesContext {
     edgeGateSatisfied: boolean;
     cortexGateEnabled: boolean;
     fundamentalsGateEnabled: boolean;
+    liquidityStructureGateEnabled: boolean;
     toxicMetricsGateEnabled: boolean;
 }
 
@@ -111,6 +112,7 @@ function buildGatesPendingColumnHtml(): string {
         buildGatePendingRowHtml('edge'),
         buildGatePendingRowHtml('cortex'),
         buildGatePendingRowHtml('fundamentals'),
+        buildGatePendingRowHtml('liquidity'),
         buildGatePendingRowHtml('toxic')
     ];
     return `<div class="flex-1 min-w-0 border-l border-white/10 pl-4 space-y-1.5">` + `${buildSectionSubtitleHtml('gates')}` + `${rows.join('')}</div>`;
@@ -182,6 +184,7 @@ function buildGatesColumnHtml(gates: ShadowingRegimeGatesContext): string {
         buildGateRowHtml('edge', gates.edgeGateEnabled, gates.edgeGateSatisfied),
         buildGateRowHtml('cortex', gates.cortexGateEnabled, null),
         buildGateRowHtml('fundamentals', gates.fundamentalsGateEnabled, null),
+        buildGateRowHtml('liquidity', gates.liquidityStructureGateEnabled, null),
         buildGateRowHtml('toxic', gates.toxicMetricsGateEnabled, null)
     ];
     return `<div class="flex-1 min-w-0 border-l border-white/10 pl-4 space-y-1.5">` + `${buildSectionSubtitleHtml('gates')}` + `${rows.join('')}</div>`;

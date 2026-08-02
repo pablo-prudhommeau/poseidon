@@ -584,6 +584,7 @@ class TradingShadowingRegimePayload(BaseModel):
     edge_gate_enabled: bool
     cortex_gate_enabled: bool
     fundamentals_gate_enabled: bool
+    liquidity_structure_gate_enabled: bool
     toxic_metrics_gate_enabled: bool
     resolved_outcome_count: Optional[int] = None
     required_outcome_count: Optional[int] = None

@@ -52,7 +52,6 @@ class TradingCortexCandidateFeatures:
     TRANSACTION_COUNT_6H: Final[str] = "candidate_transaction_count_6h"
     TRANSACTION_COUNT_24H: Final[str] = "candidate_transaction_count_24h"
     BUY_TO_SELL_RATIO: Final[str] = "candidate_buy_to_sell_ratio"
-    ORDER_NOTIONAL_VALUE_USD: Final[str] = "candidate_order_notional_value_usd"
     LIQUIDITY_USD_LOGARITHMIC: Final[str] = "candidate_liquidity_usd_logarithmic"
     MARKET_CAP_USD_LOGARITHMIC: Final[str] = "candidate_market_cap_usd_logarithmic"
     FULLY_DILUTED_VALUATION_USD_LOGARITHMIC: Final[str] = "candidate_fully_diluted_valuation_usd_logarithmic"
@@ -75,7 +74,6 @@ class TradingCortexCandidateFeatures:
     BUY_PRESSURE_5M: Final[str] = "candidate_buy_pressure_5m"
     MARKET_CAP_TO_LIQUIDITY_RATIO: Final[str] = "candidate_market_cap_to_liquidity_ratio"
     FULLY_DILUTED_VALUATION_TO_LIQUIDITY_RATIO: Final[str] = "candidate_fully_diluted_valuation_to_liquidity_ratio"
-    ORDER_NOTIONAL_TO_LIQUIDITY_RATIO: Final[str] = "candidate_order_notional_to_liquidity_ratio"
     IS_RECENT_TOKEN: Final[str] = "candidate_is_recent_token"
     IS_MICRO_CAP_TOKEN: Final[str] = "candidate_is_micro_cap_token"
     IS_HIGH_PROMOTION_TOKEN: Final[str] = "candidate_is_high_promotion_token"
@@ -168,7 +166,6 @@ def _build_candidate_xgboost_ordered_feature_names() -> tuple[str, ...]:
         TradingCortexCandidateFeatures.TRANSACTION_COUNT_6H,
         TradingCortexCandidateFeatures.TRANSACTION_COUNT_24H,
         TradingCortexCandidateFeatures.BUY_TO_SELL_RATIO,
-        TradingCortexCandidateFeatures.ORDER_NOTIONAL_VALUE_USD,
         TradingCortexCandidateFeatures.LIQUIDITY_USD_LOGARITHMIC,
         TradingCortexCandidateFeatures.MARKET_CAP_USD_LOGARITHMIC,
         TradingCortexCandidateFeatures.FULLY_DILUTED_VALUATION_USD_LOGARITHMIC,
@@ -191,7 +188,6 @@ def _build_candidate_xgboost_ordered_feature_names() -> tuple[str, ...]:
         TradingCortexCandidateFeatures.BUY_PRESSURE_5M,
         TradingCortexCandidateFeatures.MARKET_CAP_TO_LIQUIDITY_RATIO,
         TradingCortexCandidateFeatures.FULLY_DILUTED_VALUATION_TO_LIQUIDITY_RATIO,
-        TradingCortexCandidateFeatures.ORDER_NOTIONAL_TO_LIQUIDITY_RATIO,
         TradingCortexCandidateFeatures.IS_RECENT_TOKEN,
         TradingCortexCandidateFeatures.IS_MICRO_CAP_TOKEN,
         TradingCortexCandidateFeatures.IS_HIGH_PROMOTION_TOKEN,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.core.structures.structures import BlockchainNetwork, Token
 from src.core.trading.cortex.trading_cortex_final_score_service import TradingCortexFinalScoreService
+from src.core.trading.cortex.trading_cortex_quantile_gate_service import build_absolute_gate_thresholds
 from src.core.trading.cortex.trading_cortex_structures import (
     TradingCortexFeatureVectorSnapshot,
     TradingCortexNamedFeatureValue,
@@ -52,6 +53,7 @@ def _build_candidate(symbol: str, final_trade_score: float) -> TradingCandidate:
         toxicity_probability=0.4,
         expected_profit_and_loss_percentage=1.0,
         predicted_holding_time_minutes=120.0,
+        fragility_probability=0.10,
         final_trade_score=final_trade_score,
         model_version="test_v1",
         model_ready=True,
@@ -83,27 +85,72 @@ def test_sort_trading_candidates_by_cortex_final_trade_score_descending() -> Non
     assert [candidate.token.symbol for candidate in ordered] == ["HIGH", "MID", "LOW"]
 
 
-def test_gate_rejects_predicted_holding_time_above_max_hours() -> None:
-    scoring_response = TradingCortexScoringResponse(
+def _build_scoring_response(
+        predicted_holding_time_minutes: float,
+        fragility_probability: float = 0.10,
+) -> TradingCortexScoringResponse:
+    return TradingCortexScoringResponse(
         request_identifier="req-1",
         token_symbol="GENNY",
-        feature_set_version="cortex_v1",
+        feature_set_version="cortex_v2",
         model_version="test_v1",
         model_ready=True,
         success_probability=0.75,
         toxicity_probability=0.02,
         expected_profit_and_loss_percentage=3.6,
-        predicted_holding_time_minutes=1208.9,
+        predicted_holding_time_minutes=predicted_holding_time_minutes,
+        fragility_probability=fragility_probability,
         final_trade_score=65.26,
         feature_count=1,
         golden_metric_count=0,
         toxic_metric_count=0,
     )
 
-    gate_verdict = _evaluate_gate_verdict(scoring_response)
+
+def test_gate_rejects_predicted_holding_time_above_max_hours() -> None:
+    scoring_response = _build_scoring_response(predicted_holding_time_minutes=1208.9)
+
+    gate_verdict = _evaluate_gate_verdict(scoring_response, build_absolute_gate_thresholds())
 
     assert gate_verdict.is_accepted is False
     assert any("predicted_holding_time_minutes" in reason for reason in gate_verdict.rejection_reasons)
+
+
+def test_gate_rejects_predicted_holding_time_below_min_hours() -> None:
+    scoring_response = _build_scoring_response(predicted_holding_time_minutes=45.0)
+
+    gate_verdict = _evaluate_gate_verdict(scoring_response, build_absolute_gate_thresholds())
+
+    assert gate_verdict.is_accepted is False
+    assert any("predicted_holding_time_minutes" in reason for reason in gate_verdict.rejection_reasons)
+
+
+def test_gate_accepts_predicted_holding_time_inside_window() -> None:
+    scoring_response = _build_scoring_response(predicted_holding_time_minutes=240.0)
+
+    gate_verdict = _evaluate_gate_verdict(scoring_response, build_absolute_gate_thresholds())
+
+    assert gate_verdict.is_accepted is True
+
+
+def test_gate_rejects_fragile_candidate() -> None:
+    scoring_response = _build_scoring_response(predicted_holding_time_minutes=240.0, fragility_probability=0.90)
+
+    gate_verdict = _evaluate_gate_verdict(scoring_response, build_absolute_gate_thresholds())
+
+    assert gate_verdict.is_accepted is False
+    assert any("fragility_probability" in reason for reason in gate_verdict.rejection_reasons)
+
+
+def test_gate_rejects_incomplete_scoring_response_without_fragility() -> None:
+    scoring_response = _build_scoring_response(predicted_holding_time_minutes=240.0)
+    scoring_response = scoring_response.model_copy(update={"fragility_probability": None})
+
+    try:
+        _evaluate_gate_verdict(scoring_response, build_absolute_gate_thresholds())
+        raise AssertionError("Expected ValueError for incomplete scoring response")
+    except ValueError as error:
+        assert "incomplete scoring response" in str(error)
 
 
 def _build_feature_vector_snapshot() -> TradingCortexFeatureVectorSnapshot:
@@ -132,6 +179,7 @@ def test_final_trade_score_prefers_shorter_predicted_holding_time() -> None:
     short_hold_score = final_score_service.calculate_final_score(
         prediction=TradingCortexPrediction(
             predicted_holding_time_minutes=60.0,
+            fragility_probability=0.10,
             **neutral_prediction_fields,
         ),
         feature_vector_snapshot=feature_vector_snapshot,
@@ -139,6 +187,7 @@ def test_final_trade_score_prefers_shorter_predicted_holding_time() -> None:
     long_hold_score = final_score_service.calculate_final_score(
         prediction=TradingCortexPrediction(
             predicted_holding_time_minutes=900.0,
+            fragility_probability=0.10,
             **neutral_prediction_fields,
         ),
         feature_vector_snapshot=feature_vector_snapshot,

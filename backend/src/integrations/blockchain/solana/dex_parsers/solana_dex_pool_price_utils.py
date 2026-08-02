@@ -79,6 +79,35 @@ def resolve_target_token_price_in_pair(
     return None
 
 
+def resolve_spl_token_decimals_pair_or_none(
+        rpc_url: str,
+        mint_address_a: str,
+        mint_address_b: str,
+) -> Optional[tuple[int, int]]:
+    from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
+    from src.integrations.blockchain.solana.solana_rpc_client import get_spl_token_decimals
+    from src.integrations.blockchain.solana.solana_structures import SolanaRpcFailureReason
+
+    try:
+        return (
+            get_spl_token_decimals(rpc_url, mint_address_a),
+            get_spl_token_decimals(rpc_url, mint_address_b),
+        )
+    except BlockchainRpcUnavailableError as rpc_unavailable_error:
+        if rpc_unavailable_error.failure_reason in {
+            SolanaRpcFailureReason.MISSING_ACCOUNT,
+            SolanaRpcFailureReason.INVALID_ACCOUNT_DATA,
+        }:
+            logger.debug(
+                "[BLOCKCHAIN][PRICE][SOL][UTILS] Mint decimals unavailable — mint_a=%s mint_b=%s reason=%s",
+                mint_address_a[:12],
+                mint_address_b[:12],
+                rpc_unavailable_error.failure_reason.value,
+            )
+            return None
+        raise
+
+
 def fetch_vault_balances_and_mint_decimals(
         rpc_url: str,
         vault_address_a: str,
@@ -87,7 +116,6 @@ def fetch_vault_balances_and_mint_decimals(
         mint_address_b: str,
 ) -> Optional[SolanaVaultBalanceDecimalsSnapshot]:
     from src.integrations.blockchain.solana.solana_rpc_client import (
-        get_spl_token_decimals,
         read_spl_token_balance_from_account_info,
         rpc_get_multiple_accounts,
     )
@@ -108,16 +136,14 @@ def fetch_vault_balances_and_mint_decimals(
     if vault_balance_a_raw <= 0 or vault_balance_b_raw <= 0:
         return None
 
-    try:
-        decimals_a = get_spl_token_decimals(rpc_url, mint_address_a)
-        decimals_b = get_spl_token_decimals(rpc_url, mint_address_b)
-    except Exception:
-        logger.exception(
-            "[BLOCKCHAIN][PRICE][SOL][UTILS] Failed to fetch mint decimals — mint_a=%s mint_b=%s",
-            mint_address_a[:12],
-            mint_address_b[:12],
-        )
+    mint_decimals = resolve_spl_token_decimals_pair_or_none(
+        rpc_url=rpc_url,
+        mint_address_a=mint_address_a,
+        mint_address_b=mint_address_b,
+    )
+    if mint_decimals is None:
         return None
+    decimals_a, decimals_b = mint_decimals
 
     return SolanaVaultBalanceDecimalsSnapshot(
         vault_balance_a_raw=vault_balance_a_raw,

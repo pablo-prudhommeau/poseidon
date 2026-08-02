@@ -8,6 +8,7 @@ from sqlalchemy import select, desc
 
 from src.configuration.config import settings
 from src.core.trading.cortex.trading_cortex_feature_vector_builder import TradingCortexFeatureVectorBuilder
+from src.core.trading.cortex.promotion.trading_cortex_promotion_service import build_trading_cortex_promotion_service
 from src.core.trading.cortex.trading_cortex_inference_provider import get_trading_cortex_inference_service
 from src.core.trading.cortex.training.trading_cortex_training_dataset_service import TradingCortexTrainingDatasetService
 from src.core.trading.cortex.training.trading_cortex_training_service import TradingCortexTrainingService
@@ -37,6 +38,7 @@ class TradingCortexTrainingJob:
         )
         while True:
             try:
+                await self._run_challenger_arbitration_async()
                 await self._run_training_async()
             except asyncio.CancelledError:
                 break
@@ -44,6 +46,28 @@ class TradingCortexTrainingJob:
                 logger.error("[TRADING][CORTEX][TRAINING_JOB] Unexpected failure in training loop: %s", exc)
 
             await asyncio.sleep(loop_interval_seconds)
+
+    async def _run_challenger_arbitration_async(self) -> None:
+        if not settings.TRADING_CORTEX_PROMOTION_ENABLED:
+            return
+
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(self._thread_pool, self._execute_challenger_arbitration_sync)
+        except Exception as exc:
+            logger.error(
+                "[TRADING][CORTEX][TRAINING_JOB] Challenger arbitration failed in thread pool: %s\n%s",
+                exc,
+                traceback.format_exc(),
+            )
+
+    def _execute_challenger_arbitration_sync(self) -> None:
+        promotion_service = build_trading_cortex_promotion_service()
+        promotion_evaluation = promotion_service.evaluate_and_promote_challenger()
+        if promotion_evaluation is None or not promotion_evaluation.promoted:
+            return
+
+        self._reload_model_registry("challenger promotion")
 
     async def _run_training_async(self) -> None:
         if self._is_training_cooldown_active():
@@ -83,12 +107,15 @@ class TradingCortexTrainingJob:
             trained_model_artifacts.expected_profit_and_loss_percentage_model_path,
         )
 
+        self._reload_model_registry("training")
+
+    def _reload_model_registry(self, reload_cause: str) -> None:
         try:
             inference_service = get_trading_cortex_inference_service()
-            inference_service._model_registry_service.reload_models()
-            logger.info("[TRADING][CORTEX][TRAINING_JOB] Model registry reloaded successfully with new trained model\033[0m")
+            inference_service.reload_models()
+            logger.info("[TRADING][CORTEX][TRAINING_JOB] Model registry reloaded successfully after %s\033[0m", reload_cause)
         except Exception as exc:
-            logger.error("[TRADING][CORTEX][TRAINING_JOB] Failed to reload model registry after training: %s", exc)
+            logger.error("[TRADING][CORTEX][TRAINING_JOB] Failed to reload model registry after %s: %s", reload_cause, exc)
 
     def _is_training_cooldown_active(self) -> bool:
         with get_database_session() as session:

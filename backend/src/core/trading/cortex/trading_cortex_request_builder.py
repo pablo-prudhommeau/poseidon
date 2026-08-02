@@ -55,7 +55,6 @@ class TradingCortexRequestBuilder:
     ) -> TradingCortexCandidateFeatureSnapshot:
         market_snapshot = candidate.market_snapshot
         blockchain_network = candidate.token.chain.value if candidate.token.chain is not None else None
-        order_notional_value_usd = self._estimate_order_notional_value_usd(candidate)
 
         return TradingCortexCandidateFeatureSnapshot(
             token_symbol=candidate.token.symbol,
@@ -81,11 +80,7 @@ class TradingCortexRequestBuilder:
             transaction_count_6h=float(market_snapshot.transaction_count_h6),
             transaction_count_24h=float(market_snapshot.transaction_count_h24),
             buy_to_sell_ratio=market_snapshot.buy_to_sell_ratio,
-            order_notional_value_usd=order_notional_value_usd,
         )
-
-    def _estimate_order_notional_value_usd(self, candidate: TradingCandidate) -> float:
-        return settings.TRADING_SHADOWING_FIXED_NOTIONAL_USD * candidate.shadowing_diagnostics.notional_boost_factor
 
     def _build_regime_feature_snapshot(
             self,

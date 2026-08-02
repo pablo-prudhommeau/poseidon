@@ -32,6 +32,7 @@ def build_shadowing_regime_payload(snapshot: TradingShadowingSnapshot) -> Tradin
         edge_gate_enabled=shadowing_regime.edge_gate_enabled,
         cortex_gate_enabled=shadowing_regime.cortex_gate_enabled,
         fundamentals_gate_enabled=shadowing_regime.fundamentals_gate_enabled,
+        liquidity_structure_gate_enabled=shadowing_regime.liquidity_structure_gate_enabled,
         toxic_metrics_gate_enabled=shadowing_regime.toxic_metrics_gate_enabled,
         resolved_outcome_count=shadowing_regime.resolved_outcome_count,
         required_outcome_count=shadowing_regime.required_outcome_count,

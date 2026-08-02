@@ -66,7 +66,6 @@ class TradingCortexFeatureVectorBuilder:
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.TRANSACTION_COUNT_6H, candidate_features.transaction_count_6h)
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.TRANSACTION_COUNT_24H, candidate_features.transaction_count_24h)
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.BUY_TO_SELL_RATIO, candidate_features.buy_to_sell_ratio)
-        self._append_feature(named_feature_values, TradingCortexCandidateFeatures.ORDER_NOTIONAL_VALUE_USD, optional_float_to_feature_value(candidate_features.order_notional_value_usd))
 
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.LIQUIDITY_USD_LOGARITHMIC, safe_logarithm_one_plus(candidate_features.liquidity_usd))
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.MARKET_CAP_USD_LOGARITHMIC, safe_logarithm_one_plus(candidate_features.market_cap_usd))
@@ -91,7 +90,6 @@ class TradingCortexFeatureVectorBuilder:
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.BUY_PRESSURE_5M, candidate_features.buy_to_sell_ratio * candidate_features.volume_5m_usd)
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.MARKET_CAP_TO_LIQUIDITY_RATIO, safe_ratio(candidate_features.market_cap_usd, candidate_features.liquidity_usd))
         self._append_feature(named_feature_values, TradingCortexCandidateFeatures.FULLY_DILUTED_VALUATION_TO_LIQUIDITY_RATIO, safe_ratio(candidate_features.fully_diluted_valuation_usd, candidate_features.liquidity_usd))
-        self._append_feature(named_feature_values, TradingCortexCandidateFeatures.ORDER_NOTIONAL_TO_LIQUIDITY_RATIO, safe_ratio(candidate_features.order_notional_value_usd, candidate_features.liquidity_usd))
         self._append_feature(
             named_feature_values,
             TradingCortexCandidateFeatures.IS_RECENT_TOKEN,

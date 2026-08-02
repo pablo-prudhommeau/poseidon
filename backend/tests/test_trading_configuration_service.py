@@ -88,12 +88,15 @@ def test_validate_and_apply_trading_application_configuration_accepts_supported_
 
 
 def test_validate_and_apply_trading_application_configuration_accepts_quartet_blockchains() -> None:
-    validate_and_apply_trading_application_configuration(
-        _SettingsStub(
-            allowed_chains=["solana", "robinhood", "base", "bsc"],
-            supported_dex_ids=["pumpfun", "pumpswap"],
-        ),
+    settings_stub = _SettingsStub(
+        allowed_chains=["solana", "robinhood", "base", "bsc"],
+        supported_dex_ids=["pumpfun", "pumpswap"],
     )
+    settings_stub.TRADING_STABLECOIN_ADDRESS_ROBINHOOD = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+    settings_stub.TRADING_STABLECOIN_ADDRESS_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    settings_stub.TRADING_STABLECOIN_ADDRESS_BSC = "0x55d398326f99059fF775485246999027B3197955"
+
+    validate_and_apply_trading_application_configuration(settings_stub)
 
     assert resolve_trading_allowed_blockchain_networks() == [
         BlockchainNetwork.SOLANA,
@@ -103,6 +106,20 @@ def test_validate_and_apply_trading_application_configuration_accepts_quartet_bl
     ]
 
     validate_and_apply_trading_application_configuration(settings)
+
+
+def test_validate_and_apply_trading_application_configuration_rejects_evm_stablecoin_missing_from_price_metadata() -> None:
+    settings_stub = _SettingsStub(
+        allowed_chains=["bsc"],
+        supported_dex_ids=["pumpfun"],
+    )
+    settings_stub.TRADING_STABLECOIN_ADDRESS_BSC = "0x1111111111111111111111111111111111111111"
+
+    with pytest.raises(
+            TradingConfigurationError,
+            match="TRADING_STABLECOIN_ADDRESS_BSC value '0x1111111111111111111111111111111111111111' is not registered",
+    ):
+        validate_and_apply_trading_application_configuration(settings_stub)
 
 
 def test_validate_and_apply_trading_application_configuration_rejects_unsupported_blockchain() -> None:

@@ -41,9 +41,15 @@ class TradingCortexPreparedTrainingDataset(BaseModel):
     validation_expected_profit_and_loss_percentages: numpy.ndarray
     training_holding_duration_minutes: numpy.ndarray
     validation_holding_duration_minutes: numpy.ndarray
+    training_fragility_feature_matrix: numpy.ndarray
+    validation_fragility_feature_matrix: numpy.ndarray
+    training_fragility_labels: numpy.ndarray
+    validation_fragility_labels: numpy.ndarray
     training_exit_reasons: list[str]
     training_record_count: int
     validation_record_count: int
+    fragility_training_record_count: int
+    fragility_validation_record_count: int
     excluded_staled_verdict_count: int
     dataset_window_start_at: datetime
     dataset_window_end_at: datetime
@@ -58,6 +64,8 @@ class TradingCortexModelEvaluationMetrics(BaseModel):
     toxicity_probability_accuracy: float
     expected_profit_and_loss_root_mean_squared_error: float
     predicted_holding_time_root_mean_squared_error: float
+    fragility_probability_log_loss: float
+    fragility_probability_accuracy: float
 
 
 class TradingCortexInsufficientTrainingDataError(Exception):
@@ -74,6 +82,7 @@ class TradingCortexTrainedModelArtifacts(BaseModel):
     toxicity_probability_model_path: str
     expected_profit_and_loss_percentage_model_path: str
     predicted_holding_time_minutes_model_path: str
+    fragility_probability_model_path: str
     model_version: str
     feature_set_version: str
     ordered_feature_names: list[str]
@@ -148,8 +157,10 @@ class TradingCortexTrainingSummary(BaseModel):
     best_iteration_toxicity_probability: Optional[int] = None
     best_iteration_expected_profit_and_loss: Optional[int] = None
     best_iteration_predicted_holding_time: Optional[int] = None
+    best_iteration_fragility_probability: Optional[int] = None
     success_label_distribution: TradingCortexTrainingLabelDistribution
     toxicity_label_distribution: TradingCortexTrainingLabelDistribution
+    fragility_label_distribution: TradingCortexTrainingLabelDistribution
     expected_profit_and_loss_target_distribution: TradingCortexTrainingTargetDistribution
     predicted_holding_time_target_distribution: TradingCortexTrainingTargetDistribution
     exit_reason_distribution: TradingCortexTrainingExitReasonDistribution

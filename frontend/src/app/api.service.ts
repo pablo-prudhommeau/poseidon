@@ -72,7 +72,7 @@ export class ApiService {
         return this.http.get<AppStatusResponse>('/api/status');
     }
 
-    getTradingAnalytics(realm: 'qualified' | 'shadow' = 'qualified'): Observable<TradingAnalyticsResponse> {
+    getTradingAnalytics(realm: 'qualified' | 'shadow'): Observable<TradingAnalyticsResponse> {
         if (realm === 'shadow') {
             return this.http.get<TradingAnalyticsResponse>('/api/trading/analytics/shadow');
         }

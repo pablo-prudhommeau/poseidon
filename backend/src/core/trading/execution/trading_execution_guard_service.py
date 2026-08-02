@@ -11,11 +11,18 @@ from src.core.trading.execution.trading_execution_position_service import (
     _invalidate_trading_realms_after_closing_sell,
     execute_position_exit_sell,
 )
+from src.core.trading.execution.trading_execution_structures import TradingPositionThresholdEvaluationResult
 from src.core.trading.trading_structures import PositionExitTriggerReason
+from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.models import TradingPosition, TradingTrade, PositionPhase
 
 logger = get_application_logger(__name__)
+
+
+def compute_breakeven_stop_price(entry_price: float) -> float:
+    breakeven_stop_offset_fraction: float = max(0.0, min(1.0, settings.TRADING_EXIT_BREAKEVEN_STOP_OFFSET_FRACTION))
+    return entry_price * (1.0 - breakeven_stop_offset_fraction)
 
 
 def check_thresholds_and_exit_for_token_address(
@@ -38,9 +45,10 @@ def check_thresholds_and_exit_for_token_address(
     if not position:
         return created_trades
 
-    created_trades = _evaluate_position_thresholds(database_session, position, last_price)
+    evaluation_result = _evaluate_position_thresholds(database_session, position, last_price)
+    created_trades = evaluation_result.created_trades
 
-    if created_trades:
+    if created_trades or evaluation_result.position_mutated:
         database_session.commit()
 
     return created_trades
@@ -50,12 +58,12 @@ def _evaluate_position_thresholds(
         database_session: Session,
         position: TradingPosition,
         last_price_value: float,
-) -> List[TradingTrade]:
+) -> TradingPositionThresholdEvaluationResult:
     created_trades: List[TradingTrade] = []
     position_quantity = position.current_quantity or 0.0
 
     if position_quantity <= 0.0:
-        return created_trades
+        return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
 
     take_profit_1_price: float = position.take_profit_tier_1_price or 0.0
     take_profit_2_price: float = position.take_profit_tier_2_price or 0.0
@@ -80,7 +88,7 @@ def _evaluate_position_thresholds(
             _invalidate_trading_realms_after_closing_sell(
                 stablecoin_swap_settled_on_chain=closing_sell_result.stablecoin_swap_settled_on_chain,
             )
-        return created_trades
+        return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
 
     if take_profit_2_price > 0.0 and last_price_value >= take_profit_2_price:
         logger.info(
@@ -101,9 +109,13 @@ def _evaluate_position_thresholds(
             _invalidate_trading_realms_after_closing_sell(
                 stablecoin_swap_settled_on_chain=closing_sell_result.stablecoin_swap_settled_on_chain,
             )
-        return created_trades
+        return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
 
     if take_profit_1_price > 0.0 and last_price_value >= take_profit_1_price and position.position_phase == PositionPhase.OPEN:
+        if settings.TRADING_EXIT_BREAKEVEN_AFTER_TP1_ENABLED:
+            breakeven_stop_armed: bool = _arm_breakeven_stop(position, last_price_value, take_profit_1_price)
+            return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=breakeven_stop_armed)
+
         take_profit_fraction = max(0.0, min(1.0, settings.TRADING_TP1_TAKE_PROFIT_FRACTION))
         partial_quantity = position_quantity * take_profit_fraction
         if partial_quantity > 0.0:
@@ -126,4 +138,36 @@ def _evaluate_position_thresholds(
                     stablecoin_swap_settled_on_chain=closing_sell_result.stablecoin_swap_settled_on_chain,
                 )
 
-    return created_trades
+    return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
+
+
+def _arm_breakeven_stop(position: TradingPosition, last_price_value: float, take_profit_1_price: float) -> bool:
+    if position.breakeven_stop_armed_at is not None:
+        return False
+
+    breakeven_stop_price: float = compute_breakeven_stop_price(position.entry_price)
+    previous_stop_loss_price: float = position.stop_loss_price
+
+    if breakeven_stop_price <= previous_stop_loss_price:
+        logger.debug(
+            "[TRADING][EXECUTION][GUARD][TP1][BREAKEVEN] %s already protected above breakeven (stop=%.12f breakeven=%.12f)",
+            position.token_symbol,
+            previous_stop_loss_price,
+            breakeven_stop_price,
+        )
+        return False
+
+    position.stop_loss_price = breakeven_stop_price
+    position.breakeven_stop_armed_at = get_current_local_datetime()
+
+    logger.info(
+        "[TRADING][EXECUTION][GUARD][TP1][BREAKEVEN] Armed for %s @ %.12f (tp1=%.12f) — stop raised %.12f -> %.12f (entry=%.12f, offset=%.2f%%)",
+        position.token_symbol,
+        last_price_value,
+        take_profit_1_price,
+        previous_stop_loss_price,
+        breakeven_stop_price,
+        position.entry_price,
+        settings.TRADING_EXIT_BREAKEVEN_STOP_OFFSET_FRACTION * 100.0,
+    )
+    return True
