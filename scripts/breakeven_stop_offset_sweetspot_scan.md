@@ -8,13 +8,13 @@ Use this script in a future context window once enough forward shadowing has acc
 
 ## Why this exists
 
-Live policy after TP1 (when `TRADING_EXIT_BREAKEVEN_AFTER_TP1_ENABLED=true`):
+Live policy after BE arm (always on — no toggle):
 
 - no partial sell
 - raise stop to `entry × (1 − offset)`
 - default offset today: **0.05** (−5 %)
 
-That default was a conservative guardrail against wick noise, **not** a measured fee-recovery optimum (~1 %). This scan rechallenges the sweetspot from measured post-TP1 lows.
+That default was a conservative guardrail against wick noise, **not** a measured fee-recovery optimum (~1 %). This scan rechallenges the sweetspot from measured post-BE-arm lows (shadowing still instruments the former TP1 touch level via `take_profit_tier_1_*`).
 
 ---
 

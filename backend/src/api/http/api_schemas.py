@@ -198,9 +198,10 @@ class TradingPositionPayload(BaseModel):
     open_quantity: float
     current_quantity: float
     entry_price: float
-    take_profit_tier_1_price: float
-    take_profit_tier_2_price: float
+    breakeven_arm_price: float
+    take_profit_price: float
     stop_loss_price: float
+    initial_stop_loss_price: float
     position_phase: str
     blockchain_network: BlockchainNetwork
     dex_id: str
@@ -209,6 +210,7 @@ class TradingPositionPayload(BaseModel):
     closed_at: Optional[str] = None
     last_price: Optional[float] = None
     exit_reason: Optional[str] = None
+    breakeven_stop_armed_at: Optional[str] = None
     evaluation_order_notional_value_usd: float
     realized_profit_and_loss_usd: float
 
@@ -553,6 +555,7 @@ class TradingShadowingVerdictChronicleCortexModelRolloutPayload(BaseModel):
     validation_record_count: int
     success_probability_accuracy: float
     is_active: bool
+    model_role: str
     label: str
 
 

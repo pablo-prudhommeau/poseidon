@@ -105,7 +105,7 @@ class TradingShadowingVerdictTracker:
                 self._attach_stale_verdict(verdict, probe, current_time)
                 batch_statistics.resolved_verdict_count += 1
                 batch_statistics.resolved_staled_missing_dex_price_count += 1
-                logger.info(
+                logger.debug(
                     "[TRADING][SHADOWING][VERDICT] %s marked as STALED — no DexScreener price (token delisted or dead)",
                     probe.token_symbol,
                 )
@@ -167,7 +167,7 @@ class TradingShadowingVerdictTracker:
                     batch_statistics.resolved_staled_unrecoverable_onchain_price_count += 1
                     if probe.token_symbol not in staled_unrecoverable_symbols_logged:
                         staled_unrecoverable_symbols_logged.add(probe.token_symbol)
-                        logger.info(
+                        logger.debug(
                             "[TRADING][SHADOWING][VERDICT] %s marked as STALED — dex %s unsupported for on-chain pricing, stopping retries",
                             probe.token_symbol,
                             probe.dex_id,
@@ -214,7 +214,7 @@ class TradingShadowingVerdictTracker:
                             batch_statistics.resolved_staled_unrecoverable_onchain_price_count += 1
                             if probe.token_symbol not in staled_unrecoverable_symbols_logged:
                                 staled_unrecoverable_symbols_logged.add(probe.token_symbol)
-                                logger.info(
+                                logger.debug(
                                     "[TRADING][SHADOWING][VERDICT] %s marked as STALED — on-chain price unrecoverable (dead pool / drained liquidity), stopping retries",
                                     probe.token_symbol,
                                 )
@@ -224,7 +224,7 @@ class TradingShadowingVerdictTracker:
                     relative_deviation = (high_price / low_price) - 1.0
 
                     if relative_deviation > aberrant_price_tolerance:
-                        logger.info(
+                        logger.debug(
                             "[TRADING][SHADOWING][VERDICT] %s marked as STALED — aberrant DexScreener price deviation %.1f%% (onchain=%.12f dex=%.12f, tolerance=%.0f%%)",
                             probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price, aberrant_price_tolerance * 100.0,
                         )
@@ -260,7 +260,7 @@ class TradingShadowingVerdictTracker:
                             )
                             continue
 
-                        logger.info(
+                        logger.debug(
                             "[TRADING][SHADOWING][VERDICT] %s marked as STALED — persistent slippage %.1f%% for %.1fh "
                             "(onchain=%.12f dex=%.12f), probe entry price untrustworthy, stopping retries",
                             probe.token_symbol,
@@ -308,7 +308,7 @@ class TradingShadowingVerdictTracker:
                     )
                     batch_statistics.resolved_verdict_count += 1
                     batch_statistics.resolved_honeypot_count += 1
-                    logger.info(
+                    logger.debug(
                         "[TRADING][SHADOWING][VERDICT][HONEYPOT] %s marked as HONEYPOT — active mint freeze authority",
                         probe.token_symbol,
                     )
@@ -317,7 +317,7 @@ class TradingShadowingVerdictTracker:
                 self._attach_lethargic_verdict(verdict, probe, current_time, dex_price)
                 batch_statistics.resolved_verdict_count += 1
                 batch_statistics.resolved_lethargic_count += 1
-                logger.info(
+                logger.debug(
                     "[TRADING][SHADOWING][VERDICT] %s marked as LETHARGIC after %d hours",
                     probe.token_symbol,
                     lethargic_cutoff_hours,
@@ -451,7 +451,7 @@ class TradingShadowingVerdictTracker:
                     current_time=current_time,
                 )
                 honeypot_resolved_count += 1
-                logger.info(
+                logger.debug(
                     "[TRADING][SHADOWING][VERDICT][HONEYPOT] %s marked as HONEYPOT — active mint freeze authority",
                     probe.token_symbol,
                 )

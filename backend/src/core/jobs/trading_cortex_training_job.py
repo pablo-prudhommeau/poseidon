@@ -27,12 +27,11 @@ logger = get_application_logger(__name__)
 class TradingCortexTrainingJob:
     def __init__(self) -> None:
         self._thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="trading_cortex_training")
-        self._training_cooldown_seconds = settings.TRADING_CORTEX_TRAINING_COOLDOWN_HOURS * 3600
 
     async def run_loop(self) -> None:
         loop_interval_seconds = settings.TRADING_CORTEX_LOOP_INTERVAL_SECONDS
         logger.info(
-            "[TRADING][CORTEX][TRAINING_JOB] Training loop starting (interval=%ss, cooldown=%sh)",
+            "[TRADING][CORTEX][TRAINING_JOB] Training loop starting (interval=%ss, model_cycle=%sh)",
             loop_interval_seconds,
             settings.TRADING_CORTEX_TRAINING_COOLDOWN_HOURS,
         )
@@ -118,6 +117,7 @@ class TradingCortexTrainingJob:
             logger.error("[TRADING][CORTEX][TRAINING_JOB] Failed to reload model registry after %s: %s", reload_cause, exc)
 
     def _is_training_cooldown_active(self) -> bool:
+        training_cooldown_seconds: float = float(settings.TRADING_CORTEX_TRAINING_COOLDOWN_HOURS) * 3600.0
         with get_database_session() as session:
             latest_model_manifest = session.execute(
                 select(TradingCortexModelManifest).order_by(desc(TradingCortexModelManifest.created_at)).limit(1)
@@ -129,8 +129,8 @@ class TradingCortexTrainingJob:
             last_training_at = ensure_timezone_aware(latest_model_manifest.created_at)
             time_since_last_training = get_current_local_datetime() - last_training_at
 
-            if time_since_last_training.total_seconds() < self._training_cooldown_seconds:
-                remaining_seconds = self._training_cooldown_seconds - time_since_last_training.total_seconds()
+            if time_since_last_training.total_seconds() < training_cooldown_seconds:
+                remaining_seconds = training_cooldown_seconds - time_since_last_training.total_seconds()
                 logger.debug(
                     "[TRADING][CORTEX][TRAINING_JOB] Cooldown active. Last training was %s (%.1f hours ago). Next training in %.1f hours.",
                     last_training_at,

@@ -16,8 +16,15 @@
         <div class="flex w-full flex-col gap-3">
             <div class="flex w-full items-center justify-between gap-4">
                 <div class="flex min-w-0 items-center gap-3">
-                    <div class="min-w-0">
+                    <div class="flex min-w-0 items-center gap-2.5">
+                        <span #tradeModalTitleIcons class="inline-flex items-center gap-2 shrink-0"></span>
                         <div class="text-xl font-black text-white tracking-tight">{{ selectedTrade()?.token_symbol }}</div>
+                        @if (selectedTrade()?.trade_side) {
+                            <span class="poseidon-grid-pill" [ngClass]="selectedTrade()?.trade_side === 'BUY' ? 'poseidon-grid-pill--buy' : 'poseidon-grid-pill--sell'" [title]="selectedTrade()?.trade_side || ''">
+                                <i class="fa-solid poseidon-grid-pill-icon" [ngClass]="resolveTradeSideIconClass(selectedTrade()?.trade_side)" aria-hidden="true"></i>
+                                <span class="poseidon-grid-pill-label">{{ selectedTrade()?.trade_side }}</span>
+                            </span>
+                        }
                     </div>
                 </div>
                 <div class="trade-modal-header-actions flex flex-wrap items-center justify-end gap-2">
@@ -102,7 +109,7 @@
                     </div>
                 </div>
 
-                <div class="pt-3 space-y-3">
+                <div class="pt-3 space-y-2">
                     <div class="trade-modal-section-header">
                         <div class="flex items-center gap-2 px-1">
                             <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
@@ -110,44 +117,50 @@
                             </span>
                             <div class="leading-none">
                                 <div class="text-[10px] font-black uppercase text-slate-200">Trade information</div>
-                                <div class="mt-1 text-[10px] text-slate-500">Execution, context and linked position</div>
+                                <div class="mt-1 text-[9px] text-slate-500">Execution, context and linked position</div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-                            <div class="flex items-center gap-2 mb-3">
+                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-2">
+                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                            <div class="flex items-center gap-2 mb-2">
                                 <i class="fa fa-bolt text-cyan-400/60 text-sm"></i>
                                 <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Execution context</span>
                             </div>
-                            <div class="space-y-2.5">
-                                <div class="trade-modal-detail-row">
-                                    <span class="trade-modal-detail-label">Executed</span>
-                                    <span class="trade-modal-detail-value">{{ selectedTrade()?.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
+                            <div class="space-y-0 poseidon-detail-table">
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-clock" aria-hidden="true"></i>
+                                        <span>Executed</span>
+                                    </span>
+                                    <span class="poseidon-detail-value">{{ selectedTrade()?.created_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
                                 </div>
-                                <div class="trade-modal-detail-row">
-                                    <span class="trade-modal-detail-label">Fee</span>
-                                    <span class="trade-modal-detail-value">{{ formatCurrency(selectedTrade()?.transaction_fee, 'USD', 4, 6) }}</span>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+                                        <span>Fee</span>
+                                    </span>
+                                    <span class="poseidon-detail-value">{{ formatCurrency(selectedTrade()?.transaction_fee, 'USD', 4, 6) }}</span>
                                 </div>
-                                <div class="trade-modal-detail-row">
-                                    <span class="trade-modal-detail-label">Network</span>
-                                    <span class="trade-modal-inline-value">
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-globe" aria-hidden="true"></i>
+                                        <span>Network</span>
+                                    </span>
+                                    <span class="poseidon-detail-inline-value">
                                         @if (currentTradeChainIcon()) {
                                             <img [src]="currentTradeChainIcon()" (error)="handleTradeChainIconError($event)" alt="Blockchain icon" class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
                                         }
                                         <span>{{ selectedTrade()?.blockchain_network || '—' }}</span>
                                     </span>
                                 </div>
-                                <div class="trade-modal-detail-row">
-                                    <span class="trade-modal-detail-label">Side</span>
-                                    <span class="poseidon-grid-pill" [ngClass]="selectedTrade()?.trade_side === 'BUY' ? 'poseidon-grid-pill--buy' : 'poseidon-grid-pill--sell'">
-                                        {{ selectedTrade()?.trade_side || '—' }}
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-store" aria-hidden="true"></i>
+                                        <span>DEX</span>
                                     </span>
-                                </div>
-                                <div class="trade-modal-detail-row">
-                                    <span class="trade-modal-detail-label">DEX</span>
-                                    <span class="trade-modal-inline-value">
+                                    <span class="poseidon-detail-inline-value">
                                         @if (currentTradeDexIcon(); as tradeDexIcon) {
                                             <img [src]="tradeDexIcon" (error)="handleTradeDexIconError($event)" alt="DEX icon" class="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
                                         }
@@ -157,85 +170,124 @@
                             </div>
                         </div>
 
-                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-                            <div class="flex items-center gap-2 mb-3">
+                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                            <div class="flex items-center gap-2 mb-2">
                                 <i class="fa fa-layer-group text-purple-400/60 text-sm"></i>
                                 <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Position context</span>
                             </div>
                             @if (positionForSelectedTrade(); as livePosition) {
-                                <div class="space-y-2.5">
-                                    <div class="trade-modal-detail-row">
-                                        <span class="trade-modal-detail-label">Phase</span>
-                                        <span class="poseidon-grid-pill" [ngClass]="positionPhasePillNgClasses(livePosition.position_phase)">
-                                            {{ livePosition.position_phase }}
+                                <div class="space-y-0 poseidon-detail-table">
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
+                                            <span>Phase</span>
+                                        </span>
+                                        <span class="poseidon-grid-pill" [ngClass]="positionPhasePillNgClasses(livePosition.position_phase)" [title]="livePosition.position_phase">
+                                            <i class="fa-solid poseidon-grid-pill-icon" [ngClass]="resolvePositionPhaseIconClass(livePosition.position_phase)" aria-hidden="true"></i>
+                                            <span class="poseidon-grid-pill-label">{{ livePosition.position_phase }}</span>
                                         </span>
                                     </div>
-                                    <div class="trade-modal-detail-row">
-                                        <span class="trade-modal-detail-label">Opened</span>
-                                        <span class="trade-modal-detail-value">{{ livePosition.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-clock" aria-hidden="true"></i>
+                                            <span>Opened</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ livePosition.opened_at | date: 'yyyy-MM-dd HH:mm:ss' }}</span>
                                     </div>
-                                    <div class="trade-modal-detail-row">
-                                        <span class="trade-modal-detail-label">Closed</span>
-                                        <span class="trade-modal-detail-value">{{ livePosition.closed_at ? (livePosition.closed_at | date: 'yyyy-MM-dd HH:mm:ss') : 'active' }}</span>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-flag-checkered" aria-hidden="true"></i>
+                                            <span>Closed</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ livePosition.closed_at ? (livePosition.closed_at | date: 'yyyy-MM-dd HH:mm:ss') : 'active' }}</span>
                                     </div>
-                                    <div class="trade-modal-detail-row">
-                                        <span class="trade-modal-detail-label">Open quantity</span>
-                                        <span class="trade-modal-detail-value">{{ formatCompactQuantity(livePosition.open_quantity) }}</span>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                                            <span>Open quantity</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatCompactQuantity(livePosition.open_quantity) }}</span>
                                     </div>
-                                    <div class="trade-modal-detail-row">
-                                        <span class="trade-modal-detail-label">Current quantity</span>
-                                        <span class="trade-modal-detail-value">{{ formatCompactQuantity(livePosition.current_quantity) }}</span>
-                                    </div>
-                                    <div class="trade-modal-detail-row">
-                                        <span class="trade-modal-detail-label">Entry</span>
-                                        <span class="trade-modal-detail-value">{{ formatCompactUsd(livePosition.entry_price) }}</span>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-crosshairs" aria-hidden="true"></i>
+                                            <span>Entry</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatCompactUsd(livePosition.entry_price) }}</span>
                                     </div>
                                     @if (linkedPositionLastPrice(livePosition) !== null) {
-                                        <div class="trade-modal-detail-row">
-                                            <span class="trade-modal-detail-label">Live price</span>
-                                            <span class="trade-modal-detail-value">{{ formatCompactUsd(linkedPositionLastPrice(livePosition)) }}</span>
+                                        <div class="poseidon-detail-row">
+                                            <span class="poseidon-detail-label">
+                                                <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+                                                <span>Live price</span>
+                                            </span>
+                                            <span class="poseidon-detail-value">{{ formatCompactUsd(linkedPositionLastPrice(livePosition)) }}</span>
                                         </div>
-                                        <div class="trade-modal-detail-row">
-                                            <span class="trade-modal-detail-label">Live delta</span>
-                                            <span class="trade-modal-detail-value" [class.text-emerald-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) > 0" [class.text-red-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) < 0" [class.text-slate-300]="(linkedPositionDeltaPercent(livePosition) ?? 0) === 0"> {{ linkedPositionDeltaPercent(livePosition) !== null && (linkedPositionDeltaPercent(livePosition) ?? 0) > 0 ? '+' : '' }}{{ formatPercent(linkedPositionDeltaPercent(livePosition)) }} </span>
+                                        <div class="poseidon-detail-row">
+                                            <span class="poseidon-detail-label">
+                                                <i class="fa-solid fa-percent" aria-hidden="true"></i>
+                                                <span>Live delta</span>
+                                            </span>
+                                            <span class="poseidon-detail-value" [class.text-emerald-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) > 0" [class.text-red-400]="(linkedPositionDeltaPercent(livePosition) ?? 0) < 0" [class.text-slate-300]="(linkedPositionDeltaPercent(livePosition) ?? 0) === 0"> {{ linkedPositionDeltaPercent(livePosition) !== null && (linkedPositionDeltaPercent(livePosition) ?? 0) > 0 ? '+' : '' }}{{ formatPercent(linkedPositionDeltaPercent(livePosition)) }} </span>
                                         </div>
                                     }
                                 </div>
                             }
                         </div>
 
-                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-                            <div class="flex items-center gap-2 mb-3">
+                        <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                            <div class="flex items-center gap-2 mb-2">
                                 <i class="fa fa-link text-amber-400/60 text-sm"></i>
                                 <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Chain references</span>
                             </div>
-                            <div class="space-y-2.5">
+                            <div class="space-y-0 poseidon-detail-table">
                                 @if (selectedTrade()?.transaction_hash) {
-                                    <div class="trade-modal-address-row">
-                                        <span class="trade-modal-detail-label">Transaction</span>
-                                        <div class="trade-modal-address-value">
-                                            <span class="font-mono truncate">{{ selectedTrade()?.transaction_hash }}</span>
-                                            <button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.transaction_hash)">
-                                                <i class="far fa-copy text-[10px]"></i>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-hashtag" aria-hidden="true"></i>
+                                            <span>Transaction</span>
+                                        </span>
+                                        <div class="poseidon-detail-address-value">
+                                            <span class="font-mono">{{ formatMiddleEllipsisAddress(selectedTrade()?.transaction_hash) }}</span>
+                                            <button type="button" class="poseidon-detail-icon-btn" [class.poseidon-detail-icon-btn--copied]="copiedAddressKey() === 'tx'" [title]="copiedAddressKey() === 'tx' ? 'Copied' : 'Copy'" (click)="copyToClipboard(selectedTrade()?.transaction_hash, 'tx')">
+                                                @if (copiedAddressKey() === 'tx') {
+                                                    <i class="fas fa-check" aria-hidden="true"></i>
+                                                } @else {
+                                                    <i class="far fa-copy" aria-hidden="true"></i>
+                                                }
                                             </button>
                                         </div>
                                     </div>
                                 }
-                                <div class="trade-modal-address-row">
-                                    <span class="trade-modal-detail-label">Token address</span>
-                                    <div class="trade-modal-address-value">
-                                        <span class="font-mono truncate">{{ selectedTrade()?.token_address }}</span>
-                                        <button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.token_address)">
-                                            <i class="far fa-copy text-[10px]"></i>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-coins" aria-hidden="true"></i>
+                                        <span>Token</span>
+                                    </span>
+                                    <div class="poseidon-detail-address-value">
+                                        <span class="font-mono">{{ formatMiddleEllipsisAddress(selectedTrade()?.token_address) }}</span>
+                                        <button type="button" class="poseidon-detail-icon-btn" [class.poseidon-detail-icon-btn--copied]="copiedAddressKey() === 'token'" [title]="copiedAddressKey() === 'token' ? 'Copied' : 'Copy'" (click)="copyToClipboard(selectedTrade()?.token_address, 'token')">
+                                            @if (copiedAddressKey() === 'token') {
+                                                <i class="fas fa-check" aria-hidden="true"></i>
+                                            } @else {
+                                                <i class="far fa-copy" aria-hidden="true"></i>
+                                            }
                                         </button>
                                     </div>
                                 </div>
-                                <div class="trade-modal-address-row">
-                                    <span class="trade-modal-detail-label">Pair address</span>
-                                    <div class="trade-modal-address-value">
-                                        <span class="font-mono truncate">{{ selectedTrade()?.pair_address }}</span>
-                                        <button class="trade-modal-icon-btn" (click)="copyToClipboard(selectedTrade()?.pair_address)">
-                                            <i class="far fa-copy text-[10px]"></i>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-link" aria-hidden="true"></i>
+                                        <span>Pair</span>
+                                    </span>
+                                    <div class="poseidon-detail-address-value">
+                                        <span class="font-mono">{{ formatMiddleEllipsisAddress(selectedTrade()?.pair_address) }}</span>
+                                        <button type="button" class="poseidon-detail-icon-btn" [class.poseidon-detail-icon-btn--copied]="copiedAddressKey() === 'pair'" [title]="copiedAddressKey() === 'pair' ? 'Copied' : 'Copy'" (click)="copyToClipboard(selectedTrade()?.pair_address, 'pair')">
+                                            @if (copiedAddressKey() === 'pair') {
+                                                <i class="fas fa-check" aria-hidden="true"></i>
+                                            } @else {
+                                                <i class="far fa-copy" aria-hidden="true"></i>
+                                            }
                                         </button>
                                     </div>
                                 </div>
@@ -245,7 +297,7 @@
                 </div>
 
                 @if (analyticsForSelected(); as analytics) {
-                    <div class="pt-3 space-y-3">
+                    <div class="pt-3 space-y-2">
                         <div class="trade-modal-section-header">
                             <div class="flex items-center gap-2 px-1">
                                 <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
@@ -253,74 +305,112 @@
                                 </span>
                                 <div class="leading-none">
                                     <div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
-                                    <div class="mt-1 text-[10px] text-slate-500">Condensed market structure and momentum</div>
+                                    <div class="mt-1 text-[9px] text-slate-500">Market structure and entry momentum</div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-                                <div class="flex items-center gap-2 mb-3">
+                        <div class="grid grid-cols-1 xl:grid-cols-3 gap-2">
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                                <div class="flex items-center gap-2 mb-2">
                                     <i class="fa fa-coins text-emerald-400/60 text-sm"></i>
                                     <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Market structure</span>
                                 </div>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Liquidity</div>
-                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</div>
+                                <div class="space-y-0 poseidon-detail-table">
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-droplet" aria-hidden="true"></i>
+                                            <span>Liquidity</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatCurrency(analytics.fundamentals.liquidity_usd, 'USD', 0, 0) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Volume 1h</div>
-                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-chart-column" aria-hidden="true"></i>
+                                            <span>Volume 1h</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatCurrency(analytics.fundamentals.volume_h1_usd, 'USD', 0, 0) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Volume 24h</div>
-                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-chart-area" aria-hidden="true"></i>
+                                            <span>Volume 24h</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatCurrency(analytics.fundamentals.volume_h24_usd, 'USD', 0, 0) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Market cap</div>
-                                        <div class="trade-modal-stat-value">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-landmark" aria-hidden="true"></i>
+                                            <span>Market cap</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatCurrency(analytics.fundamentals.market_cap_usd, 'USD', 0, 0) }}</span>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-                                <div class="flex items-center gap-2 mb-3">
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                                <div class="flex items-center gap-2 mb-2">
                                     <i class="fa fa-wave-square text-blue-400/60 text-sm"></i>
-                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Momentum at entry</span>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Price deltas</span>
                                 </div>
-                                <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Delta 5m</div>
-                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}</div>
+                                <div class="space-y-0 poseidon-detail-table">
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+                                            <span>Delta 5m</span>
+                                        </span>
+                                        <span class="poseidon-detail-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_m5 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_m5 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_m5) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Delta 1h</div>
-                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-clock" aria-hidden="true"></i>
+                                            <span>Delta 1h</span>
+                                        </span>
+                                        <span class="poseidon-detail-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h1 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h1 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h1) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Delta 6h</div>
-                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
+                                            <span>Delta 6h</span>
+                                        </span>
+                                        <span class="poseidon-detail-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h6 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h6 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h6) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Delta 24h</div>
-                                        <div class="trade-modal-stat-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-calendar-day" aria-hidden="true"></i>
+                                            <span>Delta 24h</span>
+                                        </span>
+                                        <span class="poseidon-detail-value" [class.text-emerald-400]="analytics.fundamentals.price_change_percentage_h24 > 0" [class.text-red-400]="analytics.fundamentals.price_change_percentage_h24 < 0">{{ formatPercent(analytics.fundamentals.price_change_percentage_h24) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Buy/Sell ratio</div>
-                                        <div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.buy_to_sell_ratio, 2, 2) }}</div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i class="fa fa-arrow-right-arrow-left text-amber-400/60 text-sm"></i>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Activity</span>
+                                </div>
+                                <div class="space-y-0 poseidon-detail-table">
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i>
+                                            <span>Buy/Sell</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatNumber(analytics.fundamentals.buy_to_sell_ratio, 2, 2) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Transactions 1h</div>
-                                        <div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.transaction_count_h1, 0, 0) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+                                            <span>Tx 1h</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatNumber(analytics.fundamentals.transaction_count_h1, 0, 0) }}</span>
                                     </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">Token age</div>
-                                        <div class="trade-modal-stat-value">{{ formatNumber(analytics.fundamentals.token_age_hours, 0, 0) }}h</div>
-                                    </div>
-                                    <div class="trade-modal-stat-card">
-                                        <div class="trade-modal-stat-label">AI adjusted</div>
-                                        <div class="trade-modal-stat-value">{{ formatPercent(analytics.scores.ai_adjusted_quality_score) }}</div>
+                                    <div class="poseidon-detail-row">
+                                        <span class="poseidon-detail-label">
+                                            <i class="fa-solid fa-seedling" aria-hidden="true"></i>
+                                            <span>Token age</span>
+                                        </span>
+                                        <span class="poseidon-detail-value">{{ formatNumber(analytics.fundamentals.token_age_hours, 0, 0) }}h</span>
                                     </div>
                                 </div>
                             </div>
@@ -337,7 +427,7 @@
     </p-tabs>
 
     <ng-template #tradeMarketSnapshotSkeleton>
-        <div class="pt-3 space-y-3">
+        <div class="pt-3 space-y-2">
             <div class="trade-modal-section-header">
                 <div class="flex items-center gap-2 px-1">
                     <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-slate-400">
@@ -345,37 +435,52 @@
                     </span>
                     <div class="leading-none">
                         <div class="text-[10px] font-black uppercase text-slate-200">Market snapshot at entry</div>
-                        <div class="mt-1 text-[10px] text-slate-500">Loading market structure and momentum</div>
+                        <div class="mt-1 text-[9px] text-slate-500">Market structure and entry momentum</div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-                    <div class="flex items-center gap-2 mb-3">
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-2">
+                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                    <div class="flex items-center gap-2 mb-2">
                         <i class="fa fa-coins text-emerald-400/40 text-sm"></i>
                         <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Market structure</span>
                     </div>
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="space-y-0 poseidon-detail-table">
                         @for (_ of [1, 2, 3, 4]; track $index) {
-                            <div class="trade-modal-stat-card">
-                                <p-skeleton width="42%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
-                                <p-skeleton width="68%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
+                            <div class="poseidon-detail-row">
+                                <p-skeleton width="40%" height="0.55rem" styleClass="!rounded-md"></p-skeleton>
+                                <p-skeleton width="36%" height="0.75rem" styleClass="!rounded-md"></p-skeleton>
                             </div>
                         }
                     </div>
                 </div>
 
-                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-4">
-                    <div class="flex items-center gap-2 mb-3">
+                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                    <div class="flex items-center gap-2 mb-2">
                         <i class="fa fa-wave-square text-blue-400/40 text-sm"></i>
-                        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Momentum at entry</span>
+                        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Price deltas</span>
                     </div>
-                    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
-                        @for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track $index) {
-                            <div class="trade-modal-stat-card">
-                                <p-skeleton width="58%" height="0.55rem" styleClass="mb-2 !rounded-md"></p-skeleton>
-                                <p-skeleton width="54%" height="0.95rem" styleClass="!rounded-md"></p-skeleton>
+                    <div class="space-y-0 poseidon-detail-table">
+                        @for (_ of [1, 2, 3, 4]; track $index) {
+                            <div class="poseidon-detail-row">
+                                <p-skeleton width="40%" height="0.55rem" styleClass="!rounded-md"></p-skeleton>
+                                <p-skeleton width="36%" height="0.75rem" styleClass="!rounded-md"></p-skeleton>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="rounded-2xl bg-black/20 border border-white/5 backdrop-blur-2xl shadow-xl p-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fa fa-arrow-right-arrow-left text-amber-400/40 text-sm"></i>
+                        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Activity</span>
+                    </div>
+                    <div class="space-y-0 poseidon-detail-table">
+                        @for (_ of [1, 2, 3]; track $index) {
+                            <div class="poseidon-detail-row">
+                                <p-skeleton width="40%" height="0.55rem" styleClass="!rounded-md"></p-skeleton>
+                                <p-skeleton width="36%" height="0.75rem" styleClass="!rounded-md"></p-skeleton>
                             </div>
                         }
                     </div>

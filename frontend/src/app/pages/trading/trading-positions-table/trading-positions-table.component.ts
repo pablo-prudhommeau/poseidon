@@ -1,5 +1,5 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, computed, DestroyRef, effect, inject, signal, TemplateRef, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, computed, DestroyRef, effect, ElementRef, inject, signal, TemplateRef, ViewChild } from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
 import {
     ColDef,
@@ -12,7 +12,6 @@ import {
     ValueGetterParams
 } from 'ag-grid-community';
 import { NgApexchartsModule } from 'ng-apexcharts';
-import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { DialogModule } from 'primeng/dialog';
 import { DividerModule } from 'primeng/divider';
@@ -25,6 +24,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 import { balhamDarkThemeCompact } from '../../../ag-grid.theme';
 import { ApiService } from '../../../api.service';
+import { formatMiddleEllipsisAddress } from '../../../core/blockchain.utils';
 import { DatetimeDisplayService } from '../../../core/datetime-display.service';
 import { DefiIconsService } from '../../../core/defi-icons.service';
 import {
@@ -78,7 +78,6 @@ import {
         DatePipe,
         AgGridAngular,
         DialogModule,
-        ButtonModule,
         TagModule,
         DividerModule,
         ScrollPanelModule,
@@ -97,6 +96,7 @@ import {
 })
 export class TradingPositionsTableComponent implements AfterViewInit {
     @ViewChild('actionsTemplate', { static: false }) private actionsTemplate?: TemplateRef<unknown>;
+    @ViewChild('positionModalTitleIcons', { static: false }) private positionModalTitleIconsHost?: ElementRef<HTMLElement>;
 
     public readonly agGridTheme = balhamDarkThemeCompact;
     public readonly closingPositionIds = signal<Set<number>>(new Set());
@@ -104,6 +104,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     public readonly confirmCloseVisible = signal<boolean>(false);
 
     public readonly confirmRecoveryVisible = signal<boolean>(false);
+    public readonly copiedAddressKey = signal<'token' | 'pair' | null>(null);
     public readonly defaultColumnDefinition: ColDef<TradingPositionPayload> = {
         resizable: true,
         sortable: true,
@@ -176,6 +177,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             return changed ? next : current;
         });
     });
+    private copiedAddressResetTimeoutId: number = 0;
     private readonly datetimeDisplayService = inject(DatetimeDisplayService);
     private readonly defiIconsService = inject(DefiIconsService);
     private readonly destroyRef = inject(DestroyRef);
@@ -185,6 +187,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         }
         this.selectedPosition();
         this.selectedAnalytics();
+        queueMicrotask(() => this.renderPositionModalTitleIcons());
     });
     private readonly tradingPositionModalService = inject(TradingPositionModalService);
     private readonly externalPositionOpenEffect = effect(() => {
@@ -334,17 +337,17 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 headerComponentParams: { iconClass: 'fa-right-to-bracket', alignRight: true }
             },
             {
-                headerName: 'TP1',
-                colId: 'takeProfitTier1',
-                field: 'take_profit_tier_1_price',
+                headerName: 'BE arm',
+                colId: 'breakevenArm',
+                field: 'breakeven_arm_price',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) => this.numberFormattingService.formatUsdCompactForGrid(p.value),
                 tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
-                    this.numberFormattingService.formatCurrency((p.data as any)?.take_profit_tier_1_price, 'USD', 4, 12),
+                    this.numberFormattingService.formatCurrency((p.data as any)?.breakeven_arm_price, 'USD', 4, 12),
                 cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    this.formatTakeProfitOrStopLossPriceStackCellHtml(p.data ?? undefined, p.value, 'take_profit_tier_one'),
+                    this.formatTakeProfitOrStopLossPriceStackCellHtml(p.data ?? undefined, p.value, 'breakeven_arm'),
                 cellClass: 'text-right whitespace-nowrap poseidon-grid-price-stack-cell',
                 flex: 1.05,
                 headerClass: 'poseidon-header-align-end',
@@ -352,17 +355,17 @@ export class TradingPositionsTableComponent implements AfterViewInit {
                 headerComponentParams: { iconClass: 'fa-flag', alignRight: true }
             },
             {
-                headerName: 'TP2',
-                colId: 'takeProfitTier2',
-                field: 'take_profit_tier_2_price',
+                headerName: 'TP',
+                colId: 'takeProfit',
+                field: 'take_profit_price',
                 type: 'numericColumn',
                 sortable: true,
                 filter: 'agNumberColumnFilter',
                 valueFormatter: (p: ValueFormatterParams<TradingPositionPayload>) => this.numberFormattingService.formatUsdCompactForGrid(p.value),
                 tooltipValueGetter: (p: ITooltipParams<TradingPositionPayload>) =>
-                    this.numberFormattingService.formatCurrency((p.data as any)?.take_profit_tier_2_price, 'USD', 4, 12),
+                    this.numberFormattingService.formatCurrency((p.data as any)?.take_profit_price, 'USD', 4, 12),
                 cellRenderer: (p: ValueFormatterParams<TradingPositionPayload>) =>
-                    this.formatTakeProfitOrStopLossPriceStackCellHtml(p.data ?? undefined, p.value, 'take_profit_tier_two'),
+                    this.formatTakeProfitOrStopLossPriceStackCellHtml(p.data ?? undefined, p.value, 'take_profit'),
                 cellClass: 'text-right whitespace-nowrap poseidon-grid-price-stack-cell',
                 flex: 1.05,
                 headerClass: 'poseidon-header-align-end',
@@ -455,6 +458,14 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         return this.selectedAnalytics();
     }
 
+    public breakevenArmPositionPercentage(row: TradingPositionPayload | null): number {
+        return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe(row?.breakeven_arm_price));
+    }
+
+    public breakevenStopPositionPercentage(row: TradingPositionPayload | null): number {
+        return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe(row?.stop_loss_price));
+    }
+
     public buildSnapshotFromDiagnostics(
         diagnostics: TradingEvaluationShadowingDiagnosticsPayload | null | undefined
     ): TradingEvaluationShadowingSnapshotPayload | null {
@@ -497,7 +508,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         };
     }
 
-    public async copyToClipboard(value: string | undefined | null): Promise<void> {
+    public async copyToClipboard(value: string | undefined | null, addressKey: 'token' | 'pair'): Promise<void> {
         if (!value) {
             return;
         }
@@ -506,6 +517,13 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         } catch {
             return;
         }
+        this.copiedAddressKey.set(addressKey);
+        window.clearTimeout(this.copiedAddressResetTimeoutId);
+        this.copiedAddressResetTimeoutId = window.setTimeout(() => {
+            if (this.copiedAddressKey() === addressKey) {
+                this.copiedAddressKey.set(null);
+            }
+        }, 1200);
     }
 
     public currentPositionChainIcon(): string {
@@ -527,7 +545,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     }
 
     public entryPositionPercentage(row: TradingPositionPayload | null): number {
-        return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe((row as any)?.entry_price));
+        return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe(row?.entry_price));
     }
 
     public formatCompactQuantity(value: unknown): string {
@@ -544,6 +562,10 @@ export class TradingPositionsTableComponent implements AfterViewInit {
 
     public formatExitReasonLabel(reason: PositionExitTriggerReason | null | undefined): string {
         return formatPositionExitReasonLabel(reason);
+    }
+
+    public formatMiddleEllipsisAddress(rawAddress: string | null | undefined): string {
+        return formatMiddleEllipsisAddress(rawAddress);
     }
 
     public formatNumber(value: unknown, min: number, max: number): string {
@@ -563,6 +585,21 @@ export class TradingPositionsTableComponent implements AfterViewInit {
 
     public handlePositionDexIconError(event: Event): void {
         this.advancePositionIconCandidate(event, this.selectedPositionDexIconCandidates, 'dex');
+    }
+
+    public initialStopLossPositionPercentage(row: TradingPositionPayload | null): number {
+        return this.pricePositionPercentage(row, this.initialStopLossPrice(row));
+    }
+
+    public initialStopLossPrice(row: TradingPositionPayload | null): number | null {
+        if (!row) {
+            return null;
+        }
+        return this.numberFormattingService.toNumberSafe(row.initial_stop_loss_price);
+    }
+
+    public isBreakevenStopArmed(row: TradingPositionPayload | null): boolean {
+        return row?.breakeven_stop_armed_at != null && row.breakeven_stop_armed_at !== '';
     }
 
     public isCloseRequestInProgress(row: TradingPositionPayload | null | undefined): boolean {
@@ -631,6 +668,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         mediaCompact.addEventListener('change', handler);
         this.destroyRef.onDestroy(() => {
             mediaCompact.removeEventListener('change', handler);
+            window.clearTimeout(this.copiedAddressResetTimeoutId);
         });
     }
 
@@ -686,6 +724,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         this.selectedPositionSnapshot.set(row ?? null);
         this.selectedAnalytics.set(preloadedEvaluation);
         this.resetSelectedPositionIcons(row);
+        this.copiedAddressKey.set(null);
+        window.clearTimeout(this.copiedAddressResetTimeoutId);
         this.detailsVisible.set(true);
 
         if (!preloadedEvaluation && row && row.evaluation_id) {
@@ -749,13 +789,13 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         if (!row) {
             return 50;
         }
-        const lastPrice = targetPrice !== undefined ? targetPrice : this.numberFormattingService.toNumberSafe((row as any).last_price as number | null);
-        const stopLossPrice = this.numberFormattingService.toNumberSafe((row as any).stop_loss_price);
-        const takeProfitTier2Price = this.numberFormattingService.toNumberSafe((row as any).take_profit_tier_2_price);
-        if (lastPrice === null || stopLossPrice === null || takeProfitTier2Price === null || takeProfitTier2Price === stopLossPrice) {
+        const lastPrice = targetPrice !== undefined ? targetPrice : this.numberFormattingService.toNumberSafe(row.last_price);
+        const rangeFloorPrice = this.numberFormattingService.toNumberSafe(row.initial_stop_loss_price);
+        const takeProfitPrice = this.numberFormattingService.toNumberSafe(row.take_profit_price);
+        if (lastPrice === null || rangeFloorPrice === null || takeProfitPrice === null || takeProfitPrice === rangeFloorPrice) {
             return 50;
         }
-        const rawPercentage = ((lastPrice - stopLossPrice) / (takeProfitTier2Price - stopLossPrice)) * 100;
+        const rawPercentage = ((lastPrice - rangeFloorPrice) / (takeProfitPrice - rangeFloorPrice)) * 100;
         return Math.max(0, Math.min(100, rawPercentage));
     }
 
@@ -776,8 +816,8 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         return this.phaseClassesForPosition(this.selectedPosition());
     }
 
-    public tp1PositionPercentage(row: TradingPositionPayload | null): number {
-        return this.pricePositionPercentage(row, this.numberFormattingService.toNumberSafe((row as any)?.take_profit_tier_1_price));
+    public selectedPositionPhaseIconClass(): string {
+        return resolvePositionPhaseIconClass(this.selectedPosition()?.position_phase);
     }
 
     private advancePositionIconCandidate(event: Event, candidates: string[], kind: 'chain' | 'dex'): void {
@@ -825,7 +865,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
             ['openedAt', 'positionPhase', 'currentQuantity', 'lastPrice', 'entryPrice', 'deltaPercent', 'positionEntryNotional'],
             true
         );
-        this.positionsGridApi.setColumnsVisible(['takeProfitTier1', 'takeProfitTier2', 'stopLoss'], true);
+        this.positionsGridApi.setColumnsVisible(['breakevenArm', 'takeProfit', 'stopLoss'], true);
     }
 
     private findOriginBuyTrade(position: TradingPositionPayload | null): TradingTradePayload | null {
@@ -854,7 +894,7 @@ export class TradingPositionsTableComponent implements AfterViewInit {
     private formatTakeProfitOrStopLossPriceStackCellHtml(
         row: TradingPositionPayload | undefined,
         priceValue: unknown,
-        priceStackKind: 'take_profit_tier_one' | 'take_profit_tier_two' | 'stop_loss'
+        priceStackKind: 'breakeven_arm' | 'take_profit' | 'stop_loss'
     ): string {
         const mainLineText = this.numberFormattingService.formatUsdCompactForGrid(priceValue) ?? '—';
         const mainLineCssClass = this.resolveTakeProfitStopLossPriceStackMainLineCssClass(priceStackKind);
@@ -904,21 +944,40 @@ export class TradingPositionsTableComponent implements AfterViewInit {
         });
     }
 
+    private renderPositionModalTitleIcons(): void {
+        const host = this.positionModalTitleIconsHost?.nativeElement;
+        if (!host) {
+            return;
+        }
+        const position = this.selectedPosition();
+        if (!position) {
+            host.replaceChildren();
+            return;
+        }
+        this.defiIconsService.renderTokenChainProtocolIcons(host, {
+            blockchain_network: position.blockchain_network,
+            dex_id: position.dex_id,
+            token_address: position.token_address,
+            token_symbol: position.token_symbol
+        });
+    }
+
     private resetSelectedPositionIcons(row: TradingPositionPayload | null): void {
         this.selectedPositionChainIconCandidates = this.defiIconsService.getChainIconCandidates(row?.blockchain_network);
         this.selectedPositionDexIconCandidates = this.defiIconsService.getProtocolIconCandidates(row?.dex_id);
         this.selectedPositionChainIconIndex = 0;
         this.selectedPositionDexIconIndex = 0;
+        queueMicrotask(() => this.renderPositionModalTitleIcons());
     }
 
-    private resolveTakeProfitStopLossPriceStackMainLineCssClass(priceStackKind: 'take_profit_tier_one' | 'take_profit_tier_two' | 'stop_loss'): string {
+    private resolveTakeProfitStopLossPriceStackMainLineCssClass(priceStackKind: 'breakeven_arm' | 'take_profit' | 'stop_loss'): string {
         let modifierSuffix: string;
         switch (priceStackKind) {
-            case 'take_profit_tier_one':
-                modifierSuffix = 'take-profit-tier-one';
+            case 'breakeven_arm':
+                modifierSuffix = 'breakeven-arm';
                 break;
-            case 'take_profit_tier_two':
-                modifierSuffix = 'take-profit-tier-two';
+            case 'take_profit':
+                modifierSuffix = 'take-profit';
                 break;
             case 'stop_loss':
                 modifierSuffix = 'stop-loss';

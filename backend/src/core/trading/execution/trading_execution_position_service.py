@@ -239,7 +239,7 @@ def _execute_closing_sell(
     token_decimals = 0
     full_close_reasons = (
         PositionExitTriggerReason.STOP_LOSS,
-        PositionExitTriggerReason.TAKE_PROFIT_2,
+        PositionExitTriggerReason.TAKE_PROFIT,
         PositionExitTriggerReason.MANUAL,
     )
     is_full_close = reason in full_close_reasons

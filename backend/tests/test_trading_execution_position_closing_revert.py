@@ -25,11 +25,12 @@ def _build_closing_position() -> TradingPosition:
         open_quantity=100.0,
         current_quantity=100.0,
         entry_price=1.0,
-        take_profit_tier_1_price=1.2,
-        take_profit_tier_2_price=1.5,
+        breakeven_arm_price=1.2,
+        take_profit_price=1.5,
         stop_loss_price=0.8,
+        initial_stop_loss_price=0.8,
         position_phase=PositionPhase.CLOSING,
-        exit_reason=PositionExitTriggerReason.TAKE_PROFIT_1.value,
+        exit_reason=PositionExitTriggerReason.TAKE_PROFIT.value,
         opened_at=MagicMock(),
         updated_at=MagicMock(),
     )
@@ -58,7 +59,7 @@ def test_execute_closing_sell_reverts_on_rpc_unavailable(
         position=position,
         execution_price=1.25,
         sell_quantity=50.0,
-        reason=PositionExitTriggerReason.TAKE_PROFIT_1,
+        reason=PositionExitTriggerReason.TAKE_PROFIT,
         previous_phase=PositionPhase.OPEN,
     )
 
@@ -85,7 +86,7 @@ def test_execute_closing_sell_reverts_on_unexpected_exception(
         position=position,
         execution_price=1.25,
         sell_quantity=50.0,
-        reason=PositionExitTriggerReason.TAKE_PROFIT_1,
+        reason=PositionExitTriggerReason.TAKE_PROFIT,
         previous_phase=PositionPhase.OPEN,
     )
 
@@ -97,7 +98,7 @@ def test_execute_closing_sell_reverts_on_unexpected_exception(
 @patch("src.core.trading.execution.trading_execution_position_service.settings")
 @patch("src.core.trading.execution.trading_execution_position_service.TradingEvaluationDao")
 @patch("src.core.trading.execution.trading_execution_position_service.TradingTradeDao")
-def test_execute_closing_sell_paper_mode_completes_partial_take_profit(
+def test_execute_closing_sell_paper_mode_completes_take_profit(
         trading_trade_dao_mock: MagicMock,
         trading_evaluation_dao_mock: MagicMock,
         settings_mock: MagicMock,
@@ -105,23 +106,21 @@ def test_execute_closing_sell_paper_mode_completes_partial_take_profit(
     settings_mock.TRADING_PAPER_MODE = True
     position = _build_closing_position()
     database_session = MagicMock()
-    saved_trade = MagicMock()
-    saved_trade.id = 99
     trading_trade_dao_mock.return_value.save.side_effect = lambda trade: setattr(trade, "id", 99) or trade
 
     trade = execute_closing_sell(
         database_session=database_session,
         position=position,
         execution_price=1.25,
-        sell_quantity=50.0,
-        reason=PositionExitTriggerReason.TAKE_PROFIT_1,
+        sell_quantity=100.0,
+        reason=PositionExitTriggerReason.TAKE_PROFIT,
         previous_phase=PositionPhase.OPEN,
     )
 
     assert trade.trading_trade is not None
-    assert position.position_phase == PositionPhase.PARTIAL
-    assert position.exit_reason == PositionExitTriggerReason.TAKE_PROFIT_1.value
-    assert position.current_quantity == 50.0
+    assert position.position_phase == PositionPhase.CLOSED
+    assert position.exit_reason == PositionExitTriggerReason.TAKE_PROFIT.value
+    assert position.current_quantity == 0.0
 
 
 @patch("src.core.trading.execution.trading_execution_position_service.settings")
@@ -158,7 +157,7 @@ def test_execute_position_exit_sell_reverts_when_mark_closing_then_rpc_fails(
         position=position,
         execution_price=1.25,
         sell_quantity=50.0,
-        reason=PositionExitTriggerReason.TAKE_PROFIT_1,
+        reason=PositionExitTriggerReason.TAKE_PROFIT,
     )
 
     assert trade.trading_trade is None

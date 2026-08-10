@@ -13,8 +13,7 @@ from src.integrations.blockchain.blockchain_structures import BlockchainExecutio
 
 
 class PositionExitTriggerReason(str, enum.Enum):
-    TAKE_PROFIT_1 = "TAKE_PROFIT_1"
-    TAKE_PROFIT_2 = "TAKE_PROFIT_2"
+    TAKE_PROFIT = "TAKE_PROFIT"
     STOP_LOSS = "STOP_LOSS"
     MANUAL = "MANUAL"
     KILLED = "KILLED"

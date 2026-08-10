@@ -178,8 +178,8 @@ class TradingShadowingPipeline:
                     logger.exception("[TRADING][SHADOWING][PIPELINE] TradingCortex inference failed for probes: %s", exc)
 
         for rank, candidate, entry_price in admissible_candidates:
-            tp1_price = entry_price * (1.0 + settings.TRADING_TP1_EXIT_FRACTION)
-            tp2_price = entry_price * (1.0 + settings.TRADING_TP2_EXIT_FRACTION)
+            tp1_price = entry_price * (1.0 + settings.TRADING_BREAKEVEN_ARM_FRACTION)
+            tp2_price = entry_price * (1.0 + settings.TRADING_TAKE_PROFIT_EXIT_FRACTION)
             stop_loss_price = entry_price * (1.0 - settings.TRADING_STOP_LOSS_FRACTION)
 
             if self._persist_shadow_probe(

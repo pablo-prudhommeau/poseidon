@@ -8,7 +8,7 @@
                     </span>
                     <div class="leading-none">
                         <div class="text-[10px] font-black uppercase text-slate-200">Shadowing information</div>
-                        <div class="mt-1 text-[10px] text-slate-500">Shadowing regime telemetry</div>
+                        <div class="mt-1 text-[9px] text-slate-500">Shadowing regime telemetry</div>
                     </div>
                 </div>
             </div>
@@ -16,37 +16,66 @@
             <div class="grid grid-cols-1 xl:grid-cols-2 gap-2.5 items-stretch">
                 <app-trading-overview-shadowing-regime [overrideRegime]="snapshot.regime" [showChronicleButton]="false" />
 
-                <div class="shadowing-mini-card rounded-2xl border border-white/5 bg-black/20 p-3 flex flex-col">
-                    <div class="flex items-center gap-2 mb-3">
+                <div class="rounded-2xl border border-white/5 bg-black/20 backdrop-blur-2xl shadow-xl p-3 flex flex-col">
+                    <div class="flex items-center gap-2 mb-2">
                         <i class="fa fa-microchip text-slate-500 text-xs"></i>
-                        <span class="text-[9px] uppercase font-bold text-slate-400 tracking-widest">Cortex inference</span>
+                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Cortex inference</span>
                     </div>
                     @if (cortexInference(snapshot); as cortex) {
-                        <div class="flex items-end gap-2 mb-3">
-                            <span class="text-3xl font-black tabular-nums tracking-tight text-white">{{ cortex.final_trade_score | number: '1.2-2' }}</span>
-                            <span class="text-[8px] font-black uppercase text-slate-500 mb-1">trade score</span>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                <div class="text-[8px] font-black uppercase text-slate-500">Success probability</div>
-                                <div class="mt-1 text-sm font-black text-slate-100">{{ cortex.success_probability * 100 | number: '1.1-1' }}%</div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-start">
+                            <div class="space-y-0 poseidon-detail-table">
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
+                                        <span>Trade score</span>
+                                    </span>
+                                    <span class="poseidon-detail-value">{{ cortex.final_trade_score | number: '1.2-2' }}</span>
+                                </div>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-biohazard" aria-hidden="true"></i>
+                                        <span>Toxicity probability</span>
+                                    </span>
+                                    <span class="poseidon-detail-value">{{ cortex.toxicity_probability * 100 | number: '1.1-1' }}%</span>
+                                </div>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+                                        <span>Expected profit / loss</span>
+                                    </span>
+                                    <span class="poseidon-detail-value" [ngClass]="cortex.expected_profit_and_loss_percentage > 0 ? 'text-emerald-400' : cortex.expected_profit_and_loss_percentage < 0 ? 'text-red-400' : 'text-slate-200'"> {{ cortex.expected_profit_and_loss_percentage > 0 ? '+' : '' }}{{ cortex.expected_profit_and_loss_percentage | number: '1.2-2' }}% </span>
+                                </div>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-code-branch" aria-hidden="true"></i>
+                                        <span>Model version</span>
+                                    </span>
+                                    <span class="poseidon-detail-value truncate" [title]="cortex.model_version">{{ cortex.model_version }}</span>
+                                </div>
                             </div>
-                            <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                <div class="text-[8px] font-black uppercase text-slate-500">Toxicity probability</div>
-                                <div class="mt-1 text-sm font-black text-slate-100">{{ cortex.toxicity_probability * 100 | number: '1.1-1' }}%</div>
+                            <div class="space-y-0 poseidon-detail-table">
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                                        <span>Success probability</span>
+                                    </span>
+                                    <span class="poseidon-detail-value">{{ cortex.success_probability * 100 | number: '1.1-1' }}%</span>
+                                </div>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-heart-crack" aria-hidden="true"></i>
+                                        <span>Fragility probability</span>
+                                    </span>
+                                    <span class="poseidon-detail-value">{{ cortex.fragility_probability * 100 | number: '1.1-1' }}%</span>
+                                </div>
+                                <div class="poseidon-detail-row">
+                                    <span class="poseidon-detail-label">
+                                        <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
+                                        <span>Predicted holding time</span>
+                                    </span>
+                                    <span class="poseidon-detail-value">{{ cortex.predicted_holding_time_minutes / 60.0 | number: '1.1-1' }}h</span>
+                                </div>
                             </div>
-                            <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                <div class="text-[8px] font-black uppercase text-slate-500">Expected profit / loss</div>
-                                <div class="mt-1 text-sm font-black" [ngClass]="cortex.expected_profit_and_loss_percentage > 0 ? 'text-slate-100' : cortex.expected_profit_and_loss_percentage < 0 ? 'text-red-300' : 'text-slate-200'">{{ cortex.expected_profit_and_loss_percentage > 0 ? '+' : '' }}{{ cortex.expected_profit_and_loss_percentage | number: '1.2-2' }}%</div>
-                            </div>
-                            <div class="rounded-lg border border-white/5 bg-black/20 p-2">
-                                <div class="text-[8px] font-black uppercase text-slate-500">Predicted holding time</div>
-                                <div class="mt-1 text-sm font-black text-slate-100">{{ cortex.predicted_holding_time_minutes / 60.0 | number: '1.1-1' }}h</div>
-                            </div>
-                        </div>
-                        <div class="mt-2 rounded-lg border border-white/5 bg-black/20 p-2">
-                            <div class="text-[8px] font-black uppercase text-slate-500">Model version</div>
-                            <div class="mt-1 text-[11px] font-bold text-slate-200 truncate" [title]="cortex.model_version">{{ cortex.model_version }}</div>
                         </div>
                     } @else {
                         <div class="flex flex-1 flex-col items-center justify-center p-6 text-slate-500 gap-2">
@@ -66,7 +95,7 @@
                     </span>
                     <div class="leading-none">
                         <div class="text-[10px] font-black uppercase text-slate-200">Shadowing metrics</div>
-                        <div class="mt-1 text-[10px] text-slate-500">Evaluated buckets by category</div>
+                        <div class="mt-1 text-[9px] text-slate-500">Evaluated buckets by category</div>
                     </div>
                 </div>
             </div>
@@ -82,7 +111,7 @@
                                 </div>
                                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
                                     @for (metric of group.metrics; track metric.metric_key) {
-                                        <div class="p-3 rounded-xl bg-black/20 border transition-all" [ngClass]="metric.is_golden ? 'border-emerald-500/20 hover:border-emerald-500/40' : metric.is_toxic ? 'border-red-500/20 hover:border-red-500/40' : 'border-white/5'">
+                                        <div class="p-3 rounded-2xl bg-black/20 border backdrop-blur-2xl shadow-xl transition-all" [ngClass]="metric.is_golden ? 'border-emerald-500/20 hover:border-emerald-500/40' : metric.is_toxic ? 'border-red-500/20 hover:border-red-500/40' : 'border-white/5'">
                                             <div class="flex justify-between items-start mb-1.5">
                                                 <span class="text-[9px] uppercase font-bold tracking-widest truncate" [ngClass]="metric.is_golden ? 'text-emerald-400/80' : metric.is_toxic ? 'text-red-400/80' : 'text-slate-500'">
                                                     {{ formatMetricLabel(metric.metric_key) }}

@@ -334,8 +334,8 @@ async def _execute_evm_live_buy(
 
         recorded_price_usd = price_usd
         recorded_quantity = quantity
-        take_profit_one_fraction = settings.TRADING_TP1_EXIT_FRACTION
-        take_profit_two_fraction = settings.TRADING_TP2_EXIT_FRACTION
+        take_profit_one_fraction = settings.TRADING_BREAKEVEN_ARM_FRACTION
+        take_profit_two_fraction = settings.TRADING_TAKE_PROFIT_EXIT_FRACTION
         stop_loss_fraction = settings.TRADING_STOP_LOSS_FRACTION
         take_profit_tp1_usd = recorded_price_usd * (1.0 + take_profit_one_fraction)
         take_profit_tp2_usd = recorded_price_usd * (1.0 + take_profit_two_fraction)
@@ -372,9 +372,10 @@ async def _execute_evm_live_buy(
                 open_quantity=recorded_quantity,
                 current_quantity=recorded_quantity,
                 entry_price=recorded_price_usd,
-                take_profit_tier_1_price=take_profit_tp1_usd,
-                take_profit_tier_2_price=take_profit_tp2_usd,
+                breakeven_arm_price=take_profit_tp1_usd,
+                take_profit_price=take_profit_tp2_usd,
                 stop_loss_price=stop_loss_usd,
+                initial_stop_loss_price=stop_loss_usd,
                 position_phase=PositionPhase.OPEN,
                 dex_id=token.dex_id,
                 opened_at=get_current_local_datetime(),

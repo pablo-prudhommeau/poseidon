@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingVerdictChronicleCortexModelRollout
 from src.persistence.database_session_manager import get_database_session
-from src.persistence.models import TradingCortexModelManifest
+from src.persistence.models import TradingCortexModelManifest, TradingCortexModelRole
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,7 @@ class _CortexManifestSnapshot:
     validation_record_count: int
     success_probability_accuracy: float
     is_active: bool
+    model_role: TradingCortexModelRole
     created_at: datetime
 
 
@@ -41,7 +42,11 @@ def _format_cortex_rollout_chronicle_label(
     train_count = _format_compact_record_count(manifest.training_record_count)
     validation_count = _format_compact_record_count(manifest.validation_record_count)
     accuracy_percent = int(round(manifest.success_probability_accuracy * 100))
-    label = f"Cortex · model {model_token} · features {feature_set_token} · train/val {train_count}/{validation_count} · acc {accuracy_percent}%"
+    role_token = manifest.model_role.value
+    label = (
+        f"Cortex · {role_token} · model {model_token} · features {feature_set_token} · "
+        f"train/val {train_count}/{validation_count} · acc {accuracy_percent}%"
+    )
     if previous_feature_set_version and manifest.feature_set_version != previous_feature_set_version:
         label = f"{label} · feature set changed"
     return label
@@ -67,6 +72,7 @@ def _load_cortex_manifest_snapshots(
                 validation_record_count=manifest.validation_record_count,
                 success_probability_accuracy=manifest.success_probability_accuracy,
                 is_active=manifest.is_active,
+                model_role=manifest.model_role,
                 created_at=manifest.created_at,
             )
             for manifest in manifests
@@ -89,6 +95,7 @@ def load_cortex_model_rollouts_for_chronicle(
                 validation_record_count=manifest.validation_record_count,
                 success_probability_accuracy=manifest.success_probability_accuracy,
                 is_active=manifest.is_active,
+                model_role=manifest.model_role.value,
                 label=_format_cortex_rollout_chronicle_label(manifest, previous_feature_set_version),
             )
         )

@@ -1,4 +1,4 @@
-import type { TradingShadowingVerdictChronicleCortexModelRolloutPayload } from '../../../../core/models';
+import type { TradingCortexModelRole, TradingShadowingVerdictChronicleCortexModelRolloutPayload } from '../../../../core/models';
 import type { ChronicleChartModel, CortexModelRolloutAnnotationBundle, SciChartModule } from '../data/trading-shadowing-verdict-chronicle.models';
 import { parseIsoTimestampToEpochMilliseconds } from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
 import { CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
@@ -7,6 +7,38 @@ import { raiseChronicleGateThresholdAnnotations } from './trading-shadowing-verd
 const CORTEX_ROLLOUT_LABEL_Y_RELATIVE = 0.96;
 const CORTEX_ROLLOUT_LABEL_X_SHIFT = 0;
 const CORTEX_ROLLOUT_LABEL_Y_SHIFT = -6;
+
+type CortexRolloutRolePalette = {
+    text: string;
+    stroke: string;
+    line: string;
+    fill: string;
+};
+
+function resolveCortexRolloutRolePalette(modelRole: TradingCortexModelRole): CortexRolloutRolePalette {
+    if (modelRole === 'CHAMPION') {
+        return {
+            text: CHRONICLE_METRIC_COLORS.cortexRolloutChampionText,
+            stroke: CHRONICLE_METRIC_COLORS.cortexRolloutChampionStroke,
+            line: CHRONICLE_METRIC_COLORS.cortexRolloutChampionLine,
+            fill: CHRONICLE_METRIC_COLORS.cortexRolloutChampionFill
+        };
+    }
+    if (modelRole === 'CHALLENGER') {
+        return {
+            text: CHRONICLE_METRIC_COLORS.cortexRolloutChallengerText,
+            stroke: CHRONICLE_METRIC_COLORS.cortexRolloutChallengerStroke,
+            line: CHRONICLE_METRIC_COLORS.cortexRolloutChallengerLine,
+            fill: CHRONICLE_METRIC_COLORS.cortexRolloutChallengerFill
+        };
+    }
+    return {
+        text: CHRONICLE_METRIC_COLORS.cortexRolloutRetiredText,
+        stroke: CHRONICLE_METRIC_COLORS.cortexRolloutRetiredStroke,
+        line: CHRONICLE_METRIC_COLORS.cortexRolloutRetiredLine,
+        fill: CHRONICLE_METRIC_COLORS.cortexRolloutRetiredFill
+    };
+}
 
 export function filterCortexRolloutsForBucketWindow(
     rollouts: TradingShadowingVerdictChronicleCortexModelRolloutPayload[],
@@ -49,28 +81,30 @@ function buildCortexRolloutAnnotationLines(rollout: TradingShadowingVerdictChron
     const trainingCount = formatRolloutRecordCount(rollout.training_record_count);
     const validationCount = formatRolloutRecordCount(rollout.validation_record_count);
     const accuracyPercent = Math.round(rollout.success_probability_accuracy * 100);
-    return [`CORTEX ROLLOUT`, `model ${modelVersion}`, `feat ${featureSetVersion} · ${trainingCount}/${validationCount} · ${accuracyPercent}%`].join('\n');
+    return [
+        `CORTEX · ${rollout.model_role}`,
+        `model ${modelVersion}`,
+        `feat ${featureSetVersion} · ${trainingCount}/${validationCount} · ${accuracyPercent}%`
+    ].join('\n');
 }
 
 function escapeSvgText(value: string): string {
     return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildCortexRolloutLabelSvg(rollout: TradingShadowingVerdictChronicleCortexModelRolloutPayload, isActive: boolean): string {
+function buildCortexRolloutLabelSvg(rollout: TradingShadowingVerdictChronicleCortexModelRolloutPayload): string {
     const [title, model, details] = buildCortexRolloutAnnotationLines(rollout).split('\n');
-    const width = 170;
-    const height = 36;
+    const width = 190;
+    const height = 44;
     const originX = 0;
-    const fill = isActive ? CHRONICLE_METRIC_COLORS.cortexRolloutActiveFill : CHRONICLE_METRIC_COLORS.cortexRolloutInactiveFill;
-    const stroke = isActive ? CHRONICLE_METRIC_COLORS.cortexRolloutActiveStroke : CHRONICLE_METRIC_COLORS.cortexRolloutInactiveStroke;
-    const textColor = isActive ? CHRONICLE_METRIC_COLORS.cortexRolloutActiveText : CHRONICLE_METRIC_COLORS.cortexRolloutInactiveText;
+    const palette = resolveCortexRolloutRolePalette(rollout.model_role);
     return `
         <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" style="overflow:visible;pointer-events:none">
             <g transform="rotate(45 ${originX} ${height})">
-                <rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1" />
-                <text x="6" y="10" fill="${textColor}" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="9" font-weight="900">${escapeSvgText(title ?? '')}</text>
-                <text x="6" y="22" fill="${textColor}" opacity="0.92" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="9" font-weight="700">${escapeSvgText(model ?? '')}</text>
-                <text x="6" y="32" fill="${textColor}" opacity="0.82" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="8" font-weight="700">${escapeSvgText(details ?? '')}</text>
+                <rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="5" fill="${palette.fill}" stroke="${palette.stroke}" stroke-width="1" />
+                <text x="7" y="14" fill="${palette.text}" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10" font-weight="900">${escapeSvgText(title ?? '')}</text>
+                <text x="7" y="26" fill="${palette.text}" opacity="0.92" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10" font-weight="700">${escapeSvgText(model ?? '')}</text>
+                <text x="7" y="38" fill="${palette.text}" opacity="0.82" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="9" font-weight="700">${escapeSvgText(details ?? '')}</text>
             </g>
         </svg>
     `;
@@ -81,15 +115,13 @@ function createCortexRolloutBundle(
     rollout: TradingShadowingVerdictChronicleCortexModelRolloutPayload
 ): CortexModelRolloutAnnotationBundle {
     const { VerticalLineAnnotation, CustomAnnotation, EAnnotationLayer, ECoordinateMode, EVerticalAnchorPoint, EHorizontalAnchorPoint } = sci;
-    const isActive = rollout.is_active;
     const isVisible = true;
-
-    const lineColor = isActive ? CHRONICLE_METRIC_COLORS.cortexRolloutActiveLine : CHRONICLE_METRIC_COLORS.cortexRolloutInactiveLine;
+    const palette = resolveCortexRolloutRolePalette(rollout.model_role);
 
     const verticalLine = new VerticalLineAnnotation({
         x1: rollout.activated_at_milliseconds,
         xAxisId: 'xTime',
-        stroke: lineColor,
+        stroke: palette.line,
         strokeThickness: 2,
         strokeDashArray: [4, 5],
         showLabel: false,
@@ -114,7 +146,7 @@ function createCortexRolloutBundle(
         isHidden: !isVisible,
         annotationLayer: EAnnotationLayer.AboveChart,
         opacity: 0.96,
-        svgString: buildCortexRolloutLabelSvg(rollout, isActive)
+        svgString: buildCortexRolloutLabelSvg(rollout)
     });
 
     return { verticalLine, textLabel };

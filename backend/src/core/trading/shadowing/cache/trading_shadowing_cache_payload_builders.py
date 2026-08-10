@@ -131,6 +131,7 @@ def _build_cortex_model_rollout_payload(cortex_model_rollout: TradingShadowingVe
         validation_record_count=cortex_model_rollout.validation_record_count,
         success_probability_accuracy=cortex_model_rollout.success_probability_accuracy,
         is_active=cortex_model_rollout.is_active,
+        model_role=cortex_model_rollout.model_role,
         label=cortex_model_rollout.label,
     )
 

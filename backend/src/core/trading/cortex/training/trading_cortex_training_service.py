@@ -195,6 +195,7 @@ class TradingCortexTrainingService:
             existing_champion_manifest = session.execute(
                 select(TradingCortexModelManifest)
                 .where(TradingCortexModelManifest.model_role == TradingCortexModelRole.CHAMPION)
+                .order_by(TradingCortexModelManifest.created_at.desc())
                 .limit(1)
             ).scalar_one_or_none()
 

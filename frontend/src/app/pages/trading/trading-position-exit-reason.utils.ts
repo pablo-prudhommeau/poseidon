@@ -1,10 +1,9 @@
 import { PositionExitTriggerReason } from '../../core/models';
 
 const EXIT_REASON_LABELS: Partial<Record<PositionExitTriggerReason, string>> = {
-    TAKE_PROFIT_1: 'Take profit 1',
-    TAKE_PROFIT_2: 'Take profit 2',
+    TAKE_PROFIT: 'Take profit',
     STOP_LOSS: 'Stop loss',
-    MANUAL: 'Manual close',
+    MANUAL: 'Manual',
     KILLED: 'Killed',
     HONEYPOT: 'Honeypot',
     CIRCUIT_BREAKER: 'Circuit breaker',
@@ -12,12 +11,12 @@ const EXIT_REASON_LABELS: Partial<Record<PositionExitTriggerReason, string>> = {
 };
 
 export function formatPositionExitReasonLabel(reason: PositionExitTriggerReason | string | null | undefined): string {
-    if (!reason) {
+    if (reason == null || reason === '') {
         return '—';
     }
     const mappedLabel = EXIT_REASON_LABELS[reason as PositionExitTriggerReason];
-    if (mappedLabel) {
+    if (mappedLabel != null) {
         return mappedLabel;
     }
-    return reason.replaceAll('_', ' ');
+    return String(reason);
 }

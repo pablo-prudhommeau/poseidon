@@ -56,12 +56,12 @@ class TradingCortexPromotionService:
                 return None
 
             challenger_created_at: datetime = ensure_timezone_aware(challenger_manifest.created_at)
-            minimum_challenger_age: timedelta = timedelta(hours=settings.TRADING_CORTEX_PROMOTION_MIN_CHALLENGER_AGE_HOURS)
+            minimum_challenger_age: timedelta = timedelta(hours=settings.TRADING_CORTEX_TRAINING_COOLDOWN_HOURS)
             if get_current_local_datetime() - challenger_created_at < minimum_challenger_age:
                 logger.debug(
                     "[TRADING][CORTEX][PROMOTION] Challenger %s is younger than %.1fh, forward evaluation postponed",
                     challenger_manifest.model_version,
-                    settings.TRADING_CORTEX_PROMOTION_MIN_CHALLENGER_AGE_HOURS,
+                    settings.TRADING_CORTEX_TRAINING_COOLDOWN_HOURS,
                 )
                 return None
 

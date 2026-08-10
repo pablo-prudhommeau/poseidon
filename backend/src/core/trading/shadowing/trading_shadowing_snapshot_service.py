@@ -128,13 +128,13 @@ def compute_shadowing_snapshot() -> TradingShadowingSnapshot:
             sparse_expected_value_usd_threshold=sparse_expected_value_usd_threshold,
         )
 
-        logger.info(
+        logger.debug(
             "[TRADING][SHADOWING][SNAPSHOT][CHRONICLE_PF] Chronicle profit factor SMA — period=%d sparse_buckets=%d chronicle_pf=%s",
             chronicle_moving_average_period,
             sparse_pf_buckets,
             _format_optional_float(chronicle_profit_factor),
         )
-        logger.info(
+        logger.debug(
             "[TRADING][SHADOWING][SNAPSHOT][SPARSE_EV] Sparse expected value USD — lookback_days=%.1f bucket_width_seconds=%d period=%d sparse_buckets=%d sparse_ev_usd=%s",
             settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_MOVING_AVERAGE_LOOKBACK_DAYS,
             settings.TRADING_SHADOWING_EDGE_SPARSE_EXPECTED_VALUE_BUCKET_WIDTH_SECONDS,

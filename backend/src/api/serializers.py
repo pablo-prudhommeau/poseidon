@@ -80,9 +80,10 @@ def serialize_trading_position(
         open_quantity=trading_position.open_quantity,
         current_quantity=trading_position.current_quantity,
         entry_price=trading_position.entry_price,
-        take_profit_tier_1_price=trading_position.take_profit_tier_1_price,
-        take_profit_tier_2_price=trading_position.take_profit_tier_2_price,
+        breakeven_arm_price=trading_position.breakeven_arm_price,
+        take_profit_price=trading_position.take_profit_price,
         stop_loss_price=trading_position.stop_loss_price,
+        initial_stop_loss_price=trading_position.initial_stop_loss_price,
         position_phase=trading_position.position_phase.value,
         blockchain_network=BlockchainNetwork(trading_position.blockchain_network.lower()),
         dex_id=trading_position.dex_id,
@@ -91,6 +92,11 @@ def serialize_trading_position(
         closed_at=format_datetime_to_local_iso(trading_position.closed_at) if trading_position.closed_at else None,
         last_price=last_price,
         exit_reason=trading_position.exit_reason,
+        breakeven_stop_armed_at=(
+            format_datetime_to_local_iso(trading_position.breakeven_stop_armed_at)
+            if trading_position.breakeven_stop_armed_at
+            else None
+        ),
         evaluation_order_notional_value_usd=evaluation_order_notional_value_usd,
         realized_profit_and_loss_usd=realized_profit_and_loss_usd,
     )

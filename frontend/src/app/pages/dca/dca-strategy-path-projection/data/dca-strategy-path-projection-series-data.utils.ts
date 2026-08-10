@@ -26,6 +26,36 @@ function resolveExecutedOrders(executionOrders: DcaOrderPayload[]): DcaOrderPayl
         );
 }
 
+function resolveObservedMarketPrice(executionOrder: DcaOrderPayload): number | null {
+    const actualExecutionPrice: number | null | undefined = executionOrder.actual_execution_price;
+    if (actualExecutionPrice !== null && actualExecutionPrice !== undefined && actualExecutionPrice > 0) {
+        return actualExecutionPrice;
+    }
+    const referenceMarketPrice: number | null | undefined = executionOrder.reference_market_price;
+    if (referenceMarketPrice !== null && referenceMarketPrice !== undefined && referenceMarketPrice > 0) {
+        return referenceMarketPrice;
+    }
+    return null;
+}
+
+function resolveObservedOrders(executionOrders: DcaOrderPayload[]): DcaOrderPayload[] {
+    return executionOrders
+        .filter((executionOrder: DcaOrderPayload) => {
+            const isObservedStatus: boolean = executionOrder.order_status === 'EXECUTED' || executionOrder.order_status === 'SKIPPED';
+            if (!isObservedStatus) {
+                return false;
+            }
+            if (executionOrder.executed_at === null || executionOrder.executed_at === undefined) {
+                return false;
+            }
+            return resolveObservedMarketPrice(executionOrder) !== null;
+        })
+        .sort(
+            (orderA: DcaOrderPayload, orderB: DcaOrderPayload) =>
+                new Date(orderA.executed_at as string).getTime() - new Date(orderB.executed_at as string).getTime()
+        );
+}
+
 function mapHistoricalTimestampToLiveWindow(
     historicalTimestampMilliseconds: number,
     historicalStartTimestampMilliseconds: number,
@@ -210,10 +240,18 @@ export function buildBacktestingStrategyPathSeries(strategy: DcaStrategyPayload)
 }
 
 export function buildEffectiveMarketPriceSeries(executionOrders: DcaOrderPayload[]): DcaStrategyPathChartPoint[] {
-    return resolveExecutedOrders(executionOrders).map((executionOrder: DcaOrderPayload) => ({
-        timestampMilliseconds: new Date(executionOrder.executed_at as string).getTime(),
-        value: executionOrder.actual_execution_price as number
-    }));
+    return resolveObservedOrders(executionOrders).flatMap((executionOrder: DcaOrderPayload) => {
+        const observedMarketPrice: number | null = resolveObservedMarketPrice(executionOrder);
+        if (observedMarketPrice === null) {
+            return [];
+        }
+        return [
+            {
+                timestampMilliseconds: new Date(executionOrder.executed_at as string).getTime(),
+                value: observedMarketPrice
+            }
+        ];
+    });
 }
 
 export function buildEffectiveSmartAverageUnitPriceSeries(executionOrders: DcaOrderPayload[]): DcaStrategyPathChartPoint[] {
@@ -246,14 +284,14 @@ export function buildEffectiveBaselineAverageUnitPriceSeries(strategy: DcaStrate
     const effectivePoints: DcaStrategyPathChartPoint[] = [];
     const nominalOrderAmount: number = strategy.amount_per_execution_order;
 
-    for (const executionOrder of resolveExecutedOrders(strategy.execution_orders ?? [])) {
-        const executionPrice: number = executionOrder.actual_execution_price ?? 0;
-        if (executionPrice <= 0 || nominalOrderAmount <= 0) {
+    for (const executionOrder of resolveObservedOrders(strategy.execution_orders ?? [])) {
+        const observedMarketPrice: number | null = resolveObservedMarketPrice(executionOrder);
+        if (observedMarketPrice === null || observedMarketPrice <= 0 || nominalOrderAmount <= 0) {
             continue;
         }
 
         runningDeployedAmount += nominalOrderAmount;
-        runningTargetAssetQuantity += nominalOrderAmount / executionPrice;
+        runningTargetAssetQuantity += nominalOrderAmount / observedMarketPrice;
         effectivePoints.push({
             timestampMilliseconds: new Date(executionOrder.executed_at as string).getTime(),
             value: runningDeployedAmount / runningTargetAssetQuantity

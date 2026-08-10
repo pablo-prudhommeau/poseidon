@@ -1,13 +1,5 @@
 export type PositionPhase = 'OPEN' | 'PARTIAL' | 'CLOSING' | 'CLOSED' | 'STALED';
-export type PositionExitTriggerReason =
-    | 'TAKE_PROFIT_1'
-    | 'TAKE_PROFIT_2'
-    | 'STOP_LOSS'
-    | 'MANUAL'
-    | 'KILLED'
-    | 'HONEYPOT'
-    | 'CIRCUIT_BREAKER'
-    | 'WALLET_BALANCE_EMPTY';
+export type PositionExitTriggerReason = 'TAKE_PROFIT' | 'STOP_LOSS' | 'MANUAL' | 'KILLED' | 'HONEYPOT' | 'CIRCUIT_BREAKER' | 'WALLET_BALANCE_EMPTY';
 export type TradingShadowingPhase = 'DISABLED' | 'SYNCING' | 'SHADOWING' | 'CORTEXING' | 'BEAR' | 'TRADABLE';
 export type TradeSide = 'BUY' | 'SELL';
 export type ExecutionStatus = 'LIVE' | 'PAPER';
@@ -223,9 +215,10 @@ export interface TradingPositionPayload {
     open_quantity: number;
     current_quantity: number;
     entry_price: number;
-    take_profit_tier_1_price: number;
-    take_profit_tier_2_price: number;
+    breakeven_arm_price: number;
+    take_profit_price: number;
     stop_loss_price: number;
+    initial_stop_loss_price: number;
     position_phase: PositionPhase;
     blockchain_network: string;
     dex_id: string;
@@ -234,6 +227,7 @@ export interface TradingPositionPayload {
     closed_at?: string | null;
     last_price?: number | null;
     exit_reason?: PositionExitTriggerReason | null;
+    breakeven_stop_armed_at?: string | null;
     evaluation_order_notional_value_usd: number;
     realized_profit_and_loss_usd: number;
 }
@@ -742,6 +736,8 @@ export interface TradingShadowingVerdictChronicleRegimeGatePointPayload {
     hard_gate_open: boolean;
 }
 
+export type TradingCortexModelRole = 'CHAMPION' | 'CHALLENGER' | 'RETIRED';
+
 export interface TradingShadowingVerdictChronicleCortexModelRolloutPayload {
     activated_at_milliseconds: number;
     model_version: string;
@@ -750,6 +746,7 @@ export interface TradingShadowingVerdictChronicleCortexModelRolloutPayload {
     validation_record_count: number;
     success_probability_accuracy: number;
     is_active: boolean;
+    model_role: TradingCortexModelRole;
     label: string;
 }
 

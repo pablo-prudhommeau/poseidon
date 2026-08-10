@@ -100,8 +100,8 @@ def execute_buy(payload: TradingOrderPayload) -> bool:
         quantity,
     )
 
-    take_profit_one_fraction = settings.TRADING_TP1_EXIT_FRACTION
-    take_profit_two_fraction = settings.TRADING_TP2_EXIT_FRACTION
+    take_profit_one_fraction = settings.TRADING_BREAKEVEN_ARM_FRACTION
+    take_profit_two_fraction = settings.TRADING_TAKE_PROFIT_EXIT_FRACTION
     stop_loss_fraction = settings.TRADING_STOP_LOSS_FRACTION
 
     take_profit_tp1 = price_usd * (1.0 + take_profit_one_fraction)
@@ -109,7 +109,7 @@ def execute_buy(payload: TradingOrderPayload) -> bool:
     stop_loss = price_usd * (1.0 - stop_loss_fraction)
 
     logger.info(
-        "[TRADING][EXECUTION][SWAP][THRESHOLDS] entry=%.10f tp1=%.6f (%.1f%%) tp2=%.6f (%.1f%%) stop=%.6f (%.1f%%)",
+        "[TRADING][EXECUTION][SWAP][THRESHOLDS] entry=%.10f breakeven_arm=%.6f (%.1f%%) take_profit=%.6f (%.1f%%) stop=%.6f (%.1f%%)",
         price_usd,
         take_profit_tp1,
         take_profit_one_fraction * 100,
@@ -151,9 +151,10 @@ def execute_buy(payload: TradingOrderPayload) -> bool:
                 open_quantity=quantity,
                 current_quantity=quantity,
                 entry_price=price_usd,
-                take_profit_tier_1_price=take_profit_tp1,
-                take_profit_tier_2_price=take_profit_tp2,
+                breakeven_arm_price=take_profit_tp1,
+                take_profit_price=take_profit_tp2,
                 stop_loss_price=stop_loss,
+                initial_stop_loss_price=stop_loss,
                 position_phase=PositionPhase.OPEN,
                 dex_id=payload.target_token.dex_id,
                 opened_at=get_current_local_datetime(),

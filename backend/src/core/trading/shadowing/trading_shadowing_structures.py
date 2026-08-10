@@ -195,6 +195,7 @@ class TradingShadowingVerdictChronicleCortexModelRollout(BaseModel):
     validation_record_count: int
     success_probability_accuracy: float
     is_active: bool
+    model_role: str
     label: str
 
 

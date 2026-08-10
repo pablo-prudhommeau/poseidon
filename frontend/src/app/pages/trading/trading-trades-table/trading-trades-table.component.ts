@@ -1,5 +1,5 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, computed, DestroyRef, effect, inject, signal, TemplateRef, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, computed, DestroyRef, effect, ElementRef, inject, signal, TemplateRef, ViewChild } from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
 import { ColDef, GetRowIdParams, GridApi, GridReadyEvent, ITooltipParams, ValueFormatterParams, ValueGetterParams } from 'ag-grid-community';
 import { NgApexchartsModule } from 'ng-apexcharts';
@@ -15,6 +15,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { balhamDarkThemeCompact } from '../../../ag-grid.theme';
 import { ApiService } from '../../../api.service';
+import { formatMiddleEllipsisAddress } from '../../../core/blockchain.utils';
 import { DatetimeDisplayService } from '../../../core/datetime-display.service';
 import { DefiIconsService } from '../../../core/defi-icons.service';
 import {
@@ -37,9 +38,9 @@ import {
     tradingGridCompactViewportQuery,
     tradingGridsMobileColumnLayout
 } from '../trading-grid-viewport.utils';
-import { positionPhasePillNgClasses, resolveTradeSideIconClass } from '../trading-position-phase-pill.utils';
 import { buildTradeSecuredProfitAndLossEvaluationPercentTooltip, formatTradeRealizedProfitAndLossCellHtml } from '../trading-position-grid-metrics';
 import { TradingPositionModalService } from '../trading-position-modal.service';
+import { positionPhasePillNgClasses, resolvePositionPhaseIconClass, resolveTradeSideIconClass } from '../trading-position-phase-pill.utils';
 import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snapshot-tab/trading-shadowing-snapshot-tab.component';
 
 @Component({
@@ -67,10 +68,12 @@ import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snaps
 })
 export class TradingTradesTableComponent implements AfterViewInit {
     @ViewChild('actionsTemplate', { static: false }) private actionsTemplate?: TemplateRef<unknown>;
+    @ViewChild('tradeModalTitleIcons', { static: false }) private tradeModalTitleIconsHost?: ElementRef<HTMLElement>;
 
     public readonly agGridTheme = balhamDarkThemeCompact;
 
     public columnDefinitions: ColDef<TradingTradePayload>[] = [];
+    public readonly copiedAddressKey = signal<'tx' | 'token' | 'pair' | null>(null);
     public readonly defaultColumnDefinition: ColDef<TradingTradePayload> = {
         resizable: true,
         sortable: true,
@@ -85,14 +88,11 @@ export class TradingTradesTableComponent implements AfterViewInit {
         suppressMovableColumns: true
     };
     private readonly webSocketService = inject(WebSocketService);
-
     public readonly tradesRowData = computed<TradingTradePayload[]>(() => {
         const rows = this.webSocketService.tradingTrades() ?? [];
         return Array.isArray(rows) ? (rows as TradingTradePayload[]) : [];
     });
-
     private readonly selectedTradeId = signal<number | null>(null);
-
     private readonly selectedTradeSnapshot = signal<TradingTradePayload | null>(null);
     public readonly selectedTrade = computed<TradingTradePayload | null>(() => {
         const tradeId = this.selectedTradeId();
@@ -102,17 +102,24 @@ export class TradingTradesTableComponent implements AfterViewInit {
         }
         return this.tradesRowData().find((trade) => trade.id === tradeId) ?? snapshot;
     });
+
     public readonly positionForSelectedTrade = computed<TradingPositionPayload | null>(() => this.findPositionForTrade(this.selectedTrade()));
+
     public readonly selectedAnalytics = signal<TradingEvaluationPayload | null>(null);
+
     public selectedTradeChainIconCandidates: string[] = [];
     public selectedTradeChainIconIndex: number = 0;
-
     public selectedTradeDexIconCandidates: string[] = [];
     public selectedTradeDexIconIndex: number = 0;
+    protected readonly formatMiddleEllipsisAddress = formatMiddleEllipsisAddress;
     protected readonly positionPhasePillNgClasses = positionPhasePillNgClasses;
-    private readonly apiService = inject(ApiService);
-    private readonly datetimeDisplayService = inject(DatetimeDisplayService);
 
+    protected readonly resolvePositionPhaseIconClass = resolvePositionPhaseIconClass;
+    protected readonly resolveTradeSideIconClass = resolveTradeSideIconClass;
+    private readonly apiService = inject(ApiService);
+    private copiedAddressResetTimeoutId: number = 0;
+
+    private readonly datetimeDisplayService = inject(DatetimeDisplayService);
     private readonly defiIconsService = inject(DefiIconsService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly detailsSyncEffect = effect(() => {
@@ -121,6 +128,8 @@ export class TradingTradesTableComponent implements AfterViewInit {
         }
         this.selectedTrade();
         this.selectedAnalytics();
+        this.positionForSelectedTrade();
+        queueMicrotask(() => this.renderTradeModalTitleIcons());
     });
     private readonly linkedPositionsByEvaluationId = signal<ReadonlyMap<number, TradingPositionPayload>>(new Map());
     private readonly numberFormattingService = inject(NumberFormattingService);
@@ -312,7 +321,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
         };
     }
 
-    public async copyToClipboard(value: string | undefined | null): Promise<void> {
+    public async copyToClipboard(value: string | undefined | null, addressKey: 'tx' | 'token' | 'pair'): Promise<void> {
         if (!value) {
             return;
         }
@@ -321,6 +330,13 @@ export class TradingTradesTableComponent implements AfterViewInit {
         } catch {
             return;
         }
+        this.copiedAddressKey.set(addressKey);
+        window.clearTimeout(this.copiedAddressResetTimeoutId);
+        this.copiedAddressResetTimeoutId = window.setTimeout(() => {
+            if (this.copiedAddressKey() === addressKey) {
+                this.copiedAddressKey.set(null);
+            }
+        }, 1200);
     }
 
     public currentTradeChainIcon(): string {
@@ -420,6 +436,7 @@ export class TradingTradesTableComponent implements AfterViewInit {
         mediaCompact.addEventListener('change', handler);
         this.destroyRef.onDestroy(() => {
             mediaCompact.removeEventListener('change', handler);
+            window.clearTimeout(this.copiedAddressResetTimeoutId);
         });
     }
 
@@ -435,6 +452,8 @@ export class TradingTradesTableComponent implements AfterViewInit {
         this.selectedTradeSnapshot.set(row ?? null);
         this.selectedAnalytics.set(null);
         this.resetSelectedTradeIcons(row);
+        this.copiedAddressKey.set(null);
+        window.clearTimeout(this.copiedAddressResetTimeoutId);
         this.detailsVisible.set(true);
 
         if (row && row.evaluation_id) {
@@ -633,11 +652,33 @@ export class TradingTradesTableComponent implements AfterViewInit {
         }, 0);
     }
 
+    private renderTradeModalTitleIcons(retryCount: number = 0): void {
+        const host = this.tradeModalTitleIconsHost?.nativeElement;
+        if (!host) {
+            if (this.detailsVisible() && retryCount < 10) {
+                window.setTimeout(() => this.renderTradeModalTitleIcons(retryCount + 1), 0);
+            }
+            return;
+        }
+        const trade = this.selectedTrade();
+        if (!trade) {
+            host.replaceChildren();
+            return;
+        }
+        this.defiIconsService.renderTokenChainProtocolIcons(host, {
+            blockchain_network: trade.blockchain_network,
+            dex_id: trade.dex_id,
+            token_address: trade.token_address,
+            token_symbol: trade.token_symbol
+        });
+    }
+
     private resetSelectedTradeIcons(row: TradingTradePayload | null): void {
         this.selectedTradeChainIconCandidates = this.defiIconsService.getChainIconCandidates(row?.blockchain_network);
         this.selectedTradeDexIconCandidates = this.defiIconsService.getProtocolIconCandidates(row?.dex_id);
         this.selectedTradeChainIconIndex = 0;
         this.selectedTradeDexIconIndex = 0;
+        queueMicrotask(() => this.renderTradeModalTitleIcons());
     }
 
     private storeLinkedPositionForEvaluation(evaluationId: number, linkedPosition: TradingPositionPayload): void {

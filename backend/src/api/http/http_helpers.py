@@ -48,11 +48,25 @@ from src.persistence.dao.trading_position_dao import TradingPositionDao
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
 from src.persistence.dao.trading_shadowing_verdict_dao import TradingShadowingVerdictDao
 from src.persistence.dao.trading_trade_dao import TradingTradeDao
-from src.persistence.models import AaveDcaStrategy, PositionPhase, TradingEvaluation
+from src.persistence.models import AaveDcaStrategy, PositionPhase, TradeSide, TradingEvaluation, TradingTrade
 
 logger = get_application_logger(__name__)
 
 aave_executor_client = AaveExecutor()
+
+
+def _resolve_last_sell_execution_price(evaluation_trades: list[TradingTrade]) -> Optional[float]:
+    last_sell_execution_price: Optional[float] = None
+    last_sell_created_at: Optional[datetime] = None
+    for trade_record in evaluation_trades:
+        if trade_record.trade_side != TradeSide.SELL:
+            continue
+        if trade_record.execution_price <= 0.0:
+            continue
+        if last_sell_created_at is None or trade_record.created_at >= last_sell_created_at:
+            last_sell_created_at = trade_record.created_at
+            last_sell_execution_price = trade_record.execution_price
+    return last_sell_execution_price
 
 
 def build_live_trading_analytics_response(
@@ -188,9 +202,11 @@ def resolve_linked_position_payload_for_evaluation(
     linked_evaluation = evaluations_by_id[position_record.evaluation_id]
 
     trade_dao = TradingTradeDao(database_session)
-    realized_profit_and_loss_usd = compute_position_realized_profit_and_loss_usd(
-        trade_dao.retrieve_by_evaluation_id(position_record.evaluation_id),
-    )
+    evaluation_trades = trade_dao.retrieve_by_evaluation_id(position_record.evaluation_id)
+    realized_profit_and_loss_usd = compute_position_realized_profit_and_loss_usd(evaluation_trades)
+
+    if last_price_candidate is None and position_record.position_phase in (PositionPhase.CLOSED, PositionPhase.CLOSING):
+        last_price_candidate = _resolve_last_sell_execution_price(evaluation_trades)
 
     return serialize_trading_position(
         position_record,

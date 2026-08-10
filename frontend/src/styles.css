@@ -280,9 +280,9 @@
 }
 
 .poseidon-grid-pill--closed {
-    background-color: #0f172a;
+    background-color: #334155;
     color: #f8fafc;
-    border-color: rgba(2, 6, 23, 0.85);
+    border: none;
     font-weight: 800;
 }
 
@@ -294,6 +294,168 @@
 .poseidon-grid-pill--sell {
     background-color: #4f46e5;
     border-color: rgba(79, 70, 229, 0.55);
+}
+
+.poseidon-detail-table {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 0.55rem;
+    padding: 0.15rem;
+}
+
+.poseidon-detail-row {
+    display: grid;
+    grid-template-columns: max-content minmax(0.75rem, 1fr) minmax(0, max-content);
+    align-items: center;
+    column-gap: 0.45rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: 0.45rem;
+}
+
+.poseidon-detail-row:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.poseidon-detail-row:nth-child(even) {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.poseidon-detail-row > .poseidon-detail-label {
+    grid-column: 1;
+    min-width: 0;
+}
+
+.poseidon-detail-row > :not(.poseidon-detail-label) {
+    grid-column: 3;
+    justify-self: start;
+    min-width: 0;
+}
+
+.poseidon-detail-row::after {
+    content: '';
+    grid-column: 2;
+    grid-row: 1;
+    height: 1px;
+    align-self: center;
+    background-image: radial-gradient(circle, rgba(148, 163, 184, 0.32) 0.5px, transparent 0.55px);
+    background-size: 3.5px 1px;
+    background-repeat: repeat-x;
+    background-position: center;
+    -webkit-mask-image: linear-gradient(
+        to right,
+        rgba(0, 0, 0, 0.45) 0%,
+        rgba(0, 0, 0, 0.75) 22%,
+        #000 42%,
+        #000 58%,
+        rgba(0, 0, 0, 0.75) 78%,
+        rgba(0, 0, 0, 0.45) 100%
+    );
+    mask-image: linear-gradient(
+        to right,
+        rgba(0, 0, 0, 0.45) 0%,
+        rgba(0, 0, 0, 0.75) 22%,
+        #000 42%,
+        #000 58%,
+        rgba(0, 0, 0, 0.75) 78%,
+        rgba(0, 0, 0, 0.45) 100%
+    );
+    transform: translateY(0.12em);
+    pointer-events: none;
+}
+
+.poseidon-detail-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgb(148 163 184);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.poseidon-detail-label > i {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 0.7rem;
+    font-size: 0.55rem;
+    color: rgb(100 116 139);
+}
+
+.poseidon-detail-value {
+    color: rgb(226 232 240);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-align: left;
+    min-width: 0;
+}
+
+.poseidon-detail-inline-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: rgb(226 232 240);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.poseidon-detail-address-value {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.35rem;
+    min-width: 0;
+    color: rgb(148 163 184);
+    font-size: 0.75rem;
+    line-height: 1rem;
+}
+
+.poseidon-detail-address-value > span {
+    min-width: 0;
+    line-height: 1rem;
+}
+
+.poseidon-detail-icon-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    padding: 0;
+    border-radius: 0.3rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgb(148 163 184);
+    font-size: 0.5625rem;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+        color 140ms ease,
+        background 140ms ease,
+        border-color 140ms ease;
+}
+
+.poseidon-detail-icon-btn:hover {
+    color: rgb(226 232 240);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.poseidon-detail-icon-btn--copied {
+    color: rgb(52 211 153);
+    border-color: rgba(52, 211, 153, 0.35);
+    background: rgba(52, 211, 153, 0.12);
+}
+
+.poseidon-detail-icon-btn--copied:hover {
+    color: rgb(110 231 183);
+    border-color: rgba(52, 211, 153, 0.45);
+    background: rgba(52, 211, 153, 0.18);
 }
 
 @keyframes poseidon-ui-spinner-rotate {
@@ -718,11 +880,11 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-delta-stack-cell
     color: rgba(148, 163, 184, 0.88);
 }
 
-.poseidon-grid-price-stack-main--take-profit-tier-one {
-    color: rgb(167 243 208);
+.poseidon-grid-price-stack-main--breakeven-arm {
+    color: rgb(196 181 253);
 }
 
-.poseidon-grid-price-stack-main--take-profit-tier-two {
+.poseidon-grid-price-stack-main--take-profit {
     color: rgb(209 250 229);
 }
 

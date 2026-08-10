@@ -20,9 +20,18 @@ from src.persistence.models import TradingPosition, TradingTrade, PositionPhase
 logger = get_application_logger(__name__)
 
 
+def clamp_breakeven_stop_pnl_fraction(breakeven_stop_pnl_fraction: float) -> float:
+    maximum_pnl_fraction = max(0.0, min(1.0, settings.TRADING_BREAKEVEN_ARM_FRACTION))
+    exclusive_upper_bound = maximum_pnl_fraction
+    exclusive_lower_bound = -1.0
+    if exclusive_upper_bound <= 0.0:
+        return max(exclusive_lower_bound + 1e-12, min(0.0, breakeven_stop_pnl_fraction))
+    return max(exclusive_lower_bound + 1e-12, min(exclusive_upper_bound - 1e-12, breakeven_stop_pnl_fraction))
+
+
 def compute_breakeven_stop_price(entry_price: float) -> float:
-    breakeven_stop_offset_fraction: float = max(0.0, min(1.0, settings.TRADING_EXIT_BREAKEVEN_STOP_OFFSET_FRACTION))
-    return entry_price * (1.0 - breakeven_stop_offset_fraction)
+    breakeven_stop_pnl_fraction = clamp_breakeven_stop_pnl_fraction(settings.TRADING_EXIT_BREAKEVEN_STOP_PNL_FRACTION)
+    return entry_price * (1.0 + breakeven_stop_pnl_fraction)
 
 
 def check_thresholds_and_exit_for_token_address(
@@ -65,8 +74,8 @@ def _evaluate_position_thresholds(
     if position_quantity <= 0.0:
         return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
 
-    take_profit_1_price: float = position.take_profit_tier_1_price or 0.0
-    take_profit_2_price: float = position.take_profit_tier_2_price or 0.0
+    breakeven_arm_price: float = position.breakeven_arm_price or 0.0
+    take_profit_price: float = position.take_profit_price or 0.0
     stop_loss_price: float = position.stop_loss_price or 0.0
 
     if stop_loss_price > 0.0 and last_price_value <= stop_loss_price:
@@ -90,19 +99,19 @@ def _evaluate_position_thresholds(
             )
         return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
 
-    if take_profit_2_price > 0.0 and last_price_value >= take_profit_2_price:
+    if take_profit_price > 0.0 and last_price_value >= take_profit_price:
         logger.info(
-            "[TRADING][EXECUTION][GUARD][TP2] Triggered for %s @ %.12f (tp2=%.12f)",
+            "[TRADING][EXECUTION][GUARD][TP] Triggered for %s @ %.12f (take_profit=%.12f)",
             position.token_symbol,
             last_price_value,
-            take_profit_2_price,
+            take_profit_price,
         )
         closing_sell_result = execute_position_exit_sell(
             database_session,
             position,
             last_price_value,
             position_quantity,
-            PositionExitTriggerReason.TAKE_PROFIT_2,
+            PositionExitTriggerReason.TAKE_PROFIT,
         )
         if closing_sell_result.trading_trade is not None:
             created_trades.append(closing_sell_result.trading_trade)
@@ -111,37 +120,18 @@ def _evaluate_position_thresholds(
             )
         return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
 
-    if take_profit_1_price > 0.0 and last_price_value >= take_profit_1_price and position.position_phase == PositionPhase.OPEN:
-        if settings.TRADING_EXIT_BREAKEVEN_AFTER_TP1_ENABLED:
-            breakeven_stop_armed: bool = _arm_breakeven_stop(position, last_price_value, take_profit_1_price)
-            return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=breakeven_stop_armed)
-
-        take_profit_fraction = max(0.0, min(1.0, settings.TRADING_TP1_TAKE_PROFIT_FRACTION))
-        partial_quantity = position_quantity * take_profit_fraction
-        if partial_quantity > 0.0:
-            logger.info(
-                "[TRADING][EXECUTION][GUARD][TP1] Triggered for %s @ %.12f (tp1=%.12f)",
-                position.token_symbol,
-                last_price_value,
-                take_profit_1_price,
-            )
-            closing_sell_result = execute_position_exit_sell(
-                database_session,
-                position,
-                last_price_value,
-                partial_quantity,
-                PositionExitTriggerReason.TAKE_PROFIT_1,
-            )
-            if closing_sell_result.trading_trade is not None:
-                created_trades.append(closing_sell_result.trading_trade)
-                _invalidate_trading_realms_after_closing_sell(
-                    stablecoin_swap_settled_on_chain=closing_sell_result.stablecoin_swap_settled_on_chain,
-                )
+    if (
+            breakeven_arm_price > 0.0
+            and last_price_value >= breakeven_arm_price
+            and position.position_phase == PositionPhase.OPEN
+    ):
+        breakeven_stop_armed: bool = _arm_breakeven_stop(position, last_price_value, breakeven_arm_price)
+        return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=breakeven_stop_armed)
 
     return TradingPositionThresholdEvaluationResult(created_trades=created_trades, position_mutated=False)
 
 
-def _arm_breakeven_stop(position: TradingPosition, last_price_value: float, take_profit_1_price: float) -> bool:
+def _arm_breakeven_stop(position: TradingPosition, last_price_value: float, breakeven_arm_price: float) -> bool:
     if position.breakeven_stop_armed_at is not None:
         return False
 
@@ -150,7 +140,7 @@ def _arm_breakeven_stop(position: TradingPosition, last_price_value: float, take
 
     if breakeven_stop_price <= previous_stop_loss_price:
         logger.debug(
-            "[TRADING][EXECUTION][GUARD][TP1][BREAKEVEN] %s already protected above breakeven (stop=%.12f breakeven=%.12f)",
+            "[TRADING][EXECUTION][GUARD][BE_ARM] %s already protected above breakeven (stop=%.12f breakeven=%.12f)",
             position.token_symbol,
             previous_stop_loss_price,
             breakeven_stop_price,
@@ -161,13 +151,13 @@ def _arm_breakeven_stop(position: TradingPosition, last_price_value: float, take
     position.breakeven_stop_armed_at = get_current_local_datetime()
 
     logger.info(
-        "[TRADING][EXECUTION][GUARD][TP1][BREAKEVEN] Armed for %s @ %.12f (tp1=%.12f) — stop raised %.12f -> %.12f (entry=%.12f, offset=%.2f%%)",
+        "[TRADING][EXECUTION][GUARD][BE_ARM] Armed for %s @ %.12f (arm=%.12f) — stop raised %.12f -> %.12f (entry=%.12f, be_pnl=%+.2f%%)",
         position.token_symbol,
         last_price_value,
-        take_profit_1_price,
+        breakeven_arm_price,
         previous_stop_loss_price,
         breakeven_stop_price,
         position.entry_price,
-        settings.TRADING_EXIT_BREAKEVEN_STOP_OFFSET_FRACTION * 100.0,
+        clamp_breakeven_stop_pnl_fraction(settings.TRADING_EXIT_BREAKEVEN_STOP_PNL_FRACTION) * 100.0,
     )
     return True

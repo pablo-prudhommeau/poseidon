@@ -90,32 +90,19 @@ const DEXSCREENER_ID_TO_DEFILLAMA_SLUG: Record<string, string> = {
 export class DefiIconsService {
     public readonly tokenChainChipRenderer = (params: ICellRendererParams): HTMLElement => {
         const row = params.data ?? {};
-        const chainName = String(row.blockchain_network ?? '').toLowerCase();
-        const tokenAddress = String(row.token_address ?? '').toLowerCase();
-        const tokenSymbol = String(row.token_symbol ?? params.value ?? '').toUpperCase();
-        const dexId = String(row.dex_id ?? '').toLowerCase();
-
         const rootElement = document.createElement('span');
         rootElement.className = 'inline-flex items-center gap-2';
+        this.appendTokenChainProtocolIcons(rootElement, {
+            blockchain_network: row.blockchain_network,
+            dex_id: row.dex_id,
+            token_address: row.token_address,
+            token_symbol: row.token_symbol ?? params.value
+        });
 
-        const chainIconElement = this.buildIconElement(this.buildChainIconCandidates(chainName), `chain:${chainName || 'unknown'}`, 'chain');
-
-        let protocolIconElement: HTMLSpanElement | null = null;
-        if (dexId && dexId !== 'unknown') {
-            protocolIconElement = this.buildIconElement(this.buildProtocolIconCandidates(dexId), `protocol:${dexId}`, 'protocol');
-        }
-
-        const tokenIconElement = this.buildTokenIconElement(chainName, tokenAddress, tokenSymbol);
-
+        const tokenSymbol = String(row.token_symbol ?? params.value ?? '').toUpperCase();
         const labelElement = document.createElement('span');
         labelElement.className = 'font-medium poseidon-grid-symbol-label';
         labelElement.textContent = tokenSymbol || '—';
-
-        rootElement.appendChild(chainIconElement);
-        if (protocolIconElement) {
-            rootElement.appendChild(protocolIconElement);
-        }
-        rootElement.appendChild(tokenIconElement);
         rootElement.appendChild(labelElement);
         return rootElement;
     };
@@ -135,6 +122,45 @@ export class DefiIconsService {
 
     public getProtocolIconCandidates(dexscreenerId: string | null | undefined): string[] {
         return this.buildProtocolIconCandidates(String(dexscreenerId ?? '').toLowerCase());
+    }
+
+    public renderTokenChainProtocolIcons(
+        hostElement: HTMLElement,
+        row: {
+            blockchain_network?: string | null;
+            dex_id?: string | null;
+            token_address?: string | null;
+            token_symbol?: string | null;
+        }
+    ): void {
+        hostElement.replaceChildren();
+        this.appendTokenChainProtocolIcons(hostElement, row);
+    }
+
+    private appendTokenChainProtocolIcons(
+        hostElement: HTMLElement,
+        row: {
+            blockchain_network?: string | null;
+            dex_id?: string | null;
+            token_address?: string | null;
+            token_symbol?: string | null;
+        }
+    ): void {
+        const chainName = String(row.blockchain_network ?? '').toLowerCase();
+        const tokenAddress = String(row.token_address ?? '').toLowerCase();
+        const tokenSymbol = String(row.token_symbol ?? '').toUpperCase();
+        const dexId = String(row.dex_id ?? '').toLowerCase();
+
+        const chainIconElement = this.buildIconElement(this.buildChainIconCandidates(chainName), `chain:${chainName || 'unknown'}`, 'chain');
+        hostElement.appendChild(chainIconElement);
+
+        if (dexId && dexId !== 'unknown') {
+            const protocolIconElement = this.buildIconElement(this.buildProtocolIconCandidates(dexId), `protocol:${dexId}`, 'protocol');
+            hostElement.appendChild(protocolIconElement);
+        }
+
+        const tokenIconElement = this.buildTokenIconElement(chainName, tokenAddress, tokenSymbol);
+        hostElement.appendChild(tokenIconElement);
     }
 
     private applyResolvedImage(imageElement: HTMLImageElement, placeholderElement: HTMLElement, source: string): void {
