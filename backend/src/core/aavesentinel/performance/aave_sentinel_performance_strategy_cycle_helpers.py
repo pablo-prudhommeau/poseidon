@@ -6,8 +6,11 @@ from src.core.aavesentinel.aave_sentinel_constants import TOKEN_AMOUNT_DUST_EPSI
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelPerformanceSummary,
     AaveSentinelPositionCheckpoint,
+    AaveSentinelReserveAsset,
+    AaveSentinelReserveIndexSnapshot,
     AaveSentinelReserveInterestBreakdown,
     AaveSentinelReserveRegistry,
+    AaveSentinelReserveScaledBalanceState,
     AaveSentinelStrategyCycleSummary,
     AaveSentinelStrategyKind,
     AaveSentinelUnallocatedWealthMovement,
@@ -15,17 +18,23 @@ from src.core.aavesentinel.aave_sentinel_structures import (
 from src.core.aavesentinel.aave_sentinel_utils import (
     compute_cycle_gross_pnl_usd,
     compute_latent_profit_and_loss_usd,
+    convert_scaled_balance_to_token_amount,
 )
 from src.core.aavesentinel.performance.aave_sentinel_performance_cycle_pnl_helpers import (
     apply_fresh_capital_adjusted_pnl_to_strategy_cycles,
 )
 from src.core.aavesentinel.performance.aave_sentinel_performance_scaled_balance_helpers import (
     _resolve_interest_breakdown_by_symbol,
+    find_scaled_balance_state,
+    resolve_reserve_index_snapshot,
 )
 from src.core.aavesentinel.performance.aave_sentinel_performance_wallet_balance_helpers import (
     resolve_asset_price_usd_for_symbol,
 )
 from src.core.utils.date_utils import get_current_local_datetime
+from src.logging.logger import get_application_logger
+
+logger = get_application_logger(__name__)
 
 
 def build_strategy_cycles_from_checkpoints(
@@ -67,13 +76,15 @@ def _build_parallel_strategy_cycles_for_kind(
     strategy_cycles: list[AaveSentinelStrategyCycleSummary] = []
     open_cycle_opening_checkpoint: Optional[AaveSentinelPositionCheckpoint] = None
     last_active_checkpoint: Optional[AaveSentinelPositionCheckpoint] = None
+    open_cycle_active_checkpoints: list[AaveSentinelPositionCheckpoint] = []
 
     for position_checkpoint in position_checkpoints:
-        kind_is_active = strategy_kind in position_checkpoint.active_strategy_kinds
+        kind_is_active: bool = strategy_kind in position_checkpoint.active_strategy_kinds
         if kind_is_active:
             if open_cycle_opening_checkpoint is None:
                 open_cycle_opening_checkpoint = position_checkpoint
             last_active_checkpoint = position_checkpoint
+            open_cycle_active_checkpoints.append(position_checkpoint)
             continue
 
         if open_cycle_opening_checkpoint is not None and last_active_checkpoint is not None:
@@ -85,10 +96,12 @@ def _build_parallel_strategy_cycles_for_kind(
                     strategy_kind=strategy_kind,
                     is_open=False,
                     reserve_registry=reserve_registry,
+                    cycle_checkpoints=open_cycle_active_checkpoints,
                 )
             )
             open_cycle_opening_checkpoint = None
             last_active_checkpoint = None
+            open_cycle_active_checkpoints = []
 
     if open_cycle_opening_checkpoint is not None and last_active_checkpoint is not None:
         strategy_cycles.append(
@@ -99,6 +112,7 @@ def _build_parallel_strategy_cycles_for_kind(
                 strategy_kind=strategy_kind,
                 is_open=True,
                 reserve_registry=reserve_registry,
+                cycle_checkpoints=open_cycle_active_checkpoints,
             )
         )
     return strategy_cycles
@@ -223,6 +237,204 @@ def _resolve_closed_strategy_mark_equity_usd(
     return equity_closing_checkpoint.long_strategy_equity_usd
 
 
+def _resolve_reserve_asset_for_symbol(
+        reserve_registry: AaveSentinelReserveRegistry,
+        asset_symbol: str,
+) -> Optional[AaveSentinelReserveAsset]:
+    for reserve_asset in reserve_registry.reserve_assets:
+        if reserve_asset.symbol == asset_symbol:
+            return reserve_asset
+    return None
+
+
+def _resolve_main_asset_scaled_balance(
+        position_checkpoint: AaveSentinelPositionCheckpoint,
+        underlying_address: str,
+        strategy_kind: AaveSentinelStrategyKind,
+) -> float:
+    scaled_balance_state: Optional[AaveSentinelReserveScaledBalanceState] = find_scaled_balance_state(
+        scaled_balances=position_checkpoint.scaled_balances,
+        underlying_address=underlying_address,
+    )
+    if scaled_balance_state is None:
+        return 0.0
+    if strategy_kind == AaveSentinelStrategyKind.SHORT:
+        return scaled_balance_state.scaled_debt_balance
+    return scaled_balance_state.scaled_supply_balance
+
+
+def _resolve_main_asset_reserve_index(
+        position_checkpoint: AaveSentinelPositionCheckpoint,
+        underlying_address: str,
+        strategy_kind: AaveSentinelStrategyKind,
+) -> Optional[float]:
+    reserve_index_snapshot: Optional[AaveSentinelReserveIndexSnapshot] = resolve_reserve_index_snapshot(
+        reserve_index_snapshots=position_checkpoint.reserve_index_snapshots,
+        underlying_address=underlying_address,
+    )
+    if reserve_index_snapshot is None:
+        return None
+    if strategy_kind == AaveSentinelStrategyKind.SHORT:
+        if reserve_index_snapshot.variable_borrow_index <= 0:
+            return None
+        return reserve_index_snapshot.variable_borrow_index
+    if reserve_index_snapshot.liquidity_index <= 0:
+        return None
+    return reserve_index_snapshot.liquidity_index
+
+
+def _resolve_main_asset_position_token_amount(
+        position_checkpoint: AaveSentinelPositionCheckpoint,
+        underlying_address: str,
+        strategy_kind: AaveSentinelStrategyKind,
+) -> float:
+    reserve_index: Optional[float] = _resolve_main_asset_reserve_index(
+        position_checkpoint=position_checkpoint,
+        underlying_address=underlying_address,
+        strategy_kind=strategy_kind,
+    )
+    if reserve_index is None:
+        return 0.0
+    scaled_balance: float = _resolve_main_asset_scaled_balance(
+        position_checkpoint=position_checkpoint,
+        underlying_address=underlying_address,
+        strategy_kind=strategy_kind,
+    )
+    return convert_scaled_balance_to_token_amount(
+        scaled_balance=scaled_balance,
+        reserve_index=reserve_index,
+    )
+
+
+def _compute_main_asset_quantity_change_excluding_interest(
+        previous_checkpoint: AaveSentinelPositionCheckpoint,
+        current_checkpoint: AaveSentinelPositionCheckpoint,
+        underlying_address: str,
+        strategy_kind: AaveSentinelStrategyKind,
+) -> float:
+    current_reserve_index: Optional[float] = _resolve_main_asset_reserve_index(
+        position_checkpoint=current_checkpoint,
+        underlying_address=underlying_address,
+        strategy_kind=strategy_kind,
+    )
+    if current_reserve_index is None:
+        return 0.0
+    previous_scaled_balance: float = _resolve_main_asset_scaled_balance(
+        position_checkpoint=previous_checkpoint,
+        underlying_address=underlying_address,
+        strategy_kind=strategy_kind,
+    )
+    current_scaled_balance: float = _resolve_main_asset_scaled_balance(
+        position_checkpoint=current_checkpoint,
+        underlying_address=underlying_address,
+        strategy_kind=strategy_kind,
+    )
+    accrued_token_amount: float = convert_scaled_balance_to_token_amount(
+        scaled_balance=previous_scaled_balance,
+        reserve_index=current_reserve_index,
+    )
+    current_token_amount: float = convert_scaled_balance_to_token_amount(
+        scaled_balance=current_scaled_balance,
+        reserve_index=current_reserve_index,
+    )
+    return current_token_amount - accrued_token_amount
+
+
+def compute_strategy_cycle_average_entry_price_usd(
+        cycle_checkpoints: list[AaveSentinelPositionCheckpoint],
+        strategy_kind: AaveSentinelStrategyKind,
+        main_asset_symbol: Optional[str],
+        reserve_registry: Optional[AaveSentinelReserveRegistry],
+        fallback_opening_price_usd: float,
+) -> float:
+    if main_asset_symbol is None or reserve_registry is None or not cycle_checkpoints:
+        return fallback_opening_price_usd
+    reserve_asset = _resolve_reserve_asset_for_symbol(
+        reserve_registry=reserve_registry,
+        asset_symbol=main_asset_symbol,
+    )
+    if reserve_asset is None:
+        return fallback_opening_price_usd
+
+    average_entry_price_usd: Optional[float] = None
+    previous_checkpoint: Optional[AaveSentinelPositionCheckpoint] = None
+    for position_checkpoint in cycle_checkpoints:
+        oracle_price_usd: float = resolve_asset_price_usd_for_symbol(
+            asset_prices_usd=position_checkpoint.asset_prices_usd,
+            asset_symbol=main_asset_symbol,
+            reserve_registry=reserve_registry,
+        )
+        if previous_checkpoint is None:
+            opening_token_amount: float = _resolve_main_asset_position_token_amount(
+                position_checkpoint=position_checkpoint,
+                underlying_address=reserve_asset.underlying_address,
+                strategy_kind=strategy_kind,
+            )
+            if opening_token_amount >= TOKEN_AMOUNT_DUST_EPSILON and oracle_price_usd > 0:
+                average_entry_price_usd = oracle_price_usd
+                logger.debug(
+                    "[AAVESENTINEL][PERFORMANCE][CYCLE][ENTRY] kind=%s asset=%s timestamp_seconds=%d "
+                    "quantity_increase=%0.8f oracle_price_usd=%0.2f average_entry_price_usd=%0.2f",
+                    strategy_kind.value,
+                    main_asset_symbol,
+                    position_checkpoint.timestamp_seconds,
+                    opening_token_amount,
+                    oracle_price_usd,
+                    average_entry_price_usd,
+                )
+            previous_checkpoint = position_checkpoint
+            continue
+
+        resolved_previous_checkpoint: AaveSentinelPositionCheckpoint = previous_checkpoint
+        quantity_increase: float = _compute_main_asset_quantity_change_excluding_interest(
+            previous_checkpoint=resolved_previous_checkpoint,
+            current_checkpoint=position_checkpoint,
+            underlying_address=reserve_asset.underlying_address,
+            strategy_kind=strategy_kind,
+        )
+        current_reserve_index: Optional[float] = _resolve_main_asset_reserve_index(
+            position_checkpoint=position_checkpoint,
+            underlying_address=reserve_asset.underlying_address,
+            strategy_kind=strategy_kind,
+        )
+        if (
+                quantity_increase > TOKEN_AMOUNT_DUST_EPSILON
+                and oracle_price_usd > 0
+                and current_reserve_index is not None
+        ):
+            previous_scaled_balance: float = _resolve_main_asset_scaled_balance(
+                position_checkpoint=resolved_previous_checkpoint,
+                underlying_address=reserve_asset.underlying_address,
+                strategy_kind=strategy_kind,
+            )
+            previous_accrued_token_amount: float = convert_scaled_balance_to_token_amount(
+                scaled_balance=previous_scaled_balance,
+                reserve_index=current_reserve_index,
+            )
+            if average_entry_price_usd is None or previous_accrued_token_amount < TOKEN_AMOUNT_DUST_EPSILON:
+                average_entry_price_usd = oracle_price_usd
+            else:
+                average_entry_price_usd = (
+                    previous_accrued_token_amount * average_entry_price_usd
+                    + quantity_increase * oracle_price_usd
+                ) / (previous_accrued_token_amount + quantity_increase)
+            logger.debug(
+                "[AAVESENTINEL][PERFORMANCE][CYCLE][ENTRY] kind=%s asset=%s timestamp_seconds=%d "
+                "quantity_increase=%0.8f oracle_price_usd=%0.2f average_entry_price_usd=%0.2f",
+                strategy_kind.value,
+                main_asset_symbol,
+                position_checkpoint.timestamp_seconds,
+                quantity_increase,
+                oracle_price_usd,
+                average_entry_price_usd,
+            )
+        previous_checkpoint = position_checkpoint
+
+    if average_entry_price_usd is None or average_entry_price_usd <= 0:
+        return fallback_opening_price_usd
+    return average_entry_price_usd
+
+
 def _build_strategy_cycle_summary(
         opening_checkpoint: AaveSentinelPositionCheckpoint,
         equity_closing_checkpoint: AaveSentinelPositionCheckpoint,
@@ -230,6 +442,7 @@ def _build_strategy_cycle_summary(
         strategy_kind: AaveSentinelStrategyKind,
         is_open: bool,
         reserve_registry: Optional[AaveSentinelReserveRegistry],
+        cycle_checkpoints: list[AaveSentinelPositionCheckpoint],
 ) -> AaveSentinelStrategyCycleSummary:
     opening_strategy_equity_usd = _resolve_strategy_equity_usd(
         position_checkpoint=opening_checkpoint,
@@ -273,20 +486,27 @@ def _build_strategy_cycle_summary(
         closing_equity_usd=closing_strategy_equity_usd,
         net_external_capital_usd=net_strategy_capital_usd,
     )
-    main_asset_symbol = (
+    main_asset_symbol: Optional[str] = (
         opening_checkpoint.short_main_asset_symbol
         if strategy_kind == AaveSentinelStrategyKind.SHORT
         else opening_checkpoint.long_main_asset_symbol
     )
-    opening_leverage = (
+    opening_leverage: float = (
         opening_checkpoint.short_leverage
         if strategy_kind == AaveSentinelStrategyKind.SHORT
         else opening_checkpoint.long_leverage
     )
-    entry_main_asset_price_usd = resolve_asset_price_usd_for_symbol(
+    opening_main_asset_price_usd = resolve_asset_price_usd_for_symbol(
         asset_prices_usd=opening_checkpoint.asset_prices_usd,
         asset_symbol=main_asset_symbol,
         reserve_registry=reserve_registry,
+    )
+    entry_main_asset_price_usd = compute_strategy_cycle_average_entry_price_usd(
+        cycle_checkpoints=cycle_checkpoints,
+        strategy_kind=strategy_kind,
+        main_asset_symbol=main_asset_symbol,
+        reserve_registry=reserve_registry,
+        fallback_opening_price_usd=opening_main_asset_price_usd,
     )
     exit_main_asset_price_usd: Optional[float] = None
     if not is_open:

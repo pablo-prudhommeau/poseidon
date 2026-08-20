@@ -503,12 +503,13 @@ class AaveSentinelPerformanceService:
         for strategy_cycle in performance_summary.strategy_cycles:
             logger.debug(
                 "[AAVESENTINEL][PERFORMANCE][CYCLE] kind=%s asset=%s opened_at=%d closed_at=%s "
-                "gross_pnl_usd=%0.2f absorbed_breakdown_count=%d",
+                "gross_pnl_usd=%0.2f entry_main_asset_price_usd=%0.2f absorbed_breakdown_count=%d",
                 strategy_cycle.kind.value,
                 strategy_cycle.main_asset_symbol,
                 strategy_cycle.opened_at_timestamp_seconds,
                 strategy_cycle.closed_at_timestamp_seconds,
                 strategy_cycle.gross_pnl_usd,
+                strategy_cycle.entry_main_asset_price_usd,
                 len(strategy_cycle.absorbed_source_breakdowns),
             )
         for unallocated_wealth_movement in performance_summary.unallocated_wealth_movements:

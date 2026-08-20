@@ -769,6 +769,225 @@ def test_strategy_cycle_captures_entry_and_exit_main_asset_prices() -> None:
     ) == pytest.approx(63000.0)
 
 
+def _build_btc_strategy_checkpoint(
+        block_number: int,
+        timestamp_seconds: int,
+        strategy_kind: AaveSentinelStrategyKind,
+        btc_price_usd: float,
+        btc_debt_token_amount: float,
+        btc_supply_token_amount: float,
+        variable_borrow_index: float,
+        liquidity_index: float,
+) -> AaveSentinelPositionCheckpoint:
+    short_is_active: bool = strategy_kind == AaveSentinelStrategyKind.SHORT
+    return AaveSentinelPositionCheckpoint(
+        block_number=block_number,
+        timestamp_seconds=timestamp_seconds,
+        active_strategy_kinds=[strategy_kind],
+        short_main_asset_symbol="BTC.b" if short_is_active else None,
+        long_main_asset_symbol=None if short_is_active else "BTC.b",
+        short_strategy_equity_usd=1000.0 if short_is_active else 0.0,
+        long_strategy_equity_usd=0.0 if short_is_active else 1000.0,
+        cumulative_short_strategy_capital_usd=1000.0 if short_is_active else 0.0,
+        cumulative_long_strategy_capital_usd=0.0 if short_is_active else 1000.0,
+        equity_usd=1000.0,
+        cumulative_external_capital_usd=1000.0,
+        asset_prices_usd=[
+            AaveSentinelAssetPriceUsd(
+                underlying_address=BTC_CONTRACT_ADDRESS,
+                price_usd=btc_price_usd,
+            ),
+        ],
+        scaled_balances=[
+            AaveSentinelReserveScaledBalanceState(
+                underlying_address=BTC_CONTRACT_ADDRESS,
+                scaled_supply_balance=convert_token_amount_to_scaled_balance(
+                    token_amount=btc_supply_token_amount,
+                    reserve_index=liquidity_index,
+                ),
+                scaled_debt_balance=convert_token_amount_to_scaled_balance(
+                    token_amount=btc_debt_token_amount,
+                    reserve_index=variable_borrow_index,
+                ),
+            ),
+        ],
+        reserve_index_snapshots=[
+            AaveSentinelReserveIndexSnapshot(
+                underlying_address=BTC_CONTRACT_ADDRESS,
+                liquidity_index=liquidity_index,
+                variable_borrow_index=variable_borrow_index,
+            ),
+        ],
+    )
+
+
+def test_short_cycle_averages_entry_price_across_reloop_size_increases() -> None:
+    ray_units: float = float(RAY_UNITS)
+    reserve_registry = build_test_reserve_registry()
+    strategy_cycles = build_strategy_cycles_from_checkpoints(
+        position_checkpoints=[
+            _build_btc_strategy_checkpoint(
+                block_number=1,
+                timestamp_seconds=100,
+                strategy_kind=AaveSentinelStrategyKind.SHORT,
+                btc_price_usd=63000.0,
+                btc_debt_token_amount=1.0,
+                btc_supply_token_amount=0.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+            _build_btc_strategy_checkpoint(
+                block_number=2,
+                timestamp_seconds=200,
+                strategy_kind=AaveSentinelStrategyKind.SHORT,
+                btc_price_usd=67000.0,
+                btc_debt_token_amount=2.0,
+                btc_supply_token_amount=0.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+        ],
+        reserve_registry=reserve_registry,
+    )
+    assert len(strategy_cycles) == 1
+    short_cycle = strategy_cycles[0]
+    assert short_cycle.kind == AaveSentinelStrategyKind.SHORT
+    assert short_cycle.entry_main_asset_price_usd == pytest.approx(65000.0)
+    assert short_cycle.exit_main_asset_price_usd is None
+
+
+def test_long_cycle_averages_entry_price_across_reloop_size_increases() -> None:
+    ray_units: float = float(RAY_UNITS)
+    reserve_registry = build_test_reserve_registry()
+    strategy_cycles = build_strategy_cycles_from_checkpoints(
+        position_checkpoints=[
+            _build_btc_strategy_checkpoint(
+                block_number=1,
+                timestamp_seconds=100,
+                strategy_kind=AaveSentinelStrategyKind.LONG,
+                btc_price_usd=63000.0,
+                btc_debt_token_amount=0.0,
+                btc_supply_token_amount=1.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+            _build_btc_strategy_checkpoint(
+                block_number=2,
+                timestamp_seconds=200,
+                strategy_kind=AaveSentinelStrategyKind.LONG,
+                btc_price_usd=67000.0,
+                btc_debt_token_amount=0.0,
+                btc_supply_token_amount=2.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+        ],
+        reserve_registry=reserve_registry,
+    )
+    assert len(strategy_cycles) == 1
+    long_cycle = strategy_cycles[0]
+    assert long_cycle.kind == AaveSentinelStrategyKind.LONG
+    assert long_cycle.entry_main_asset_price_usd == pytest.approx(65000.0)
+    assert long_cycle.exit_main_asset_price_usd is None
+
+
+def test_short_cycle_keeps_average_entry_price_when_size_decreases() -> None:
+    ray_units: float = float(RAY_UNITS)
+    reserve_registry = build_test_reserve_registry()
+    strategy_cycles = build_strategy_cycles_from_checkpoints(
+        position_checkpoints=[
+            _build_btc_strategy_checkpoint(
+                block_number=1,
+                timestamp_seconds=100,
+                strategy_kind=AaveSentinelStrategyKind.SHORT,
+                btc_price_usd=63000.0,
+                btc_debt_token_amount=1.0,
+                btc_supply_token_amount=0.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+            _build_btc_strategy_checkpoint(
+                block_number=2,
+                timestamp_seconds=200,
+                strategy_kind=AaveSentinelStrategyKind.SHORT,
+                btc_price_usd=67000.0,
+                btc_debt_token_amount=0.4,
+                btc_supply_token_amount=0.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+        ],
+        reserve_registry=reserve_registry,
+    )
+    short_cycle = next(
+        strategy_cycle
+        for strategy_cycle in strategy_cycles
+        if strategy_cycle.kind == AaveSentinelStrategyKind.SHORT
+    )
+    assert short_cycle.entry_main_asset_price_usd == pytest.approx(63000.0)
+
+
+def test_short_cycle_ignores_index_interest_when_averaging_entry_price() -> None:
+    ray_units: float = float(RAY_UNITS)
+    reserve_registry = build_test_reserve_registry()
+    opening_scaled_debt_balance: float = convert_token_amount_to_scaled_balance(
+        token_amount=1.0,
+        reserve_index=ray_units,
+    )
+    accrued_variable_borrow_index: float = ray_units * 1.01
+    strategy_cycles = build_strategy_cycles_from_checkpoints(
+        position_checkpoints=[
+            _build_btc_strategy_checkpoint(
+                block_number=1,
+                timestamp_seconds=100,
+                strategy_kind=AaveSentinelStrategyKind.SHORT,
+                btc_price_usd=63000.0,
+                btc_debt_token_amount=1.0,
+                btc_supply_token_amount=0.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+            AaveSentinelPositionCheckpoint(
+                block_number=2,
+                timestamp_seconds=200,
+                active_strategy_kinds=[AaveSentinelStrategyKind.SHORT],
+                short_main_asset_symbol="BTC.b",
+                short_strategy_equity_usd=1000.0,
+                cumulative_short_strategy_capital_usd=1000.0,
+                equity_usd=1000.0,
+                cumulative_external_capital_usd=1000.0,
+                asset_prices_usd=[
+                    AaveSentinelAssetPriceUsd(
+                        underlying_address=BTC_CONTRACT_ADDRESS,
+                        price_usd=67000.0,
+                    ),
+                ],
+                scaled_balances=[
+                    AaveSentinelReserveScaledBalanceState(
+                        underlying_address=BTC_CONTRACT_ADDRESS,
+                        scaled_supply_balance=0.0,
+                        scaled_debt_balance=opening_scaled_debt_balance,
+                    ),
+                ],
+                reserve_index_snapshots=[
+                    AaveSentinelReserveIndexSnapshot(
+                        underlying_address=BTC_CONTRACT_ADDRESS,
+                        liquidity_index=ray_units,
+                        variable_borrow_index=accrued_variable_borrow_index,
+                    ),
+                ],
+            ),
+        ],
+        reserve_registry=reserve_registry,
+    )
+    short_cycle = next(
+        strategy_cycle
+        for strategy_cycle in strategy_cycles
+        if strategy_cycle.kind == AaveSentinelStrategyKind.SHORT
+    )
+    assert short_cycle.entry_main_asset_price_usd == pytest.approx(63000.0)
+
+
 def test_flat_wavax_long_ignores_matched_wallet_external_outflow() -> None:
     checkpoints = [
         AaveSentinelPositionCheckpoint(
