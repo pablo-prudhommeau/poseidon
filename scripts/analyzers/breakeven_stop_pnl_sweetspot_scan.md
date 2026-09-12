@@ -4,6 +4,12 @@ Reference for [`breakeven_stop_pnl_sweetspot_scan.py`](breakeven_stop_pnl_sweets
 
 ---
 
+## Configuration source
+
+The script loads `V:\opt\poseidon\.env` and raises if that file is not reachable. The repository `.env` is never read. The baseline stop fraction, the arm fraction bound and the database connection all come from that file.
+
+---
+
 ## Overview
 
 Live policy after BE arm (always on):
@@ -39,9 +45,10 @@ The script rechallenges loss-side and gain-side BE stops from measured post-arm 
 
 Universe = resolved shadowing verdicts where:
 
-1. `take_profit_tier_1_hit_at IS NOT NULL`
-2. `post_take_profit_tier_1_lowest_price IS NOT NULL`
-3. optionally `probe.probed_at >= --probed-since`
+1. `realized_pnl_percentage IS NOT NULL`
+2. `take_profit_tier_1_hit_at IS NOT NULL`
+3. `post_take_profit_tier_1_lowest_price IS NOT NULL`
+4. optionally `probe.probed_at >= --probed-since`
 
 **NULL lowest price means “not measured”, not “never retraced”.** Always pass `--probed-since` or `--lookback-days` covering only the instrumented era.
 
@@ -51,19 +58,19 @@ Universe = resolved shadowing verdicts where:
 
 | Requirement | Detail |
 |-------------|--------|
-| Repository root | Directory containing `backend/`, `scripts/`, `.venv`, `.env` |
-| Python | Project virtual environment at repository root |
-| Database | PostgreSQL via `DATABASE_*` in `.env` |
+| Repository root | Directory containing `backend/` and `scripts/` |
+| Python | Project virtual environment `venv` at repository root |
+| Database | PostgreSQL from the `DATABASE_*` keys of `V:\opt\poseidon\.env` |
 | Instrumentation | Columns on `trading_shadowing_verdicts` from migration `20260801_1240_…` |
 
 ```powershell
 cd <repository-root>
-.\.venv\Scripts\python.exe scripts/breakeven_stop_pnl_sweetspot_scan.py --help
+.\venv\Scripts\python.exe scripts/analyzers/breakeven_stop_pnl_sweetspot_scan.py --help
 ```
 
 ```bash
 cd <repository-root>
-.venv/bin/python scripts/breakeven_stop_pnl_sweetspot_scan.py --help
+venv/bin/python scripts/analyzers/breakeven_stop_pnl_sweetspot_scan.py --help
 ```
 
 ---
@@ -71,7 +78,7 @@ cd <repository-root>
 ## Recommended run
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/breakeven_stop_pnl_sweetspot_scan.py `
+.\venv\Scripts\python.exe scripts/analyzers/breakeven_stop_pnl_sweetspot_scan.py `
   --probed-since 2026-08-01T00:00:00 `
   --apply-live-filters `
   --pnl-fractions -0.10,-0.07,-0.05,-0.03,-0.02,-0.01,0,0.01,0.02,0.03,0.05 `
@@ -97,8 +104,8 @@ cd <repository-root>
 | `--max-fetch` | Cap on fetched instrumented BE-arm verdicts |
 | `--min-n` | Minimum evaluated count for ranking |
 | `--rank-by` | Ranking objective (default avg PnL uplift) |
-| `--csv` | Write full matrix under `scripts/csv/` when bare filename |
-| `--no-log-file` | Skip `scripts/logs/` file |
+| `--csv` | Write full matrix under `scripts/analyzers/csv/` when given a bare filename |
+| `--no-log-file` | Skip the `scripts/analyzers/logs/` file |
 
 ---
 
@@ -131,10 +138,10 @@ Baseline = actual shadow outcomes (no live breakeven applied in the tracker).
 
 | Type | Location |
 |------|----------|
-| Logs | `scripts/logs/breakeven_stop_pnl_sweetspot_scan_YYYYMMDD_HHMMSS.log` |
-| CSV | `scripts/csv/` when `--csv` is set |
+| Logs | `scripts/analyzers/logs/breakeven_stop_pnl_sweetspot_scan_YYYYMMDD_HHMMSS.log` |
+| CSV | `scripts/analyzers/csv/` when `--csv` is set |
 
-Both directories are gitignored via [`scripts/.gitignore`](.gitignore).
+Both directories are gitignored via [`.gitignore`](.gitignore).
 
 ---
 

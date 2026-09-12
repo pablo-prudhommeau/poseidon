@@ -10,7 +10,7 @@ MARKERS_DIRECTORY="${OPTIONAL_DEPENDENCIES_ROOT}/markers"
 RUNTIME_ENVIRONMENT_FILE="${OPTIONAL_DEPENDENCIES_ROOT}/runtime-environment.sh"
 
 MEMRAY_PACK_NAME="memray"
-MEMRAY_PACK_VERSION="memray-1.19.1"
+MEMRAY_PACK_VERSION="memray-1.19.1-no-typing-extensions"
 BOOTSTRAP_STAGING_ROOT="/tmp/poseidon-bootstrap-staging"
 
 _abort_bootstrap() {
@@ -65,6 +65,14 @@ _prepare_staging_directory() {
     staging_directory="$1"
     rm -rf "$staging_directory"
     mkdir -p "$staging_directory"
+}
+
+_strip_packages_that_shadow_application_site_packages() {
+    target_directory="$1"
+    rm -f "${target_directory}/typing_extensions.py"
+    rm -rf "${target_directory}/typing_extensions"
+    rm -rf "${target_directory}/typing_extensions-"*.dist-info
+    rm -rf "${target_directory}/__pycache__/typing_extensions."*
 }
 
 _sync_staged_python_packages_to_volume() {
@@ -182,6 +190,8 @@ _install_memray_pack() {
         _abort_bootstrap "Memray pip install failed"
     fi
 
+    _strip_packages_that_shadow_application_site_packages "$memray_staging_directory"
+
     _sync_staged_python_packages_to_volume "MEMRAY" "$memray_staging_directory" "$memray_python_packages_directory"
 
     _write_marker_ok "$MEMRAY_PACK_NAME" "$MEMRAY_PACK_VERSION"
@@ -196,7 +206,7 @@ _write_runtime_environment_file() {
     if [ -d "${PYTHON_PACKAGES_ROOT}/${CORTEX_PACK_NAME}" ] && _is_pack_ready "$CORTEX_PACK_NAME" "$CORTEX_PACK_VERSION"; then
         pythonpath_segments="${pythonpath_segments}:${PYTHON_PACKAGES_ROOT}/${CORTEX_PACK_NAME}"
     fi
-    if [ -d "${PYTHON_PACKAGES_ROOT}/${MEMRAY_PACK_NAME}" ] && _is_pack_ready "$MEMRAY_PACK_NAME" "$MEMRAY_PACK_VERSION"; then
+    if _as_bool "${MEMRAY_ENABLED:-false}" && [ -d "${PYTHON_PACKAGES_ROOT}/${MEMRAY_PACK_NAME}" ] && _is_pack_ready "$MEMRAY_PACK_NAME" "$MEMRAY_PACK_VERSION"; then
         pythonpath_segments="${pythonpath_segments}:${PYTHON_PACKAGES_ROOT}/${MEMRAY_PACK_NAME}"
     fi
 

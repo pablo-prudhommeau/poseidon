@@ -12,20 +12,24 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
-SWEEP_LOG_DIR = SCRIPTS_DIR / "logs"
-SWEEP_CSV_DIR = SCRIPTS_DIR / "csv"
+ROOT = Path(__file__).resolve().parents[2]
+ANALYZERS_DIR = ROOT / "scripts" / "analyzers"
+SWEEP_LOG_DIR = ANALYZERS_DIR / "logs"
+SWEEP_CSV_DIR = ANALYZERS_DIR / "csv"
+DEPLOYMENT_ENV_FILE = Path("V:/opt/poseidon/.env")
 BACKEND_PACKAGE_ROOT = ROOT / "backend"
 if str(BACKEND_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_PACKAGE_ROOT))
 
 try:
     from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-else:
-    load_dotenv(ROOT / ".env")
+except ImportError as dotenv_import_error:
+    raise RuntimeError("[ANALYZER] python-dotenv is required to load the deployment environment file") from dotenv_import_error
+
+if not DEPLOYMENT_ENV_FILE.is_file():
+    raise RuntimeError(f"[ANALYZER] deployment environment file not found: {DEPLOYMENT_ENV_FILE}")
+
+load_dotenv(DEPLOYMENT_ENV_FILE)
 
 from pydantic import BaseModel, ConfigDict
 
@@ -678,23 +682,23 @@ def main() -> None:
         epilog=(
             "Example runs:\n"
             "  Focus split signal — coarse sweep:\n"
-            "    python scripts/shadow_pf_sweetspot_scan.py "
+            "    python scripts/analyzers/shadow_pf_sweetspot_scan.py "
             "--lookbacks 7,14 --granularities 300,900 "
             "--sma-periods 50,100 --thresholds 1.35,1.45,1.55 "
             "--min-regime-n 30 --rank-by win_rate_delta\n"
             "  Max delta expectation vs baseline regime:\n"
-            "    python scripts/shadow_pf_sweetspot_scan.py "
+            "    python scripts/analyzers/shadow_pf_sweetspot_scan.py "
             "--lookbacks 14,21,30 --granularities 300 "
             "--sma-periods 30,50,80 --thresholds 1.2,1.35,1.5 "
             "--min-regime-n 40 --min-regime-below-n 40 "
             "--rank-by avg_pnl_delta --csv avg_pnl_delta.csv\n"
             "  Find throughput niches (velocity):\n"
-            "    python scripts/shadow_pf_sweetspot_scan.py "
+            "    python scripts/analyzers/shadow_pf_sweetspot_scan.py "
             "--lookbacks 7 --granularities 300,600 "
             "--sma-periods 40,60 --thresholds 1.4,1.45,1.5 "
             "--min-regime-n 25 --rank-by velocity_above\n"
             "  Chart-side SMA pentaptych tie-break with verdict deltas:\n"
-            "    python scripts/shadow_pf_sweetspot_scan.py "
+            "    python scripts/analyzers/shadow_pf_sweetspot_scan.py "
             "--lookbacks 14 --granularities 300 "
             "--sma-periods 50 --thresholds 1.35,1.4,1.45,1.5 "
             "--rank-by composite --no-winsorize\n"

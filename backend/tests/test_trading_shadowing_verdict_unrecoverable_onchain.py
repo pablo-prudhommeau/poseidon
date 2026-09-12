@@ -74,6 +74,10 @@ def test_shadowing_verdict_stales_unrecoverable_onchain_price_instead_of_deferri
     assert batch_statistics.resolved_staled_unrecoverable_onchain_price_count == 1
     assert batch_statistics.deferred_onchain_price_unavailable_count == 0
     assert verdict.exit_reason == "STALED"
+    assert verdict.stale_cause == "unrecoverable_onchain"
+    assert verdict.realized_pnl_percentage is None
+    assert verdict.realized_pnl_usd is None
+    assert verdict.is_profitable is None
 
 
 @patch("src.core.trading.shadowing.trading_shadowing_verdict_tracker.fetch_onchain_prices_for_tokens_with_metadata")

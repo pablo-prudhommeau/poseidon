@@ -210,6 +210,14 @@ class TradingShadowingVerdictChronicle(BaseModel):
     cortex_model_rollouts: list[TradingShadowingVerdictChronicleCortexModelRollout] = Field(default_factory=list)
 
 
+class TradingShadowingStaleCause:
+    MISSING_DEX_PRICE: str = "missing_dex_price"
+    UNSUPPORTED_DEX: str = "unsupported_dex"
+    UNRECOVERABLE_ONCHAIN: str = "unrecoverable_onchain"
+    ABERRANT_DEVIATION: str = "aberrant_deviation"
+    PERSISTENT_SLIPPAGE: str = "persistent_slippage"
+
+
 class TradingShadowingVerdictChronicleComputationResult(BaseModel):
     chronicle: TradingShadowingVerdictChronicle
     verdicts: list[TradingShadowingVerdictChronicleVerdict]
@@ -223,6 +231,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
     resolved_staled_missing_dex_price_count: int = 0
     resolved_staled_aberrant_onchain_dex_price_count: int = 0
     resolved_staled_unrecoverable_onchain_price_count: int = 0
+    resolved_staled_unsupported_dex_count: int = 0
     resolved_staled_persistent_slippage_count: int = 0
     resolved_honeypot_count: int = 0
     resolved_lethargic_count: int = 0
@@ -240,6 +249,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
         self.resolved_staled_missing_dex_price_count += other.resolved_staled_missing_dex_price_count
         self.resolved_staled_aberrant_onchain_dex_price_count += other.resolved_staled_aberrant_onchain_dex_price_count
         self.resolved_staled_unrecoverable_onchain_price_count += other.resolved_staled_unrecoverable_onchain_price_count
+        self.resolved_staled_unsupported_dex_count += other.resolved_staled_unsupported_dex_count
         self.resolved_staled_persistent_slippage_count += other.resolved_staled_persistent_slippage_count
         self.resolved_honeypot_count += other.resolved_honeypot_count
         self.resolved_lethargic_count += other.resolved_lethargic_count
@@ -260,6 +270,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
             ("staled_missing_dex", self.resolved_staled_missing_dex_price_count),
             ("staled_aberrant_onchain_dex", self.resolved_staled_aberrant_onchain_dex_price_count),
             ("staled_unrecoverable_onchain", self.resolved_staled_unrecoverable_onchain_price_count),
+            ("staled_unsupported_dex", self.resolved_staled_unsupported_dex_count),
             ("staled_persistent_slippage", self.resolved_staled_persistent_slippage_count),
             ("honeypot", self.resolved_honeypot_count),
             ("lethargic", self.resolved_lethargic_count),

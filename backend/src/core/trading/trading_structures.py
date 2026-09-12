@@ -38,7 +38,6 @@ class TradingCortexInferenceSnapshot(BaseModel):
     final_trade_score: float
     model_version: str
     model_ready: bool
-    gate_verdict: TradingFilterVerdict
 
 
 class TradingDexMarketSnapshot(BaseModel):

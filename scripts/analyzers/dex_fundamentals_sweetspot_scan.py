@@ -13,26 +13,41 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, load_only
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
-SWEEP_LOG_DIR = SCRIPTS_DIR / "logs"
-SWEEP_CSV_DIR = SCRIPTS_DIR / "csv"
+ROOT = Path(__file__).resolve().parents[2]
+ANALYZERS_DIR = ROOT / "scripts" / "analyzers"
+SWEEP_LOG_DIR = ANALYZERS_DIR / "logs"
+SWEEP_CSV_DIR = ANALYZERS_DIR / "csv"
+DEPLOYMENT_ENV_FILE = Path("V:/opt/poseidon/.env")
 BACKEND_PACKAGE_ROOT = ROOT / "backend"
 if str(BACKEND_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_PACKAGE_ROOT))
+if str(ANALYZERS_DIR) not in sys.path:
+    sys.path.insert(0, str(ANALYZERS_DIR))
 
 try:
     from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-else:
-    load_dotenv(ROOT / ".env")
+except ImportError as dotenv_import_error:
+    raise RuntimeError("[ANALYZER] python-dotenv is required to load the deployment environment file") from dotenv_import_error
+
+if not DEPLOYMENT_ENV_FILE.is_file():
+    raise RuntimeError(f"[ANALYZER] deployment environment file not found: {DEPLOYMENT_ENV_FILE}")
+
+load_dotenv(DEPLOYMENT_ENV_FILE)
 
 from src.configuration.config import settings
+from src.core.trading.evaluators.trading_quality_scorer import compute_quality_score_from_market_components
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_database_session
 from src.persistence.models import TradingShadowingProbe, TradingShadowingVerdict
+
+from cortex_quantile_gate_replay import (
+    build_live_cortex_gate_acceptance_mask,
+    build_quantile_gate_replay_arrays,
+    compute_accepted_probe_identifiers,
+    compute_effective_quantile_gate_thresholds,
+    load_scored_probe_replay_rows,
+)
 
 logger = get_application_logger(__name__)
 
@@ -46,12 +61,24 @@ SWEEP_AXES = (
     "liquidity_structure",
     "age",
     "liquidity_min",
+    "volume_m5",
     "volume_h1",
+    "volume_h6",
     "volume_h24",
     "fdv",
     "market_cap",
     "liq_to_fdv",
+    "momentum_floor_5m",
+    "momentum_floor_1h",
+    "momentum_floor_6h",
+    "momentum_floor_24h",
+    "momentum_abs_5m",
+    "momentum_abs_1h",
+    "momentum_abs_6h",
     "momentum_abs_24h",
+    "quality_min",
+    "risk_overextended",
+    "risk_weak_buy_flow",
     "holding_hours",
     "combo_ls_holding",
 )
@@ -60,12 +87,18 @@ BUCKET_FEATURES = (
     "mcap_to_liq",
     "age_hours",
     "liquidity_usd",
+    "volume_m5_usd",
     "volume_h1_usd",
+    "volume_h6_usd",
     "volume_h24_usd",
     "fdv_usd",
     "market_cap_usd",
     "liq_to_fdv",
+    "price_change_percentage_m5",
+    "price_change_percentage_h1",
+    "price_change_percentage_h6",
     "abs_price_change_h24",
+    "quality_score",
     "holding_hours",
 )
 
@@ -73,23 +106,28 @@ BUCKET_FEATURES = (
 class DexFundamentalsObservation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    probe_id: int
+    probed_at: datetime
     resolved_at: datetime
     exit_reason: str
-    realized_profit_and_loss_percentage: float
-    realized_profit_and_loss_usd: float
-    is_profitable: bool
+    realized_profit_and_loss_percentage: float | None
+    realized_profit_and_loss_usd: float | None
+    is_profitable: bool | None
     market_cap_usd: float
     liquidity_usd: float
     fully_diluted_valuation_usd: float
     token_age_hours: float
+    volume_m5_usd: float
     volume_h1_usd: float
+    volume_h6_usd: float
     volume_h24_usd: float
     price_change_percentage_h24: float
     price_change_percentage_h1: float
     price_change_percentage_h6: float
     price_change_percentage_m5: float
+    buy_to_sell_ratio: float
+    quality_score: float
     predicted_holding_time_hours: float | None
-    cortex_gate_accepted: bool | None
 
     @property
     def market_cap_to_liquidity_ratio(self) -> float | None:
@@ -210,8 +248,12 @@ def resolve_feature_value(observation: DexFundamentalsObservation, feature: str)
         return observation.token_age_hours
     if feature == "liquidity_usd":
         return observation.liquidity_usd
+    if feature == "volume_m5_usd":
+        return observation.volume_m5_usd
     if feature == "volume_h1_usd":
         return observation.volume_h1_usd
+    if feature == "volume_h6_usd":
+        return observation.volume_h6_usd
     if feature == "volume_h24_usd":
         return observation.volume_h24_usd
     if feature == "fdv_usd":
@@ -220,8 +262,16 @@ def resolve_feature_value(observation: DexFundamentalsObservation, feature: str)
         return observation.market_cap_usd
     if feature == "liq_to_fdv":
         return observation.liquidity_to_fdv_ratio
+    if feature == "price_change_percentage_m5":
+        return observation.price_change_percentage_m5
+    if feature == "price_change_percentage_h1":
+        return observation.price_change_percentage_h1
+    if feature == "price_change_percentage_h6":
+        return observation.price_change_percentage_h6
     if feature == "abs_price_change_h24":
         return observation.absolute_price_change_h24
+    if feature == "quality_score":
+        return observation.quality_score
     if feature == "holding_hours":
         return observation.predicted_holding_time_hours
     raise ValueError(f"unsupported feature '{feature}'")
@@ -261,23 +311,26 @@ def fetch_dex_fundamentals_observations(
                 ),
                 joinedload(TradingShadowingVerdict.probe).load_only(
                     TradingShadowingProbe.id,
+                    TradingShadowingProbe.probed_at,
                     TradingShadowingProbe.market_cap_usd,
                     TradingShadowingProbe.liquidity_usd,
                     TradingShadowingProbe.fully_diluted_valuation_usd,
                     TradingShadowingProbe.token_age_hours,
+                    TradingShadowingProbe.volume_m5_usd,
                     TradingShadowingProbe.volume_h1_usd,
+                    TradingShadowingProbe.volume_h6_usd,
                     TradingShadowingProbe.volume_h24_usd,
                     TradingShadowingProbe.price_change_percentage_m5,
                     TradingShadowingProbe.price_change_percentage_h1,
                     TradingShadowingProbe.price_change_percentage_h6,
                     TradingShadowingProbe.price_change_percentage_h24,
+                    TradingShadowingProbe.buy_to_sell_ratio,
                     TradingShadowingProbe.cortex_inference_summary,
                 ),
             )
             .where(TradingShadowingVerdict.exit_reason.is_not(None))
             .where(TradingShadowingVerdict.resolved_at.is_not(None))
             .where(TradingShadowingVerdict.resolved_at >= lower_bound)
-            .where(TradingShadowingVerdict.realized_pnl_percentage.is_not(None))
             .order_by(TradingShadowingVerdict.resolved_at.desc())
             .limit(maximum_fetch_count)
         )
@@ -289,40 +342,59 @@ def fetch_dex_fundamentals_observations(
         observations: list[DexFundamentalsObservation] = []
         for verdict in verdicts:
             probe = verdict.probe
-            if probe is None or verdict.resolved_at is None or verdict.realized_pnl_percentage is None:
+            if probe is None or verdict.resolved_at is None or verdict.exit_reason is None:
+                continue
+            if verdict.exit_reason != STALED_EXIT_REASON and verdict.realized_pnl_percentage is None:
                 continue
 
             predicted_holding_time_hours: float | None = None
-            cortex_gate_accepted: bool | None = None
             cortex_inference_summary = probe.cortex_inference_summary
             if cortex_inference_summary is not None:
                 predicted_holding_time_hours = cortex_inference_summary.predicted_holding_time_minutes / 60.0
-                if cortex_inference_summary.gate_verdict is not None:
-                    cortex_gate_accepted = bool(cortex_inference_summary.gate_verdict.is_accepted)
+
+            aware_probed_at = ensure_timezone_aware(probe.probed_at)
+            aware_resolved_at = ensure_timezone_aware(verdict.resolved_at)
+            if aware_probed_at is None or aware_resolved_at is None:
+                continue
 
             observations.append(
                 DexFundamentalsObservation(
-                    resolved_at=ensure_timezone_aware(verdict.resolved_at),
+                    probe_id=probe.id,
+                    probed_at=aware_probed_at,
+                    resolved_at=aware_resolved_at,
                     exit_reason=str(verdict.exit_reason),
-                    realized_profit_and_loss_percentage=float(verdict.realized_pnl_percentage),
-                    realized_profit_and_loss_usd=float(verdict.realized_pnl_usd or 0.0),
-                    is_profitable=(
-                        bool(verdict.is_profitable)
-                        if verdict.is_profitable is not None
-                        else float(verdict.realized_pnl_percentage) > 0.0
+                    realized_profit_and_loss_percentage=(
+                        None if verdict.realized_pnl_percentage is None else float(verdict.realized_pnl_percentage)
                     ),
+                    realized_profit_and_loss_usd=(
+                        None if verdict.realized_pnl_usd is None else float(verdict.realized_pnl_usd)
+                    ),
+                    is_profitable=None if verdict.is_profitable is None else bool(verdict.is_profitable),
                     market_cap_usd=float(probe.market_cap_usd),
                     liquidity_usd=float(probe.liquidity_usd),
                     fully_diluted_valuation_usd=float(probe.fully_diluted_valuation_usd),
                     token_age_hours=float(probe.token_age_hours),
+                    volume_m5_usd=float(probe.volume_m5_usd),
                     volume_h1_usd=float(probe.volume_h1_usd),
+                    volume_h6_usd=float(probe.volume_h6_usd),
                     volume_h24_usd=float(probe.volume_h24_usd),
                     price_change_percentage_h24=float(probe.price_change_percentage_h24),
                     price_change_percentage_h1=float(probe.price_change_percentage_h1),
                     price_change_percentage_h6=float(probe.price_change_percentage_h6),
                     price_change_percentage_m5=float(probe.price_change_percentage_m5),
+                    buy_to_sell_ratio=float(probe.buy_to_sell_ratio),
+                    quality_score=compute_quality_score_from_market_components(
+                        liquidity_usd=float(probe.liquidity_usd),
+                        volume_m5_usd=float(probe.volume_m5_usd),
+                        volume_h1_usd=float(probe.volume_h1_usd),
+                        volume_h6_usd=float(probe.volume_h6_usd),
+                        volume_h24_usd=float(probe.volume_h24_usd),
+                        price_change_percentage_m5=float(probe.price_change_percentage_m5),
+                        price_change_percentage_h1=float(probe.price_change_percentage_h1),
+                        price_change_percentage_h6=float(probe.price_change_percentage_h6),
+                        price_change_percentage_h24=float(probe.price_change_percentage_h24),
+                    ),
                     predicted_holding_time_hours=predicted_holding_time_hours,
-                    cortex_gate_accepted=cortex_gate_accepted,
                 )
             )
 
@@ -330,17 +402,15 @@ def fetch_dex_fundamentals_observations(
     return observations
 
 
-def filter_base_universe(
-        observations: list[DexFundamentalsObservation],
-        require_cortex_accepted: bool,
-) -> list[DexFundamentalsObservation]:
-    if not require_cortex_accepted:
-        return observations
-    return [
-        observation
-        for observation in observations
-        if observation.cortex_gate_accepted is True
-    ]
+def collect_mark_to_market_percentages(observations: list[DexFundamentalsObservation]) -> list[float]:
+    percentages: list[float] = []
+    for observation in observations:
+        if observation.exit_reason == STALED_EXIT_REASON:
+            continue
+        if observation.realized_profit_and_loss_percentage is None:
+            continue
+        percentages.append(observation.realized_profit_and_loss_percentage)
+    return percentages
 
 
 def aggregate_observation_metrics(
@@ -348,8 +418,9 @@ def aggregate_observation_metrics(
         total_count: int,
         window_days: float,
 ) -> dict[str, float | int]:
-    percentages = [observation.realized_profit_and_loss_percentage for observation in selected]
+    mark_to_market_percentages = collect_mark_to_market_percentages(selected)
     selected_count = len(selected)
+    mark_to_market_count = len(mark_to_market_percentages)
     staled_count = sum(1 for observation in selected if observation.exit_reason == STALED_EXIT_REASON)
     take_profit_tier_2_count = sum(
         1 for observation in selected if observation.exit_reason == "TAKE_PROFIT_2"
@@ -358,17 +429,20 @@ def aggregate_observation_metrics(
         1
         for observation in selected
         if observation.exit_reason == STALED_EXIT_REASON
-        or observation.realized_profit_and_loss_percentage <= -50.0
+        or (
+            observation.realized_profit_and_loss_percentage is not None
+            and observation.realized_profit_and_loss_percentage <= -50.0
+        )
     )
-    win_count = sum(1 for percentage in percentages if percentage > 0.0)
+    win_count = sum(1 for percentage in mark_to_market_percentages if percentage > 0.0)
     safe_window_days = max(window_days, 1e-9)
     return {
         "selected_count": selected_count,
         "pass_rate_pct": 100.0 * selected_count / total_count if total_count > 0 else 0.0,
         "trades_per_day": selected_count / safe_window_days,
-        "average_profit_and_loss_percentage": compute_average(percentages),
-        "win_rate_pct": 100.0 * win_count / selected_count if selected_count > 0 else 0.0,
-        "empirical_profit_factor": compute_empirical_profit_factor(percentages),
+        "average_profit_and_loss_percentage": compute_average(mark_to_market_percentages),
+        "win_rate_pct": 100.0 * win_count / mark_to_market_count if mark_to_market_count > 0 else 0.0,
+        "empirical_profit_factor": compute_empirical_profit_factor(mark_to_market_percentages),
         "staled_rate_pct": 100.0 * staled_count / selected_count if selected_count > 0 else 0.0,
         "take_profit_tier_2_rate_pct": (
             100.0 * take_profit_tier_2_count / selected_count if selected_count > 0 else 0.0
@@ -393,14 +467,18 @@ def default_bucket_edges(feature: str) -> list[float]:
         return [0.0, 1.0, 6.0, 24.0, 72.0, 164.0, 336.0, UNBOUNDED_MAXIMUM]
     if feature == "liquidity_usd":
         return [0.0, 2000.0, 5000.0, 10000.0, 25000.0, 50000.0, 100000.0, UNBOUNDED_MAXIMUM]
-    if feature in {"volume_h1_usd", "volume_h24_usd"}:
+    if feature in {"volume_m5_usd", "volume_h1_usd", "volume_h6_usd", "volume_h24_usd"}:
         return [0.0, 5000.0, 15000.0, 25000.0, 50000.0, 90000.0, 200000.0, UNBOUNDED_MAXIMUM]
     if feature in {"fdv_usd", "market_cap_usd"}:
         return [0.0, 30000.0, 100000.0, 500000.0, 2000000.0, 10000000.0, 30000000.0, UNBOUNDED_MAXIMUM]
     if feature == "liq_to_fdv":
         return [0.0, 0.01, 0.03, 0.05, 0.10, 0.20, 1.0]
+    if feature in {"price_change_percentage_m5", "price_change_percentage_h1", "price_change_percentage_h6"}:
+        return [-50.0, 0.0, 2.0, 5.0, 8.0, 10.0, 40.0, UNBOUNDED_MAXIMUM]
     if feature == "abs_price_change_h24":
         return [0.0, 20.0, 50.0, 100.0, 150.0, 300.0, UNBOUNDED_MAXIMUM]
+    if feature == "quality_score":
+        return [0.0, 10.0, 20.0, 30.0, 50.0, 80.0, 100.0]
     if feature == "holding_hours":
         return [0.0, 1.0, 2.0, 5.0, 6.0, 10.0, 20.0, UNBOUNDED_MAXIMUM]
     raise ValueError(f"unsupported feature '{feature}'")
@@ -473,12 +551,26 @@ def select_for_axis_configuration(
             for observation in observations
             if observation.liquidity_usd >= minimum_liquidity
         ]
+    if axis == "volume_m5":
+        minimum_volume = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if observation.volume_m5_usd >= minimum_volume
+        ]
     if axis == "volume_h1":
         minimum_volume = configuration[0]
         return [
             observation
             for observation in observations
             if observation.volume_h1_usd >= minimum_volume
+        ]
+    if axis == "volume_h6":
+        minimum_volume = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if observation.volume_h6_usd >= minimum_volume
         ]
     if axis == "volume_h24":
         minimum_volume = configuration[0]
@@ -509,12 +601,91 @@ def select_for_axis_configuration(
             if observation.liquidity_to_fdv_ratio is not None
             and observation.liquidity_to_fdv_ratio >= minimum_ratio
         ]
+    if axis == "momentum_floor_5m":
+        minimum_change = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if observation.price_change_percentage_m5 >= minimum_change
+        ]
+    if axis == "momentum_floor_1h":
+        minimum_change = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if observation.price_change_percentage_h1 >= minimum_change
+        ]
+    if axis == "momentum_floor_6h":
+        minimum_change = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if observation.price_change_percentage_h6 >= minimum_change
+        ]
+    if axis == "momentum_floor_24h":
+        minimum_change = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if observation.price_change_percentage_h24 >= minimum_change
+        ]
+    if axis == "momentum_abs_5m":
+        maximum_absolute = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if abs(observation.price_change_percentage_m5) <= maximum_absolute
+        ]
+    if axis == "momentum_abs_1h":
+        maximum_absolute = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if abs(observation.price_change_percentage_h1) <= maximum_absolute
+        ]
+    if axis == "momentum_abs_6h":
+        maximum_absolute = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if abs(observation.price_change_percentage_h6) <= maximum_absolute
+        ]
     if axis == "momentum_abs_24h":
         maximum_absolute = configuration[0]
         return [
             observation
             for observation in observations
             if observation.absolute_price_change_h24 <= maximum_absolute
+        ]
+    if axis == "quality_min":
+        minimum_quality = configuration[0]
+        return [
+            observation
+            for observation in observations
+            if observation.quality_score >= minimum_quality
+        ]
+    if axis == "risk_overextended":
+        overextended_factor = configuration[0]
+        maximum_absolute_5m = settings.TRADING_MAX_ABSOLUTE_PERCENT_5M
+        maximum_absolute_1h = settings.TRADING_MAX_ABSOLUTE_PERCENT_1H
+        return [
+            observation
+            for observation in observations
+            if not (
+                abs(observation.price_change_percentage_m5) > maximum_absolute_5m
+                and observation.price_change_percentage_h1 > maximum_absolute_1h * overextended_factor
+            )
+        ]
+    if axis == "risk_weak_buy_flow":
+        weak_buy_flow_ratio = configuration[0]
+        weak_buy_flow_minimum_percent_5m = configuration[1]
+        return [
+            observation
+            for observation in observations
+            if not (
+                observation.buy_to_sell_ratio < weak_buy_flow_ratio
+                and observation.price_change_percentage_m5 > weak_buy_flow_minimum_percent_5m
+            )
         ]
     if axis == "holding_hours":
         minimum_hours, maximum_hours = configuration
@@ -542,10 +713,14 @@ def configuration_label(axis: str, configuration: tuple[float, ...]) -> str:
             f"mcap/liq[{format_bound(configuration[0])}, {format_bound(configuration[1])}] "
             f"hold[{format_bound(configuration[2])}, {format_bound(configuration[3])}]h"
         )
-    if axis in {"liquidity_min", "volume_h1", "volume_h24", "liq_to_fdv"}:
+    if axis in {"liquidity_min", "volume_m5", "volume_h1", "volume_h6", "volume_h24", "liq_to_fdv", "quality_min", "risk_overextended"}:
         return f">={format_bound(configuration[0])}"
-    if axis == "momentum_abs_24h":
-        return f"|d24h|<={format_bound(configuration[0])}"
+    if axis in {"momentum_floor_5m", "momentum_floor_1h", "momentum_floor_6h", "momentum_floor_24h"}:
+        return f">={format_bound(configuration[0])}"
+    if axis in {"momentum_abs_5m", "momentum_abs_1h", "momentum_abs_6h", "momentum_abs_24h"}:
+        return f"|d|<={format_bound(configuration[0])}"
+    if axis == "risk_weak_buy_flow":
+        return f"ratio>={format_bound(configuration[0])} m5<={format_bound(configuration[1])}"
     return str(configuration)
 
 
@@ -571,8 +746,12 @@ def default_axis_configurations(axis: str) -> list[tuple[float, ...]]:
         ]
     if axis == "liquidity_min":
         return [(1000.0,), (2500.0,), (5000.0,), (10000.0,), (25000.0,), (50000.0,)]
+    if axis == "volume_m5":
+        return [(0.0,), (2000.0,), (5000.0,), (10000.0,)]
     if axis == "volume_h1":
         return [(5000.0,), (15000.0,), (25000.0,), (50000.0,), (100000.0,)]
+    if axis == "volume_h6":
+        return [(0.0,), (10000.0,), (25000.0,), (50000.0,)]
     if axis == "volume_h24":
         return [(25000.0,), (50000.0,), (90000.0,), (150000.0,), (250000.0,)]
     if axis == "fdv":
@@ -592,8 +771,28 @@ def default_axis_configurations(axis: str) -> list[tuple[float, ...]]:
         ]
     if axis == "liq_to_fdv":
         return [(0.01,), (0.03,), (0.05,), (0.10,)]
+    if axis == "momentum_floor_5m":
+        return [(0.0,), (1.0,), (2.0,)]
+    if axis == "momentum_floor_1h":
+        return [(0.0,), (2.0,), (5.0,)]
+    if axis == "momentum_floor_6h":
+        return [(0.0,), (4.0,), (8.0,)]
+    if axis == "momentum_floor_24h":
+        return [(0.0,), (5.0,), (10.0,)]
+    if axis == "momentum_abs_5m":
+        return [(8.0,), (15.0,), (30.0,), (UNBOUNDED_MAXIMUM,)]
+    if axis == "momentum_abs_1h":
+        return [(40.0,), (80.0,), (UNBOUNDED_MAXIMUM,)]
+    if axis == "momentum_abs_6h":
+        return [(100.0,), (200.0,), (UNBOUNDED_MAXIMUM,)]
     if axis == "momentum_abs_24h":
         return [(50.0,), (100.0,), (150.0,), (300.0,), (UNBOUNDED_MAXIMUM,)]
+    if axis == "quality_min":
+        return [(0.0,), (10.0,), (20.0,), (30.0,)]
+    if axis == "risk_overextended":
+        return [(0.5,), (0.7,), (1.0,), (2.0,)]
+    if axis == "risk_weak_buy_flow":
+        return [(0.40, 6.0), (0.60, 6.0), (0.80, 6.0)]
     if axis == "holding_hours":
         return [
             (0.0, 2.0),
@@ -625,9 +824,7 @@ def build_sweep_rows(
 ) -> list[DexSweepMatrixRow]:
     window_days = resolve_window_days(observations)
     total_count = len(observations)
-    baseline_average = compute_average(
-        [observation.realized_profit_and_loss_percentage for observation in observations]
-    )
+    baseline_average = compute_average(collect_mark_to_market_percentages(observations))
     rows: list[DexSweepMatrixRow] = []
     for configuration in configurations:
         selected = select_for_axis_configuration(observations, axis, configuration)
@@ -640,9 +837,7 @@ def build_sweep_rows(
             if id(observation) not in selected_identity_set
         ]
         selected_metrics = aggregate_observation_metrics(selected, total_count, window_days)
-        rejected_average = compute_average(
-            [observation.realized_profit_and_loss_percentage for observation in rejected]
-        )
+        rejected_average = compute_average(collect_mark_to_market_percentages(rejected))
         selected_average = float(selected_metrics["average_profit_and_loss_percentage"])
         rows.append(
             DexSweepMatrixRow(
@@ -707,6 +902,38 @@ def write_model_rows_csv(rows: list[BaseModel], csv_path: Path) -> None:
             writer.writerow({key: getattr(row, key) for key in column_keys})
 
 
+def filter_observations_with_live_cortex_quantile_gate(
+        observations: list[DexFundamentalsObservation],
+) -> list[DexFundamentalsObservation]:
+    replay_rows = load_scored_probe_replay_rows()
+    if not replay_rows:
+        logger.warning("[DEX][FUNDAMENTALS][SWEEP] Quantile gate replay returned no scored probes")
+        return []
+    replay_arrays = build_quantile_gate_replay_arrays(replay_rows)
+    effective_thresholds = compute_effective_quantile_gate_thresholds(replay_arrays)
+    acceptance_mask = build_live_cortex_gate_acceptance_mask(
+        replay_arrays=replay_arrays,
+        effective_thresholds=effective_thresholds,
+        holding_time_minimum_minutes=settings.TRADING_CORTEX_HOLDING_TIME_MIN_HOURS * 60.0,
+        holding_time_maximum_minutes=settings.TRADING_CORTEX_HOLDING_TIME_MAX_HOURS * 60.0,
+        expected_profit_and_loss_threshold=settings.TRADING_CORTEX_PNL_THRESHOLD,
+    )
+    accepted_probe_identifiers = compute_accepted_probe_identifiers(
+        replay_arrays=replay_arrays,
+        acceptance_mask=acceptance_mask,
+    )
+    logger.info(
+        "[DEX][FUNDAMENTALS][SWEEP] Cortex quantile conjunction retained %d / %d scored probes",
+        len(accepted_probe_identifiers),
+        len(replay_rows),
+    )
+    return [
+        observation
+        for observation in observations
+        if observation.probe_id in accepted_probe_identifiers
+    ]
+
+
 def attach_log_file() -> Path:
     SWEEP_LOG_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = get_current_local_datetime().strftime("%Y%m%d_%H%M%S")
@@ -736,18 +963,16 @@ def main() -> None:
         ),
         epilog=(
             "Example runs:\n"
-            "  Recreate the mcap/liq discovery buckets (includes STALED):\n"
-            "    python scripts/dex_fundamentals_sweetspot_scan.py --mode bucket --feature mcap_to_liq "
-            "--require-cortex-accepted\n"
+            "  Recreate the mcap/liq discovery buckets (STALED counted in staled_rate, excluded from PF):\n"
+            "    python scripts/analyzers/dex_fundamentals_sweetspot_scan.py --mode bucket --feature mcap_to_liq\n"
             "  Sweep liquidity-structure bands:\n"
-            "    python scripts/dex_fundamentals_sweetspot_scan.py --mode sweep --axis liquidity_structure "
-            "--require-cortex-accepted --csv ls_sweep.csv\n"
-            "  Sweep the live-like combo mcap/liq x holding:\n"
-            "    python scripts/dex_fundamentals_sweetspot_scan.py --mode sweep --axis combo_ls_holding "
-            "--require-cortex-accepted\n"
-            "  Run every single-axis sweep:\n"
-            "    python scripts/dex_fundamentals_sweetspot_scan.py --mode sweep --axis all "
-            "--require-cortex-accepted\n"
+            "    python scripts/analyzers/dex_fundamentals_sweetspot_scan.py --mode sweep --axis liquidity_structure "
+            "--csv ls_sweep.csv\n"
+            "  Sweep previously unscanned momentum floors:\n"
+            "    python scripts/analyzers/dex_fundamentals_sweetspot_scan.py --mode sweep --axis momentum_floor_1h\n"
+            "  Restrict to the live Cortex quantile gate conjunction:\n"
+            "    python scripts/analyzers/dex_fundamentals_sweetspot_scan.py --mode sweep --axis all "
+            "--require-cortex-quantile-accepted\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -776,19 +1001,19 @@ def main() -> None:
     argument_parser.add_argument(
         "--thresholds",
         default=None,
-        help="Optional comma-separated thresholds for floor/ceiling axes (liquidity_min/volume_*/liq_to_fdv/momentum_abs_24h)",
+        help="Optional comma-separated thresholds for floor/ceiling axes",
     )
     argument_parser.add_argument("--lookback-days", type=float, default=None)
     argument_parser.add_argument("--max-fetch", type=int, default=500_000)
     argument_parser.add_argument(
         "--exclude-staled",
         action="store_true",
-        help="Drop STALED verdicts (default keeps them — required for mortality analysis)",
+        help="Drop STALED verdicts from the universe (default keeps them for staled_rate; PF always ignores their null PnL)",
     )
     argument_parser.add_argument(
-        "--require-cortex-accepted",
+        "--require-cortex-quantile-accepted",
         action="store_true",
-        help="Restrict to probes whose persisted cortex gate_verdict.is_accepted is true",
+        help="Keep only probes that pass the live six-criterion Cortex quantile gate replay",
     )
     argument_parser.add_argument("--min-n", type=int, default=50)
     argument_parser.add_argument(
@@ -815,16 +1040,14 @@ def main() -> None:
         lookback_days=arguments.lookback_days,
         include_staled=not arguments.exclude_staled,
     )
-    observations = filter_base_universe(
-        observations,
-        require_cortex_accepted=arguments.require_cortex_accepted,
-    )
+    if arguments.require_cortex_quantile_accepted:
+        observations = filter_observations_with_live_cortex_quantile_gate(observations)
     logger.info(
-        "[DEX][FUNDAMENTALS][SWEEP] Loaded %d observations (lookback=%s, include_staled=%s, cortex_accepted_only=%s)",
+        "[DEX][FUNDAMENTALS][SWEEP] Loaded %d observations (lookback=%s, include_staled=%s, cortex_quantile=%s)",
         len(observations),
         arguments.lookback_days if arguments.lookback_days is not None else "all",
         not arguments.exclude_staled,
-        arguments.require_cortex_accepted,
+        arguments.require_cortex_quantile_accepted,
     )
     if not observations:
         logger.warning("[DEX][FUNDAMENTALS][SWEEP] No observations — aborting")
@@ -876,10 +1099,21 @@ def main() -> None:
             configurations = [pair for pair in parse_band_pairs(arguments.bands)]
         elif arguments.thresholds is not None and axis in {
             "liquidity_min",
+            "volume_m5",
             "volume_h1",
+            "volume_h6",
             "volume_h24",
             "liq_to_fdv",
+            "momentum_floor_5m",
+            "momentum_floor_1h",
+            "momentum_floor_6h",
+            "momentum_floor_24h",
+            "momentum_abs_5m",
+            "momentum_abs_1h",
+            "momentum_abs_6h",
             "momentum_abs_24h",
+            "quality_min",
+            "risk_overextended",
         }:
             configurations = [(value,) for value in parse_comma_separated_floats(arguments.thresholds)]
         else:

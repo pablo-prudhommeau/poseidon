@@ -2,6 +2,8 @@
 
 Reference for [`shadow_pf_sweetspot_scan.py`](shadow_pf_sweetspot_scan.py): parameter sweep over shadowing chronicle profit-factor SMA settings, with regime comparison above versus at-or-below each SMA threshold.
 
+Verdicts come from `retrieve_resolved_in_window`, which returns those carrying a realized PnL, so both regimes are computed on realized outcomes.
+
 ---
 
 ## Overview
@@ -24,28 +26,22 @@ For each combination it:
 
 | Requirement | Detail |
 |-------------|--------|
-| Repository root | Directory containing `backend/`, `scripts/`, `.venv`, `.env`. |
-| Python | Project virtual environment: `.venv` at repository root. |
-| Database | PostgreSQL connection via `DATABASE_*` in `.env`; resolved shadowing verdicts required. |
+| Repository root | Directory containing `backend/` and `scripts/`. |
+| Python | Project virtual environment: `venv` at repository root. |
+| Configuration | `V:\opt\poseidon\.env`, loaded at import. The script raises if the file is unreachable and never falls back to the repository `.env`. |
+| Database | PostgreSQL connection from the `DATABASE_*` keys of that file; resolved shadowing verdicts required. |
 | Imports | The script prepends `backend/` to `sys.path` for `src.*` modules. |
 
-The script loads `load_dotenv(ROOT / ".env")` where `ROOT` is the parent of `scripts/`.
-
-### Paths
-
-| Resource | From repository root | From `scripts/` |
-|----------|---------------------|-------------------|
-| Virtual environment | `.venv` | `../.venv` |
-| Environment file | `.env` | `../.env` |
+Variables already present in the environment are not overwritten by the load, so an exported value takes precedence over the deployed one.
 
 ```powershell
 cd <repository-root>
-.\.venv\Scripts\python.exe scripts/shadow_pf_sweetspot_scan.py --help
+.\venv\Scripts\python.exe scripts/analyzers/shadow_pf_sweetspot_scan.py --help
 ```
 
 ```bash
 cd <repository-root>
-.venv/bin/python scripts/shadow_pf_sweetspot_scan.py --help
+venv/bin/python scripts/analyzers/shadow_pf_sweetspot_scan.py --help
 ```
 
 ---
@@ -54,10 +50,10 @@ cd <repository-root>
 
 | Type | Location | Behaviour |
 |------|----------|-----------|
-| Logs | [`scripts/logs/`](logs/) | Timestamped file `shadow_pf_sweetspot_scan_YYYYMMDD_HHMMSS.log` unless `--no-log-file`. |
-| CSV | [`scripts/csv/`](csv/) | Bare filename with `--csv` writes to `scripts/csv/<name>`. |
+| Logs | [`scripts/analyzers/logs/`](logs/) | Timestamped file `shadow_pf_sweetspot_scan_YYYYMMDD_HHMMSS.log` unless `--no-log-file`. |
+| CSV | [`scripts/analyzers/csv/`](csv/) | A bare filename given to `--csv` is written into that directory. |
 
-Both directories are listed in [`scripts/.gitignore`](.gitignore).
+Both directories are listed in [`.gitignore`](.gitignore).
 
 ---
 
@@ -131,7 +127,7 @@ Minimum verdict counts in the above-threshold and at-or-below-threshold regimes.
 ## CLI reference
 
 ```text
-python scripts/shadow_pf_sweetspot_scan.py --help
+python scripts/analyzers/shadow_pf_sweetspot_scan.py --help
 ```
 
 | Argument | Default | Description |
@@ -145,7 +141,7 @@ python scripts/shadow_pf_sweetspot_scan.py --help
 | `--min-regime-below-n` | `0` | Minimum verdict count in the at-or-below regime. |
 | `--rank-by` | `win_rate_delta` | Row sort order. |
 | `--csv` | — | CSV export path. |
-| `--no-log-file` | — | Disable log file under `scripts/logs/`. |
+| `--no-log-file` | — | Disable the log file under `scripts/analyzers/logs/`. |
 
 ---
 
@@ -154,7 +150,7 @@ python scripts/shadow_pf_sweetspot_scan.py --help
 Coarse sweep ranked by win-rate delta:
 
 ```bash
-python scripts/shadow_pf_sweetspot_scan.py \
+python scripts/analyzers/shadow_pf_sweetspot_scan.py \
   --lookbacks 7,14 \
   --granularities 300,900 \
   --sma-periods 50,100 \
@@ -167,7 +163,7 @@ python scripts/shadow_pf_sweetspot_scan.py \
 Mean PnL delta between regimes:
 
 ```bash
-python scripts/shadow_pf_sweetspot_scan.py \
+python scripts/analyzers/shadow_pf_sweetspot_scan.py \
   --lookbacks 14,21,30 \
   --granularities 300 \
   --sma-periods 30,50,80 \
@@ -180,7 +176,7 @@ python scripts/shadow_pf_sweetspot_scan.py \
 Throughput-oriented ranking:
 
 ```bash
-python scripts/shadow_pf_sweetspot_scan.py \
+python scripts/analyzers/shadow_pf_sweetspot_scan.py \
   --lookbacks 7 \
   --granularities 300,600 \
   --sma-periods 40,60 \

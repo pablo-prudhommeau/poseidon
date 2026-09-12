@@ -170,10 +170,7 @@ def apply_trading_cortex_gate_filter(
             continue
 
         gate_verdict = _evaluate_gate_verdict(scoring_response, gate_thresholds)
-        candidate.cortex_diagnostics.inference_snapshot = _build_inference_snapshot(
-            scoring_response=scoring_response,
-            gate_verdict=gate_verdict,
-        )
+        candidate.cortex_diagnostics.inference_snapshot = _build_inference_snapshot(scoring_response)
 
         if not gate_enabled or gate_verdict.is_accepted:
             retained.append(candidate)
@@ -335,7 +332,6 @@ def _evaluate_gate_verdict(
 
 def _build_inference_snapshot(
         scoring_response: TradingCortexScoringResponse,
-        gate_verdict: TradingFilterVerdict,
 ) -> TradingCortexInferenceSnapshot:
     if (
             scoring_response.success_probability is None
@@ -356,5 +352,4 @@ def _build_inference_snapshot(
         final_trade_score=scoring_response.final_trade_score,
         model_version=scoring_response.model_version,
         model_ready=scoring_response.model_ready,
-        gate_verdict=gate_verdict,
     )

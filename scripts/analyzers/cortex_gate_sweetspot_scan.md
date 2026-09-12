@@ -1,6 +1,8 @@
 # Cortex gate sweet-spot scan
 
-Reference for [`cortex_gate_sweetspot_scan.py`](cortex_gate_sweetspot_scan.py): parameter sweep over the four Cortex gate thresholds, with aggregate metrics on accepted versus rejected observations.
+Reference for [`cortex_gate_sweetspot_scan.py`](cortex_gate_sweetspot_scan.py): parameter sweep over the **six** Cortex gate thresholds, with aggregate metrics on accepted versus rejected observations.
+
+The live path derives its success / toxicity / fragility thresholds from recent score quantiles (see [`cortex_quantile_gate_replay.md`](cortex_quantile_gate_replay.md)). This script sweeps static thresholds instead, which is what the absolute fallback uses when the quantile sample count is insufficient.
 
 ---
 
@@ -8,9 +10,11 @@ Reference for [`cortex_gate_sweetspot_scan.py`](cortex_gate_sweetspot_scan.py): 
 
 The script evaluates a Cartesian grid:
 
-`win_threshold × toxicity_threshold × max_hold_minutes × expected_pnl_threshold`
+`win_threshold × toxicity_threshold × fragility_threshold × min_hold_minutes × max_hold_minutes × expected_pnl_threshold`
 
-For each combination it applies the same acceptance rules as `apply_trading_cortex_gate_filter` and `_is_cortex_gate_accepted`, then aggregates realized outcome metrics on the accepted subset and compares them to the rejected subset.
+For each combination it applies the same six acceptance rules as `apply_trading_cortex_gate_filter` / `_evaluate_gate_verdict`, then aggregates realized outcome metrics on the accepted subset.
+
+Shadowing data comes from `retrieve_resolved_in_window`, which returns verdicts carrying a realized PnL.
 
 Data sources:
 
@@ -19,7 +23,7 @@ Data sources:
 | `shadowing` (default) | Resolved shadowing verdicts; Cortex scores from `trading_shadowing_probes.cortex_inference_summary`. |
 | `trades` | Closed paper-trade positions; Cortex scores from `trading_evaluations.cortex_inference_summary`, PnL from SELL `trading_trades`. |
 
-Observations without a complete Cortex inference (all four numeric fields) are excluded.
+Observations without a complete Cortex inference (six numeric fields including fragility) are excluded.
 
 ---
 
@@ -29,14 +33,16 @@ Observations without a complete Cortex inference (all four numeric fields) are e
 |---------------------|-----------|--------------|
 | `TRADING_CORTEX_SUCCESS_PROBABILITY_THRESHOLD` | `success_probability >= threshold` | `--win-thresholds` |
 | `TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD` | `toxicity_probability <= threshold` | `--toxicity-thresholds` |
+| `TRADING_CORTEX_FRAGILITY_PROBABILITY_THRESHOLD` | `fragility_probability <= threshold` | `--fragility-thresholds` |
 | `TRADING_CORTEX_PNL_THRESHOLD` | `expected_profit_and_loss_percentage >= threshold` | `--expected-pnl-thresholds` |
+| `TRADING_CORTEX_HOLDING_TIME_MIN_HOURS` | `predicted_holding_time_minutes >= hours × 60` | `--min-hold-minutes` |
 | `TRADING_CORTEX_HOLDING_TIME_MAX_HOURS` | `predicted_holding_time_minutes <= hours × 60` | `--max-hold-minutes` |
 
-Defaults from [`config.py`](../backend/src/configuration/config.py) when unset: win `0.60`, toxicity `0.35`, PnL `1.00`, holding `10.0` h (`600` min).
+The `TRADING_CORTEX_QUANTILE_GATE_*` knobs are not swept here; they belong to [`cortex_quantile_gate_replay.md`](cortex_quantile_gate_replay.md).
 
-In `--breakdown` mode, single-threshold flags (`--win-threshold`, `--toxicity-threshold`, `--expected-pnl-threshold`, `--max-hold-minutes-single`) default to current `settings` values.
+In `--breakdown` mode, single-threshold flags default to the deployed `settings` values, including `--fragility-threshold` and `--min-hold-minutes-single`.
 
-The sentinel value `100000000` in `--max-hold-minutes` effectively disables the holding-time cap (rendered as `none` in the text matrix).
+The sentinel value `100000000` in `--max-hold-minutes` effectively disables the holding-time cap.
 
 ---
 
@@ -44,29 +50,23 @@ The sentinel value `100000000` in `--max-hold-minutes` effectively disables the 
 
 | Requirement | Detail |
 |-------------|--------|
-| Repository root | Directory containing `backend/`, `scripts/`, `.venv`, `.env`. |
-| Python | Project virtual environment: `.venv` at repository root. |
-| Dependencies | `numpy` (see `backend/requirements-cortex.txt`). |
-| Database | PostgreSQL connection via `DATABASE_*` in `.env`. |
+| Repository root | Directory containing `backend/` and `scripts/`. |
+| Python | Project virtual environment: `venv` at repository root. |
+| Dependencies | `numpy` and `python-dotenv` (see `backend/requirements-cortex.txt`). |
+| Configuration | `V:\opt\poseidon\.env`, loaded at import. The script raises if the file is unreachable and never falls back to the repository `.env`. |
+| Database | PostgreSQL connection from the `DATABASE_*` keys of that file. |
 | Imports | The script prepends `backend/` to `sys.path` for `src.*` modules. |
 
-The script loads `load_dotenv(ROOT / ".env")` with `override=False`. Shell-exported variables take precedence; missing keys are filled from the repository `.env`.
-
-### Paths
-
-| Resource | From repository root | From `scripts/` |
-|----------|---------------------|-------------------|
-| Virtual environment | `.venv` | `../.venv` |
-| Environment file | `.env` | `../.env` |
+Variables already present in the environment are not overwritten by the load, so an exported value takes precedence over the deployed one.
 
 ```powershell
 cd <repository-root>
-.\.venv\Scripts\python.exe scripts/cortex_gate_sweetspot_scan.py --help
+.\venv\Scripts\python.exe scripts/analyzers/cortex_gate_sweetspot_scan.py --help
 ```
 
 ```bash
 cd <repository-root>
-.venv/bin/python scripts/cortex_gate_sweetspot_scan.py --help
+venv/bin/python scripts/analyzers/cortex_gate_sweetspot_scan.py --help
 ```
 
 ---
@@ -75,10 +75,10 @@ cd <repository-root>
 
 | Type | Location | Behaviour |
 |------|----------|-----------|
-| Logs | [`scripts/logs/`](logs/) | Timestamped file `cortex_gate_sweetspot_scan_YYYYMMDD_HHMMSS.log` unless `--no-log-file`. |
-| CSV | [`scripts/csv/`](csv/) | Bare filename with `--csv` writes to `scripts/csv/<name>`. |
+| Logs | [`scripts/analyzers/logs/`](logs/) | Timestamped file `cortex_gate_sweetspot_scan_YYYYMMDD_HHMMSS.log` unless `--no-log-file`. |
+| CSV | [`scripts/analyzers/csv/`](csv/) | A bare filename given to `--csv` is written into that directory. |
 
-Both directories are listed in [`scripts/.gitignore`](.gitignore).
+Both directories are listed in [`.gitignore`](.gitignore).
 
 ---
 
@@ -152,7 +152,7 @@ Skips the sweep. Reports per-day (`day`) or per-model-version (`model`) gate hea
 ## CLI reference
 
 ```text
-python scripts/cortex_gate_sweetspot_scan.py --help
+python scripts/analyzers/cortex_gate_sweetspot_scan.py --help
 ```
 
 | Argument | Default | Description |
@@ -170,7 +170,7 @@ python scripts/cortex_gate_sweetspot_scan.py --help
 | `--breakdown` | — | `day` or `model`. |
 | `--csv` | — | CSV export path. |
 | `--max-printed-rows` | `80` | Console row limit. |
-| `--no-log-file` | — | Disable log file under `scripts/logs/`. |
+| `--no-log-file` | — | Disable the log file under `scripts/analyzers/logs/`. |
 
 ---
 
@@ -179,7 +179,7 @@ python scripts/cortex_gate_sweetspot_scan.py --help
 Full sweep, stable profit factor ranking:
 
 ```bash
-python scripts/cortex_gate_sweetspot_scan.py \
+python scripts/analyzers/cortex_gate_sweetspot_scan.py \
   --rank-by pf_stable \
   --min-n 500 --min-n-second-half 200 \
   --csv cortex_gate_pf_stable.csv
@@ -188,7 +188,7 @@ python scripts/cortex_gate_sweetspot_scan.py \
 Single-threshold comparison (other parameters fixed):
 
 ```bash
-python scripts/cortex_gate_sweetspot_scan.py \
+python scripts/analyzers/cortex_gate_sweetspot_scan.py \
   --win-thresholds 0.60 \
   --toxicity-thresholds 0.35,0.40 \
   --max-hold-minutes 600 \
@@ -200,7 +200,7 @@ python scripts/cortex_gate_sweetspot_scan.py \
 Paper trades only:
 
 ```bash
-python scripts/cortex_gate_sweetspot_scan.py \
+python scripts/analyzers/cortex_gate_sweetspot_scan.py \
   --dataset trades \
   --min-n 30 --min-n-second-half 10 \
   --csv cortex_trades_sweep.csv
@@ -209,7 +209,7 @@ python scripts/cortex_gate_sweetspot_scan.py \
 Daily breakdown at current settings:
 
 ```bash
-python scripts/cortex_gate_sweetspot_scan.py --breakdown day
+python scripts/analyzers/cortex_gate_sweetspot_scan.py --breakdown day
 ```
 
 ---

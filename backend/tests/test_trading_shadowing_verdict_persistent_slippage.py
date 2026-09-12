@@ -161,8 +161,11 @@ def test_persistent_slippage_episode_beyond_window_stales_verdict(
     assert batch_statistics.resolved_staled_persistent_slippage_count == 1
     assert batch_statistics.deferred_transient_slippage_count == 0
     assert verdict.exit_reason == "STALED"
+    assert verdict.stale_cause == "persistent_slippage"
     assert verdict.resolved_at == _FIXED_NOW
-    assert verdict.realized_pnl_percentage == -100.0
+    assert verdict.realized_pnl_percentage is None
+    assert verdict.realized_pnl_usd is None
+    assert verdict.is_profitable is None
 
 
 @patch("src.core.trading.shadowing.trading_shadowing_verdict_tracker.get_current_local_datetime", return_value=_FIXED_NOW)
@@ -252,3 +255,5 @@ def test_aberrant_price_deviation_still_stales_immediately(
     assert batch_statistics.resolved_staled_aberrant_onchain_dex_price_count == 1
     assert batch_statistics.resolved_staled_persistent_slippage_count == 0
     assert verdict.exit_reason == "STALED"
+    assert verdict.stale_cause == "aberrant_deviation"
+    assert verdict.realized_pnl_percentage is None

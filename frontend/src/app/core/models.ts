@@ -396,7 +396,6 @@ export interface TradingCortexInferenceSnapshotPayload {
     final_trade_score: number;
     model_version: string;
     model_ready: boolean;
-    gate_verdict: TradingFilterVerdictPayload;
 }
 
 export interface TradingEvaluationShadowingSnapshotPayload {

@@ -18,7 +18,6 @@ from src.core.trading.trading_structures import (
     TradingCandidateCortexDiagnostics,
     TradingCortexInferenceSnapshot,
     TradingDexMarketSnapshot,
-    TradingFilterVerdict,
 )
 from src.core.trading.cortex.trading_cortex_structures import TradingCortexScoringResponse
 
@@ -57,7 +56,6 @@ def _build_candidate(symbol: str, final_trade_score: float) -> TradingCandidate:
         final_trade_score=final_trade_score,
         model_version="test_v1",
         model_ready=True,
-        gate_verdict=TradingFilterVerdict(is_accepted=True, rejection_reasons=[]),
     )
     return TradingCandidate(
         token=Token(

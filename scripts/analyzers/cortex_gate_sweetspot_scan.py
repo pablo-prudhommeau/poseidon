@@ -12,20 +12,24 @@ from typing import Callable
 
 import numpy
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
-SWEEP_LOG_DIR = SCRIPTS_DIR / "logs"
-SWEEP_CSV_DIR = SCRIPTS_DIR / "csv"
+ROOT = Path(__file__).resolve().parents[2]
+ANALYZERS_DIR = ROOT / "scripts" / "analyzers"
+SWEEP_LOG_DIR = ANALYZERS_DIR / "logs"
+SWEEP_CSV_DIR = ANALYZERS_DIR / "csv"
+DEPLOYMENT_ENV_FILE = Path("V:/opt/poseidon/.env")
 BACKEND_PACKAGE_ROOT = ROOT / "backend"
 if str(BACKEND_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_PACKAGE_ROOT))
 
 try:
     from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-else:
-    load_dotenv(ROOT / ".env")
+except ImportError as dotenv_import_error:
+    raise RuntimeError("[ANALYZER] python-dotenv is required to load the deployment environment file") from dotenv_import_error
+
+if not DEPLOYMENT_ENV_FILE.is_file():
+    raise RuntimeError(f"[ANALYZER] deployment environment file not found: {DEPLOYMENT_ENV_FILE}")
+
+load_dotenv(DEPLOYMENT_ENV_FILE)
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from src.configuration.config import settings
@@ -53,6 +57,7 @@ class CortexGateSweepObservation(BaseModel):
     toxicity_probability: float
     expected_profit_and_loss_percentage: float
     predicted_holding_time_minutes: float
+    fragility_probability: float
     cortex_model_version: str
 
 
@@ -61,6 +66,8 @@ class CortexGateSweepMatrixRow(BaseModel):
 
     win_threshold: float
     toxicity_threshold: float
+    fragility_threshold: float
+    min_hold_minutes: float
     max_hold_minutes: float
     expected_pnl_threshold: float
     accepted_count: int
@@ -95,6 +102,7 @@ class CortexGateSweepObservationArrays(BaseModel):
     toxicity_probability: numpy.ndarray
     expected_profit_and_loss_percentage: numpy.ndarray
     predicted_holding_time_minutes: numpy.ndarray
+    fragility_probability: numpy.ndarray
     window_start: datetime
     window_end: datetime
     halves_split_epoch_seconds: float
@@ -142,6 +150,7 @@ def load_shadowing_cortex_observations(
                 or inference_snapshot.toxicity_probability is None
                 or inference_snapshot.expected_profit_and_loss_percentage is None
                 or inference_snapshot.predicted_holding_time_minutes is None
+                or inference_snapshot.fragility_probability is None
             ):
                 incomplete_inference_count += 1
                 continue
@@ -158,6 +167,7 @@ def load_shadowing_cortex_observations(
                     predicted_holding_time_minutes=float(
                         inference_snapshot.predicted_holding_time_minutes
                     ),
+                    fragility_probability=float(inference_snapshot.fragility_probability),
                     cortex_model_version=str(
                         inference_snapshot.model_version or "unknown"
                     ),
@@ -226,6 +236,7 @@ def load_paper_trade_cortex_observations() -> list[CortexGateSweepObservation]:
             or inference_snapshot.toxicity_probability is None
             or inference_snapshot.expected_profit_and_loss_percentage is None
             or inference_snapshot.predicted_holding_time_minutes is None
+            or inference_snapshot.fragility_probability is None
         ):
             incomplete_inference_count += 1
             continue
@@ -243,6 +254,7 @@ def load_paper_trade_cortex_observations() -> list[CortexGateSweepObservation]:
                 predicted_holding_time_minutes=float(
                     inference_snapshot.predicted_holding_time_minutes
                 ),
+                fragility_probability=float(inference_snapshot.fragility_probability),
                 cortex_model_version=str(inference_snapshot.model_version or "unknown"),
             )
         )
@@ -299,6 +311,10 @@ def build_observation_arrays(
             ],
             dtype=numpy.float64,
         ),
+        fragility_probability=numpy.asarray(
+            [observation.fragility_probability for observation in observations],
+            dtype=numpy.float64,
+        ),
         window_start=window_start,
         window_end=window_end,
         halves_split_epoch_seconds=halves_split_epoch_seconds,
@@ -336,6 +352,8 @@ def build_sweep_matrix_row(
     acceptance_mask: numpy.ndarray,
     win_threshold: float,
     toxicity_threshold: float,
+    fragility_threshold: float,
+    min_hold_minutes: float,
     max_hold_minutes: float,
     expected_pnl_threshold: float,
     window_days: float,
@@ -377,6 +395,8 @@ def build_sweep_matrix_row(
     return CortexGateSweepMatrixRow(
         win_threshold=win_threshold,
         toxicity_threshold=toxicity_threshold,
+        fragility_threshold=fragility_threshold,
+        min_hold_minutes=min_hold_minutes,
         max_hold_minutes=max_hold_minutes,
         expected_pnl_threshold=expected_pnl_threshold,
         accepted_count=accepted_count,
@@ -427,6 +447,8 @@ def run_cortex_gate_threshold_sweep(
     observation_arrays: CortexGateSweepObservationArrays,
     win_thresholds: list[float],
     toxicity_thresholds: list[float],
+    fragility_thresholds: list[float],
+    min_hold_minutes_values: list[float],
     max_hold_minutes_values: list[float],
     expected_pnl_thresholds: list[float],
 ) -> list[CortexGateSweepMatrixRow]:
@@ -438,17 +460,23 @@ def run_cortex_gate_threshold_sweep(
     for (
         win_threshold,
         toxicity_threshold,
+        fragility_threshold,
+        min_hold_minutes,
         max_hold_minutes,
         expected_pnl_threshold,
     ) in product(
         win_thresholds,
         toxicity_thresholds,
+        fragility_thresholds,
+        min_hold_minutes_values,
         max_hold_minutes_values,
         expected_pnl_thresholds,
     ):
         acceptance_mask = (
             (observation_arrays.success_probability >= win_threshold)
             & (observation_arrays.toxicity_probability <= toxicity_threshold)
+            & (observation_arrays.fragility_probability <= fragility_threshold)
+            & (observation_arrays.predicted_holding_time_minutes >= min_hold_minutes)
             & (observation_arrays.predicted_holding_time_minutes <= max_hold_minutes)
             & (
                 observation_arrays.expected_profit_and_loss_percentage
@@ -460,6 +488,8 @@ def run_cortex_gate_threshold_sweep(
             acceptance_mask,
             win_threshold,
             toxicity_threshold,
+            fragility_threshold,
+            min_hold_minutes,
             max_hold_minutes,
             expected_pnl_threshold,
             window_days,
@@ -565,6 +595,8 @@ def run_breakdown_report(
     breakdown_mode: str,
     win_threshold: float,
     toxicity_threshold: float,
+    fragility_threshold: float,
+    min_hold_minutes: float,
     max_hold_minutes: float,
     expected_pnl_threshold: float,
 ) -> None:
@@ -584,10 +616,12 @@ def run_breakdown_report(
         f"{'skill%':>7}  {'dir_acc%':>8}  {'pass%':>6}  {'gate_prec%':>10}  {'acc_avg_pnl':>11}  {'acc_pf':>7}"
     )
     logger.info(
-        "[SCRIPT][CORTEX][GATE_SWEEP] Breakdown by %s (thresholds win>=%.2f tox<=%.2f hold<=%.0fmin pnl>=%.2f):",
+        "[SCRIPT][CORTEX][GATE_SWEEP] Breakdown by %s (thresholds win>=%.2f tox<=%.2f frag<=%.2f hold[%.0f,%.0f]min pnl>=%.2f):",
         breakdown_mode,
         win_threshold,
         toxicity_threshold,
+        fragility_threshold,
+        min_hold_minutes,
         max_hold_minutes,
         expected_pnl_threshold,
     )
@@ -630,6 +664,8 @@ def run_breakdown_report(
             for observation in slice_observations
             if observation.success_probability >= win_threshold
             and observation.toxicity_probability <= toxicity_threshold
+            and observation.fragility_probability <= fragility_threshold
+            and observation.predicted_holding_time_minutes >= min_hold_minutes
             and observation.predicted_holding_time_minutes <= max_hold_minutes
             and observation.expected_profit_and_loss_percentage
             >= expected_pnl_threshold
@@ -699,17 +735,17 @@ def main() -> None:
         epilog=(
             "Example runs:\n"
             "  Full-history sweep ranked by stable profit factor:\n"
-            "    python scripts/cortex_gate_sweetspot_scan.py --rank-by pf_stable\n"
+            "    python scripts/analyzers/cortex_gate_sweetspot_scan.py --rank-by pf_stable\n"
             "  Tighten around current thresholds with a custom grid:\n"
-            "    python scripts/cortex_gate_sweetspot_scan.py "
+            "    python scripts/analyzers/cortex_gate_sweetspot_scan.py "
             "--win-thresholds 0.55,0.58,0.60,0.62 --toxicity-thresholds 0.40,0.45 "
             "--max-hold-minutes 240,360,600 --min-n 100 --csv cortex_gate_sweep.csv\n"
             "  Cross-check on real paper trade positions:\n"
-            "    python scripts/cortex_gate_sweetspot_scan.py --dataset trades --min-n 30 --min-n-second-half 10\n"
+            "    python scripts/analyzers/cortex_gate_sweetspot_scan.py --dataset trades --min-n 30 --min-n-second-half 10\n"
             "  Locate accuracy degradation per active model version:\n"
-            "    python scripts/cortex_gate_sweetspot_scan.py --breakdown model\n"
+            "    python scripts/analyzers/cortex_gate_sweetspot_scan.py --breakdown model\n"
             "  Daily health of the current gate:\n"
-            "    python scripts/cortex_gate_sweetspot_scan.py --breakdown day\n"
+            "    python scripts/analyzers/cortex_gate_sweetspot_scan.py --breakdown day\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -740,6 +776,16 @@ def main() -> None:
         "--toxicity-thresholds",
         default="0.30,0.35,0.40,0.45,0.50",
         help="Comma-separated maximum toxicity probability thresholds",
+    )
+    argument_parser.add_argument(
+        "--fragility-thresholds",
+        default=f"{settings.TRADING_CORTEX_FRAGILITY_PROBABILITY_THRESHOLD:g},0.30,0.40",
+        help="Comma-separated maximum fragility probability thresholds",
+    )
+    argument_parser.add_argument(
+        "--min-hold-minutes",
+        default=f"0,{settings.TRADING_CORTEX_HOLDING_TIME_MIN_HOURS * 60.0:.0f}",
+        help="Comma-separated minimum predicted holding time values in minutes",
     )
     argument_parser.add_argument(
         "--max-hold-minutes",
@@ -794,6 +840,18 @@ def main() -> None:
         type=float,
         default=settings.TRADING_CORTEX_TOXICITY_PROBABILITY_THRESHOLD,
         help="Breakdown mode: toxicity probability threshold (default: current settings)",
+    )
+    argument_parser.add_argument(
+        "--fragility-threshold",
+        type=float,
+        default=settings.TRADING_CORTEX_FRAGILITY_PROBABILITY_THRESHOLD,
+        help="Breakdown mode: fragility probability threshold (default: current settings)",
+    )
+    argument_parser.add_argument(
+        "--min-hold-minutes-single",
+        type=float,
+        default=settings.TRADING_CORTEX_HOLDING_TIME_MIN_HOURS * 60.0,
+        help="Breakdown mode: min predicted holding time in minutes (default: current settings)",
     )
     argument_parser.add_argument(
         "--max-hold-minutes-single",
@@ -867,6 +925,8 @@ def main() -> None:
                 breakdown_mode=parsed.breakdown,
                 win_threshold=parsed.win_threshold,
                 toxicity_threshold=parsed.toxicity_threshold,
+                fragility_threshold=parsed.fragility_threshold,
+                min_hold_minutes=parsed.min_hold_minutes_single,
                 max_hold_minutes=parsed.max_hold_minutes_single,
                 expected_pnl_threshold=parsed.expected_pnl_threshold,
             )
@@ -878,6 +938,12 @@ def main() -> None:
             win_thresholds=parse_comma_separated_floats(parsed.win_thresholds),
             toxicity_thresholds=parse_comma_separated_floats(
                 parsed.toxicity_thresholds
+            ),
+            fragility_thresholds=parse_comma_separated_floats(
+                parsed.fragility_thresholds
+            ),
+            min_hold_minutes_values=parse_comma_separated_floats(
+                parsed.min_hold_minutes
             ),
             max_hold_minutes_values=parse_comma_separated_floats(
                 parsed.max_hold_minutes

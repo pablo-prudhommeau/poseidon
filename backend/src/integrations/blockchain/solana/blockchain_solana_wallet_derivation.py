@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from bip_utils import Bip39SeedGenerator, Bip32Slip10Ed25519
+from eth_account.hdaccount.mnemonic import Language, Mnemonic
 from solders.keypair import Keypair
+
+_SOLANA_BIP44_PATH_TEMPLATE = "m/44'/501'/{wallet_derivation_index}'/0'"
 
 
 def derive_solana_keypair_from_mnemonic(mnemonic: str, wallet_derivation_index: int) -> Keypair:
@@ -9,12 +11,12 @@ def derive_solana_keypair_from_mnemonic(mnemonic: str, wallet_derivation_index: 
     if not normalized_mnemonic:
         raise ValueError("Solana wallet derivation requires a non-empty mnemonic")
 
-    seed = Bip39SeedGenerator(normalized_mnemonic).Generate("")
-    bip32_node = Bip32Slip10Ed25519.FromSeed(seed)
-    derivation_path = f"m/44'/501'/{wallet_derivation_index}'/0'"
-    derived_node = bip32_node.DerivePath(derivation_path)
-    raw_private_key = derived_node.PrivateKey().Raw().ToBytes()
-    return Keypair.from_seed(raw_private_key)
+    if not Mnemonic(Language.ENGLISH).is_mnemonic_valid(normalized_mnemonic):
+        raise ValueError("Solana wallet derivation requires a valid BIP39 mnemonic")
+
+    seed = Mnemonic.to_seed(normalized_mnemonic, "")
+    derivation_path = _SOLANA_BIP44_PATH_TEMPLATE.format(wallet_derivation_index=wallet_derivation_index)
+    return Keypair.from_seed_and_derivation_path(seed, derivation_path)
 
 
 def derive_solana_wallet_address_from_mnemonic(mnemonic: str, wallet_derivation_index: int) -> str:

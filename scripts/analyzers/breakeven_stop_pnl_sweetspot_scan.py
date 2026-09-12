@@ -12,20 +12,24 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, load_only
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
-SWEEP_LOG_DIR = SCRIPTS_DIR / "logs"
-SWEEP_CSV_DIR = SCRIPTS_DIR / "csv"
+ROOT = Path(__file__).resolve().parents[2]
+ANALYZERS_DIR = ROOT / "scripts" / "analyzers"
+SWEEP_LOG_DIR = ANALYZERS_DIR / "logs"
+SWEEP_CSV_DIR = ANALYZERS_DIR / "csv"
+DEPLOYMENT_ENV_FILE = Path("V:/opt/poseidon/.env")
 BACKEND_PACKAGE_ROOT = ROOT / "backend"
 if str(BACKEND_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_PACKAGE_ROOT))
 
 try:
     from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-else:
-    load_dotenv(ROOT / ".env")
+except ImportError as dotenv_import_error:
+    raise RuntimeError("[ANALYZER] python-dotenv is required to load the deployment environment file") from dotenv_import_error
+
+if not DEPLOYMENT_ENV_FILE.is_file():
+    raise RuntimeError(f"[ANALYZER] deployment environment file not found: {DEPLOYMENT_ENV_FILE}")
+
+load_dotenv(DEPLOYMENT_ENV_FILE)
 
 from src.configuration.config import settings
 from src.core.utils.date_utils import ensure_timezone_aware, get_current_local_datetime
@@ -478,10 +482,10 @@ def main() -> None:
         epilog=(
             "Example runs:\n"
             "  Default PnL grid on live-like universe:\n"
-            "    python scripts/breakeven_stop_pnl_sweetspot_scan.py "
+            "    python scripts/analyzers/breakeven_stop_pnl_sweetspot_scan.py "
             "--probed-since 2026-08-01T00:00:00 --apply-live-filters\n"
             "  Focus around fee-recovery versus small locked gains:\n"
-            "    python scripts/breakeven_stop_pnl_sweetspot_scan.py "
+            "    python scripts/analyzers/breakeven_stop_pnl_sweetspot_scan.py "
             "--pnl-fractions -0.05,-0.02,-0.01,0,0.01,0.02,0.05 --apply-live-filters "
             "--csv breakeven_stop_pnl_sweep.csv\n"
         ),

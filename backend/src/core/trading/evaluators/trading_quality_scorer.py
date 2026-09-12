@@ -32,9 +32,17 @@ def blend_momentum_percentages(percent_m5: float, percent_h1: float, percent_h6:
     return weighted_sum / _MOMENTUM_TOTAL_WEIGHT
 
 
-def compute_quality_score(candidate: TradingCandidate) -> float:
-    market_snapshot = candidate.market_snapshot
-
+def compute_quality_score_from_market_components(
+        liquidity_usd: float,
+        volume_m5_usd: float,
+        volume_h1_usd: float,
+        volume_h6_usd: float,
+        volume_h24_usd: float,
+        price_change_percentage_m5: float,
+        price_change_percentage_h1: float,
+        price_change_percentage_h6: float,
+        price_change_percentage_h24: float,
+) -> float:
     minimum_liquidity_usd = settings.TRADING_MIN_LIQUIDITY_USD
     minimum_volume_m5_usd = settings.TRADING_MIN_VOLUME_5M_USD
     minimum_volume_h1_usd = settings.TRADING_MIN_VOLUME_1H_USD
@@ -42,17 +50,17 @@ def compute_quality_score(candidate: TradingCandidate) -> float:
     minimum_volume_h24_usd = settings.TRADING_MIN_VOLUME_24H_USD
 
     momentum_score = blend_momentum_percentages(
-        market_snapshot.price_change_percentage_m5,
-        market_snapshot.price_change_percentage_h1,
-        market_snapshot.price_change_percentage_h6,
-        market_snapshot.price_change_percentage_h24,
+        price_change_percentage_m5,
+        price_change_percentage_h1,
+        price_change_percentage_h6,
+        price_change_percentage_h24,
     )
-    liquidity_component_score = min(1.0, market_snapshot.liquidity_usd / (minimum_liquidity_usd * 4.0))
+    liquidity_component_score = min(1.0, liquidity_usd / (minimum_liquidity_usd * 4.0))
 
-    volume_m5_component = min(1.0, market_snapshot.volume_m5_usd / (minimum_volume_m5_usd * 4.0))
-    volume_h1_component = min(1.0, market_snapshot.volume_h1_usd / (minimum_volume_h1_usd * 4.0))
-    volume_h6_component = min(1.0, market_snapshot.volume_h6_usd / (minimum_volume_h6_usd * 4.0))
-    volume_h24_component = min(1.0, market_snapshot.volume_h24_usd / (minimum_volume_h24_usd * 4.0))
+    volume_m5_component = min(1.0, volume_m5_usd / (minimum_volume_m5_usd * 4.0))
+    volume_h1_component = min(1.0, volume_h1_usd / (minimum_volume_h1_usd * 4.0))
+    volume_h6_component = min(1.0, volume_h6_usd / (minimum_volume_h6_usd * 4.0))
+    volume_h24_component = min(1.0, volume_h24_usd / (minimum_volume_h24_usd * 4.0))
 
     volume_component_score = (
             0.4 * volume_m5_component
@@ -65,6 +73,21 @@ def compute_quality_score(candidate: TradingCandidate) -> float:
             0.45 * momentum_score
             + 0.25 * liquidity_component_score
             + 0.30 * volume_component_score
+    )
+
+
+def compute_quality_score(candidate: TradingCandidate) -> float:
+    market_snapshot = candidate.market_snapshot
+    return compute_quality_score_from_market_components(
+        liquidity_usd=market_snapshot.liquidity_usd,
+        volume_m5_usd=market_snapshot.volume_m5_usd,
+        volume_h1_usd=market_snapshot.volume_h1_usd,
+        volume_h6_usd=market_snapshot.volume_h6_usd,
+        volume_h24_usd=market_snapshot.volume_h24_usd,
+        price_change_percentage_m5=market_snapshot.price_change_percentage_m5,
+        price_change_percentage_h1=market_snapshot.price_change_percentage_h1,
+        price_change_percentage_h6=market_snapshot.price_change_percentage_h6,
+        price_change_percentage_h24=market_snapshot.price_change_percentage_h24,
     )
 
 

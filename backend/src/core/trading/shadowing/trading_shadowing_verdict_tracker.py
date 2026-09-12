@@ -5,7 +5,10 @@ from typing import Optional
 
 from src.configuration.config import settings
 from src.core.structures.structures import BlockchainNetwork, Token
-from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingVerdictCycleStatistics
+from src.core.trading.shadowing.trading_shadowing_structures import (
+    TradingShadowingStaleCause,
+    TradingShadowingVerdictCycleStatistics,
+)
 from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.utils.date_utils import get_current_local_datetime, ensure_timezone_aware
 from src.integrations.blockchain.blockchain_exceptions import BlockchainRpcUnavailableError
@@ -102,7 +105,12 @@ class TradingShadowingVerdictTracker:
             current_price = dexscreener_prices.get(self._build_price_key(probe))
 
             if current_price is None:
-                self._attach_stale_verdict(verdict, probe, current_time)
+                self._attach_stale_verdict(
+                    verdict=verdict,
+                    probe=probe,
+                    current_time=current_time,
+                    stale_cause=TradingShadowingStaleCause.MISSING_DEX_PRICE,
+                )
                 batch_statistics.resolved_verdict_count += 1
                 batch_statistics.resolved_staled_missing_dex_price_count += 1
                 logger.debug(
@@ -162,9 +170,14 @@ class TradingShadowingVerdictTracker:
                         blockchain_network == BlockchainNetwork.SOLANA
                         and probe.dex_id.lower().strip() not in supported_solana_dex_ids
                 ):
-                    self._attach_stale_verdict(verdict, probe, current_time)
+                    self._attach_stale_verdict(
+                        verdict=verdict,
+                        probe=probe,
+                        current_time=current_time,
+                        stale_cause=TradingShadowingStaleCause.UNSUPPORTED_DEX,
+                    )
                     batch_statistics.resolved_verdict_count += 1
-                    batch_statistics.resolved_staled_unrecoverable_onchain_price_count += 1
+                    batch_statistics.resolved_staled_unsupported_dex_count += 1
                     if probe.token_symbol not in staled_unrecoverable_symbols_logged:
                         staled_unrecoverable_symbols_logged.add(probe.token_symbol)
                         logger.debug(
@@ -209,7 +222,12 @@ class TradingShadowingVerdictTracker:
                                     probe.token_symbol,
                                 )
                         else:
-                            self._attach_stale_verdict(verdict, probe, current_time)
+                            self._attach_stale_verdict(
+                                verdict=verdict,
+                                probe=probe,
+                                current_time=current_time,
+                                stale_cause=TradingShadowingStaleCause.UNRECOVERABLE_ONCHAIN,
+                            )
                             batch_statistics.resolved_verdict_count += 1
                             batch_statistics.resolved_staled_unrecoverable_onchain_price_count += 1
                             if probe.token_symbol not in staled_unrecoverable_symbols_logged:
@@ -228,7 +246,12 @@ class TradingShadowingVerdictTracker:
                             "[TRADING][SHADOWING][VERDICT] %s marked as STALED — aberrant DexScreener price deviation %.1f%% (onchain=%.12f dex=%.12f, tolerance=%.0f%%)",
                             probe.token_symbol, relative_deviation * 100.0, onchain_price, dex_price, aberrant_price_tolerance * 100.0,
                         )
-                        self._attach_stale_verdict(verdict, probe, current_time)
+                        self._attach_stale_verdict(
+                            verdict=verdict,
+                            probe=probe,
+                            current_time=current_time,
+                            stale_cause=TradingShadowingStaleCause.ABERRANT_DEVIATION,
+                        )
                         batch_statistics.resolved_verdict_count += 1
                         batch_statistics.resolved_staled_aberrant_onchain_dex_price_count += 1
                         continue
@@ -269,7 +292,12 @@ class TradingShadowingVerdictTracker:
                             onchain_price,
                             dex_price,
                         )
-                        self._attach_stale_verdict(verdict, probe, current_time)
+                        self._attach_stale_verdict(
+                            verdict=verdict,
+                            probe=probe,
+                            current_time=current_time,
+                            stale_cause=TradingShadowingStaleCause.PERSISTENT_SLIPPAGE,
+                        )
                         batch_statistics.resolved_verdict_count += 1
                         batch_statistics.resolved_staled_persistent_slippage_count += 1
                         continue
@@ -402,15 +430,21 @@ class TradingShadowingVerdictTracker:
 
         return False
 
-    def _attach_stale_verdict(self, verdict: TradingShadowingVerdict, probe: TradingShadowingProbe, current_time: datetime) -> None:
-        notional = probe.order_notional_value_usd
+    def _attach_stale_verdict(
+            self,
+            verdict: TradingShadowingVerdict,
+            probe: TradingShadowingProbe,
+            current_time: datetime,
+            stale_cause: str,
+    ) -> None:
         aware_probed_at = ensure_timezone_aware(probe.probed_at) or current_time
         holding_duration_minutes = (current_time - aware_probed_at).total_seconds() / 60.0
         verdict.exit_reason = "STALED"
-        verdict.realized_pnl_percentage = -100.0
-        verdict.realized_pnl_usd = -notional
+        verdict.stale_cause = stale_cause
+        verdict.realized_pnl_percentage = None
+        verdict.realized_pnl_usd = None
         verdict.holding_duration_minutes = holding_duration_minutes
-        verdict.is_profitable = False
+        verdict.is_profitable = None
         verdict.resolved_at = current_time
 
     def attach_honeypot_shadowing_verdict(

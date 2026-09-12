@@ -25,7 +25,7 @@ from src.core.trading.trading_chain_capability_service import (
 )
 from src.core.trading.trading_dex_capability_service import resolve_supported_trading_solana_dex_ids
 from src.core.trading.trading_service import fetch_trading_candidates_sync
-from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot, TradingFilterVerdict
+from src.core.trading.trading_structures import TradingCandidate, TradingCortexInferenceSnapshot
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.dao.trading_shadowing_probe_dao import TradingShadowingProbeDao
@@ -172,7 +172,6 @@ class TradingShadowingPipeline:
                                 final_trade_score=scoring_response.final_trade_score,
                                 model_version=scoring_response.model_version,
                                 model_ready=scoring_response.model_ready,
-                                gate_verdict=TradingFilterVerdict(is_accepted=True, rejection_reasons=[]),
                             )
                 except Exception as exc:
                     logger.exception("[TRADING][SHADOWING][PIPELINE] TradingCortex inference failed for probes: %s", exc)

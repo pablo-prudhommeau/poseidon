@@ -18,6 +18,8 @@ import {
 import { PROGRESS_TONE, ProgressTone, resolvePhasePalette } from './trading-overview-shadowing-regime.palette';
 import { buildShadowingRegimeStatusTooltip } from './trading-overview-shadowing-regime-status-tooltip.builder';
 
+const SPARSE_EXPECTED_VALUE_VISUAL_FLOOR_USD: number = -30;
+
 @Component({
     standalone: true,
     selector: 'app-trading-overview-shadowing-regime',
@@ -388,6 +390,15 @@ export class TradingOverviewShadowingRegimeComponent {
         mapNullable(this.shadowingRegime(), (shadowingRegime) => shadowingRegime.edge_sparse_expected_value_usd_threshold)
     );
 
+    readonly shadowingSparseExpectedValueMeetsThreshold = computed<boolean>(() => {
+        const threshold: number | null = this.shadowingSparseExpectedValueUsdThreshold();
+        const value: number | null = this.shadowingSparseExpectedValueUsd();
+        if (threshold === null || value === null) {
+            return false;
+        }
+        return value >= threshold;
+    });
+
     readonly shadowingSparseExpectedValueProgress = computed(() => {
         if (!this.shadowingMetricsReady()) {
             return null;
@@ -395,33 +406,31 @@ export class TradingOverviewShadowingRegimeComponent {
         if (!this.shadowingEdgeGateEnabled()) {
             return 100;
         }
-        const threshold = this.shadowingSparseExpectedValueUsdThreshold();
-        const value = this.shadowingSparseExpectedValueUsd();
+        const threshold: number | null = this.shadowingSparseExpectedValueUsdThreshold();
+        const value: number | null = this.shadowingSparseExpectedValueUsd();
         if (threshold === null || value === null) {
             return null;
         }
         if (value >= threshold) {
             return 100;
         }
-        const worstValue: number = -30.0;
-        const progress: number = Math.min(100, Math.max(0, (value / worstValue) * 100));
-        return progress;
+        return Math.min(100, Math.max(0, (value / SPARSE_EXPECTED_VALUE_VISUAL_FLOOR_USD) * 100));
     });
 
     readonly shadowingSparseExpectedValueBarClass = computed(() => {
-        const progress = this.shadowingSparseExpectedValueProgress();
+        const progress: number | null = this.shadowingSparseExpectedValueProgress();
         if (progress === null || !this.shadowingEdgeGateEnabled() || this.shadowingLearningDone()) {
             return PROGRESS_TONE.done.bar;
         }
-        return progress >= 100 ? 'bg-purple-400' : 'bg-red-400';
+        return this.shadowingSparseExpectedValueMeetsThreshold() ? 'bg-purple-400' : 'bg-red-400';
     });
 
     readonly shadowingSparseExpectedValueClass = computed(() => {
-        const progress = this.shadowingSparseExpectedValueProgress();
+        const progress: number | null = this.shadowingSparseExpectedValueProgress();
         if (progress === null || !this.shadowingEdgeGateEnabled() || this.shadowingLearningDone()) {
             return 'text-white';
         }
-        return progress >= 100 ? '!text-purple-400' : '!text-red-400';
+        return this.shadowingSparseExpectedValueMeetsThreshold() ? '!text-purple-400' : '!text-red-400';
     });
 
     readonly shadowingSparseExpectedValueFloorLabel = computed(() => {
