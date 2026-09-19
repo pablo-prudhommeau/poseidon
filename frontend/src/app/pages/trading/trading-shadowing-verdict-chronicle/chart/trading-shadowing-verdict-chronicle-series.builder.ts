@@ -10,6 +10,7 @@ import type {
 } from '../data/trading-shadowing-verdict-chronicle.models';
 import { CHRONICLE_DEFAULT_VISIBLE_SERIES, CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
 import { CHRONICLE_SERIES } from '../data/trading-shadowing-verdict-chronicle-series-names';
+import { CHRONICLE_EQUILATERAL_TRIANGLE_HEIGHT_OVER_WIDTH } from '../data/trading-shadowing-verdict-chronicle-sell-path.utils';
 import { buildChronicleCursorTooltipSvg } from '../data/trading-shadowing-verdict-chronicle-tooltip.formatter';
 import {
     buildCortexCalibrationBandSegmentBundles,
@@ -25,6 +26,7 @@ import {
     buildChronicleGoldenZoneExpectedValueBandValues,
     buildChronicleGoldenZoneProfitFactorBandValues
 } from './trading-shadowing-verdict-chronicle-golden-zone.utils';
+import { buildChronicleSellPathSegmentBundles, excludeChronicleSeriesFromCursorHitTest } from './trading-shadowing-verdict-chronicle-sell-path-series.utils';
 import { buildSplineSafeXyValues } from './trading-shadowing-verdict-chronicle-spline-data.utils';
 
 export interface ChronicleSeriesBundle {
@@ -40,6 +42,11 @@ export interface ChronicleSeriesBundle {
     movingAverageLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
     profitableVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     lossVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    profitableSellXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    lossSellXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    profitableSellPathSegmentBundles: ChronicleChartModel['profitableSellPathSegmentBundles'];
+    lossSellPathSegmentBundles: ChronicleChartModel['lossSellPathSegmentBundles'];
+    cursorModifier: ChronicleChartModel['cursorModifier'];
     goldenZoneExpectedValueAnnotation: InstanceType<SciChartModule['HorizontalLineAnnotation']>;
     goldenZoneProfitFactorAnnotation: InstanceType<SciChartModule['HorizontalLineAnnotation']>;
     cortexCalibrationBandSegmentBundles: ChronicleChartModel['cortexCalibrationBandSegmentBundles'];
@@ -86,7 +93,13 @@ function createCortexHaloPaletteProvider(sci: SciChartModule, _baseStrokeColor: 
             this.strokePaletteMode = sci.EStrokePaletteMode.SOLID;
         }
 
-        overrideStrokeArgb(_xValue: number, _yValue: number, _index: number, _opacity?: number, metadata?: any): number | undefined {
+        overrideStrokeArgb(
+            _xValue: number,
+            _yValue: number,
+            _index: number,
+            _opacity?: number,
+            metadata?: ChronicleVerdictBubblePointMetadata
+        ): number | undefined {
             if (metadata && typeof metadata.cortexProbability === 'number' && !Number.isNaN(metadata.cortexProbability)) {
                 return metadata.cortexProbability >= 0.5 ? winPredictedHaloArgb : lossPredictedHaloArgb;
             }
@@ -119,6 +132,13 @@ function buildVerdictCloudPointMetadata(point: ChronicleCartesianPoint): Chronic
     return {
         cortexProbability: point.cortexProbability,
         orderNotionalUsd: point.orderNotionalUsd,
+        tokenSymbol: point.tokenSymbol,
+        executionStatus: point.executionStatus,
+        pnlUsd: point.pnlUsd,
+        pathFade: point.pathFade,
+        realizedPnlPercentage: point.realizedPnlPercentage,
+        blockchainNetwork: point.blockchainNetwork,
+        tokenAddress: point.tokenAddress,
         isSelected: false
     };
 }
@@ -192,23 +212,22 @@ export function buildChronicleSeriesBundle(
     meta: ChronicleBucketMeta
 ): ChronicleSeriesBundle {
     const {
-        ColumnAnimation,
         CursorModifier,
         ELegendPlacement,
         EllipsePointMarker,
+        TrianglePointMarker,
         FastColumnRenderableSeries,
         GlowEffect,
         GradientParams,
         LegendModifier,
         MouseWheelZoomModifier,
         Point,
+        SplineLineRenderableSeries,
         SplineMountainRenderableSeries,
-        SweepAnimation,
         XyDataSeries,
         XyScatterRenderableSeries,
         ZoomExtentsModifier,
-        ZoomPanModifier,
-        easing
+        ZoomPanModifier
     } = sci;
 
     const goldenZoneExpectedValueAnnotation = createGoldenZoneAnnotation(
@@ -680,6 +699,82 @@ export function buildChronicleSeriesBundle(
         effect: new GlowEffect(wasmContext, { intensity: 0.55, range: 2 })
     });
 
+    const sellCloudMarkerWidth = 10;
+    const sellCloudMarkerHeight = sellCloudMarkerWidth * CHRONICLE_EQUILATERAL_TRIANGLE_HEIGHT_OVER_WIDTH;
+    const profitableSellXyDataSeries = new XyDataSeries(wasmContext, {
+        dataSeriesName: CHRONICLE_SERIES.winnerSellPath,
+        containsNaN: false,
+        isSorted: true,
+        dataEvenlySpacedInX: false
+    });
+    const lossSellXyDataSeries = new XyDataSeries(wasmContext, {
+        dataSeriesName: CHRONICLE_SERIES.loserSellPath,
+        containsNaN: false,
+        isSorted: true,
+        dataEvenlySpacedInX: false
+    });
+    for (const row of chronicleArrays.sellCloudProfitablePoints) {
+        profitableSellXyDataSeries.append(row.x, row.y, buildVerdictCloudPointMetadata(row));
+    }
+    for (const row of chronicleArrays.sellCloudLossPoints) {
+        lossSellXyDataSeries.append(row.x, row.y, buildVerdictCloudPointMetadata(row));
+    }
+
+    const winnerSellPathVisibleByDefault = isChronicleSeriesVisibleByDefault(CHRONICLE_SERIES.winnerSellPath);
+    const loserSellPathVisibleByDefault = isChronicleSeriesVisibleByDefault(CHRONICLE_SERIES.loserSellPath);
+    const profitableSellPathSegmentBundles = buildChronicleSellPathSegmentBundles(
+        sci,
+        wasmContext,
+        chronicleArrays.sellPathProfitablePaths,
+        CHRONICLE_SERIES.winnerSellPath,
+        CHRONICLE_METRIC_COLORS.winnerSellStroke,
+        winnerSellPathVisibleByDefault
+    );
+    const lossSellPathSegmentBundles = buildChronicleSellPathSegmentBundles(
+        sci,
+        wasmContext,
+        chronicleArrays.sellPathLossPaths,
+        CHRONICLE_SERIES.loserSellPath,
+        CHRONICLE_METRIC_COLORS.loserSellStroke,
+        loserSellPathVisibleByDefault
+    );
+
+    const profitableSellBubbleSeries = new XyScatterRenderableSeries(wasmContext, {
+        yAxisId: 'yPct',
+        xAxisId: 'xTime',
+        dataSeries: profitableSellXyDataSeries,
+        seriesName: CHRONICLE_SERIES.winnerSellPath,
+        pointMarker: new TrianglePointMarker(wasmContext, {
+            width: sellCloudMarkerWidth,
+            height: sellCloudMarkerHeight,
+            stroke: CHRONICLE_METRIC_COLORS.winnerSellFill,
+            fill: CHRONICLE_METRIC_COLORS.winnerSellFill,
+            strokeThickness: 1
+        }),
+        stroke: CHRONICLE_METRIC_COLORS.winnerSellStroke,
+        strokeThickness: 0,
+        opacity: 0.96,
+        effect: new GlowEffect(wasmContext, { intensity: 0.55, range: 2 })
+    });
+
+    const lossSellBubbleSeries = new XyScatterRenderableSeries(wasmContext, {
+        yAxisId: 'yPct',
+        xAxisId: 'xTime',
+        dataSeries: lossSellXyDataSeries,
+        seriesName: CHRONICLE_SERIES.loserSellPath,
+        pointMarker: new TrianglePointMarker(wasmContext, {
+            width: sellCloudMarkerWidth,
+            height: sellCloudMarkerHeight,
+            stroke: CHRONICLE_METRIC_COLORS.loserSellFill,
+            fill: CHRONICLE_METRIC_COLORS.loserSellFill,
+            strokeThickness: 1
+        }),
+        stroke: CHRONICLE_METRIC_COLORS.loserSellStroke,
+        strokeThickness: 0,
+        opacity: 0.96,
+        effect: new GlowEffect(wasmContext, { intensity: 0.5, range: 2 })
+    });
+
     const renderableSeriesWithDefaultVisibility: Array<{ seriesName?: string; isVisible?: boolean }> = [
         volumeColumnRenderableSeries,
         averagePnlLineSeries,
@@ -711,7 +806,11 @@ export function buildChronicleSeriesBundle(
         goldenZoneExpectedValueBandSeries,
         goldenZoneProfitFactorBandSeries,
         profitableVerdictBubbleSeries,
-        lossVerdictBubbleSeries
+        lossVerdictBubbleSeries,
+        ...profitableSellPathSegmentBundles.map((bundle) => bundle.series),
+        ...lossSellPathSegmentBundles.map((bundle) => bundle.series),
+        profitableSellBubbleSeries,
+        lossSellBubbleSeries
     ];
     for (const series of renderableSeriesWithDefaultVisibility) {
         applyChronicleSeriesDefaultVisibility(series);
@@ -751,59 +850,29 @@ export function buildChronicleSeriesBundle(
         movingAverageTradesPerHourLineSeries,
         ...cortexCalibrationBandSegmentBundles.map((bundle) => bundle.series),
         lossVerdictBubbleSeries,
-        profitableVerdictBubbleSeries
+        profitableVerdictBubbleSeries,
+        ...lossSellPathSegmentBundles.map((bundle) => bundle.series),
+        ...profitableSellPathSegmentBundles.map((bundle) => bundle.series),
+        lossSellBubbleSeries,
+        profitableSellBubbleSeries
     );
     sciChartSurface.annotations.add(goldenZoneExpectedValueAnnotation, goldenZoneProfitFactorAnnotation);
 
-    const sweep = { duration: 2200, ease: easing.outExpo };
-    volumeColumnRenderableSeries.runAnimation(new ColumnAnimation({ ...sweep, dataSeries: volumeColumnDataSeries }));
-    for (const series of [
-        averagePnlLineSeries,
-        averageWinRateLineSeries,
-        averageCortexPredictionWinRateLineSeries,
-        cortexSkillScoreLineSeries,
-        cortexCalibrationGapLineSeries,
-        cortexHighConvictionAccuracyLineSeries,
-        cortexHighConvictionShareLineSeries,
-        cortexGatePrecisionLineSeries,
-        cortexGatePassRateLineSeries,
-        expectedValueLineSeries,
-        portfolioWalletValueLineSeries,
-        profitFactorLineSeries,
-        tradesPerHourLineSeries,
-        movingAveragePnlLineSeries,
-        movingAverageWinRateLineSeries,
-        movingAverageCortexPredictionWinRateLineSeries,
-        movingAverageCortexSkillScoreLineSeries,
-        movingAverageCortexCalibrationGapLineSeries,
-        movingAverageCortexHighConvictionAccuracyLineSeries,
-        movingAverageCortexHighConvictionShareLineSeries,
-        movingAverageCortexGatePrecisionLineSeries,
-        movingAverageCortexGatePassRateLineSeries,
-        movingAverageExpectedValueLineSeries,
-        movingAveragePortfolioWalletValueLineSeries,
-        movingAverageProfitFactorLineSeries,
-        movingAverageTradesPerHourLineSeries
-    ]) {
-        series.runAnimation(new SweepAnimation(sweep));
-    }
-    profitableVerdictBubbleSeries.runAnimation(new SweepAnimation(sweep));
-    lossVerdictBubbleSeries.runAnimation(new SweepAnimation(sweep));
-
+    const cursorModifier = new CursorModifier({
+        crosshairStroke: CHRONICLE_METRIC_COLORS.crosshair,
+        crosshairStrokeThickness: 1,
+        showTooltip: true,
+        tooltipContainerBackground: CHRONICLE_METRIC_COLORS.tooltipContainerBackground,
+        tooltipTextStroke: CHRONICLE_METRIC_COLORS.tooltipText,
+        axisLabelFill: CHRONICLE_METRIC_COLORS.tooltipAxisLabelFill,
+        tooltipSvgTemplate: (seriesInfos, svgAnnotation) =>
+            buildChronicleCursorTooltipSvg(sci as unknown as ChronicleAdjustTooltipPositionHost, seriesInfos as never, svgAnnotation)
+    });
     sciChartSurface.chartModifiers.add(
         new ZoomPanModifier(),
         new MouseWheelZoomModifier(),
         new ZoomExtentsModifier(),
-        new CursorModifier({
-            crosshairStroke: CHRONICLE_METRIC_COLORS.crosshair,
-            crosshairStrokeThickness: 1,
-            showTooltip: true,
-            tooltipContainerBackground: CHRONICLE_METRIC_COLORS.tooltipContainerBackground,
-            tooltipTextStroke: CHRONICLE_METRIC_COLORS.tooltipText,
-            axisLabelFill: CHRONICLE_METRIC_COLORS.tooltipAxisLabelFill,
-            tooltipSvgTemplate: (seriesInfos, svgAnnotation) =>
-                buildChronicleCursorTooltipSvg(sci as unknown as ChronicleAdjustTooltipPositionHost, seriesInfos as never, svgAnnotation)
-        }),
+        cursorModifier,
         new LegendModifier({
             showCheckboxes: true,
             showSeriesMarkers: true,
@@ -814,6 +883,16 @@ export function buildChronicleSeriesBundle(
             textColor: CHRONICLE_METRIC_COLORS.legendText
         })
     );
+    excludeChronicleSeriesFromCursorHitTest(cursorModifier, profitableVerdictBubbleSeries);
+    excludeChronicleSeriesFromCursorHitTest(cursorModifier, lossVerdictBubbleSeries);
+    excludeChronicleSeriesFromCursorHitTest(cursorModifier, profitableSellBubbleSeries);
+    excludeChronicleSeriesFromCursorHitTest(cursorModifier, lossSellBubbleSeries);
+    for (const bundle of profitableSellPathSegmentBundles) {
+        excludeChronicleSeriesFromCursorHitTest(cursorModifier, bundle.series);
+    }
+    for (const bundle of lossSellPathSegmentBundles) {
+        excludeChronicleSeriesFromCursorHitTest(cursorModifier, bundle.series);
+    }
 
     return {
         volumeColumnDataSeries,
@@ -856,6 +935,11 @@ export function buildChronicleSeriesBundle(
         ],
         profitableVerdictXyDataSeries,
         lossVerdictXyDataSeries,
+        profitableSellXyDataSeries,
+        lossSellXyDataSeries,
+        profitableSellPathSegmentBundles,
+        lossSellPathSegmentBundles,
+        cursorModifier,
         goldenZoneExpectedValueAnnotation,
         goldenZoneProfitFactorAnnotation,
         cortexCalibrationBandSegmentBundles

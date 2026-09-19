@@ -1,4 +1,4 @@
-import type { SciChartSurface, TSciChart } from 'scichart';
+import type { SciChartOverview, SciChartSurface, TSciChart } from 'scichart';
 import type { TradingShadowingVerdictChronicleBucketPayload, TradingShadowingVerdictChroniclePayload } from '../../../../core/models';
 
 export type SciChartModule = typeof import('scichart');
@@ -8,11 +8,25 @@ export interface ChronicleCartesianPoint {
     y: number;
     cortexProbability?: number | null;
     orderNotionalUsd?: number | null;
+    tokenSymbol?: string | null;
+    executionStatus?: string | null;
+    pnlUsd?: number | null;
+    pathFade?: number | null;
+    realizedPnlPercentage?: number | null;
+    blockchainNetwork?: string | null;
+    tokenAddress?: string | null;
 }
 
 export interface ChronicleVerdictBubblePointMetadata {
     cortexProbability?: number | null;
     orderNotionalUsd?: number | null;
+    tokenSymbol?: string | null;
+    executionStatus?: string | null;
+    pnlUsd?: number | null;
+    pathFade?: number | null;
+    realizedPnlPercentage?: number | null;
+    blockchainNetwork?: string | null;
+    tokenAddress?: string | null;
     isSelected: boolean;
 }
 
@@ -28,6 +42,16 @@ export interface ChronicleAxisTickBounds extends ChronicleNumericBounds {
 export interface CortexCalibrationBandSegmentBundle {
     dataSeries: InstanceType<SciChartModule['XyyDataSeries']>;
     series: InstanceType<SciChartModule['SplineBandRenderableSeries']>;
+}
+
+export interface ChronicleSellPathTokenIconAnnotationBundle {
+    annotation: InstanceType<SciChartModule['HtmlCustomAnnotation']>;
+    seriesName: string;
+}
+
+export interface ChronicleSellPathSegmentBundle {
+    dataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    series: InstanceType<SciChartModule['FastLineRenderableSeries']>;
 }
 
 export interface GateSubmergedBandSegmentBundle {
@@ -68,7 +92,7 @@ export interface ChronicleTooltipSeriesInfoLike {
     renderableSeries?: ChronicleTooltipRenderableSeriesShape;
     zValue?: number;
     xValue?: number;
-    pointMetadata?: any;
+    pointMetadata?: ChronicleVerdictBubblePointMetadata;
 }
 
 export interface ChronicleRenderableSeriesCollectionLike {
@@ -103,6 +127,8 @@ export interface ChronicleConfigurableAxisOptions {
 
 export interface ChronicleChartModel {
     sciChartSurface: SciChartSurface;
+    sciChartOverview: SciChartOverview;
+    overviewWalletValueDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     wasmContext: TSciChart;
     sci: SciChartModule;
     xAxis: InstanceType<SciChartModule['DateTimeNumericAxis']>;
@@ -126,6 +152,12 @@ export interface ChronicleChartModel {
     movingAverageLineRenderableSeries: InstanceType<SciChartModule['SplineLineRenderableSeries']>[];
     profitableVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     lossVerdictXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    profitableSellXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    lossSellXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
+    profitableSellPathSegmentBundles: ChronicleSellPathSegmentBundle[];
+    lossSellPathSegmentBundles: ChronicleSellPathSegmentBundle[];
+    sellPathTokenIconAnnotations: ChronicleSellPathTokenIconAnnotationBundle[];
+    cursorModifier: InstanceType<SciChartModule['CursorModifier']>;
     cortexCalibrationBandSegmentBundles: CortexCalibrationBandSegmentBundle[];
     cortexCalibrationBandUserVisible: boolean;
     cortexModelRolloutUserVisible: boolean;
@@ -180,4 +212,8 @@ export interface ChronicleArrays {
     volumeBucketVerdictCounts: number[];
     verdictCloudProfitablePoints: ChronicleCartesianPoint[];
     verdictCloudLossPoints: ChronicleCartesianPoint[];
+    sellCloudProfitablePoints: ChronicleCartesianPoint[];
+    sellCloudLossPoints: ChronicleCartesianPoint[];
+    sellPathProfitablePaths: ChronicleCartesianPoint[][];
+    sellPathLossPaths: ChronicleCartesianPoint[][];
 }

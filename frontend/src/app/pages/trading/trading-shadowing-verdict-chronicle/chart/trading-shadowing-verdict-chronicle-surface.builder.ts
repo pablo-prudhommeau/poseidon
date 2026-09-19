@@ -1,4 +1,4 @@
-import type { LabelProvider } from 'scichart';
+import type { IRenderableSeries, LabelProvider, SciChartOverview, SciChartSurface } from 'scichart';
 import type { ChronicleBucketMeta, ChronicleChartModel } from '../data/trading-shadowing-verdict-chronicle.models';
 import {
     buildChronicleArraysFromBucket,
@@ -11,16 +11,25 @@ import {
 import { CHRONICLE_AXIS_TITLES, CHRONICLE_DEFAULT_VISIBLE_SERIES, CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
 import { CHRONICLE_SERIES } from '../data/trading-shadowing-verdict-chronicle-series-names';
 import type { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/trading-shadowing-verdict-chronicle-scichart-loader.service';
+import { patchChronicleSciChartAnnotationDetach } from './trading-shadowing-verdict-chronicle-annotation-detach.utils';
+import {
+    assignChronicleSciChartHostElementIds,
+    configureChronicleOverviewSurface,
+    ensureChronicleOverviewWalletValueDataSeries,
+    transformChronicleOverviewRenderableSeries
+} from './trading-shadowing-verdict-chronicle-overview.utils';
 import { buildChronicleSeriesBundle } from './trading-shadowing-verdict-chronicle-series.builder';
 
 export class TradingShadowingVerdictChronicleSurfaceBuilder {
     async buildFullChartSurface(
         host: HTMLDivElement,
+        overviewHost: HTMLDivElement,
         meta: ChronicleBucketMeta,
         sciChartLoader: TradingShadowingVerdictChronicleSciChartLoaderService,
         smaWindowBuckets: number
     ): Promise<ChronicleChartModel> {
         const sci = await sciChartLoader.loadModule();
+        assignChronicleSciChartHostElementIds(host, overviewHost);
         const { DateTimeNumericAxis, EAutoRange, EAxisAlignment, EDatePrecision, NumberRange, NumericAxis, SciChartJSDarkTheme, SciChartSurface, Thickness } =
             sci;
 
@@ -39,9 +48,14 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             background: CHRONICLE_METRIC_COLORS.chartBackground,
             padding: new Thickness(6, 6, 6, 6)
         });
+        patchChronicleSciChartAnnotationDetach(sciChartSurface);
 
         const chronicleArrays = buildChronicleArraysFromBucket(meta, smaWindowBuckets);
-        const viewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(chronicleArrays, meta.bucket.bucket_label as ChronicleBucketLabel);
+        const viewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(
+            chronicleArrays,
+            meta.bucket.bucket_label as ChronicleBucketLabel,
+            meta.bucket
+        );
         const initialRightEdgeMilliseconds = parseIsoTimestampToEpochMilliseconds(meta.response.as_of_iso) ?? Date.now();
 
         const xAxis = new DateTimeNumericAxis(wasmContext, {
@@ -197,9 +211,53 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
         );
 
         const seriesBundle = buildChronicleSeriesBundle(sci, wasmContext, sciChartSurface, chronicleArrays, meta);
+        const sciChartOverview: SciChartOverview = await sci.SciChartOverview.create(sciChartSurface, overviewHost, {
+            theme: customTheme,
+            background: CHRONICLE_METRIC_COLORS.chartBackground,
+            padding: new Thickness(0, 6, 4, 6),
+            mainAxisId: 'xTime',
+            secondaryAxisId: 'yWalletValue',
+            overviewXAxisOptions: {
+                isVisible: true,
+                autoRange: EAutoRange.Always,
+                drawMajorBands: false,
+                drawMajorGridLines: true,
+                drawMinorGridLines: false,
+                maxAutoTicks: 6,
+                minorsPerMajor: 1,
+                labelStyle: { fontSize: 10, color: CHRONICLE_METRIC_COLORS.axisTick }
+            },
+            overviewYAxisOptions: {
+                isVisible: true,
+                isInnerAxis: true,
+                autoRange: EAutoRange.Always,
+                growBy: new NumberRange(0.08, 0.12),
+                axisTitle: '',
+                drawLabels: false,
+                drawMajorBands: false,
+                drawMajorGridLines: true,
+                drawMinorGridLines: false,
+                drawMajorTickLines: false,
+                drawMinorTickLines: false,
+                maxAutoTicks: 4,
+                minorsPerMajor: 1
+            },
+            transformRenderableSeries: (parentSeries: IRenderableSeries, overviewSurface?: SciChartSurface): IRenderableSeries | undefined => {
+                return transformChronicleOverviewRenderableSeries(sci, parentSeries, overviewSurface);
+            }
+        });
+        patchChronicleSciChartAnnotationDetach(sciChartOverview.overviewSciChartSurface);
+        configureChronicleOverviewSurface(sciChartOverview);
+        const overviewWalletValueDataSeries: ChronicleChartModel['overviewWalletValueDataSeries'] = ensureChronicleOverviewWalletValueDataSeries(
+            sci,
+            sciChartSurface,
+            sciChartOverview
+        );
 
         return {
             sciChartSurface,
+            sciChartOverview,
+            overviewWalletValueDataSeries,
             wasmContext,
             sci,
             xAxis,
@@ -223,6 +281,12 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             movingAverageLineRenderableSeries: seriesBundle.movingAverageLineRenderableSeries,
             profitableVerdictXyDataSeries: seriesBundle.profitableVerdictXyDataSeries,
             lossVerdictXyDataSeries: seriesBundle.lossVerdictXyDataSeries,
+            profitableSellXyDataSeries: seriesBundle.profitableSellXyDataSeries,
+            lossSellXyDataSeries: seriesBundle.lossSellXyDataSeries,
+            profitableSellPathSegmentBundles: seriesBundle.profitableSellPathSegmentBundles,
+            lossSellPathSegmentBundles: seriesBundle.lossSellPathSegmentBundles,
+            sellPathTokenIconAnnotations: [],
+            cursorModifier: seriesBundle.cursorModifier,
             cortexCalibrationBandSegmentBundles: seriesBundle.cortexCalibrationBandSegmentBundles,
             cortexCalibrationBandUserVisible: CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(CHRONICLE_SERIES.cortexCalibrationBand),
             cortexModelRolloutUserVisible: CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(CHRONICLE_SERIES.cortexModelRolloutMarker),

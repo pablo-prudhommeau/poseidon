@@ -6,49 +6,41 @@ import type {
     ChronicleSurfaceSyncOptions
 } from '../data/trading-shadowing-verdict-chronicle.models';
 import {
-    blendChronicleArrays,
     buildChronicleArraysFromBucket,
-    CHRONICLE_SNAPSHOT_BLEND_MS,
     chronicleMinimumDisplayXMilliseconds,
-    chronicleShouldShowTargetVerdictCloud,
-    cloneChronicleArrays,
     computeChronicleViewportWidthMilliseconds,
     parseIsoTimestampToEpochMilliseconds,
     type ChronicleBucketLabel
 } from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
 import type { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/trading-shadowing-verdict-chronicle-scichart-loader.service';
+import type { DefiIconsService } from '../../../../core/defi-icons.service';
 import { synchronizeCortexModelRolloutAnnotations } from './trading-shadowing-verdict-chronicle-cortex-rollout.utils';
 import { applyChronicleGoldenZoneVisualState, resolveChronicleGoldenZoneThresholds } from './trading-shadowing-verdict-chronicle-golden-zone.utils';
 import type { ChronicleLegendSeriesItem } from './trading-shadowing-verdict-chronicle-legend.adapter';
 import { listChronicleLegendSeries, setChronicleSeriesVisibility } from './trading-shadowing-verdict-chronicle-legend.adapter';
+import { deleteChronicleOverview } from './trading-shadowing-verdict-chronicle-overview.utils';
 import { harmonizeChronicleRightAxes } from './trading-shadowing-verdict-chronicle-right-axis.utils';
-import {
-    synchronizeChronicleSeriesFromArrays,
-    synchronizeChronicleTapeBoundSeries,
-    synchronizeChronicleVerdictCloudSeries
-} from './trading-shadowing-verdict-chronicle-series-sync.utils';
+import { synchronizeChronicleSellPathTokenIconAnnotations } from './trading-shadowing-verdict-chronicle-sell-path-token-icon.utils';
+import { synchronizeChronicleSeriesFromArrays } from './trading-shadowing-verdict-chronicle-series-sync.utils';
 import { TradingShadowingVerdictChronicleSurfaceBuilder } from './trading-shadowing-verdict-chronicle-surface.builder';
 
 export class TradingShadowingVerdictChronicleSurfaceCoordinator {
     private static readonly RIGHT_AXIS_MAJOR_TICK_COUNT: number = 8;
+    private static readonly TIME_VISIBLE_RANGE_LEADING_PAD_MILLISECONDS: number = 45_000;
 
-    private blendFromArrays: ChronicleArrays | null = null;
-    private blendStartPerformanceMs: number | null = null;
-    private blendToArrays: ChronicleArrays | null = null;
     private chartModel: ChronicleChartModel | undefined;
     private displayArrays: ChronicleArrays | null = null;
     private goldenZoneThresholds: ChronicleGoldenZoneThresholds = {
         sparseExpectedValueThreshold: undefined,
         chronicleProfitFactorThreshold: undefined
     };
-    private pendingTapeAnchorWallClockMs: number | undefined;
-    private playbackRequestAnimationFrameId: number | null = null;
     private sciChartSurface: ChronicleChartModel['sciChartSurface'] | undefined;
     private readonly surfaceBuilder: TradingShadowingVerdictChronicleSurfaceBuilder = new TradingShadowingVerdictChronicleSurfaceBuilder();
-    private tapeAnchorPerformanceMs: number | null = null;
-    private tapeAnchorWallClockMs: number = 0;
 
-    constructor(private readonly sciChartLoader: TradingShadowingVerdictChronicleSciChartLoaderService) {}
+    constructor(
+        private readonly sciChartLoader: TradingShadowingVerdictChronicleSciChartLoaderService,
+        private readonly defiIconsService: DefiIconsService
+    ) {}
 
     hasChartModel(): boolean {
         return this.chartModel !== undefined;
@@ -75,6 +67,7 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
 
     async synchronizeChartSurface(
         host: HTMLDivElement,
+        overviewHost: HTMLDivElement,
         meta: ChronicleBucketMeta,
         options: ChronicleSurfaceSyncOptions,
         notifyChartReady: () => void
@@ -84,10 +77,11 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
                 if (!options.allowInitialBuild) {
                     return;
                 }
-                await this.buildFullChartSurface(host, meta, options.smaWindowBuckets);
+                await this.buildFullChartSurface(host, overviewHost, meta, options.smaWindowBuckets);
                 return;
             }
             this.updateChartData(meta, options.snapBucketData, options.smaWindowBuckets);
+        } catch {
         } finally {
             if (this.chartModel) {
                 notifyChartReady();
@@ -96,16 +90,18 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
     }
 
     teardownChartSurface(): void {
-        this.stopPlaybackLoop();
         if (this.chartModel) {
-            synchronizeCortexModelRolloutAnnotations(this.chartModel, undefined, '', '');
+            try {
+                synchronizeCortexModelRolloutAnnotations(this.chartModel, undefined, '', '');
+            } catch {}
+            try {
+                synchronizeChronicleSellPathTokenIconAnnotations(this.chartModel, this.defiIconsService, [], []);
+            } catch {}
+            try {
+                deleteChronicleOverview(this.chartModel);
+            } catch {}
         }
         this.displayArrays = null;
-        this.blendFromArrays = null;
-        this.blendToArrays = null;
-        this.blendStartPerformanceMs = null;
-        this.tapeAnchorPerformanceMs = null;
-        this.pendingTapeAnchorWallClockMs = undefined;
         this.goldenZoneThresholds = {
             sparseExpectedValueThreshold: undefined,
             chronicleProfitFactorThreshold: undefined
@@ -127,21 +123,60 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
         applyChronicleGoldenZoneVisualState(model, this.goldenZoneThresholds);
     }
 
-    private async buildFullChartSurface(host: HTMLDivElement, meta: ChronicleBucketMeta, smaWindowBuckets: number): Promise<void> {
+    private applySnapshotToSurface(meta: ChronicleBucketMeta, snapTimeVisibleRange: boolean): void {
+        const model = this.chartModel;
+        if (!model || !this.displayArrays) {
+            return;
+        }
+        synchronizeChronicleSeriesFromArrays(model, this.displayArrays, this.goldenZoneThresholds);
+        try {
+            this.synchronizeGoldenZones(meta);
+            this.synchronizeCortexModelRollouts(meta);
+            synchronizeChronicleSellPathTokenIconAnnotations(
+                model,
+                this.defiIconsService,
+                this.displayArrays.sellPathProfitablePaths,
+                this.displayArrays.sellPathLossPaths
+            );
+        } catch {}
+        this.harmonizeRightAxes();
+        if (snapTimeVisibleRange) {
+            this.applyTimeVisibleRange(meta);
+        }
+        try {
+            model.sciChartSurface.invalidateElement();
+            model.sciChartOverview.overviewSciChartSurface.invalidateElement();
+        } catch {}
+    }
+
+    private applyTimeVisibleRange(meta: ChronicleBucketMeta): void {
+        const model = this.chartModel;
+        if (!model || !this.displayArrays) {
+            return;
+        }
+        const { EAutoRange, NumberRange } = model.sci;
+        const rightEdgeMilliseconds = parseIsoTimestampToEpochMilliseconds(meta.response.as_of_iso) ?? Date.now();
+        const earliestDisplayXMilliseconds = chronicleMinimumDisplayXMilliseconds(this.displayArrays);
+        const naturalLeftEdgeMilliseconds = rightEdgeMilliseconds - model.viewportWidthMilliseconds;
+        const leftEdgeClampMilliseconds =
+            earliestDisplayXMilliseconds - TradingShadowingVerdictChronicleSurfaceCoordinator.TIME_VISIBLE_RANGE_LEADING_PAD_MILLISECONDS;
+        const leftEdgeMilliseconds = Math.max(naturalLeftEdgeMilliseconds, leftEdgeClampMilliseconds);
+        model.xAxis.autoRange = EAutoRange.Never;
+        model.xAxis.visibleRange = new NumberRange(leftEdgeMilliseconds, rightEdgeMilliseconds);
+    }
+
+    private async buildFullChartSurface(
+        host: HTMLDivElement,
+        overviewHost: HTMLDivElement,
+        meta: ChronicleBucketMeta,
+        smaWindowBuckets: number
+    ): Promise<void> {
         this.teardownChartSurface();
 
-        this.chartModel = await this.surfaceBuilder.buildFullChartSurface(host, meta, this.sciChartLoader, smaWindowBuckets);
+        this.chartModel = await this.surfaceBuilder.buildFullChartSurface(host, overviewHost, meta, this.sciChartLoader, smaWindowBuckets);
         this.sciChartSurface = this.chartModel.sciChartSurface;
-
-        const chronicleArrays = buildChronicleArraysFromBucket(meta, smaWindowBuckets);
-        this.displayArrays = cloneChronicleArrays(chronicleArrays);
-        this.blendFromArrays = null;
-        this.blendToArrays = null;
-        this.blendStartPerformanceMs = null;
-
-        this.synchronizeCortexModelRollouts(meta);
-        this.queueTapeAnchorFromMeta(meta);
-        this.startPlaybackLoop(true);
+        this.displayArrays = buildChronicleArraysFromBucket(meta, smaWindowBuckets);
+        this.applySnapshotToSurface(meta, true);
     }
 
     private harmonizeRightAxes(): void {
@@ -155,81 +190,6 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
             TradingShadowingVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT,
             this.goldenZoneThresholds
         );
-    }
-
-    private queueTapeAnchorFromMeta(meta: ChronicleBucketMeta): void {
-        const parsed = parseIsoTimestampToEpochMilliseconds(meta.response.as_of_iso);
-        if (parsed != null) {
-            this.pendingTapeAnchorWallClockMs = parsed;
-        }
-    }
-
-    private startPlaybackLoop(resetTapeAnchors: boolean): void {
-        this.stopPlaybackLoop();
-        if (resetTapeAnchors || this.tapeAnchorPerformanceMs == null) {
-            this.tapeAnchorWallClockMs = this.pendingTapeAnchorWallClockMs ?? Date.now();
-            this.pendingTapeAnchorWallClockMs = undefined;
-            this.tapeAnchorPerformanceMs = performance.now();
-        }
-
-        const tick = (): void => {
-            const model = this.chartModel;
-            if (!model) {
-                this.stopPlaybackLoop();
-                return;
-            }
-
-            if (this.blendFromArrays && this.blendToArrays && this.blendStartPerformanceMs != null) {
-                const rawAlpha = (performance.now() - this.blendStartPerformanceMs) / CHRONICLE_SNAPSHOT_BLEND_MS;
-                if (rawAlpha >= 1) {
-                    this.displayArrays = cloneChronicleArrays(this.blendToArrays);
-                    this.blendFromArrays = null;
-                    this.blendToArrays = null;
-                    this.blendStartPerformanceMs = null;
-                } else {
-                    this.displayArrays = blendChronicleArrays(this.blendFromArrays, this.blendToArrays, rawAlpha);
-                }
-                if (this.displayArrays && chronicleShouldShowTargetVerdictCloud(rawAlpha)) {
-                    synchronizeChronicleVerdictCloudSeries(model, this.displayArrays);
-                }
-            }
-
-            const { NumberRange, EAutoRange } = model.sci;
-            const performanceBase = this.tapeAnchorPerformanceMs ?? performance.now();
-            const rightEdgeMs = this.tapeAnchorWallClockMs + (performance.now() - performanceBase);
-            if (this.displayArrays) {
-                synchronizeChronicleTapeBoundSeries(model, this.displayArrays, this.goldenZoneThresholds);
-                this.applyGoldenZoneVisualState();
-                harmonizeChronicleRightAxes(
-                    model,
-                    this.displayArrays,
-                    TradingShadowingVerdictChronicleSurfaceCoordinator.RIGHT_AXIS_MAJOR_TICK_COUNT,
-                    this.goldenZoneThresholds
-                );
-                const earliestDisplayXMilliseconds = chronicleMinimumDisplayXMilliseconds(this.displayArrays);
-                const naturalLeftEdgeMilliseconds = rightEdgeMs - model.viewportWidthMilliseconds;
-                const leftEdgeClampMilliseconds = earliestDisplayXMilliseconds - 45_000;
-                const leftEdgeMs = Math.max(naturalLeftEdgeMilliseconds, leftEdgeClampMilliseconds);
-                model.xAxis.autoRange = EAutoRange.Never;
-                model.xAxis.visibleRange = new NumberRange(leftEdgeMs, rightEdgeMs);
-            } else {
-                const leftEdgeMs = rightEdgeMs - model.viewportWidthMilliseconds;
-                model.xAxis.autoRange = EAutoRange.Never;
-                model.xAxis.visibleRange = new NumberRange(leftEdgeMs, rightEdgeMs);
-            }
-            model.sciChartSurface.invalidateElement();
-
-            this.playbackRequestAnimationFrameId = requestAnimationFrame(tick);
-        };
-
-        this.playbackRequestAnimationFrameId = requestAnimationFrame(tick);
-    }
-
-    private stopPlaybackLoop(): void {
-        if (this.playbackRequestAnimationFrameId != null) {
-            cancelAnimationFrame(this.playbackRequestAnimationFrameId);
-            this.playbackRequestAnimationFrameId = null;
-        }
     }
 
     private synchronizeCortexModelRollouts(meta: ChronicleBucketMeta): void {
@@ -250,10 +210,12 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
         if (!model) {
             return;
         }
-        this.synchronizeGoldenZones(meta);
-        this.synchronizeCortexModelRollouts(meta);
         const nextArrays = buildChronicleArraysFromBucket(meta, smaWindowBuckets);
-        const computedViewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(nextArrays, meta.bucket.bucket_label as ChronicleBucketLabel);
+        const computedViewportWidthMilliseconds = computeChronicleViewportWidthMilliseconds(
+            nextArrays,
+            meta.bucket.bucket_label as ChronicleBucketLabel,
+            meta.bucket
+        );
         if (snapBucketData) {
             model.viewportWidthMilliseconds = computedViewportWidthMilliseconds;
         } else {
@@ -266,32 +228,7 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
         const bucketMilliseconds = Math.max(1000, meta.bucket.granularity_seconds * 1000);
         model.volumeColumnRenderableSeries.dataPointWidthMode = model.sci.EDataPointWidthMode.Range;
         model.volumeColumnRenderableSeries.dataPointWidth = bucketMilliseconds * 0.88;
-
-        if (snapBucketData) {
-            this.blendFromArrays = null;
-            this.blendToArrays = null;
-            this.blendStartPerformanceMs = null;
-            this.displayArrays = cloneChronicleArrays(nextArrays);
-            synchronizeChronicleSeriesFromArrays(model, this.displayArrays, this.goldenZoneThresholds);
-            model.sciChartSurface.invalidateElement();
-            this.queueTapeAnchorFromMeta(meta);
-            this.startPlaybackLoop(true);
-            return;
-        }
-
-        if (!this.displayArrays) {
-            this.displayArrays = cloneChronicleArrays(nextArrays);
-            synchronizeChronicleSeriesFromArrays(model, this.displayArrays, this.goldenZoneThresholds);
-            model.sciChartSurface.invalidateElement();
-            this.queueTapeAnchorFromMeta(meta);
-            this.startPlaybackLoop(true);
-            return;
-        }
-
-        this.queueTapeAnchorFromMeta(meta);
-        this.blendFromArrays = cloneChronicleArrays(this.displayArrays);
-        this.blendToArrays = cloneChronicleArrays(nextArrays);
-        this.blendStartPerformanceMs = performance.now();
-        this.startPlaybackLoop(false);
+        this.displayArrays = nextArrays;
+        this.applySnapshotToSurface(meta, snapBucketData);
     }
 }

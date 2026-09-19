@@ -1,5 +1,5 @@
-import { CommonModule, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, computed, DestroyRef, effect, ElementRef, inject, signal, TemplateRef, ViewChild } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { AfterViewInit, Component, computed, DestroyRef, ElementRef, effect, inject, signal, TemplateRef, ViewChild } from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
 import {
     ColDef,
@@ -28,11 +28,11 @@ import { formatMiddleEllipsisAddress } from '../../../core/blockchain.utils';
 import { DatetimeDisplayService } from '../../../core/datetime-display.service';
 import { DefiIconsService } from '../../../core/defi-icons.service';
 import {
+    PositionExitTriggerReason,
     TradingEvaluationPayload,
     TradingEvaluationShadowingDiagnosticsPayload,
     TradingEvaluationShadowingSnapshotPayload,
     TradingPositionPayload,
-    PositionExitTriggerReason,
     TradingTradePayload
 } from '../../../core/models';
 import { NumberFormattingService } from '../../../core/number-formatting.service';
@@ -48,6 +48,7 @@ import {
     tradingGridCompactViewportQuery,
     tradingGridsMobileColumnLayout
 } from '../trading-grid-viewport.utils';
+import { formatPositionExitReasonLabel } from '../trading-position-exit-reason.utils';
 import {
     computeTradingPositionDeltaPercent,
     computeTradingPositionEffectiveNotionalUsd,
@@ -60,9 +61,8 @@ import {
     formatPositionQuantityCellHtml,
     orderTradingPositionNotionalUsd
 } from '../trading-position-grid-metrics';
-import { formatPositionExitReasonLabel } from '../trading-position-exit-reason.utils';
-import { positionPhasePillNgClasses, resolvePositionPhaseIconClass, resolvePositionPhasePillClass } from '../trading-position-phase-pill.utils';
 import { TradingPositionModalService } from '../trading-position-modal.service';
+import { positionPhasePillNgClasses, resolvePositionPhaseIconClass, resolvePositionPhasePillClass } from '../trading-position-phase-pill.utils';
 import { TradingShadowingSnapshotTabComponent } from '../trading-shadowing-snapshot-tab/trading-shadowing-snapshot-tab.component';
 import { TradingPositionClosingDialogComponent } from './trading-position-closing-dialog/trading-position-closing-dialog.component';
 import {
@@ -75,7 +75,6 @@ import {
     selector: 'trading-positions-table',
     imports: [
         CommonModule,
-        DatePipe,
         AgGridAngular,
         DialogModule,
         TagModule,

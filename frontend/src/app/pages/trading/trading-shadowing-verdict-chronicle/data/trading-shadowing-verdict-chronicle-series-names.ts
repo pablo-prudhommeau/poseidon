@@ -30,6 +30,8 @@ export const CHRONICLE_SERIES = {
     volumeColumns: 'Volume · columns',
     winnerVerdictBubble: 'Winner verdict PnL % · bubble',
     loserVerdictBubble: 'Loser verdict PnL % · bubble',
+    winnerSellPath: 'Winner sell PnL % · path',
+    loserSellPath: 'Loser sell PnL % · path',
     cortexCalibrationBand: 'Cortex calibration · band',
     cortexModelRolloutMarker: 'Cortex model rollout · marker'
 } as const;

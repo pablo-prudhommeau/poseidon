@@ -11,6 +11,7 @@ import {
 } from '../data/trading-shadowing-verdict-chronicle-legend.utils';
 import { CHRONICLE_LEGEND_PREFERRED_ORDER, CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
 import { CHRONICLE_SERIES } from '../data/trading-shadowing-verdict-chronicle-series-names';
+import { setChronicleSellPathTokenIconVisibility } from './trading-shadowing-verdict-chronicle-sell-path-token-icon.utils';
 
 export interface ChronicleLegendSeriesItem {
     name: string;
@@ -118,7 +119,9 @@ export function setChronicleSeriesVisibility(model: ChronicleChartModel, seriesN
         const series = entry as ChronicleVisibilityToggleSeriesLike;
         if ((series.seriesName ?? '').trim() === seriesName) {
             series.isVisible = isVisible;
-            break;
         }
+    }
+    if (seriesName === CHRONICLE_SERIES.winnerSellPath || seriesName === CHRONICLE_SERIES.loserSellPath) {
+        setChronicleSellPathTokenIconVisibility(model, seriesName, isVisible);
     }
 }

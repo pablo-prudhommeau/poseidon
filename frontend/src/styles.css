@@ -1194,3 +1194,7 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-delta-stack-cell
 .shadow-chronicle-dialog .p-dialog-header-actions {
     display: none !important;
 }
+
+.shadow-chronicle-dialog .p-dialog-content {
+    overflow: hidden !important;
+}

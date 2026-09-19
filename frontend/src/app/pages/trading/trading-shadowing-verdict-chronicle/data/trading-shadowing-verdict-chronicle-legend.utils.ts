@@ -1,4 +1,4 @@
-export type ChronicleLegendSwatchKind = 'line' | 'dashed-line' | 'area' | 'column' | 'bubble' | 'band' | 'threshold' | 'marker';
+export type ChronicleLegendSwatchKind = 'line' | 'dashed-line' | 'area' | 'column' | 'bubble' | 'band' | 'threshold' | 'marker' | 'path';
 
 const CHRONICLE_LEGEND_TYPE_SEPARATOR = ' · ';
 
@@ -29,6 +29,8 @@ export function chronicleLegendSwatchKind(seriesName: string): ChronicleLegendSw
             return 'column';
         case 'bubble':
             return 'bubble';
+        case 'path':
+            return 'path';
         case 'line':
             return 'line';
         default: {
@@ -45,6 +47,9 @@ export function chronicleLegendSwatchKind(seriesName: string): ChronicleLegendSw
             if (normalized.includes('bubble')) {
                 return 'bubble';
             }
+            if (normalized.includes('path')) {
+                return 'path';
+            }
             return 'line';
         }
     }
@@ -59,5 +64,5 @@ export function chronicleSeriesUsesDashedLegendSwatch(seriesName: string, stroke
 
 export function chronicleLegendHidesTooltipHit(seriesName: string): boolean {
     const kind = chronicleLegendSwatchKind(seriesName);
-    return kind === 'area' || kind === 'band' || kind === 'threshold';
+    return kind === 'area' || kind === 'band' || kind === 'threshold' || kind === 'bubble' || kind === 'path';
 }

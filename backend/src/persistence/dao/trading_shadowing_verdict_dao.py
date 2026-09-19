@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Iterator, Optional
 
-from sqlalchemy import select, Select
+from sqlalchemy import and_, or_, select, Select
 from sqlalchemy.orm import Session, contains_eager, joinedload, load_only
 
 from src.logging.logger import get_application_logger
@@ -303,6 +303,106 @@ class TradingShadowingVerdictDao:
         except Exception as error:
             logger.exception(
                 "[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts in range [%s, %s] — %s",
+                start_datetime,
+                end_datetime,
+                error,
+            )
+            raise
+
+    def retrieve_earliest_resolved_at(self) -> Optional[datetime]:
+        from sqlalchemy import func
+        try:
+            earliest_resolved_at = self.database_session.execute(
+                select(func.min(TradingShadowingVerdict.resolved_at))
+                .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
+                .where(TradingShadowingVerdict.resolved_at.is_not(None))
+                .where(TradingShadowingVerdict.realized_pnl_percentage.is_not(None))
+                .where(TradingShadowingVerdict.realized_pnl_usd.is_not(None))
+                .where(TradingShadowingVerdict.is_profitable.is_not(None))
+            ).scalar_one_or_none()
+            return earliest_resolved_at
+        except Exception as error:
+            logger.exception("[DAO][SHADOWING_VERDICT] Failed to retrieve earliest resolved_at — %s", error)
+            raise
+
+    def count_resolved_in_window(self, start_datetime: datetime, end_datetime: datetime) -> int:
+        from sqlalchemy import func
+        try:
+            resolved_count = self.database_session.execute(
+                select(func.count(TradingShadowingVerdict.id))
+                .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
+                .where(TradingShadowingVerdict.resolved_at.is_not(None))
+                .where(TradingShadowingVerdict.realized_pnl_percentage.is_not(None))
+                .where(TradingShadowingVerdict.realized_pnl_usd.is_not(None))
+                .where(TradingShadowingVerdict.is_profitable.is_not(None))
+                .where(TradingShadowingVerdict.resolved_at >= start_datetime)
+                .where(TradingShadowingVerdict.resolved_at <= end_datetime)
+            ).scalar_one_or_none()
+            return resolved_count or 0
+        except Exception as error:
+            logger.exception(
+                "[DAO][SHADOWING_VERDICT] Failed to count resolved verdicts in range [%s, %s] — %s",
+                start_datetime,
+                end_datetime,
+                error,
+            )
+            raise
+
+    def retrieve_resolved_in_window_after_resolved_cursor(
+            self,
+            start_datetime: datetime,
+            end_datetime: datetime,
+            after_resolved_at: Optional[datetime],
+            after_id: int,
+            limit_count: int,
+    ) -> list[TradingShadowingVerdict]:
+        try:
+            statement = (
+                select(TradingShadowingVerdict)
+                .options(
+                    load_only(
+                        TradingShadowingVerdict.id,
+                        TradingShadowingVerdict.probe_id,
+                        TradingShadowingVerdict.exit_reason,
+                        TradingShadowingVerdict.realized_pnl_percentage,
+                        TradingShadowingVerdict.realized_pnl_usd,
+                        TradingShadowingVerdict.is_profitable,
+                        TradingShadowingVerdict.resolved_at,
+                    ),
+                    joinedload(TradingShadowingVerdict.probe).load_only(
+                        TradingShadowingProbe.id,
+                        TradingShadowingProbe.order_notional_value_usd,
+                        TradingShadowingProbe.cortex_inference_summary,
+                    ),
+                )
+                .where(TradingShadowingVerdict.exit_reason.is_not(None))
+                .where(TradingShadowingVerdict.exit_reason != "STALED")
+                .where(TradingShadowingVerdict.resolved_at.is_not(None))
+                .where(TradingShadowingVerdict.resolved_at >= start_datetime)
+                .where(TradingShadowingVerdict.resolved_at <= end_datetime)
+            )
+            if after_resolved_at is not None:
+                statement = statement.where(
+                    or_(
+                        TradingShadowingVerdict.resolved_at > after_resolved_at,
+                        and_(
+                            TradingShadowingVerdict.resolved_at == after_resolved_at,
+                            TradingShadowingVerdict.id > after_id,
+                        ),
+                    )
+                )
+            statement = statement.order_by(
+                TradingShadowingVerdict.resolved_at.asc(),
+                TradingShadowingVerdict.id.asc(),
+            ).limit(limit_count)
+            return list(self.database_session.scalars(statement).unique().all())
+        except Exception as error:
+            logger.exception(
+                "[DAO][SHADOWING_VERDICT] Failed to retrieve resolved verdicts after cursor resolved_at=%s id=%s in range [%s, %s] — %s",
+                after_resolved_at,
+                after_id,
                 start_datetime,
                 end_datetime,
                 error,

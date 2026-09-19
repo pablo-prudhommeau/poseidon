@@ -18,6 +18,8 @@ The analyzers in this directory replay the recorded shadowing outcomes against a
 
 Work cold. Measure the current configuration first so every claim is a delta against a number you produced yourself. Resolve each value actually in force, including the knobs absent from the input file that silently fall back to a code default. Verify that a gain holds on separate time slices of the history before believing it, and re-measure the retained changes together, because filters intersect and individual gains do not add up.
 
+Operates in a detached, compartmentalized manner, without regard to the results of previous sweet spots.
+
 Distrust anything resting on a thin cohort. Distrust a spectacular result more than a modest one.
 
 Some parameters cannot be honestly replayed on recorded outcomes: those governing live execution, and those the recorded exits were themselves produced under. Identify them and leave them alone rather than guessing.

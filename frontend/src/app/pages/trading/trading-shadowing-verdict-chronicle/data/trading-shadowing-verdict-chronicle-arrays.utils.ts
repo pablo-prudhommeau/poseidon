@@ -1,21 +1,29 @@
-import { easeOutCubic, linearInterpolate } from '../../../../core/math.utils';
 import type {
     TradingShadowingVerdictChronicleBucketPayload,
     TradingShadowingVerdictChroniclePayload,
     TradingShadowingVerdictChronicleRegimeGatePointPayload,
+    TradingShadowingVerdictChronicleSellPointPayload,
     TradingShadowingVerdictChronicleVerdictPointPayload
 } from '../../../../core/models';
 import type { ChronicleArrays, ChronicleBucketMeta, ChronicleCartesianPoint, SciChartModule } from './trading-shadowing-verdict-chronicle.models';
+import {
+    buildChronicleSellClosePoint,
+    buildChronicleSellEndpointPoints,
+    buildChronicleSellPaths,
+    isChronicleSellClosePayloadComplete,
+    isChronicleSellPathPayloadComplete,
+    sortChronicleSellEndpointPoints
+} from './trading-shadowing-verdict-chronicle-sell-path.utils';
 
 export type { SciChartModule };
-
-export const CHRONICLE_SNAPSHOT_BLEND_MS = 1400;
 
 const CHRONICLE_MAX_METRIC_POINTS = 500;
 const CHRONICLE_MAX_VOLUME_POINTS = 900;
 
 export type ChronicleBucketLabel = TradingShadowingVerdictChronicleBucketPayload['bucket_label'];
 export type TradingShadowingVerdictChronicleBucketLabel = ChronicleBucketLabel;
+
+export const CHRONICLE_ALL_BUCKET_LABEL = 'all';
 
 function buildDownsampledIndices(length: number, maxPoints: number): number[] {
     if (length <= maxPoints) {
@@ -54,7 +62,34 @@ export function computeSimpleMovingAverage(values: number[], windowSize: number)
     return result;
 }
 
-export function shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel: ChronicleBucketLabel): number {
+export function formatChronicleGranularityLabel(granularitySeconds: number): string {
+    if (granularitySeconds >= 86400 && granularitySeconds % 86400 === 0) {
+        const dayCount = granularitySeconds / 86400;
+        return `${dayCount}d`;
+    }
+    if (granularitySeconds >= 3600 && granularitySeconds % 3600 === 0) {
+        const hourCount = granularitySeconds / 3600;
+        return `${hourCount}h`;
+    }
+    if (granularitySeconds >= 60 && granularitySeconds % 60 === 0) {
+        const minuteCount = granularitySeconds / 60;
+        return `${minuteCount}m`;
+    }
+    return `${granularitySeconds}s`;
+}
+
+export function shadowingVerdictChronicleBucketLookbackMilliseconds(
+    bucketLabel: ChronicleBucketLabel,
+    bucket?: Pick<TradingShadowingVerdictChronicleBucketPayload, 'from_iso' | 'to_iso'>
+): number {
+    if (bucketLabel === CHRONICLE_ALL_BUCKET_LABEL) {
+        const fromMilliseconds = parseIsoTimestampToEpochMilliseconds(bucket?.from_iso);
+        const toMilliseconds = parseIsoTimestampToEpochMilliseconds(bucket?.to_iso);
+        if (fromMilliseconds != null && toMilliseconds != null && toMilliseconds > fromMilliseconds) {
+            return toMilliseconds - fromMilliseconds;
+        }
+        return 30 * 24 * 60 * 60 * 1000;
+    }
     switch (bucketLabel) {
         case 'last_30m_1m':
             return 30 * 60 * 1000;
@@ -72,9 +107,10 @@ export function shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel:
 export function computeChronicleRetentionFloorServerEpochMilliseconds(
     bucketLabel: ChronicleBucketLabel,
     granularitySeconds: number,
-    referenceWallClockMilliseconds: number = Date.now()
+    referenceWallClockMilliseconds: number = Date.now(),
+    bucket?: Pick<TradingShadowingVerdictChronicleBucketPayload, 'from_iso' | 'to_iso'>
 ): number {
-    const lookbackMilliseconds = shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel);
+    const lookbackMilliseconds = shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel, bucket);
     const viewportSpanMilliseconds = lookbackMilliseconds * 1.18;
     const trailingSafetyMilliseconds = 10 * Math.max(1, granularitySeconds) * 1000;
     return referenceWallClockMilliseconds - viewportSpanMilliseconds - trailingSafetyMilliseconds;
@@ -114,13 +150,25 @@ export function floorEpochMillisecondsToBucketStart(epochMilliseconds: number, g
     return Math.floor(epochMilliseconds / granularityMilliseconds) * granularityMilliseconds;
 }
 
+function collectFinitePointXValues(points: ChronicleCartesianPoint[], target: number[]): void {
+    for (const point of points) {
+        if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
+            target.push(point.x);
+        }
+    }
+}
+
 export function chronicleMinimumDisplayXMilliseconds(arrays: ChronicleArrays): number {
     const candidates: number[] = [...arrays.metricTimestampsMilliseconds, ...arrays.volumeBucketTimestampsMilliseconds];
-    for (const point of arrays.verdictCloudProfitablePoints) {
-        candidates.push(point.x);
+    collectFinitePointXValues(arrays.verdictCloudProfitablePoints, candidates);
+    collectFinitePointXValues(arrays.verdictCloudLossPoints, candidates);
+    collectFinitePointXValues(arrays.sellCloudProfitablePoints, candidates);
+    collectFinitePointXValues(arrays.sellCloudLossPoints, candidates);
+    for (const path of arrays.sellPathProfitablePaths) {
+        collectFinitePointXValues(path, candidates);
     }
-    for (const point of arrays.verdictCloudLossPoints) {
-        candidates.push(point.x);
+    for (const path of arrays.sellPathLossPaths) {
+        collectFinitePointXValues(path, candidates);
     }
     if (candidates.length === 0) {
         return Number.MAX_SAFE_INTEGER;
@@ -144,39 +192,6 @@ export function winsorizeSeries(values: number[], lowerQuantile = 0.02, upperQua
         }
         return Math.min(upperBound, Math.max(lowerBound, value));
     });
-}
-
-export function chronicleShouldShowTargetVerdictCloud(rawAlpha: number): boolean {
-    return easeOutCubic(rawAlpha) >= 0.88;
-}
-
-function sampleSortedXySeriesAtX(sortedXValues: number[], yValues: number[], xQuery: number): number {
-    if (sortedXValues.length === 0 || yValues.length === 0) {
-        return 0;
-    }
-    if (xQuery <= sortedXValues[0]) {
-        return yValues[0];
-    }
-    const lastIndex = sortedXValues.length - 1;
-    if (xQuery >= sortedXValues[lastIndex]) {
-        return yValues[lastIndex];
-    }
-    let lower = 0;
-    let upper = lastIndex;
-    while (lower < upper - 1) {
-        const middle = (lower + upper) >> 1;
-        if (sortedXValues[middle] <= xQuery) {
-            lower = middle;
-        } else {
-            upper = middle;
-        }
-    }
-    const span = sortedXValues[upper] - sortedXValues[lower];
-    if (span <= 0) {
-        return yValues[lower];
-    }
-    const interpolationWeight = (xQuery - sortedXValues[lower]) / span;
-    return linearInterpolate(yValues[lower], yValues[upper], interpolationWeight);
 }
 
 function alignRegimeGateSeriesToMetrics(
@@ -213,227 +228,14 @@ function alignRegimeGateSeriesToMetrics(
     };
 }
 
-export function cloneChronicleArrays(source: ChronicleArrays): ChronicleArrays {
-    return {
-        metricTimestampsMilliseconds: [...source.metricTimestampsMilliseconds],
-        averagePnlPercentageSeries: [...source.averagePnlPercentageSeries],
-        averageWinRatePercentageSeries: [...source.averageWinRatePercentageSeries],
-        expectedValuePerTradeUsdSeries: [...source.expectedValuePerTradeUsdSeries],
-        portfolioWalletValueUsdSeries: [...source.portfolioWalletValueUsdSeries],
-        profitFactorSeries: [...source.profitFactorSeries],
-        closedVerdictsPerHourSeries: [...source.closedVerdictsPerHourSeries],
-        averageCortexPredictionWinRatePercentageSeries: [...source.averageCortexPredictionWinRatePercentageSeries],
-        cortexSkillScorePercentageSeries: [...source.cortexSkillScorePercentageSeries],
-        cortexCalibrationGapPercentagePointsSeries: [...source.cortexCalibrationGapPercentagePointsSeries],
-        cortexHighConvictionAccuracyPercentageSeries: [...source.cortexHighConvictionAccuracyPercentageSeries],
-        cortexHighConvictionSharePercentageSeries: [...source.cortexHighConvictionSharePercentageSeries],
-        cortexGatePrecisionPercentageSeries: [...source.cortexGatePrecisionPercentageSeries],
-        cortexGatePassRatePercentageSeries: [...source.cortexGatePassRatePercentageSeries],
-        movingAveragePnlSeries: [...source.movingAveragePnlSeries],
-        movingAverageWinRateSeries: [...source.movingAverageWinRateSeries],
-        movingAverageExpectedValueSeries: [...source.movingAverageExpectedValueSeries],
-        movingAveragePortfolioWalletValueUsdSeries: [...source.movingAveragePortfolioWalletValueUsdSeries],
-        movingAverageProfitFactorSeries: [...source.movingAverageProfitFactorSeries],
-        movingAverageTradesPerHourSeries: [...source.movingAverageTradesPerHourSeries],
-        movingAverageCortexPredictionWinRatePercentageSeries: [...source.movingAverageCortexPredictionWinRatePercentageSeries],
-        movingAverageCortexSkillScorePercentageSeries: [...source.movingAverageCortexSkillScorePercentageSeries],
-        movingAverageCortexCalibrationGapPercentagePointsSeries: [...source.movingAverageCortexCalibrationGapPercentagePointsSeries],
-        movingAverageCortexHighConvictionAccuracyPercentageSeries: [...source.movingAverageCortexHighConvictionAccuracyPercentageSeries],
-        movingAverageCortexHighConvictionSharePercentageSeries: [...source.movingAverageCortexHighConvictionSharePercentageSeries],
-        movingAverageCortexGatePrecisionPercentageSeries: [...source.movingAverageCortexGatePrecisionPercentageSeries],
-        movingAverageCortexGatePassRatePercentageSeries: [...source.movingAverageCortexGatePassRatePercentageSeries],
-        regimeProfitFactorSmaSeries: [...source.regimeProfitFactorSmaSeries],
-        regimeSparseExpectedValueUsdSmaSeries: [...source.regimeSparseExpectedValueUsdSmaSeries],
-        profitFactorGateOpenSeries: [...source.profitFactorGateOpenSeries],
-        sparseExpectedValueGateOpenSeries: [...source.sparseExpectedValueGateOpenSeries],
-        hardGateOpenSeries: [...source.hardGateOpenSeries],
-        volumeBucketTimestampsMilliseconds: [...source.volumeBucketTimestampsMilliseconds],
-        volumeBucketVerdictCounts: [...source.volumeBucketVerdictCounts],
-        verdictCloudProfitablePoints: source.verdictCloudProfitablePoints.map((point) => ({ ...point })),
-        verdictCloudLossPoints: source.verdictCloudLossPoints.map((point) => ({ ...point }))
-    };
-}
-
-export function blendChronicleArrays(fromArrays: ChronicleArrays, toArrays: ChronicleArrays, rawAlpha: number): ChronicleArrays {
-    const alpha = easeOutCubic(rawAlpha);
-    const cloudBlendCutoff = 0.88;
-    const takeCloudFromSource = alpha < cloudBlendCutoff;
-
-    const metricTimestampsMilliseconds = toArrays.metricTimestampsMilliseconds;
-    const averagePnlPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.averagePnlPercentageSeries, x),
-            toArrays.averagePnlPercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const averageWinRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.averageWinRatePercentageSeries, x),
-            toArrays.averageWinRatePercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const expectedValuePerTradeUsdSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.expectedValuePerTradeUsdSeries, x),
-            toArrays.expectedValuePerTradeUsdSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const portfolioWalletValueUsdSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.portfolioWalletValueUsdSeries, x),
-            toArrays.portfolioWalletValueUsdSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const profitFactorSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.profitFactorSeries, x),
-            toArrays.profitFactorSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const closedVerdictsPerHourSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.closedVerdictsPerHourSeries, x),
-            toArrays.closedVerdictsPerHourSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const averageCortexPredictionWinRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.averageCortexPredictionWinRatePercentageSeries, x),
-            toArrays.averageCortexPredictionWinRatePercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const cortexSkillScorePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexSkillScorePercentageSeries, x),
-            toArrays.cortexSkillScorePercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const cortexCalibrationGapPercentagePointsSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexCalibrationGapPercentagePointsSeries, x),
-            toArrays.cortexCalibrationGapPercentagePointsSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const cortexHighConvictionAccuracyPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexHighConvictionAccuracyPercentageSeries, x),
-            toArrays.cortexHighConvictionAccuracyPercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const cortexHighConvictionSharePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexHighConvictionSharePercentageSeries, x),
-            toArrays.cortexHighConvictionSharePercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const cortexGatePrecisionPercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexGatePrecisionPercentageSeries, x),
-            toArrays.cortexGatePrecisionPercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-    const cortexGatePassRatePercentageSeries = metricTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays.cortexGatePassRatePercentageSeries, x),
-            toArrays.cortexGatePassRatePercentageSeries[index] ?? 0,
-            alpha
-        )
-    );
-
-    const volumeBucketTimestampsMilliseconds = toArrays.volumeBucketTimestampsMilliseconds;
-    const volumeBucketVerdictCounts = volumeBucketTimestampsMilliseconds.map((x, index) =>
-        linearInterpolate(
-            sampleSortedXySeriesAtX(fromArrays.volumeBucketTimestampsMilliseconds, fromArrays.volumeBucketVerdictCounts, x),
-            toArrays.volumeBucketVerdictCounts[index] ?? 0,
-            alpha
-        )
-    );
-
-    const blendMovingAverageSeries = (fieldName: keyof ChronicleArrays): number[] =>
-        metricTimestampsMilliseconds.map((x, index) =>
-            linearInterpolate(
-                sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays[fieldName] as number[], x),
-                (toArrays[fieldName] as number[])[index] ?? 0,
-                alpha
-            )
-        );
-    const blendRegimeSmaSeries = (fieldName: 'regimeProfitFactorSmaSeries' | 'regimeSparseExpectedValueUsdSmaSeries'): number[] =>
-        metricTimestampsMilliseconds.map((x, index) => {
-            const fromValue = sampleSortedXySeriesAtX(fromArrays.metricTimestampsMilliseconds, fromArrays[fieldName], x);
-            const toValue = toArrays[fieldName][index] ?? NaN;
-            if (!Number.isFinite(fromValue)) {
-                return toValue;
-            }
-            if (!Number.isFinite(toValue)) {
-                return fromValue;
-            }
-            return linearInterpolate(fromValue, toValue, alpha);
-        });
-    const blendGateOpenSeries = (fieldName: 'profitFactorGateOpenSeries' | 'sparseExpectedValueGateOpenSeries' | 'hardGateOpenSeries'): boolean[] =>
-        metricTimestampsMilliseconds.map((x, index) => (alpha >= 0.5 ? toArrays[fieldName][index] : fromArrays[fieldName][index]) ?? false);
-
-    return {
-        metricTimestampsMilliseconds,
-        averagePnlPercentageSeries,
-        averageWinRatePercentageSeries,
-        expectedValuePerTradeUsdSeries,
-        portfolioWalletValueUsdSeries,
-        profitFactorSeries,
-        closedVerdictsPerHourSeries,
-        averageCortexPredictionWinRatePercentageSeries,
-        cortexSkillScorePercentageSeries,
-        cortexCalibrationGapPercentagePointsSeries,
-        cortexHighConvictionAccuracyPercentageSeries,
-        cortexHighConvictionSharePercentageSeries,
-        cortexGatePrecisionPercentageSeries,
-        cortexGatePassRatePercentageSeries,
-        movingAveragePnlSeries: blendMovingAverageSeries('movingAveragePnlSeries'),
-        movingAverageWinRateSeries: blendMovingAverageSeries('movingAverageWinRateSeries'),
-        movingAverageExpectedValueSeries: blendMovingAverageSeries('movingAverageExpectedValueSeries'),
-        movingAveragePortfolioWalletValueUsdSeries: blendMovingAverageSeries('movingAveragePortfolioWalletValueUsdSeries'),
-        movingAverageProfitFactorSeries: blendMovingAverageSeries('movingAverageProfitFactorSeries'),
-        movingAverageTradesPerHourSeries: blendMovingAverageSeries('movingAverageTradesPerHourSeries'),
-        movingAverageCortexPredictionWinRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexPredictionWinRatePercentageSeries'),
-        movingAverageCortexSkillScorePercentageSeries: blendMovingAverageSeries('movingAverageCortexSkillScorePercentageSeries'),
-        movingAverageCortexCalibrationGapPercentagePointsSeries: blendMovingAverageSeries('movingAverageCortexCalibrationGapPercentagePointsSeries'),
-        movingAverageCortexHighConvictionAccuracyPercentageSeries: blendMovingAverageSeries('movingAverageCortexHighConvictionAccuracyPercentageSeries'),
-        movingAverageCortexHighConvictionSharePercentageSeries: blendMovingAverageSeries('movingAverageCortexHighConvictionSharePercentageSeries'),
-        movingAverageCortexGatePrecisionPercentageSeries: blendMovingAverageSeries('movingAverageCortexGatePrecisionPercentageSeries'),
-        movingAverageCortexGatePassRatePercentageSeries: blendMovingAverageSeries('movingAverageCortexGatePassRatePercentageSeries'),
-        regimeProfitFactorSmaSeries: blendRegimeSmaSeries('regimeProfitFactorSmaSeries'),
-        regimeSparseExpectedValueUsdSmaSeries: blendRegimeSmaSeries('regimeSparseExpectedValueUsdSmaSeries'),
-        profitFactorGateOpenSeries: blendGateOpenSeries('profitFactorGateOpenSeries'),
-        sparseExpectedValueGateOpenSeries: blendGateOpenSeries('sparseExpectedValueGateOpenSeries'),
-        hardGateOpenSeries: blendGateOpenSeries('hardGateOpenSeries'),
-        volumeBucketTimestampsMilliseconds,
-        volumeBucketVerdictCounts,
-        verdictCloudProfitablePoints: takeCloudFromSource
-            ? fromArrays.verdictCloudProfitablePoints.map((point) => ({ ...point }))
-            : toArrays.verdictCloudProfitablePoints.map((point) => ({ ...point })),
-        verdictCloudLossPoints: takeCloudFromSource
-            ? fromArrays.verdictCloudLossPoints.map((point) => ({ ...point }))
-            : toArrays.verdictCloudLossPoints.map((point) => ({ ...point }))
-    };
-}
-
 export function buildChronicleSnapshotFingerprint(historySnapshot: TradingShadowingVerdictChroniclePayload): string {
     const bucketParts = historySnapshot.buckets.map((bucket) => {
         const lastMetricTimestamp = bucket.metrics[bucket.metrics.length - 1]?.timestamp_milliseconds ?? 0;
         const lastVolumeTimestamp = bucket.volumes[bucket.volumes.length - 1]?.timestamp_milliseconds ?? 0;
         const lastCloudTimestamp = bucket.verdict_cloud[bucket.verdict_cloud.length - 1]?.timestamp_milliseconds ?? 0;
-        return `${bucket.bucket_label}:${bucket.metrics.length}:${bucket.volumes.length}:${bucket.verdict_cloud.length}:${lastMetricTimestamp}:${lastVolumeTimestamp}:${lastCloudTimestamp}`;
+        const sellCloud = bucket.sell_cloud ?? [];
+        const lastSellTimestamp = sellCloud[sellCloud.length - 1]?.timestamp_milliseconds ?? 0;
+        return `${bucket.bucket_label}:${bucket.metrics.length}:${bucket.volumes.length}:${bucket.verdict_cloud.length}:${sellCloud.length}:${lastMetricTimestamp}:${lastVolumeTimestamp}:${lastCloudTimestamp}:${lastSellTimestamp}`;
     });
     return [
         historySnapshot.generated_at_iso,
@@ -604,6 +406,34 @@ export function buildChronicleArraysFromBucket(meta: ChronicleBucketMeta, smaWin
         }
     }
 
+    const sellCloud = meta.bucket.sell_cloud ?? [];
+    const sellCloudProfitablePoints: ChronicleCartesianPoint[] = [];
+    const sellCloudLossPoints: ChronicleCartesianPoint[] = [];
+    const profitableSellPayloads: TradingShadowingVerdictChronicleSellPointPayload[] = [];
+    const lossSellPayloads: TradingShadowingVerdictChronicleSellPointPayload[] = [];
+    for (const point of sellCloud) {
+        const pathComplete = isChronicleSellPathPayloadComplete(point);
+        if (!pathComplete && !isChronicleSellClosePayloadComplete(point)) {
+            continue;
+        }
+        const endpointPoints = pathComplete ? buildChronicleSellEndpointPoints(point) : [buildChronicleSellClosePoint(point)];
+        if (point.is_profitable) {
+            sellCloudProfitablePoints.push(...endpointPoints);
+            if (pathComplete) {
+                profitableSellPayloads.push(point);
+            }
+        } else {
+            sellCloudLossPoints.push(...endpointPoints);
+            if (pathComplete) {
+                lossSellPayloads.push(point);
+            }
+        }
+    }
+    const sortedSellCloudProfitablePoints = sortChronicleSellEndpointPoints(sellCloudProfitablePoints);
+    const sortedSellCloudLossPoints = sortChronicleSellEndpointPoints(sellCloudLossPoints);
+    const sellPathProfitablePaths = buildChronicleSellPaths(profitableSellPayloads);
+    const sellPathLossPaths = buildChronicleSellPaths(lossSellPayloads);
+
     return {
         metricTimestampsMilliseconds: downsampledMetricTimestampsMilliseconds,
         averagePnlPercentageSeries,
@@ -640,18 +470,30 @@ export function buildChronicleArraysFromBucket(meta: ChronicleBucketMeta, smaWin
         volumeBucketTimestampsMilliseconds: downsampledVolumeBucketTimestampsMilliseconds,
         volumeBucketVerdictCounts: downsampledVolumeBucketVerdictCounts,
         verdictCloudProfitablePoints,
-        verdictCloudLossPoints
+        verdictCloudLossPoints,
+        sellCloudProfitablePoints: sortedSellCloudProfitablePoints,
+        sellCloudLossPoints: sortedSellCloudLossPoints,
+        sellPathProfitablePaths,
+        sellPathLossPaths
     };
 }
 
-export function computeChronicleViewportWidthMilliseconds(arrays: ChronicleArrays, bucketLabel?: ChronicleBucketLabel): number {
-    const configuredLookbackMilliseconds = bucketLabel != null ? shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel) : 0;
+export function computeChronicleViewportWidthMilliseconds(
+    arrays: ChronicleArrays,
+    bucketLabel?: ChronicleBucketLabel,
+    bucket?: Pick<TradingShadowingVerdictChronicleBucketPayload, 'from_iso' | 'to_iso'>
+): number {
+    const configuredLookbackMilliseconds = bucketLabel != null ? shadowingVerdictChronicleBucketLookbackMilliseconds(bucketLabel, bucket) : 0;
     const allXValues: number[] = [...arrays.volumeBucketTimestampsMilliseconds, ...arrays.metricTimestampsMilliseconds];
-    for (const point of arrays.verdictCloudProfitablePoints) {
-        allXValues.push(point.x);
+    collectFinitePointXValues(arrays.verdictCloudProfitablePoints, allXValues);
+    collectFinitePointXValues(arrays.verdictCloudLossPoints, allXValues);
+    collectFinitePointXValues(arrays.sellCloudProfitablePoints, allXValues);
+    collectFinitePointXValues(arrays.sellCloudLossPoints, allXValues);
+    for (const path of arrays.sellPathProfitablePaths) {
+        collectFinitePointXValues(path, allXValues);
     }
-    for (const point of arrays.verdictCloudLossPoints) {
-        allXValues.push(point.x);
+    for (const path of arrays.sellPathLossPaths) {
+        collectFinitePointXValues(path, allXValues);
     }
 
     let dataSpanMilliseconds = 60_000;

@@ -529,6 +529,21 @@ class TradingShadowingVerdictChronicleVerdictPointPayload(BaseModel):
     cortex_probability: Optional[float] = None
 
 
+class TradingShadowingVerdictChronicleSellPointPayload(BaseModel):
+    trade_id: int
+    timestamp_milliseconds: int
+    opened_at_milliseconds: int
+    pnl_percentage: float
+    pnl_usd: float
+    is_profitable: bool
+    token_symbol: str
+    execution_status: str
+    blockchain_network: str
+    token_address: str
+    breakeven_stop_armed_at_milliseconds: Optional[int] = None
+    breakeven_arm_pnl_percentage: Optional[float] = None
+
+
 class TradingShadowingVerdictChronicleCortexReliabilityBinPayload(BaseModel):
     predicted_probability_bin_center: float
     mean_predicted_probability: float
@@ -567,6 +582,7 @@ class TradingShadowingVerdictChronicleBucketPayload(BaseModel):
     metrics: List[TradingShadowingVerdictChronicleMetricPointPayload] = Field(default_factory=list)
     volumes: List[TradingShadowingVerdictChronicleVolumePointPayload] = Field(default_factory=list)
     verdict_cloud: List[TradingShadowingVerdictChronicleVerdictPointPayload] = Field(default_factory=list)
+    sell_cloud: List[TradingShadowingVerdictChronicleSellPointPayload] = Field(default_factory=list)
     cortex_reliability_diagram: List[TradingShadowingVerdictChronicleCortexReliabilityBinPayload] = Field(default_factory=list)
     regime_gate: List[TradingShadowingVerdictChronicleRegimeGatePointPayload] = Field(default_factory=list)
 

@@ -7,6 +7,7 @@ from src.api.http.api_schemas import (
     TradingShadowingVerdictChronicleMetricPointPayload,
     TradingShadowingVerdictChronicleVolumePointPayload,
     TradingShadowingVerdictChronicleVerdictPointPayload,
+    TradingShadowingVerdictChronicleSellPointPayload,
     TradingShadowingVerdictChronicleCortexReliabilityBinPayload,
     TradingShadowingVerdictChronicleRegimeGatePointPayload,
     TradingShadowingVerdictChronicleCortexModelRolloutPayload,
@@ -20,6 +21,7 @@ from src.core.trading.shadowing.trading_shadowing_structures import (
     TradingShadowingVerdictChronicleMetricPoint,
     TradingShadowingVerdictChronicleRegimeGatePoint,
     TradingShadowingVerdictChronicleVerdictPoint,
+    TradingShadowingVerdictChronicleSellPoint,
     TradingShadowingVerdictChronicleVolumePoint,
 )
 from src.core.utils.date_utils import format_datetime_to_local_iso
@@ -102,6 +104,23 @@ def _build_verdict_point_payload(verdict_point: TradingShadowingVerdictChronicle
     )
 
 
+def _build_sell_point_payload(sell_point: TradingShadowingVerdictChronicleSellPoint) -> TradingShadowingVerdictChronicleSellPointPayload:
+    return TradingShadowingVerdictChronicleSellPointPayload(
+        trade_id=sell_point.trade_id,
+        timestamp_milliseconds=sell_point.timestamp_milliseconds,
+        opened_at_milliseconds=sell_point.opened_at_milliseconds,
+        pnl_percentage=sell_point.pnl_percentage,
+        pnl_usd=sell_point.pnl_usd,
+        is_profitable=sell_point.is_profitable,
+        token_symbol=sell_point.token_symbol,
+        execution_status=sell_point.execution_status,
+        blockchain_network=sell_point.blockchain_network,
+        token_address=sell_point.token_address,
+        breakeven_stop_armed_at_milliseconds=sell_point.breakeven_stop_armed_at_milliseconds,
+        breakeven_arm_pnl_percentage=sell_point.breakeven_arm_pnl_percentage,
+    )
+
+
 def _build_regime_gate_point_payload(regime_gate_point: TradingShadowingVerdictChronicleRegimeGatePoint) -> TradingShadowingVerdictChronicleRegimeGatePointPayload:
     return TradingShadowingVerdictChronicleRegimeGatePointPayload(
         timestamp_milliseconds=regime_gate_point.timestamp_milliseconds,
@@ -149,6 +168,10 @@ def _build_bucket_payload(chronicle_bucket: TradingShadowingVerdictChronicleBuck
         _build_verdict_point_payload(verdict_point)
         for verdict_point in chronicle_bucket.verdict_cloud
     ]
+    sell_cloud = [
+        _build_sell_point_payload(sell_point)
+        for sell_point in chronicle_bucket.sell_cloud
+    ]
     regime_gate = [
         _build_regime_gate_point_payload(regime_gate_point)
         for regime_gate_point in chronicle_bucket.regime_gate
@@ -165,6 +188,7 @@ def _build_bucket_payload(chronicle_bucket: TradingShadowingVerdictChronicleBuck
         metrics=metrics,
         volumes=volumes,
         verdict_cloud=verdict_cloud,
+        sell_cloud=sell_cloud,
         cortex_reliability_diagram=cortex_reliability_diagram,
         regime_gate=regime_gate,
     )

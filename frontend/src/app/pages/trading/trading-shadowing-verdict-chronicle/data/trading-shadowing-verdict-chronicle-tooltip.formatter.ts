@@ -15,6 +15,7 @@ import {
     CHRONICLE_TOOLTIP_COMPACT_LABEL,
     CHRONICLE_TOOLTIP_PREFERRED_ORDER
 } from './trading-shadowing-verdict-chronicle-metrics.catalog';
+import { CHRONICLE_EQUILATERAL_TRIANGLE_HEIGHT_OVER_WIDTH } from './trading-shadowing-verdict-chronicle-sell-path.utils';
 
 export type ChronicleTooltipSwatchKind = ChronicleLegendSwatchKind;
 
@@ -42,16 +43,32 @@ export function chronicleTooltipSwatchKind(seriesName: string): ChronicleTooltip
 }
 
 function readVerdictBubbleMetadata(entry: ChronicleTooltipSeriesInfoLike): ChronicleVerdictBubblePointMetadata | undefined {
-    return entry.pointMetadata as ChronicleVerdictBubblePointMetadata | undefined;
+    return entry.pointMetadata;
 }
 
 function formatVerdictBubbleTooltipValue(entry: ChronicleTooltipSeriesInfoLike): string {
-    const pnlText = (entry.formattedYValue ?? '').trim();
-    const detailParts: string[] = [];
     const metadata = readVerdictBubbleMetadata(entry);
+    const realizedPnlPercentage = metadata?.realizedPnlPercentage;
+    const pnlText =
+        typeof realizedPnlPercentage === 'number' && Number.isFinite(realizedPnlPercentage)
+            ? `${realizedPnlPercentage.toFixed(2)}%`
+            : (entry.formattedYValue ?? '').trim();
+    const detailParts: string[] = [];
+    const tokenSymbol = metadata?.tokenSymbol;
+    if (typeof tokenSymbol === 'string' && tokenSymbol.trim().length > 0) {
+        detailParts.push(tokenSymbol.trim());
+    }
+    const executionStatus = metadata?.executionStatus;
+    if (typeof executionStatus === 'string' && executionStatus.trim().length > 0) {
+        detailParts.push(executionStatus.trim().toLowerCase());
+    }
     const orderNotionalUsd = metadata?.orderNotionalUsd;
     if (typeof orderNotionalUsd === 'number' && Number.isFinite(orderNotionalUsd) && orderNotionalUsd > 0) {
         detailParts.push(`${formatUsdCompact(orderNotionalUsd)} notional`);
+    }
+    const pnlUsd = metadata?.pnlUsd;
+    if (typeof pnlUsd === 'number' && Number.isFinite(pnlUsd)) {
+        detailParts.push(formatUsdCompact(pnlUsd));
     }
     const cortexProbability = metadata?.cortexProbability;
     if (typeof cortexProbability === 'number' && Number.isFinite(cortexProbability)) {
@@ -65,7 +82,7 @@ function formatVerdictBubbleTooltipValue(entry: ChronicleTooltipSeriesInfoLike):
 
 function formatChronicleTooltipValue(seriesName: string, entry: ChronicleTooltipSeriesInfoLike): string {
     const kind = chronicleLegendSwatchKind(seriesName);
-    if (kind === 'bubble') {
+    if (kind === 'bubble' || kind === 'path') {
         return formatVerdictBubbleTooltipValue(entry);
     }
     return (entry.formattedYValue ?? '').trim();
@@ -135,6 +152,13 @@ export function buildChronicleCursorTooltipSvg(
             }
             if (row.kind === 'bubble') {
                 return `<circle cx="${x + 6}" cy="${y - 4}" r="3.2" fill="${row.stroke}" fill-opacity="0.7" stroke="${row.stroke}" stroke-width="1"/>`;
+            }
+            if (row.kind === 'path') {
+                const triangleWidth = 6;
+                const triangleHeight = triangleWidth * CHRONICLE_EQUILATERAL_TRIANGLE_HEIGHT_OVER_WIDTH;
+                const baseY = y - 1;
+                const apexY = baseY - triangleHeight;
+                return `<polygon points="${x + triangleWidth / 2},${apexY} ${x},${baseY} ${x + triangleWidth},${baseY}" fill="${row.stroke}"/><line x1="${x + triangleWidth}" y1="${(apexY + baseY) / 2}" x2="${x + 10}" y2="${(apexY + baseY) / 2}" stroke="${row.stroke}" stroke-width="1.3" stroke-dasharray="1.4,1.8" stroke-linecap="round"/><polygon points="${x + 13},${apexY} ${x + 10},${baseY} ${x + 16},${baseY}" fill="${row.stroke}"/>`;
             }
             if (row.kind === 'band') {
                 return `<rect x="${x}" y="${y - 8}" width="12" height="8" rx="1.5" fill="${CHRONICLE_METRIC_COLORS.tooltipBandAbove}" fill-opacity="0.45"/><rect x="${x}" y="${y - 4}" width="12" height="4" rx="0 0 1.5 1.5" fill="${CHRONICLE_METRIC_COLORS.tooltipBandBelow}" fill-opacity="0.45"/>`;

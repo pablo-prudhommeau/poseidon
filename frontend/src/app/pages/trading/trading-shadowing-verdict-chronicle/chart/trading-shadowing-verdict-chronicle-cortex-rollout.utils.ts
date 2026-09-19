@@ -2,6 +2,7 @@ import type { TradingCortexModelRole, TradingShadowingVerdictChronicleCortexMode
 import type { ChronicleChartModel, CortexModelRolloutAnnotationBundle, SciChartModule } from '../data/trading-shadowing-verdict-chronicle.models';
 import { parseIsoTimestampToEpochMilliseconds } from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
 import { CHRONICLE_METRIC_COLORS } from '../data/trading-shadowing-verdict-chronicle-metrics.catalog';
+import { addChronicleAnnotationSafely, deleteChronicleAnnotationSafely } from './trading-shadowing-verdict-chronicle-annotation-detach.utils';
 import { raiseChronicleGateThresholdAnnotations } from './trading-shadowing-verdict-chronicle-golden-zone.utils';
 
 const CORTEX_ROLLOUT_LABEL_Y_RELATIVE = 0.96;
@@ -155,8 +156,8 @@ function createCortexRolloutBundle(
 export function clearCortexModelRolloutAnnotations(model: ChronicleChartModel): void {
     const annotations = model.sciChartSurface.annotations;
     for (const bundle of model.cortexModelRolloutAnnotationBundles) {
-        annotations.remove(bundle.verticalLine);
-        annotations.remove(bundle.textLabel);
+        deleteChronicleAnnotationSafely(annotations, bundle.verticalLine);
+        deleteChronicleAnnotationSafely(annotations, bundle.textLabel);
     }
     model.cortexModelRolloutAnnotationBundles = [];
 }
@@ -180,8 +181,8 @@ export function synchronizeCortexModelRolloutAnnotations(
         const bundle = createCortexRolloutBundle(model.sci, rollout);
         bundle.verticalLine.isHidden = !model.cortexModelRolloutUserVisible;
         bundle.textLabel.isHidden = !model.cortexModelRolloutUserVisible;
-        annotations.add(bundle.verticalLine);
-        annotations.add(bundle.textLabel);
+        addChronicleAnnotationSafely(annotations, bundle.verticalLine);
+        addChronicleAnnotationSafely(annotations, bundle.textLabel);
         model.cortexModelRolloutAnnotationBundles.push(bundle);
     }
 

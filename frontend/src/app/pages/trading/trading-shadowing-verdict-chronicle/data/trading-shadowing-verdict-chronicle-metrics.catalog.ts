@@ -36,6 +36,10 @@ export const CHRONICLE_METRIC_COLORS = {
     winnerVerdictFill: 'rgba(16, 185, 129, 0.55)',
     loserVerdictStroke: 'rgba(239, 68, 68, 0.88)',
     loserVerdictFill: 'rgba(239, 68, 68, 0.52)',
+    winnerSellStroke: 'rgba(34, 211, 238, 0.95)',
+    winnerSellFill: 'rgba(34, 211, 238, 0.72)',
+    loserSellStroke: 'rgba(245, 158, 11, 0.95)',
+    loserSellFill: 'rgba(245, 158, 11, 0.72)',
     cortexHaloWin: 'rgba(168, 85, 247, 1.0)',
     cortexHaloLoss: 'rgba(71, 85, 105, 0.9)',
     crosshair: 'rgba(167, 139, 250, 0.45)',
@@ -45,6 +49,12 @@ export const CHRONICLE_METRIC_COLORS = {
     legendBackground: '#110b2478',
     legendText: '#f5f3ff',
     chartBackground: '#050914',
+    overviewUnselectedFill: 'rgba(2, 6, 23, 0.62)',
+    overviewSelectedFill: 'rgba(148, 163, 184, 0.08)',
+    overviewRangeHandleFill: '#171717',
+    overviewRangeHandleStroke: '#2a2a2a',
+    overviewRangeHandleGrip: '#8a8a8a',
+    overviewMountainFillHigh: 'rgba(96, 165, 250, 0.26)',
     transparent: '#00000000',
     majorGridLine: 'rgba(148, 163, 184, 0.28)',
     minorGridLine: 'rgba(148, 163, 184, 0.14)',
@@ -117,7 +127,9 @@ export const CHRONICLE_TOOLTIP_COMPACT_LABEL: Partial<Record<string, string>> = 
     [CHRONICLE_SERIES.smaPortfolioWalletValueLine]: 'SMA total wallet value',
     [CHRONICLE_SERIES.smaProfitFactorLine]: 'SMA profit factor',
     [CHRONICLE_SERIES.smaTradesPerHourLine]: 'SMA Trades / h',
-    [CHRONICLE_SERIES.volumeColumns]: 'Volume'
+    [CHRONICLE_SERIES.volumeColumns]: 'Volume',
+    [CHRONICLE_SERIES.winnerSellPath]: 'Winner sell PnL %',
+    [CHRONICLE_SERIES.loserSellPath]: 'Loser sell PnL %'
 };
 
 export const CHRONICLE_TOOLTIP_PREFERRED_ORDER = [
@@ -145,6 +157,8 @@ export const CHRONICLE_TOOLTIP_PREFERRED_ORDER = [
     CHRONICLE_SERIES.smaCortexGatePassRateLine,
     CHRONICLE_SERIES.tradesPerHourLine,
     CHRONICLE_SERIES.volumeColumns,
+    CHRONICLE_SERIES.winnerSellPath,
+    CHRONICLE_SERIES.loserSellPath,
     CHRONICLE_SERIES.winnerVerdictBubble,
     CHRONICLE_SERIES.loserVerdictBubble
 ] as const;
@@ -181,6 +195,8 @@ export const CHRONICLE_LEGEND_PREFERRED_ORDER = [
     CHRONICLE_SERIES.smaProfitFactorLine,
     CHRONICLE_SERIES.smaTradesPerHourLine,
     CHRONICLE_SERIES.volumeColumns,
+    CHRONICLE_SERIES.winnerSellPath,
+    CHRONICLE_SERIES.loserSellPath,
     CHRONICLE_SERIES.winnerVerdictBubble,
     CHRONICLE_SERIES.loserVerdictBubble
 ] as const;
@@ -189,5 +205,7 @@ export const CHRONICLE_DEFAULT_VISIBLE_SERIES: string[] = [
     CHRONICLE_SERIES.cortexModelRolloutMarker,
     CHRONICLE_SERIES.evGateThreshold,
     CHRONICLE_SERIES.pfGateThreshold,
-    CHRONICLE_SERIES.portfolioWalletValueLine
+    CHRONICLE_SERIES.portfolioWalletValueLine,
+    CHRONICLE_SERIES.winnerSellPath,
+    CHRONICLE_SERIES.loserSellPath
 ] as const;

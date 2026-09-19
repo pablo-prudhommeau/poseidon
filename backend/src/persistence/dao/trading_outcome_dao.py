@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import desc, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, load_only
 
 from src.logging.logger import get_application_logger
-from src.persistence.models import TradingOutcome
+from src.persistence.models import TradeSide, TradingOutcome, TradingTrade
 
 logger = get_application_logger(__name__)
 
@@ -32,3 +33,40 @@ class TradingOutcomeDao:
             .limit(limit)
         )
         return list(self.database_session.execute(database_query).scalars().all())
+
+    def retrieve_closed_sells_in_window(
+            self,
+            start_datetime: datetime,
+            end_datetime: datetime,
+    ) -> list[TradingOutcome]:
+        logger.debug(
+            "[DATABASE][DAO][TRADING_OUTCOME][RETRIEVE] Fetching closed SELL outcomes in range [%s, %s]",
+            start_datetime,
+            end_datetime,
+        )
+        try:
+            database_query = (
+                select(TradingOutcome)
+                .join(TradingTrade, TradingOutcome.trade_id == TradingTrade.id)
+                .options(
+                    joinedload(TradingOutcome.trade).load_only(
+                        TradingTrade.id,
+                        TradingTrade.trade_side,
+                        TradingTrade.token_symbol,
+                        TradingTrade.execution_status,
+                    )
+                )
+                .where(TradingTrade.trade_side == TradeSide.SELL)
+                .where(TradingOutcome.occurred_at >= start_datetime)
+                .where(TradingOutcome.occurred_at <= end_datetime)
+                .order_by(TradingOutcome.occurred_at.asc(), TradingOutcome.id.asc())
+            )
+            return list(self.database_session.execute(database_query).unique().scalars().all())
+        except Exception as error:
+            logger.exception(
+                "[DAO][TRADING_OUTCOME] Failed to retrieve closed SELL outcomes in range [%s, %s] — %s",
+                start_datetime,
+                end_datetime,
+                error,
+            )
+            raise

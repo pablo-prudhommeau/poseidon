@@ -5,11 +5,17 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import type { TradingShadowingVerdictChroniclePayload } from '../../../../core/models';
+import { DefiIconsService } from '../../../../core/defi-icons.service';
 import { WebSocketService } from '../../../../core/websocket.service';
 import type { ChronicleLegendSeriesItem } from '../chart/trading-shadowing-verdict-chronicle-legend.adapter';
 import { TradingShadowingVerdictChronicleSurfaceCoordinator } from '../chart/trading-shadowing-verdict-chronicle-surface.coordinator';
 import type { ChronicleBucketMeta } from '../data/trading-shadowing-verdict-chronicle.models';
-import { buildChronicleSnapshotFingerprint, type ChronicleBucketLabel } from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
+import {
+    buildChronicleSnapshotFingerprint,
+    CHRONICLE_ALL_BUCKET_LABEL,
+    formatChronicleGranularityLabel,
+    type ChronicleBucketLabel
+} from '../data/trading-shadowing-verdict-chronicle-arrays.utils';
 import { chronicleSeriesDisplayLabel } from '../data/trading-shadowing-verdict-chronicle-legend.utils';
 import { CHRONICLE_SERIES } from '../data/trading-shadowing-verdict-chronicle-series-names';
 import { TradingShadowingVerdictChronicleSciChartLoaderService } from '../services/trading-shadowing-verdict-chronicle-scichart-loader.service';
@@ -90,12 +96,17 @@ export class TradingShadowingVerdictChronicleComponent {
             : null;
     });
 
-    readonly bucketOptions: ChronicleBucketOption[] = [
-        { label: '30m · 1m', value: 'last_30m_1m' satisfies ChronicleBucketLabel },
-        { label: '24h · 1h', value: 'last_24h_1h' satisfies ChronicleBucketLabel },
-        { label: '7d · 15m', value: 'last_7d_15m' satisfies ChronicleBucketLabel },
-        { label: '30d · 30m', value: 'last_30d_30m' satisfies ChronicleBucketLabel }
-    ];
+    readonly bucketOptions = computed<ChronicleBucketOption[]>(() => {
+        const allBucket = this.payload()?.buckets.find((entry) => entry.bucket_label === CHRONICLE_ALL_BUCKET_LABEL);
+        const allGranularityLabel = allBucket != null ? formatChronicleGranularityLabel(allBucket.granularity_seconds) : '1h';
+        return [
+            { label: '30m · 1m', value: 'last_30m_1m' satisfies ChronicleBucketLabel },
+            { label: '24h · 1h', value: 'last_24h_1h' satisfies ChronicleBucketLabel },
+            { label: '7d · 15m', value: 'last_7d_15m' satisfies ChronicleBucketLabel },
+            { label: '30d · 30m', value: 'last_30d_30m' satisfies ChronicleBucketLabel },
+            { label: `All · ${allGranularityLabel}`, value: CHRONICLE_ALL_BUCKET_LABEL satisfies ChronicleBucketLabel }
+        ];
+    });
 
     readonly chartReady = signal<boolean>(false);
     readonly cortexMetricsAvailable = computed<boolean>(() => this.legendItems().some((item) => CHRONICLE_CORTEX_METRIC_SERIES_NAMES.includes(item.name)));
@@ -139,21 +150,24 @@ export class TradingShadowingVerdictChronicleComponent {
     ];
 
     private readonly chartHost = viewChild<ElementRef<HTMLDivElement>>('chartHost');
+    private readonly defiIconsService: DefiIconsService = inject(DefiIconsService);
+    private readonly overviewHost = viewChild<ElementRef<HTMLDivElement>>('overviewHost');
     private readonly sciChartLoader: TradingShadowingVerdictChronicleSciChartLoaderService = inject(TradingShadowingVerdictChronicleSciChartLoaderService);
 
     private readonly surfaceCoordinator: TradingShadowingVerdictChronicleSurfaceCoordinator = new TradingShadowingVerdictChronicleSurfaceCoordinator(
-        this.sciChartLoader
+        this.sciChartLoader,
+        this.defiIconsService
     );
 
     constructor() {
         effect(() => {
-            const hist = this.webSocketService.tradingShadowingVerdictChronicle();
+            const historySnapshot = this.webSocketService.tradingShadowingVerdictChronicle();
             const open = this.visible();
-            if (!open || !hist) {
+            if (!open || !historySnapshot) {
                 return;
             }
             untracked(() => {
-                void this.applySnapshot(hist);
+                void this.applySnapshot(historySnapshot);
             });
         });
 
@@ -180,9 +194,9 @@ export class TradingShadowingVerdictChronicleComponent {
     }
 
     handleDialogShow(): void {
-        const hist = this.webSocketService.tradingShadowingVerdictChronicle();
-        if (hist) {
-            void this.applySnapshot(hist);
+        const historySnapshot = this.webSocketService.tradingShadowingVerdictChronicle();
+        if (historySnapshot) {
+            void this.applySnapshot(historySnapshot);
         }
     }
 
@@ -250,12 +264,16 @@ export class TradingShadowingVerdictChronicleComponent {
         this.showLegendPanel.update((value) => !value);
     }
 
-    private async applySnapshot(hist: TradingShadowingVerdictChroniclePayload): Promise<void> {
+    private async applySnapshot(historySnapshot: TradingShadowingVerdictChroniclePayload): Promise<void> {
         const existing = this.payload();
-        if (this.surfaceCoordinator.hasChartModel() && existing && buildChronicleSnapshotFingerprint(existing) === buildChronicleSnapshotFingerprint(hist)) {
+        if (
+            this.surfaceCoordinator.hasChartModel() &&
+            existing &&
+            buildChronicleSnapshotFingerprint(existing) === buildChronicleSnapshotFingerprint(historySnapshot)
+        ) {
             return;
         }
-        this.payload.set(hist);
+        this.payload.set(historySnapshot);
         await this.scheduleChartSynchronization();
     }
 
@@ -263,7 +281,8 @@ export class TradingShadowingVerdictChronicleComponent {
         for (let attempt = 0; attempt < 24; attempt++) {
             await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
             const host = this.chartHost()?.nativeElement;
-            if (host) {
+            const overviewHost = this.overviewHost()?.nativeElement;
+            if (host && overviewHost) {
                 await this.synchronizeChart(true, false);
                 return;
             }
@@ -273,13 +292,15 @@ export class TradingShadowingVerdictChronicleComponent {
 
     private async synchronizeChart(allowInitialBuild: boolean, snapBucketData: boolean): Promise<void> {
         const host = this.chartHost()?.nativeElement;
+        const overviewHost = this.overviewHost()?.nativeElement;
         const meta = this.bucketMeta();
-        if (!host || !meta) {
+        if (!host || !overviewHost || !meta) {
             return;
         }
 
         await this.surfaceCoordinator.synchronizeChartSurface(
             host,
+            overviewHost,
             meta,
             {
                 allowInitialBuild: allowInitialBuild,

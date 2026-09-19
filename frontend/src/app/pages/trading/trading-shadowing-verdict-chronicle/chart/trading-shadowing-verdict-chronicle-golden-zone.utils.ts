@@ -18,13 +18,8 @@ export function resolveChronicleGoldenZoneThresholds(meta: ChronicleBucketMeta):
 }
 
 export function raiseChronicleGateThresholdAnnotations(model: ChronicleChartModel): void {
-    const annotations = model.sciChartSurface.annotations;
-    for (const annotation of [model.goldenZoneExpectedValueAnnotation, model.goldenZoneProfitFactorAnnotation]) {
-        if (!annotation) {
-            continue;
-        }
-        annotations.remove(annotation);
-        annotations.add(annotation);
+    if (!model.sciChartSurface) {
+        return;
     }
 }
 

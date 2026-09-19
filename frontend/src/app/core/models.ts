@@ -719,6 +719,21 @@ export interface TradingShadowingVerdictChronicleVerdictPointPayload {
     cortex_probability?: number | null;
 }
 
+export interface TradingShadowingVerdictChronicleSellPointPayload {
+    trade_id: number;
+    timestamp_milliseconds: number;
+    opened_at_milliseconds: number;
+    pnl_percentage: number;
+    pnl_usd: number;
+    is_profitable: boolean;
+    token_symbol: string;
+    execution_status: string;
+    blockchain_network: string;
+    token_address: string;
+    breakeven_stop_armed_at_milliseconds?: number | null;
+    breakeven_arm_pnl_percentage?: number | null;
+}
+
 export interface TradingShadowingVerdictChronicleCortexReliabilityBinPayload {
     predicted_probability_bin_center: number;
     mean_predicted_probability: number;
@@ -757,6 +772,7 @@ export interface TradingShadowingVerdictChronicleBucketPayload {
     metrics: TradingShadowingVerdictChronicleMetricPointPayload[];
     volumes: TradingShadowingVerdictChronicleVolumePointPayload[];
     verdict_cloud: TradingShadowingVerdictChronicleVerdictPointPayload[];
+    sell_cloud?: TradingShadowingVerdictChronicleSellPointPayload[];
     cortex_reliability_diagram?: TradingShadowingVerdictChronicleCortexReliabilityBinPayload[];
     regime_gate?: TradingShadowingVerdictChronicleRegimeGatePointPayload[];
 }

@@ -116,6 +116,39 @@ export class DefiIconsService {
         console.info('[UI][ICONS] DefiIconsService initialized');
     }
 
+    public createTokenIconElement(
+        blockchainNetwork: string | null | undefined,
+        tokenAddress: string | null | undefined,
+        tokenSymbol: string | null | undefined,
+        sizePixels: number
+    ): HTMLElement {
+        const normalizedBlockchainNetwork: string = blockchainNetwork ?? '';
+        const normalizedTokenAddress: string = tokenAddress ?? '';
+        const normalizedTokenSymbol: string = tokenSymbol ?? '';
+        const wrapperElement = this.buildTokenIconElement(
+            normalizedBlockchainNetwork.toLowerCase(),
+            normalizedTokenAddress.toLowerCase(),
+            normalizedTokenSymbol.toUpperCase(),
+            sizePixels
+        );
+        wrapperElement.style.width = `${sizePixels}px`;
+        wrapperElement.style.height = `${sizePixels}px`;
+        wrapperElement.style.pointerEvents = 'none';
+        wrapperElement.style.opacity = '0';
+        const imageElement = wrapperElement.querySelector('img');
+        const revealIcon = (): void => {
+            wrapperElement.style.opacity = '0.92';
+        };
+        if (imageElement instanceof HTMLImageElement) {
+            if (imageElement.complete && imageElement.naturalWidth > 0) {
+                revealIcon();
+            } else {
+                imageElement.addEventListener('load', revealIcon);
+            }
+        }
+        return wrapperElement;
+    }
+
     public getChainIconCandidates(chainName: string | null | undefined): string[] {
         return this.buildChainIconCandidates(String(chainName ?? '').toLowerCase());
     }
@@ -284,11 +317,11 @@ export class DefiIconsService {
         return candidates;
     }
 
-    private buildTokenIconElement(chainName: string, tokenAddress: string, tokenSymbol: string): HTMLSpanElement {
+    private buildTokenIconElement(chainName: string, tokenAddress: string, tokenSymbol: string, sizePixels: number = 16): HTMLSpanElement {
         const cacheKey = `token:${chainName}:${tokenAddress}`;
-        const wrapperElement = this.createCircleWrapper();
+        const wrapperElement = this.createCircleWrapper(sizePixels);
         const placeholderElement = this.createPlaceholderElement();
-        const imageElement = this.createImageElement('token');
+        const imageElement = this.createImageElement('token', sizePixels);
         wrapperElement.appendChild(placeholderElement);
         wrapperElement.appendChild(imageElement);
 
@@ -323,19 +356,23 @@ export class DefiIconsService {
         return wrapperElement;
     }
 
-    private createCircleWrapper(): HTMLSpanElement {
+    private createCircleWrapper(sizePixels: number = 16): HTMLSpanElement {
         const element = document.createElement('span');
-        element.className = 'relative inline-block h-4 w-4 align-middle';
+        element.className = 'relative inline-block align-middle';
+        element.style.width = `${sizePixels}px`;
+        element.style.height = `${sizePixels}px`;
         return element;
     }
 
-    private createImageElement(altText: string): HTMLImageElement {
+    private createImageElement(altText: string, sizePixels: number = 16): HTMLImageElement {
         const element = document.createElement('img');
         element.loading = 'lazy';
         element.alt = altText;
-        element.width = 16;
-        element.height = 16;
-        element.className = 'absolute inset-0 h-4 w-4 rounded-full img-fade';
+        element.width = sizePixels;
+        element.height = sizePixels;
+        element.className = 'absolute inset-0 rounded-full img-fade';
+        element.style.width = `${sizePixels}px`;
+        element.style.height = `${sizePixels}px`;
         return element;
     }
 

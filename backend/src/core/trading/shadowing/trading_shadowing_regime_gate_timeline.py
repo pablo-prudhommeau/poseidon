@@ -26,6 +26,7 @@ def build_regime_gate_timeline_for_metric_timestamps(
         verdicts: list[TradingShadowingVerdictChronicleVerdict],
         as_of_datetime: datetime,
         metric_timestamps_milliseconds: list[int],
+        history_from_datetime: Optional[datetime] = None,
 ) -> list[TradingShadowingVerdictChronicleRegimeGatePoint]:
     if not metric_timestamps_milliseconds:
         return []
@@ -34,9 +35,14 @@ def build_regime_gate_timeline_for_metric_timestamps(
     assert current_time is not None
 
     series_end_milliseconds = to_epoch_milliseconds(current_time)
-    retention_start_milliseconds = to_epoch_milliseconds(
-        current_time - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
-    )
+    if history_from_datetime is not None:
+        history_from_aware = ensure_timezone_aware(history_from_datetime)
+        assert history_from_aware is not None
+        retention_start_milliseconds = to_epoch_milliseconds(history_from_aware)
+    else:
+        retention_start_milliseconds = to_epoch_milliseconds(
+            current_time - timedelta(days=settings.TRADING_SHADOWING_HISTORY_RETENTION_DAYS)
+        )
     sample_timestamps_milliseconds: list[int] = [
         min(metric_timestamp_milliseconds, series_end_milliseconds)
         for metric_timestamp_milliseconds in metric_timestamps_milliseconds
