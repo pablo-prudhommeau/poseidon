@@ -43,6 +43,7 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelErc20TransferFlow,
     AaveSentinelErc20TransferFlowRecord,
     AaveSentinelIntervalForensicBreakdown,
+    AaveSentinelLiquidationDirection,
     AaveSentinelPositionCheckpoint,
     AaveSentinelRawCapitalFlowEvent,
     AaveSentinelReserveAsset,
@@ -57,6 +58,8 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelWalletTokenBalance,
 )
 from src.core.aavesentinel.aave_sentinel_utils import (
+    compute_account_liquidation_price_usd,
+    compute_account_notional_leverage,
     compute_cycle_gross_pnl_usd,
     compute_index_accrued_interest_token_amount,
     compute_long_liquidation_price_usd,
@@ -206,7 +209,8 @@ def test_resolve_active_strategies_returns_short_only() -> None:
     assert strategies[0].kind == AaveSentinelStrategyKind.SHORT
     assert strategies[0].main_asset_symbol == "BTC.b"
     assert strategies[0].liquidation_price_usd == pytest.approx(80_000.0)
-    assert strategies[0].leverage == pytest.approx(10_000.0 / 3_000.0)
+    assert strategies[0].liquidation_direction == AaveSentinelLiquidationDirection.UPSIDE
+    assert strategies[0].leverage == pytest.approx(7_000.0 / 3_000.0)
 
 
 def test_resolve_active_strategies_returns_unlevered_long_at_one_x() -> None:
@@ -244,9 +248,10 @@ def test_resolve_active_strategies_returns_unlevered_long_at_one_x() -> None:
     assert len(strategies) == 1
     assert strategies[0].kind == AaveSentinelStrategyKind.LONG
     assert strategies[0].main_asset_symbol == "BTC.b"
-    assert strategies[0].leverage == pytest.approx(1.0)
+    assert strategies[0].leverage == pytest.approx(4_000.0 / 9_000.0)
     assert strategies[0].debt_usd == pytest.approx(0.0)
     assert strategies[0].liquidation_price_usd == pytest.approx(0.0)
+    assert strategies[0].liquidation_direction is None
 
 
 def test_resolve_active_strategies_returns_short_and_long_concurrently() -> None:
@@ -283,6 +288,187 @@ def test_resolve_active_strategies_returns_short_and_long_concurrently() -> None
     )
     strategy_kinds = {strategy.kind for strategy in strategies}
     assert strategy_kinds == {AaveSentinelStrategyKind.SHORT, AaveSentinelStrategyKind.LONG}
+
+
+def test_account_liquidation_price_matches_short_and_long_special_cases() -> None:
+    short_account_liquidation_price = compute_account_liquidation_price_usd(
+        main_asset_supply_token_amount=0.0,
+        main_asset_supply_liquidation_threshold=0.0,
+        main_asset_debt_token_amount=0.10,
+        other_collateral_liquidation_capacity_usd=10_000.0 * 0.80,
+        other_debt_usd=0.0,
+    )
+    assert short_account_liquidation_price.liquidation_price_usd == pytest.approx(80_000.0)
+    assert short_account_liquidation_price.liquidation_direction == AaveSentinelLiquidationDirection.UPSIDE
+    assert compute_short_liquidation_price_usd(
+        stable_collateral_usd=10_000.0,
+        weighted_stable_collateral_liquidation_threshold=0.80,
+        volatile_debt_token_amount=0.10,
+    ) == pytest.approx(80_000.0)
+
+    long_account_liquidation_price = compute_account_liquidation_price_usd(
+        main_asset_supply_token_amount=0.20,
+        main_asset_supply_liquidation_threshold=0.70,
+        main_asset_debt_token_amount=0.0,
+        other_collateral_liquidation_capacity_usd=0.0,
+        other_debt_usd=8_000.0,
+    )
+    assert long_account_liquidation_price.liquidation_price_usd == pytest.approx(8_000.0 / (0.20 * 0.70))
+    assert long_account_liquidation_price.liquidation_direction == AaveSentinelLiquidationDirection.DOWNSIDE
+    assert compute_long_liquidation_price_usd(
+        stable_debt_usd=8_000.0,
+        volatile_collateral_token_amount=0.20,
+        volatile_collateral_liquidation_threshold=0.70,
+    ) == pytest.approx(8_000.0 / (0.20 * 0.70))
+
+    unreachable_account_liquidation_price = compute_account_liquidation_price_usd(
+        main_asset_supply_token_amount=0.20,
+        main_asset_supply_liquidation_threshold=0.75,
+        main_asset_debt_token_amount=0.15,
+        other_collateral_liquidation_capacity_usd=5_000.0,
+        other_debt_usd=0.0,
+    )
+    assert unreachable_account_liquidation_price.liquidation_price_usd == pytest.approx(0.0)
+    assert unreachable_account_liquidation_price.liquidation_direction is None
+    assert compute_account_notional_leverage(notional_usd=15_125.30, aave_net_worth_usd=6_957.90) == pytest.approx(
+        15_125.30 / 6_957.90
+    )
+
+
+def test_resolve_active_strategies_assigns_account_liquidation_on_delta_neutral() -> None:
+    bitcoin_spot_price_usd: float = 85_174.67
+    bitcoin_supply_token_amount: float = 0.1774780
+    bitcoin_debt_token_amount: float = 0.1775798
+    usdc_supply_value_usd: float = 6_966.57
+    bitcoin_supply_value_usd: float = bitcoin_supply_token_amount * bitcoin_spot_price_usd
+    bitcoin_debt_value_usd: float = bitcoin_debt_token_amount * bitcoin_spot_price_usd
+    strategies = resolve_active_strategies(
+        detected_assets=[
+            AaveSentinelAssetSnapshot(
+                symbol="USDC",
+                underlying_address=USDC_CONTRACT_ADDRESS,
+                supply_amount=usdc_supply_value_usd,
+                debt_amount=0.0,
+                wallet_amount=0.0,
+                supply_value_usd=usdc_supply_value_usd,
+                debt_value_usd=0.0,
+                wallet_value_usd=0.0,
+                supply_annual_percentage_yield=0.0,
+                borrow_annual_percentage_yield=0.0,
+                liquidation_threshold=0.78,
+            ),
+            AaveSentinelAssetSnapshot(
+                symbol="BTC.b",
+                underlying_address=BTC_CONTRACT_ADDRESS,
+                supply_amount=bitcoin_supply_token_amount,
+                debt_amount=bitcoin_debt_token_amount,
+                wallet_amount=0.0,
+                supply_value_usd=bitcoin_supply_value_usd,
+                debt_value_usd=bitcoin_debt_value_usd,
+                wallet_value_usd=0.0,
+                supply_annual_percentage_yield=0.0,
+                borrow_annual_percentage_yield=0.0,
+                liquidation_threshold=0.75,
+            ),
+        ],
+        reserve_registry=build_test_reserve_registry(),
+    )
+    short_strategy = next(
+        strategy for strategy in strategies if strategy.kind == AaveSentinelStrategyKind.SHORT
+    )
+    long_strategy = next(
+        strategy for strategy in strategies if strategy.kind == AaveSentinelStrategyKind.LONG
+    )
+    aave_net_worth_usd: float = (
+            usdc_supply_value_usd + bitcoin_supply_value_usd - bitcoin_debt_value_usd
+    )
+    expected_liquidation_price_usd: float = (
+            usdc_supply_value_usd * 0.78
+    ) / (bitcoin_debt_token_amount - bitcoin_supply_token_amount * 0.75)
+    assert short_strategy.liquidation_price_usd == pytest.approx(expected_liquidation_price_usd)
+    assert short_strategy.liquidation_direction == AaveSentinelLiquidationDirection.UPSIDE
+    assert long_strategy.liquidation_price_usd == pytest.approx(0.0)
+    assert long_strategy.liquidation_direction is None
+    assert short_strategy.leverage == pytest.approx(bitcoin_debt_value_usd / aave_net_worth_usd)
+    assert long_strategy.leverage == pytest.approx(bitcoin_supply_value_usd / aave_net_worth_usd)
+    assert short_strategy.leverage == pytest.approx(2.17, abs=0.02)
+    assert long_strategy.leverage == pytest.approx(2.17, abs=0.02)
+
+
+def test_parallel_short_and_long_ignore_strategy_capital_reshuffle() -> None:
+    checkpoints = [
+        AaveSentinelPositionCheckpoint(
+            block_number=1,
+            timestamp_seconds=100,
+            active_strategy_kinds=[AaveSentinelStrategyKind.SHORT, AaveSentinelStrategyKind.LONG],
+            short_main_asset_symbol="BTC.b",
+            long_main_asset_symbol="BTC.b",
+            short_strategy_equity_usd=7_000.0,
+            long_strategy_equity_usd=15_000.0,
+            cumulative_short_strategy_capital_usd=7_000.0,
+            cumulative_long_strategy_capital_usd=15_000.0,
+            equity_usd=22_000.0,
+            wallet_equity_usd=0.0,
+            cumulative_external_capital_usd=22_000.0,
+        ),
+        AaveSentinelPositionCheckpoint(
+            block_number=2,
+            timestamp_seconds=200,
+            active_strategy_kinds=[AaveSentinelStrategyKind.SHORT, AaveSentinelStrategyKind.LONG],
+            short_main_asset_symbol="BTC.b",
+            long_main_asset_symbol="BTC.b",
+            short_strategy_equity_usd=6_000.0,
+            long_strategy_equity_usd=15_000.0,
+            cumulative_short_strategy_capital_usd=6_000.0,
+            cumulative_long_strategy_capital_usd=15_000.0,
+            equity_usd=21_000.0,
+            wallet_equity_usd=1_000.0,
+            cumulative_external_capital_usd=22_000.0,
+        ),
+        AaveSentinelPositionCheckpoint(
+            block_number=3,
+            timestamp_seconds=300,
+            active_strategy_kinds=[AaveSentinelStrategyKind.SHORT, AaveSentinelStrategyKind.LONG],
+            short_main_asset_symbol="BTC.b",
+            long_main_asset_symbol="BTC.b",
+            short_strategy_equity_usd=6_000.0,
+            long_strategy_equity_usd=16_000.0,
+            cumulative_short_strategy_capital_usd=6_000.0,
+            cumulative_long_strategy_capital_usd=16_000.0,
+            equity_usd=22_000.0,
+            wallet_equity_usd=0.0,
+            cumulative_external_capital_usd=22_000.0,
+        ),
+        AaveSentinelPositionCheckpoint(
+            block_number=4,
+            timestamp_seconds=400,
+            active_strategy_kinds=[AaveSentinelStrategyKind.SHORT, AaveSentinelStrategyKind.LONG],
+            short_main_asset_symbol="BTC.b",
+            long_main_asset_symbol="BTC.b",
+            short_strategy_equity_usd=5_000.0,
+            long_strategy_equity_usd=17_000.0,
+            cumulative_short_strategy_capital_usd=6_000.0,
+            cumulative_long_strategy_capital_usd=16_000.0,
+            equity_usd=22_000.0,
+            wallet_equity_usd=0.0,
+            cumulative_external_capital_usd=22_000.0,
+        ),
+    ]
+    strategy_cycles = build_strategy_cycles_from_checkpoints(position_checkpoints=checkpoints)
+    short_cycle = next(
+        strategy_cycle
+        for strategy_cycle in strategy_cycles
+        if strategy_cycle.kind == AaveSentinelStrategyKind.SHORT
+    )
+    long_cycle = next(
+        strategy_cycle
+        for strategy_cycle in strategy_cycles
+        if strategy_cycle.kind == AaveSentinelStrategyKind.LONG
+    )
+    assert short_cycle.gross_pnl_usd == pytest.approx(-1_000.0)
+    assert long_cycle.gross_pnl_usd == pytest.approx(1_000.0)
+    assert short_cycle.is_open is True
+    assert long_cycle.is_open is True
 
 
 def test_index_accrual_and_trading_pnl_formula() -> None:
@@ -925,6 +1111,46 @@ def test_short_cycle_keeps_average_entry_price_when_size_decreases() -> None:
         if strategy_cycle.kind == AaveSentinelStrategyKind.SHORT
     )
     assert short_cycle.entry_main_asset_price_usd == pytest.approx(63000.0)
+    assert short_cycle.realized_size_reduction_pnl_usd == pytest.approx(0.6 * (63000.0 - 67000.0))
+    assert short_cycle.remaining_main_asset_token_amount == pytest.approx(0.4)
+
+
+def test_short_cycle_realizes_size_reduction_without_changing_average_entry_price() -> None:
+    ray_units: float = float(RAY_UNITS)
+    reserve_registry = build_test_reserve_registry()
+    strategy_cycles = build_strategy_cycles_from_checkpoints(
+        position_checkpoints=[
+            _build_btc_strategy_checkpoint(
+                block_number=1,
+                timestamp_seconds=100,
+                strategy_kind=AaveSentinelStrategyKind.SHORT,
+                btc_price_usd=66_000.0,
+                btc_debt_token_amount=1.0,
+                btc_supply_token_amount=0.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+            _build_btc_strategy_checkpoint(
+                block_number=2,
+                timestamp_seconds=200,
+                strategy_kind=AaveSentinelStrategyKind.SHORT,
+                btc_price_usd=85_000.0,
+                btc_debt_token_amount=0.9,
+                btc_supply_token_amount=0.0,
+                variable_borrow_index=ray_units,
+                liquidity_index=ray_units,
+            ),
+        ],
+        reserve_registry=reserve_registry,
+    )
+    short_cycle = next(
+        strategy_cycle
+        for strategy_cycle in strategy_cycles
+        if strategy_cycle.kind == AaveSentinelStrategyKind.SHORT
+    )
+    assert short_cycle.entry_main_asset_price_usd == pytest.approx(66_000.0)
+    assert short_cycle.realized_size_reduction_pnl_usd == pytest.approx(0.1 * (66_000.0 - 85_000.0))
+    assert short_cycle.remaining_main_asset_token_amount == pytest.approx(0.9)
 
 
 def test_short_cycle_ignores_index_interest_when_averaging_entry_price() -> None:

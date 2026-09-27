@@ -377,8 +377,16 @@ def compute_interval_fresh_capital_adjusted_strategy_pnl_usd(
         )
         if len(continuing_strategy_kinds) == 1:
             return remaining_wallet_boundary_delta_usd
-        return strategy_equity_delta_usd
-    return strategy_equity_delta_usd
+        return _compute_position_only_strategy_pnl_usd(
+            previous_checkpoint=previous_checkpoint,
+            current_checkpoint=current_checkpoint,
+            strategy_kind=strategy_kind,
+        )
+    return _compute_position_only_strategy_pnl_usd(
+        previous_checkpoint=previous_checkpoint,
+        current_checkpoint=current_checkpoint,
+        strategy_kind=strategy_kind,
+    )
 
 
 def apply_fresh_capital_adjusted_pnl_to_strategy_cycles(

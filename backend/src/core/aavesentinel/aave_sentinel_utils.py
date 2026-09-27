@@ -4,7 +4,9 @@ from decimal import Decimal
 
 from src.core.aavesentinel.aave_sentinel_constants import TOKEN_AMOUNT_DUST_EPSILON
 from src.core.aavesentinel.aave_sentinel_structures import (
+    AaveSentinelAccountLiquidationPrice,
     AaveSentinelAssetSnapshot,
+    AaveSentinelLiquidationDirection,
     AaveSentinelUniversalLedgerEntry,
 )
 from src.integrations.aave.aave_abis import RAY_UNITS, SECONDS_PER_YEAR
@@ -98,6 +100,52 @@ def compute_strategy_leverage(
     return collateral_usd / strategy_equity_usd
 
 
+def compute_account_notional_leverage(
+        notional_usd: float,
+        aave_net_worth_usd: float,
+) -> float:
+    if aave_net_worth_usd <= 0:
+        return 0.0
+    return notional_usd / aave_net_worth_usd
+
+
+def compute_account_liquidation_price_usd(
+        main_asset_supply_token_amount: float,
+        main_asset_supply_liquidation_threshold: float,
+        main_asset_debt_token_amount: float,
+        other_collateral_liquidation_capacity_usd: float,
+        other_debt_usd: float,
+) -> AaveSentinelAccountLiquidationPrice:
+    liquidation_denominator_token_amount: float = (
+            main_asset_debt_token_amount
+            - main_asset_supply_token_amount * main_asset_supply_liquidation_threshold
+    )
+    if abs(liquidation_denominator_token_amount) <= TOKEN_AMOUNT_DUST_EPSILON:
+        return AaveSentinelAccountLiquidationPrice(
+            liquidation_price_usd=0.0,
+            liquidation_direction=None,
+        )
+
+    liquidation_numerator_usd: float = other_collateral_liquidation_capacity_usd - other_debt_usd
+    computed_liquidation_price_usd: float = (
+            liquidation_numerator_usd / liquidation_denominator_token_amount
+    )
+    if computed_liquidation_price_usd <= 0.0:
+        return AaveSentinelAccountLiquidationPrice(
+            liquidation_price_usd=0.0,
+            liquidation_direction=None,
+        )
+    if liquidation_denominator_token_amount > 0.0:
+        return AaveSentinelAccountLiquidationPrice(
+            liquidation_price_usd=computed_liquidation_price_usd,
+            liquidation_direction=AaveSentinelLiquidationDirection.UPSIDE,
+        )
+    return AaveSentinelAccountLiquidationPrice(
+        liquidation_price_usd=computed_liquidation_price_usd,
+        liquidation_direction=AaveSentinelLiquidationDirection.DOWNSIDE,
+    )
+
+
 def compute_short_liquidation_price_usd(
         stable_collateral_usd: float,
         weighted_stable_collateral_liquidation_threshold: float,
@@ -105,9 +153,16 @@ def compute_short_liquidation_price_usd(
 ) -> float:
     if volatile_debt_token_amount <= 0 or weighted_stable_collateral_liquidation_threshold <= 0:
         return 0.0
-    return (
-            stable_collateral_usd * weighted_stable_collateral_liquidation_threshold
-    ) / volatile_debt_token_amount
+    account_liquidation_price: AaveSentinelAccountLiquidationPrice = compute_account_liquidation_price_usd(
+        main_asset_supply_token_amount=0.0,
+        main_asset_supply_liquidation_threshold=0.0,
+        main_asset_debt_token_amount=volatile_debt_token_amount,
+        other_collateral_liquidation_capacity_usd=(
+                stable_collateral_usd * weighted_stable_collateral_liquidation_threshold
+        ),
+        other_debt_usd=0.0,
+    )
+    return account_liquidation_price.liquidation_price_usd
 
 
 def compute_long_liquidation_price_usd(
@@ -120,9 +175,14 @@ def compute_long_liquidation_price_usd(
             or volatile_collateral_liquidation_threshold <= 0
     ):
         return 0.0
-    return stable_debt_usd / (
-            volatile_collateral_token_amount * volatile_collateral_liquidation_threshold
+    account_liquidation_price: AaveSentinelAccountLiquidationPrice = compute_account_liquidation_price_usd(
+        main_asset_supply_token_amount=volatile_collateral_token_amount,
+        main_asset_supply_liquidation_threshold=volatile_collateral_liquidation_threshold,
+        main_asset_debt_token_amount=0.0,
+        other_collateral_liquidation_capacity_usd=0.0,
+        other_debt_usd=stable_debt_usd,
     )
+    return account_liquidation_price.liquidation_price_usd
 
 
 def decode_aave_reserve_liquidation_threshold(configuration_bitmap: int) -> float:

@@ -6,6 +6,7 @@ from datetime import datetime
 from src.core.aavesentinel.notification.aave_sentinel_notification_service import AaveSentinelNotificationService
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelCapitalFlowSummary,
+    AaveSentinelLiquidationDirection,
     AaveSentinelNonTradingMovementSource,
     AaveSentinelNonTradingPeriodSourceBreakdown,
     AaveSentinelPerformanceSummary,
@@ -488,5 +489,115 @@ def test_format_notification_message_always_shows_strategies_section() -> None:
         assert "💵 PnL :" in formatted_message
         assert "🚀" in formatted_message
         assert "0.00 € · $0.00" in formatted_message
+
+    asyncio.run(run_test())
+
+
+def test_format_notification_message_shows_upside_liquidation_direction() -> None:
+    async def run_test() -> None:
+        notification_service = AaveSentinelNotificationService()
+
+        async def resolve_exchange_rate() -> float:
+            return 1.0
+
+        notification_service._fetch_usd_eur_exchange_rate = resolve_exchange_rate
+        formatted_message = await notification_service.format_notification_message(
+            position_snapshot=AaveSentinelPositionSnapshot(
+                health_factor=1.11,
+                total_collateral_usd=22_083.0,
+                total_debt_usd=15_125.0,
+                strategies=[
+                    AaveSentinelStrategy(
+                        kind=AaveSentinelStrategyKind.SHORT,
+                        main_asset_symbol="BTC.b",
+                        main_asset_price_usd=85_174.67,
+                        liquidation_price_usd=122_189.0,
+                        leverage=2.17,
+                        collateral_usd=6_966.57,
+                        debt_usd=15_125.0,
+                        liquidation_direction=AaveSentinelLiquidationDirection.UPSIDE,
+                    ),
+                    AaveSentinelStrategy(
+                        kind=AaveSentinelStrategyKind.LONG,
+                        main_asset_symbol="BTC.b",
+                        main_asset_price_usd=85_174.67,
+                        liquidation_price_usd=0.0,
+                        leverage=2.17,
+                        collateral_usd=15_116.0,
+                        debt_usd=0.0,
+                    ),
+                ],
+            ),
+            capital_flow_summary=AaveSentinelCapitalFlowSummary(),
+            performance_summary=AaveSentinelPerformanceSummary(is_available=True),
+        )
+        assert "💀 $122,189.00 ↑" in formatted_message
+        assert "📉 <b>SHORT</b> BTC.b" in formatted_message
+        assert "📈 <b>LONG</b> BTC.b" in formatted_message
+        long_block_index: int = formatted_message.index("📈 <b>LONG</b> BTC.b")
+        long_block: str = formatted_message[long_block_index:]
+        assert "💀" not in long_block.split("Positions AAVE")[0]
+
+    asyncio.run(run_test())
+
+
+def test_format_pnl_detail_message_shows_realized_and_latent_on_open_short_cycle() -> None:
+    async def run_test() -> None:
+        notification_service = AaveSentinelNotificationService()
+
+        async def resolve_exchange_rate() -> float:
+            return 1.0
+
+        notification_service._fetch_usd_eur_exchange_rate = resolve_exchange_rate
+        formatted_message = await notification_service.format_pnl_detail_message(
+            performance_summary=AaveSentinelPerformanceSummary(
+                is_available=True,
+                strategy_cycles=[
+                    AaveSentinelStrategyCycleSummary(
+                        kind=AaveSentinelStrategyKind.SHORT,
+                        main_asset_symbol="BTC.b",
+                        leverage=2.17,
+                        opened_at_timestamp_seconds=1_700_000_000,
+                        is_open=True,
+                        opening_block_number=1,
+                        gross_pnl_usd=-3_400.0,
+                        entry_main_asset_price_usd=66_000.0,
+                        realized_size_reduction_pnl_usd=-1_900.0,
+                        remaining_main_asset_token_amount=0.10,
+                        absorbed_source_breakdowns=[
+                            AaveSentinelNonTradingPeriodSourceBreakdown(
+                                source=AaveSentinelNonTradingMovementSource.INTEREST_ACCRUAL,
+                                pnl_usd=150.0,
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            position_snapshot=AaveSentinelPositionSnapshot(
+                health_factor=1.11,
+                total_collateral_usd=22_000.0,
+                total_debt_usd=15_000.0,
+                strategies=[
+                    AaveSentinelStrategy(
+                        kind=AaveSentinelStrategyKind.SHORT,
+                        main_asset_symbol="BTC.b",
+                        main_asset_price_usd=85_000.0,
+                        liquidation_price_usd=122_000.0,
+                        leverage=2.17,
+                        collateral_usd=7_000.0,
+                        debt_usd=15_000.0,
+                    ),
+                ],
+            ),
+        )
+        brut_line_index: int = formatted_message.index("• Brut :")
+        realized_line_index: int = formatted_message.index("◦ Réalisé :")
+        latent_line_index: int = formatted_message.index("◦ Latent :")
+        next_breakdown_line_index: int = formatted_message.index("• Dont intérêts :")
+        assert brut_line_index < realized_line_index < latent_line_index < next_breakdown_line_index
+        assert "        ◦ Réalisé : <code>-1,900.00 € ($-1,900.00)</code>" in formatted_message
+        assert "        ◦ Latent : <code>-1,900.00 € ($-1,900.00)</code>" in formatted_message
+        assert "allègement" not in formatted_message
+        assert "position restante" not in formatted_message
 
     asyncio.run(run_test())

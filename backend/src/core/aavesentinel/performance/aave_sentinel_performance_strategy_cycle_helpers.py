@@ -11,6 +11,7 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelReserveInterestBreakdown,
     AaveSentinelReserveRegistry,
     AaveSentinelReserveScaledBalanceState,
+    AaveSentinelStrategyCycleEntryMetrics,
     AaveSentinelStrategyCycleSummary,
     AaveSentinelStrategyKind,
     AaveSentinelUnallocatedWealthMovement,
@@ -340,36 +341,44 @@ def _compute_main_asset_quantity_change_excluding_interest(
     return current_token_amount - accrued_token_amount
 
 
-def compute_strategy_cycle_average_entry_price_usd(
+def compute_strategy_cycle_entry_metrics(
         cycle_checkpoints: list[AaveSentinelPositionCheckpoint],
         strategy_kind: AaveSentinelStrategyKind,
         main_asset_symbol: Optional[str],
         reserve_registry: Optional[AaveSentinelReserveRegistry],
         fallback_opening_price_usd: float,
-) -> float:
+) -> AaveSentinelStrategyCycleEntryMetrics:
+    empty_entry_metrics = AaveSentinelStrategyCycleEntryMetrics(
+        average_entry_price_usd=fallback_opening_price_usd,
+        realized_size_reduction_pnl_usd=0.0,
+        remaining_main_asset_token_amount=0.0,
+    )
     if main_asset_symbol is None or reserve_registry is None or not cycle_checkpoints:
-        return fallback_opening_price_usd
+        return empty_entry_metrics
     reserve_asset = _resolve_reserve_asset_for_symbol(
         reserve_registry=reserve_registry,
         asset_symbol=main_asset_symbol,
     )
     if reserve_asset is None:
-        return fallback_opening_price_usd
+        return empty_entry_metrics
 
     average_entry_price_usd: Optional[float] = None
+    realized_size_reduction_pnl_usd: float = 0.0
+    remaining_main_asset_token_amount: float = 0.0
     previous_checkpoint: Optional[AaveSentinelPositionCheckpoint] = None
     for position_checkpoint in cycle_checkpoints:
+        remaining_main_asset_token_amount = _resolve_main_asset_position_token_amount(
+            position_checkpoint=position_checkpoint,
+            underlying_address=reserve_asset.underlying_address,
+            strategy_kind=strategy_kind,
+        )
         oracle_price_usd: float = resolve_asset_price_usd_for_symbol(
             asset_prices_usd=position_checkpoint.asset_prices_usd,
             asset_symbol=main_asset_symbol,
             reserve_registry=reserve_registry,
         )
         if previous_checkpoint is None:
-            opening_token_amount: float = _resolve_main_asset_position_token_amount(
-                position_checkpoint=position_checkpoint,
-                underlying_address=reserve_asset.underlying_address,
-                strategy_kind=strategy_kind,
-            )
+            opening_token_amount: float = remaining_main_asset_token_amount
             if opening_token_amount >= TOKEN_AMOUNT_DUST_EPSILON and oracle_price_usd > 0:
                 average_entry_price_usd = oracle_price_usd
                 logger.debug(
@@ -386,7 +395,7 @@ def compute_strategy_cycle_average_entry_price_usd(
             continue
 
         resolved_previous_checkpoint: AaveSentinelPositionCheckpoint = previous_checkpoint
-        quantity_increase: float = _compute_main_asset_quantity_change_excluding_interest(
+        quantity_change: float = _compute_main_asset_quantity_change_excluding_interest(
             previous_checkpoint=resolved_previous_checkpoint,
             current_checkpoint=position_checkpoint,
             underlying_address=reserve_asset.underlying_address,
@@ -398,7 +407,7 @@ def compute_strategy_cycle_average_entry_price_usd(
             strategy_kind=strategy_kind,
         )
         if (
-                quantity_increase > TOKEN_AMOUNT_DUST_EPSILON
+                quantity_change > TOKEN_AMOUNT_DUST_EPSILON
                 and oracle_price_usd > 0
                 and current_reserve_index is not None
         ):
@@ -416,23 +425,57 @@ def compute_strategy_cycle_average_entry_price_usd(
             else:
                 average_entry_price_usd = (
                     previous_accrued_token_amount * average_entry_price_usd
-                    + quantity_increase * oracle_price_usd
-                ) / (previous_accrued_token_amount + quantity_increase)
+                    + quantity_change * oracle_price_usd
+                ) / (previous_accrued_token_amount + quantity_change)
             logger.debug(
                 "[AAVESENTINEL][PERFORMANCE][CYCLE][ENTRY] kind=%s asset=%s timestamp_seconds=%d "
                 "quantity_increase=%0.8f oracle_price_usd=%0.2f average_entry_price_usd=%0.2f",
                 strategy_kind.value,
                 main_asset_symbol,
                 position_checkpoint.timestamp_seconds,
-                quantity_increase,
+                quantity_change,
                 oracle_price_usd,
                 average_entry_price_usd,
+            )
+        elif (
+                quantity_change < -TOKEN_AMOUNT_DUST_EPSILON
+                and average_entry_price_usd is not None
+                and oracle_price_usd > 0
+        ):
+            reduced_token_amount: float = -quantity_change
+            if strategy_kind == AaveSentinelStrategyKind.SHORT:
+                realized_size_reduction_pnl_usd += reduced_token_amount * (
+                        average_entry_price_usd - oracle_price_usd
+                )
+            else:
+                realized_size_reduction_pnl_usd += reduced_token_amount * (
+                        oracle_price_usd - average_entry_price_usd
+                )
+            logger.debug(
+                "[AAVESENTINEL][PERFORMANCE][CYCLE][ENTRY] kind=%s asset=%s timestamp_seconds=%d "
+                "quantity_decrease=%0.8f oracle_price_usd=%0.2f average_entry_price_usd=%0.2f "
+                "realized_size_reduction_pnl_usd=%0.2f",
+                strategy_kind.value,
+                main_asset_symbol,
+                position_checkpoint.timestamp_seconds,
+                reduced_token_amount,
+                oracle_price_usd,
+                average_entry_price_usd,
+                realized_size_reduction_pnl_usd,
             )
         previous_checkpoint = position_checkpoint
 
     if average_entry_price_usd is None or average_entry_price_usd <= 0:
-        return fallback_opening_price_usd
-    return average_entry_price_usd
+        return AaveSentinelStrategyCycleEntryMetrics(
+            average_entry_price_usd=fallback_opening_price_usd,
+            realized_size_reduction_pnl_usd=realized_size_reduction_pnl_usd,
+            remaining_main_asset_token_amount=remaining_main_asset_token_amount,
+        )
+    return AaveSentinelStrategyCycleEntryMetrics(
+        average_entry_price_usd=average_entry_price_usd,
+        realized_size_reduction_pnl_usd=realized_size_reduction_pnl_usd,
+        remaining_main_asset_token_amount=remaining_main_asset_token_amount,
+    )
 
 
 def _build_strategy_cycle_summary(
@@ -501,7 +544,7 @@ def _build_strategy_cycle_summary(
         asset_symbol=main_asset_symbol,
         reserve_registry=reserve_registry,
     )
-    entry_main_asset_price_usd = compute_strategy_cycle_average_entry_price_usd(
+    cycle_entry_metrics: AaveSentinelStrategyCycleEntryMetrics = compute_strategy_cycle_entry_metrics(
         cycle_checkpoints=cycle_checkpoints,
         strategy_kind=strategy_kind,
         main_asset_symbol=main_asset_symbol,
@@ -534,6 +577,8 @@ def _build_strategy_cycle_summary(
         silent_mark_to_market_usd=silent_mark_to_market_usd,
         interest_usd=0.0,
         trading_pnl_usd=gross_pnl_usd,
-        entry_main_asset_price_usd=entry_main_asset_price_usd,
+        entry_main_asset_price_usd=cycle_entry_metrics.average_entry_price_usd,
         exit_main_asset_price_usd=exit_main_asset_price_usd,
+        realized_size_reduction_pnl_usd=cycle_entry_metrics.realized_size_reduction_pnl_usd,
+        remaining_main_asset_token_amount=cycle_entry_metrics.remaining_main_asset_token_amount,
     )

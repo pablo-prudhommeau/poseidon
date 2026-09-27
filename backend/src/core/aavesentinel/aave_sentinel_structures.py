@@ -14,6 +14,11 @@ class AaveSentinelStrategyKind(str, Enum):
     SHORT = "SHORT"
 
 
+class AaveSentinelLiquidationDirection(str, Enum):
+    UPSIDE = "UPSIDE"
+    DOWNSIDE = "DOWNSIDE"
+
+
 class AaveSentinelNonTradingMovementSource(str, Enum):
     INTEREST_ACCRUAL = "INTEREST_ACCRUAL"
     GAS_FEES = "GAS_FEES"
@@ -60,6 +65,17 @@ class AaveSentinelAssetSnapshot(BaseModel):
     liquidation_threshold: float = 0.0
 
 
+class AaveSentinelAccountLiquidationPrice(BaseModel):
+    liquidation_price_usd: float
+    liquidation_direction: Optional[AaveSentinelLiquidationDirection] = None
+
+
+class AaveSentinelStrategyCycleEntryMetrics(BaseModel):
+    average_entry_price_usd: float
+    realized_size_reduction_pnl_usd: float
+    remaining_main_asset_token_amount: float
+
+
 class AaveSentinelStrategy(BaseModel):
     kind: AaveSentinelStrategyKind
     main_asset_symbol: str
@@ -68,6 +84,7 @@ class AaveSentinelStrategy(BaseModel):
     leverage: float
     collateral_usd: float
     debt_usd: float
+    liquidation_direction: Optional[AaveSentinelLiquidationDirection] = None
 
 
 class AaveSentinelPositionSnapshot(BaseModel):
@@ -293,6 +310,8 @@ class AaveSentinelStrategyCycleSummary(BaseModel):
     trading_pnl_usd: float = 0.0
     entry_main_asset_price_usd: float = 0.0
     exit_main_asset_price_usd: Optional[float] = None
+    realized_size_reduction_pnl_usd: float = 0.0
+    remaining_main_asset_token_amount: float = 0.0
     absorbed_source_breakdowns: list[AaveSentinelNonTradingPeriodSourceBreakdown] = Field(
         default_factory=list,
     )

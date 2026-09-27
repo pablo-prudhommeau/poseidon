@@ -40,6 +40,13 @@ def _format_breakdown_bullet_line(source_label: str, formatted_monetary_values: 
     )
 
 
+def _format_nested_breakdown_bullet_line(source_label: str, formatted_monetary_values: str) -> str:
+    return (
+        f"        ◦ {source_label} : "
+        f"<code>{formatted_monetary_values}</code>"
+    )
+
+
 def _resolve_visible_source_breakdowns(
         source_breakdowns: list[AaveSentinelNonTradingPeriodSourceBreakdown],
 ) -> list[AaveSentinelNonTradingPeriodSourceBreakdown]:
@@ -61,13 +68,15 @@ def _append_pnl_breakdown_bullet_lines(
         total_pnl_usd: float,
         source_breakdowns: list[AaveSentinelNonTradingPeriodSourceBreakdown],
         format_monetary_values: Callable[[float], str],
+        nested_brut_lines: Optional[list[str]] = None,
 ) -> None:
     visible_source_breakdowns: list[AaveSentinelNonTradingPeriodSourceBreakdown] = (
         _resolve_visible_source_breakdowns(
             source_breakdowns=source_breakdowns,
         )
     )
-    if not visible_source_breakdowns:
+    resolved_nested_brut_lines: list[str] = [] if nested_brut_lines is None else nested_brut_lines
+    if not visible_source_breakdowns and not resolved_nested_brut_lines:
         return
     visible_breakdown_pnl_usd: float = sum(
         source_breakdown.pnl_usd
@@ -80,6 +89,7 @@ def _append_pnl_breakdown_bullet_lines(
             formatted_monetary_values=format_monetary_values(brut_pnl_usd),
         )
     )
+    movement_lines.extend(resolved_nested_brut_lines)
     for source_breakdown in visible_source_breakdowns:
         source_label: str = _resolve_non_trading_source_display_label(
             source=source_breakdown.source,
@@ -456,6 +466,49 @@ def _resolve_strategy_cycle_period_end_label(
     return latest_aave_position_snapshot_at.astimezone().strftime("%d/%m/%Y %H:%M")
 
 
+def _build_open_strategy_size_reduction_lines(
+        strategy_cycle: AaveSentinelStrategyCycleSummary,
+        position_snapshot: Optional[AaveSentinelPositionSnapshot],
+        format_monetary_values: Callable[[float], str],
+) -> list[str]:
+    if not strategy_cycle.is_open:
+        return []
+    if abs(strategy_cycle.realized_size_reduction_pnl_usd) < NON_TRADING_MOVEMENT_DISPLAY_EPSILON_USD:
+        return []
+    size_reduction_lines: list[str] = [
+        _format_nested_breakdown_bullet_line(
+            source_label="Réalisé",
+            formatted_monetary_values=format_monetary_values(
+                strategy_cycle.realized_size_reduction_pnl_usd,
+            ),
+        ),
+    ]
+    open_strategy_mark_price_usd: Optional[float] = _resolve_open_strategy_mark_price_usd(
+        strategy_cycle=strategy_cycle,
+        position_snapshot=position_snapshot,
+    )
+    if open_strategy_mark_price_usd is None or strategy_cycle.entry_main_asset_price_usd <= 0:
+        return size_reduction_lines
+    remaining_mark_price_delta_usd: float = (
+            open_strategy_mark_price_usd - strategy_cycle.entry_main_asset_price_usd
+    )
+    if strategy_cycle.kind == AaveSentinelStrategyKind.SHORT:
+        latent_remaining_position_pnl_usd: float = (
+                -strategy_cycle.remaining_main_asset_token_amount * remaining_mark_price_delta_usd
+        )
+    else:
+        latent_remaining_position_pnl_usd = (
+                strategy_cycle.remaining_main_asset_token_amount * remaining_mark_price_delta_usd
+        )
+    size_reduction_lines.append(
+        _format_nested_breakdown_bullet_line(
+            source_label="Latent",
+            formatted_monetary_values=format_monetary_values(latent_remaining_position_pnl_usd),
+        )
+    )
+    return size_reduction_lines
+
+
 def _build_strategy_cycle_movement_lines(
         strategy_cycle: AaveSentinelStrategyCycleSummary,
         format_monetary_values: Callable[[float], str],
@@ -498,6 +551,11 @@ def _build_strategy_cycle_movement_lines(
         total_pnl_usd=strategy_cycle.gross_pnl_usd,
         source_breakdowns=strategy_cycle.absorbed_source_breakdowns,
         format_monetary_values=format_monetary_values,
+        nested_brut_lines=_build_open_strategy_size_reduction_lines(
+            strategy_cycle=strategy_cycle,
+            position_snapshot=position_snapshot,
+            format_monetary_values=format_monetary_values,
+        ),
     )
     return cycle_lines
 

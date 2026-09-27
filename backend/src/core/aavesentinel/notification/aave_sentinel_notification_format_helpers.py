@@ -5,6 +5,7 @@ from typing import Callable, Optional
 from src.configuration.config import settings
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelCapitalFlowSummary,
+    AaveSentinelLiquidationDirection,
     AaveSentinelPerformanceSummary,
     AaveSentinelPositionSnapshot,
     AaveSentinelStrategy,
@@ -175,14 +176,19 @@ def _build_strategies_section_lines(strategies: list[AaveSentinelStrategy]) -> l
         strategy_detail_parts: list[str] = [
             f"🏷️ {format_currency(strategy.main_asset_price_usd)}",
         ]
-        if strategy.debt_usd > 0 and strategy.liquidation_price_usd > 0:
+        if strategy.liquidation_price_usd > 0:
             distance_to_liquidation: float = 0.0
             if strategy.main_asset_price_usd > 0:
                 distance_to_liquidation = (
                         abs(strategy.main_asset_price_usd - strategy.liquidation_price_usd)
                         / strategy.main_asset_price_usd
                 )
-            strategy_detail_parts.append(f"💀 {format_currency(strategy.liquidation_price_usd)}")
+            liquidation_price_label: str = f"💀 {format_currency(strategy.liquidation_price_usd)}"
+            if strategy.liquidation_direction == AaveSentinelLiquidationDirection.UPSIDE:
+                liquidation_price_label = f"{liquidation_price_label} ↑"
+            elif strategy.liquidation_direction == AaveSentinelLiquidationDirection.DOWNSIDE:
+                liquidation_price_label = f"{liquidation_price_label} ↓"
+            strategy_detail_parts.append(liquidation_price_label)
             strategy_detail_parts.append(f"📏 {format_percent(distance_to_liquidation)}")
         strategy_section_lines.append(
             f"   {_TELEGRAM_DUAL_CURRENCY_SEPARATOR.join(strategy_detail_parts)}"
