@@ -7,6 +7,7 @@ import time
 from src.cache.cache_protocols import RealmRebuilder, CacheRealmRebuildSkipped
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.integrations.blockchain.blockchain_rpc_registry import BlockchainRpcRateLimitedError
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -105,6 +106,11 @@ class CacheInvalidator:
             logger.debug("[CACHE][REBUILD] realm=%s done", realm_candidate.value)
         except CacheRealmRebuildSkipped as exception:
             logger.debug("[CACHE][REBUILD] realm=%s skipped (%s)", realm_candidate.value, exception)
+        except BlockchainRpcRateLimitedError:
+            logger.warning(
+                "[CACHE][REBUILD] realm=%s failed because the RPC endpoint is rate limited",
+                realm_candidate.value,
+            )
         except Exception:
             logger.exception("[CACHE][REBUILD] realm=%s failed", realm_candidate.value)
         finally:

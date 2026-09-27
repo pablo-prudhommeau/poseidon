@@ -360,6 +360,11 @@ class AaveSentinelReserveScaledBalanceState(BaseModel):
     scaled_debt_balance: float = 0.0
 
 
+class AaveSentinelScaledBalanceMemoEntry(BaseModel):
+    lookup_key: AaveSentinelHistoricalAssetPriceLookupKey
+    scaled_balance_state: AaveSentinelReserveScaledBalanceState
+
+
 class AaveSentinelWalletTokenBalance(BaseModel):
     underlying_address: str
     token_amount: float = 0.0

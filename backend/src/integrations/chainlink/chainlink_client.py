@@ -6,7 +6,10 @@ from web3 import AsyncWeb3
 from web3.contract import AsyncContract
 
 from src.core.structures.structures import BlockchainNetwork
-from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
+from src.integrations.blockchain.blockchain_rpc_registry import (
+    BlockchainRpcRateLimitedError,
+    resolve_async_web3_provider_for_chain,
+)
 from src.integrations.chainlink.chainlink_abis import CHAINLINK_AGGREGATOR_V3_ABI
 from src.integrations.chainlink.chainlink_constants import AVALANCHE_EURC_USD_CHAINLINK_FEED_ADDRESS
 from src.logging.logger import get_application_logger
@@ -45,6 +48,12 @@ class ChainlinkClient:
                 normalized_price,
             )
             return normalized_price
+        except BlockchainRpcRateLimitedError:
+            logger.warning(
+                "[CHAINLINK][FX] Historical lookup skipped because the RPC endpoint is rate limited block=%d",
+                block_number,
+            )
+            raise
         except Exception as exception:
             logger.debug(
                 "[CHAINLINK][FX] Historical lookup failed for block %d: %s",

@@ -17,9 +17,14 @@ from src.core.aavesentinel.aave_sentinel_utils import (
     compute_total_strategy_equity_usd,
 )
 from src.core.aavesentinel.cache.aave_sentinel_cache import aave_sentinel_state_cache
-from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import resolve_aave_sentinel_state_for_display
+from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import (
+    is_aave_sentinel_performance_rebuild_pending,
+    resolve_aave_sentinel_state_for_display,
+)
 from src.core.aavesentinel.notification.aave_sentinel_notification_constants import (
+    AAVE_SENTINEL_PNL_PENDING_MESSAGE,
     AAVE_SENTINEL_PNL_NOTIFICATION_TITLE,
+    AAVE_SENTINEL_SNAPSHOT_PENDING_MESSAGE,
     AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
     AAVE_SENTINEL_TELEGRAM_TITLE_BODY_SEPARATOR,
 )
@@ -36,6 +41,7 @@ from src.core.utils.date_utils import get_current_local_datetime
 from src.core.utils.format_utils import format_percent
 from src.integrations.frankfurter.frankfurter_client import FrankfurterClient
 from src.integrations.telegram.telegram_client import (
+    edit_alert as edit_telegram_alert,
     register_bot_commands,
     send_alert as send_telegram_alert,
     send_html_message as send_telegram_html_message,
@@ -51,6 +57,8 @@ class AaveSentinelNotificationService:
     def __init__(self) -> None:
         self._frankfurter_client = FrankfurterClient()
         self._state = AaveSentinelNotificationState()
+        self._pending_snapshot_message_identifiers: list[int] = []
+        self._pending_pnl_message_identifiers: list[int] = []
 
     async def close(self) -> None:
         await self._frankfurter_client.close()
@@ -110,6 +118,38 @@ class AaveSentinelNotificationService:
         except Exception as exception:
             logger.exception("[AAVESENTINEL][TELEGRAM] Alert dispatch failed: %s", exception)
             return None
+
+    async def edit_alert(
+            self,
+            message_identifier: int,
+            title: str,
+            message: str,
+            severity: AaveSentinelAlertSeverity = AaveSentinelAlertSeverity.INFO,
+    ) -> bool:
+        if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHAT_ID:
+            logger.debug("[AAVESENTINEL][TELEGRAM] Alert edit skipped because Telegram credentials are missing")
+            return False
+
+        resolved_emoji_indicator = self._resolve_alert_severity_emoji(alert_severity=severity)
+        try:
+            message_edited = await asyncio.to_thread(
+                edit_telegram_alert,
+                message_id=message_identifier,
+                title=self._format_alert_title(title=title),
+                body=message,
+                emoji_indicator=resolved_emoji_indicator,
+                title_body_separator=AAVE_SENTINEL_TELEGRAM_TITLE_BODY_SEPARATOR,
+            )
+            if message_edited:
+                logger.info(
+                    "[AAVESENTINEL][TELEGRAM] Alert edited: %s message_id=%s",
+                    title,
+                    message_identifier,
+                )
+            return message_edited
+        except Exception as exception:
+            logger.exception("[AAVESENTINEL][TELEGRAM] Alert edit failed: %s", exception)
+            return False
 
     async def send_html_message(self, message: str) -> Optional[int]:
         if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHAT_ID:
@@ -183,7 +223,11 @@ class AaveSentinelNotificationService:
             position_snapshot=position_snapshot,
         )
 
-    async def send_pnl_detail_pages(self, formatted_pages: list[str]) -> None:
+    async def send_pnl_detail_pages(
+            self,
+            formatted_pages: list[str],
+            editable_message_identifier: Optional[int] = None,
+    ) -> None:
         if not formatted_pages:
             return
         total_page_count: int = len(formatted_pages)
@@ -192,13 +236,27 @@ class AaveSentinelNotificationService:
             if total_page_count == 1
             else f"{AAVE_SENTINEL_PNL_NOTIFICATION_TITLE} (1/{total_page_count})"
         )
-        await self.send_alert(
-            first_page_title,
-            formatted_pages[0],
-            AaveSentinelAlertSeverity.INFO,
-        )
+        first_page_edited = False
+        if editable_message_identifier is not None:
+            first_page_edited = await self.edit_alert(
+                message_identifier=editable_message_identifier,
+                title=first_page_title,
+                message=formatted_pages[0],
+                severity=AaveSentinelAlertSeverity.INFO,
+            )
+        if not first_page_edited:
+            await self.send_alert(
+                first_page_title,
+                formatted_pages[0],
+                AaveSentinelAlertSeverity.INFO,
+            )
         for page_index in range(1, total_page_count):
-            await self.send_html_message(message=formatted_pages[page_index])
+            page_title = f"{AAVE_SENTINEL_PNL_NOTIFICATION_TITLE} ({page_index + 1}/{total_page_count})"
+            await self.send_alert(
+                page_title,
+                formatted_pages[page_index],
+                AaveSentinelAlertSeverity.INFO,
+            )
 
     def _build_balance_sheet_section_lines(
             self,
@@ -341,6 +399,16 @@ class AaveSentinelNotificationService:
             )
             return
 
+        if is_aave_sentinel_performance_rebuild_pending():
+            message_identifier = await self.send_alert(
+                AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
+                AAVE_SENTINEL_SNAPSHOT_PENDING_MESSAGE,
+                AaveSentinelAlertSeverity.INFO,
+            )
+            if message_identifier is not None:
+                self._pending_snapshot_message_identifiers.append(message_identifier)
+            return
+
         formatted_message = await self.format_notification_message(
             position_snapshot=current_position_snapshot,
             capital_flow_summary=sentinel_state.capital_flow_summary,
@@ -357,11 +425,13 @@ class AaveSentinelNotificationService:
         sentinel_state = await resolve_aave_sentinel_state_for_display()
         performance_summary = sentinel_state.performance_summary
         if performance_summary is None or not performance_summary.is_available:
-            await self.send_alert(
-                "Erreur",
-                "Impossible de calculer le bilan trading et APY.",
-                AaveSentinelAlertSeverity.WARNING,
+            message_identifier = await self.send_alert(
+                AAVE_SENTINEL_PNL_NOTIFICATION_TITLE,
+                AAVE_SENTINEL_PNL_PENDING_MESSAGE,
+                AaveSentinelAlertSeverity.INFO,
             )
+            if message_identifier is not None:
+                self._pending_pnl_message_identifiers.append(message_identifier)
             return
 
         formatted_pages = await self.format_pnl_detail_message_pages(
@@ -376,6 +446,59 @@ class AaveSentinelNotificationService:
             )
             return
         await self.send_pnl_detail_pages(formatted_pages=formatted_pages)
+
+    async def publish_pending_messages_after_performance_rebuild(self) -> None:
+        pending_snapshot_message_identifiers = self._pending_snapshot_message_identifiers
+        pending_pnl_message_identifiers = self._pending_pnl_message_identifiers
+        self._pending_snapshot_message_identifiers = []
+        self._pending_pnl_message_identifiers = []
+        if not pending_snapshot_message_identifiers and not pending_pnl_message_identifiers:
+            return
+
+        sentinel_state = aave_sentinel_state_cache.get_aave_sentinel_state()
+        performance_summary = sentinel_state.performance_summary
+        if performance_summary is None or not performance_summary.is_available:
+            self._pending_snapshot_message_identifiers.extend(pending_snapshot_message_identifiers)
+            self._pending_pnl_message_identifiers.extend(pending_pnl_message_identifiers)
+            return
+
+        if pending_snapshot_message_identifiers and sentinel_state.position_snapshot is not None:
+            formatted_snapshot_message = await self.format_notification_message(
+                position_snapshot=sentinel_state.position_snapshot,
+                capital_flow_summary=sentinel_state.capital_flow_summary,
+                performance_summary=performance_summary,
+            )
+            for message_identifier in pending_snapshot_message_identifiers:
+                snapshot_edited = await self.edit_alert(
+                    message_identifier=message_identifier,
+                    title=AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
+                    message=formatted_snapshot_message,
+                    severity=AaveSentinelAlertSeverity.INFO,
+                )
+                if not snapshot_edited:
+                    await self.send_alert(
+                        AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
+                        formatted_snapshot_message,
+                        AaveSentinelAlertSeverity.INFO,
+                    )
+        elif pending_snapshot_message_identifiers:
+            self._pending_snapshot_message_identifiers.extend(pending_snapshot_message_identifiers)
+
+        if not pending_pnl_message_identifiers:
+            return
+
+        formatted_pages = await self.format_pnl_detail_message_pages(
+            performance_summary=performance_summary,
+            position_snapshot=sentinel_state.position_snapshot,
+        )
+        if not formatted_pages:
+            self._pending_pnl_message_identifiers.extend(pending_pnl_message_identifiers)
+            return
+        for message_identifier in pending_pnl_message_identifiers:
+            await self.send_pnl_detail_pages(
+                formatted_pages=formatted_pages,
+                editable_message_identifier=message_identifier,
+            )
 
     def _resolve_risk_status(self, current_health_factor: float) -> AaveSentinelRiskStatus:
         if current_health_factor < settings.AAVE_SENTINEL_HEALTH_FACTOR_DANGER_THRESHOLD:

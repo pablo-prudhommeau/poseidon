@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.aavesentinel.aave_sentinel_service import resolve_running_aave_sentinel_notification_service
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelCapitalFlowSummary,
     AaveSentinelPerformanceSummary,
@@ -58,7 +59,12 @@ class _AaveSentinelPerformanceRebuilder:
         aave_sentinel_state_cache.update_performance_summary(performance_summary=payload)
 
     async def notify_websocket(self, payload: object) -> None:
-        return None
+        if not isinstance(payload, AaveSentinelPerformanceSummary) or not payload.is_available:
+            return
+        notification_service = resolve_running_aave_sentinel_notification_service()
+        if notification_service is None:
+            return
+        await notification_service.publish_pending_messages_after_performance_rebuild()
 
 
 def register_aave_sentinel_rebuilders() -> None:

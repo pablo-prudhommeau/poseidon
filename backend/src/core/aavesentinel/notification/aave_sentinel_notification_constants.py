@@ -9,4 +9,6 @@ PNL_DETAIL_MAX_PAGE_COUNT: int = 5
 
 AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE: Final[str] = "Statut du portefeuille"
 AAVE_SENTINEL_PNL_NOTIFICATION_TITLE: Final[str] = "Détails du bilan trading et APY"
+AAVE_SENTINEL_SNAPSHOT_PENDING_MESSAGE: Final[str] = "⏳ Statut du portefeuille en cours de construction..."
+AAVE_SENTINEL_PNL_PENDING_MESSAGE: Final[str] = "⏳ Détails du bilan trading et APY en cours de construction..."
 AAVE_SENTINEL_TELEGRAM_TITLE_BODY_SEPARATOR: Final[str] = "\n\n"

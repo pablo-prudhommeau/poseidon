@@ -5,11 +5,13 @@ from typing import Optional
 from src.core.aavesentinel.aave_sentinel_constants import TOKEN_AMOUNT_DUST_EPSILON
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelAssetSnapshot,
+    AaveSentinelHistoricalAssetPriceLookupKey,
     AaveSentinelReserveAsset,
     AaveSentinelReserveIndexSnapshot,
     AaveSentinelReserveInterestBreakdown,
     AaveSentinelReserveRegistry,
     AaveSentinelReserveScaledBalanceState,
+    AaveSentinelScaledBalanceMemoEntry,
     AaveSentinelUniversalLedger,
     AaveSentinelUniversalLedgerEntry,
 )
@@ -21,9 +23,14 @@ from src.core.aavesentinel.aave_sentinel_utils import (
 from src.core.aavesentinel.capitalflow.aave_sentinel_capital_flow_helpers import (
     resolve_reserve_asset_for_underlying,
 )
+from src.core.aavesentinel.capitalflow.aave_sentinel_capital_flow_valuation_memo_helpers import (
+    build_historical_asset_price_lookup_key,
+)
 from src.core.aavesentinel.performance.aave_sentinel_performance_wallet_balance_helpers import (
     resolve_asset_price_usd,
 )
+from src.integrations.aave.aave_protocol_reader import AaveProtocolReader
+from src.integrations.aave.aave_structures import AaveScaledBalanceBatchRequest
 
 
 def _resolve_interest_breakdown_by_symbol(
@@ -358,3 +365,153 @@ def collect_underlying_addresses_for_index_lookup(
             if debt_token_reserve_asset is not None:
                 underlying_addresses.add(debt_token_reserve_asset.underlying_address)
     return sorted(underlying_addresses)
+
+
+def _resolve_scaled_balance_memo_entry(
+        scaled_balance_memo_entries: list[AaveSentinelScaledBalanceMemoEntry],
+        lookup_key: AaveSentinelHistoricalAssetPriceLookupKey,
+) -> Optional[AaveSentinelReserveScaledBalanceState]:
+    for memo_entry in scaled_balance_memo_entries:
+        if memo_entry.lookup_key == lookup_key:
+            return memo_entry.scaled_balance_state
+    return None
+
+
+def _remember_scaled_balance_memo_entry(
+        scaled_balance_memo_entries: list[AaveSentinelScaledBalanceMemoEntry],
+        lookup_key: AaveSentinelHistoricalAssetPriceLookupKey,
+        scaled_balance_state: AaveSentinelReserveScaledBalanceState,
+) -> None:
+    if _resolve_scaled_balance_memo_entry(
+            scaled_balance_memo_entries=scaled_balance_memo_entries,
+            lookup_key=lookup_key,
+    ) is not None:
+        return
+    scaled_balance_memo_entries.append(
+        AaveSentinelScaledBalanceMemoEntry(
+            lookup_key=lookup_key,
+            scaled_balance_state=scaled_balance_state,
+        ),
+    )
+
+
+def _without_zero_scaled_balances(
+        scaled_balances: list[AaveSentinelReserveScaledBalanceState],
+) -> list[AaveSentinelReserveScaledBalanceState]:
+    active_scaled_balances: list[AaveSentinelReserveScaledBalanceState] = []
+    for scaled_balance in scaled_balances:
+        if scaled_balance.scaled_supply_balance == 0 and scaled_balance.scaled_debt_balance == 0:
+            continue
+        active_scaled_balances.append(scaled_balance)
+    return active_scaled_balances
+
+
+async def _fetch_scaled_balance_states_from_chain(
+        aave_protocol_reader: AaveProtocolReader,
+        reserve_registry: AaveSentinelReserveRegistry,
+        wallet_address: str,
+        underlying_addresses: list[str],
+        block_number: int,
+) -> Optional[list[AaveSentinelReserveScaledBalanceState]]:
+    underlying_address_set = {address.lower() for address in underlying_addresses}
+    scaled_balance_batch_requests: list[AaveScaledBalanceBatchRequest] = []
+    for reserve_asset in reserve_registry.reserve_assets:
+        if reserve_asset.underlying_address not in underlying_address_set:
+            continue
+        scaled_balance_batch_requests.append(
+            AaveScaledBalanceBatchRequest(
+                underlying_address=reserve_asset.underlying_address,
+                a_token_address=reserve_asset.a_token_address,
+                variable_debt_token_address=reserve_asset.variable_debt_token_address,
+                decimal_count=reserve_asset.decimal_count,
+            ),
+        )
+    if len(scaled_balance_batch_requests) == 0:
+        return []
+
+    scaled_balance_snapshots = await aave_protocol_reader.fetch_scaled_balances_at_block_batch(
+        wallet_address=wallet_address,
+        scaled_balance_batch_requests=scaled_balance_batch_requests,
+        block_number=block_number,
+    )
+    if len(scaled_balance_snapshots) == 0:
+        return None
+
+    fetched_scaled_balances: list[AaveSentinelReserveScaledBalanceState] = []
+    for scaled_balance_batch_request in scaled_balance_batch_requests:
+        scaled_balance_snapshot = None
+        normalized_underlying_address = scaled_balance_batch_request.underlying_address.lower()
+        for candidate_scaled_balance_snapshot in scaled_balance_snapshots:
+            if candidate_scaled_balance_snapshot.underlying_address == normalized_underlying_address:
+                scaled_balance_snapshot = candidate_scaled_balance_snapshot
+                break
+        if scaled_balance_snapshot is None:
+            continue
+        fetched_scaled_balances.append(
+            AaveSentinelReserveScaledBalanceState(
+                underlying_address=scaled_balance_snapshot.underlying_address,
+                scaled_supply_balance=scaled_balance_snapshot.scaled_supply_balance,
+                scaled_debt_balance=scaled_balance_snapshot.scaled_debt_balance,
+            ),
+        )
+    return fetched_scaled_balances
+
+
+async def fetch_scaled_balances_at_block_with_memo(
+        aave_protocol_reader: AaveProtocolReader,
+        scaled_balance_memo_entries: list[AaveSentinelScaledBalanceMemoEntry],
+        reserve_registry: AaveSentinelReserveRegistry,
+        wallet_address: str,
+        underlying_addresses: list[str],
+        block_number: int,
+        refresh_from_chain: bool,
+) -> Optional[list[AaveSentinelReserveScaledBalanceState]]:
+    if len(underlying_addresses) == 0:
+        return []
+
+    resolved_scaled_balances: list[AaveSentinelReserveScaledBalanceState] = []
+    unresolved_underlying_addresses: list[str] = []
+    if refresh_from_chain:
+        unresolved_underlying_addresses = list(underlying_addresses)
+    else:
+        for underlying_address in underlying_addresses:
+            lookup_key = build_historical_asset_price_lookup_key(
+                block_number=block_number,
+                contract_address=underlying_address,
+            )
+            cached_scaled_balance = _resolve_scaled_balance_memo_entry(
+                scaled_balance_memo_entries=scaled_balance_memo_entries,
+                lookup_key=lookup_key,
+            )
+            if cached_scaled_balance is None:
+                unresolved_underlying_addresses.append(underlying_address)
+                continue
+            resolved_scaled_balances.append(cached_scaled_balance)
+        if len(unresolved_underlying_addresses) == 0:
+            return _without_zero_scaled_balances(resolved_scaled_balances)
+
+    fetched_scaled_balances = await _fetch_scaled_balance_states_from_chain(
+        aave_protocol_reader=aave_protocol_reader,
+        reserve_registry=reserve_registry,
+        wallet_address=wallet_address,
+        underlying_addresses=unresolved_underlying_addresses,
+        block_number=block_number,
+    )
+    if fetched_scaled_balances is None:
+        return None
+
+    if not refresh_from_chain:
+        for scaled_balance_state in fetched_scaled_balances:
+            lookup_key = build_historical_asset_price_lookup_key(
+                block_number=block_number,
+                contract_address=scaled_balance_state.underlying_address,
+            )
+            _remember_scaled_balance_memo_entry(
+                scaled_balance_memo_entries=scaled_balance_memo_entries,
+                lookup_key=lookup_key,
+                scaled_balance_state=scaled_balance_state,
+            )
+        resolved_scaled_balances.extend(fetched_scaled_balances)
+        return _without_zero_scaled_balances(resolved_scaled_balances)
+
+    return _without_zero_scaled_balances(fetched_scaled_balances)

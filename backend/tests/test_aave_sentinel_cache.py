@@ -18,7 +18,10 @@ from src.core.aavesentinel.cache.aave_sentinel_cache import aave_sentinel_state_
 from src.core.aavesentinel.cache.aave_sentinel_cache_transaction_fingerprint_service import (
     poll_transaction_fingerprint_and_invalidate_capital_flow_if_changed,
 )
-from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import resolve_aave_sentinel_state_for_display
+from src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders import (
+    is_aave_sentinel_performance_rebuild_pending,
+    resolve_aave_sentinel_state_for_display,
+)
 from src.core.aavesentinel.cache.aave_sentinel_cache_rebuilders import register_aave_sentinel_rebuilders
 
 
@@ -204,6 +207,35 @@ def test_five_snapshot_requests_reuse_cached_position_when_available() -> None:
                 assert sentinel_state.position_snapshot is cached_position_snapshot
 
         build_position_mock.assert_not_called()
+        build_capital_flow_mock.assert_not_called()
+        build_performance_mock.assert_not_called()
+
+    asyncio.run(run_test())
+
+
+def test_display_state_does_not_wait_for_pending_performance_rebuild() -> None:
+    async def run_test() -> None:
+        cached_position_snapshot = AaveSentinelPositionSnapshot(
+            health_factor=1.5,
+            total_collateral_usd=100.0,
+            total_debt_usd=50.0,
+        )
+        aave_sentinel_state_cache.update_position_snapshot(position_snapshot=cached_position_snapshot)
+
+        build_capital_flow_mock = AsyncMock()
+        build_performance_mock = AsyncMock()
+
+        with patch(
+                "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_capital_flow_payload",
+                build_capital_flow_mock,
+        ), patch(
+                "src.core.aavesentinel.cache.aave_sentinel_cache_payload_builders.build_aave_sentinel_performance_payload",
+                build_performance_mock,
+        ):
+            sentinel_state = await resolve_aave_sentinel_state_for_display()
+
+        assert sentinel_state.position_snapshot is cached_position_snapshot
+        assert is_aave_sentinel_performance_rebuild_pending()
         build_capital_flow_mock.assert_not_called()
         build_performance_mock.assert_not_called()
 

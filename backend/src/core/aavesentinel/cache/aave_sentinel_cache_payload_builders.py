@@ -187,17 +187,12 @@ async def resolve_aave_sentinel_state_for_display() -> AaveSentinelState:
         aave_sentinel_state_cache.update_position_snapshot(position_snapshot=position_snapshot)
         sentinel_state = aave_sentinel_state_cache.get_aave_sentinel_state()
 
-    if sentinel_state.capital_flow_summary is None or not sentinel_state.capital_flow_summary.is_available:
-        capital_flow_summary = await build_aave_sentinel_capital_flow_payload()
-        aave_sentinel_state_cache.update_capital_flow_summary(capital_flow_summary=capital_flow_summary)
-        sentinel_state = aave_sentinel_state_cache.get_aave_sentinel_state()
-
-    if sentinel_state.performance_summary is None or not sentinel_state.performance_summary.is_available:
-        performance_summary = await build_aave_sentinel_performance_payload()
-        aave_sentinel_state_cache.update_performance_summary(performance_summary=performance_summary)
-        sentinel_state = aave_sentinel_state_cache.get_aave_sentinel_state()
-
     return sentinel_state
+
+
+def is_aave_sentinel_performance_rebuild_pending() -> bool:
+    sentinel_state = aave_sentinel_state_cache.get_aave_sentinel_state()
+    return sentinel_state.performance_summary is None or not sentinel_state.performance_summary.is_available
 
 
 async def close_aave_sentinel_payload_builder_resources() -> None:

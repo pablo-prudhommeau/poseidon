@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import time
 from typing import Final, Optional
 
 import requests
@@ -16,6 +17,22 @@ from src.logging.logger import get_application_logger
 logger = get_application_logger(__name__)
 
 _TELEGRAM_API_BASE_URL: Final[str] = "https://api.telegram.org"
+_TELEGRAM_METHODS_MUTED_WHILE_RATE_LIMITED: Final[frozenset[str]] = frozenset({
+    "sendMessage",
+    "editMessageText",
+})
+_telegram_outbound_muted_until_monotonic: Optional[float] = None
+
+
+def format_alert_html(
+        title: str,
+        body: str,
+        emoji_indicator: Optional[str] = None,
+        title_body_separator: str = "\n\n",
+) -> str:
+    resolved_emoji_indicator: str = emoji_indicator if emoji_indicator is not None else "🔔"
+    header_text: str = f"{resolved_emoji_indicator} {title}".strip()
+    return f"<b>{html.escape(header_text)}</b>{title_body_separator}{body}"
 
 
 def send_alert(
@@ -29,13 +46,32 @@ def send_alert(
         logger.debug("[TELEGRAM][CLIENT][SKIPPED] Telegram credentials missing from configuration, alert will not be sent")
         return None
 
-    resolved_emoji_indicator: str = emoji_indicator if emoji_indicator is not None else "🔔"
-    header_text: str = f"{resolved_emoji_indicator} {title}".strip()
-
-    formatted_message_text: str = f"<b>{html.escape(header_text)}</b>{title_body_separator}{body}"
     return send_html_message(
-        text=formatted_message_text,
+        text=format_alert_html(
+            title=title,
+            body=body,
+            emoji_indicator=emoji_indicator,
+            title_body_separator=title_body_separator,
+        ),
         reply_markup=reply_markup,
+    )
+
+
+def edit_alert(
+        message_id: int,
+        title: str,
+        body: str,
+        emoji_indicator: Optional[str] = None,
+        title_body_separator: str = "\n\n",
+) -> bool:
+    return edit_message_text(
+        message_id=message_id,
+        text=format_alert_html(
+            title=title,
+            body=body,
+            emoji_indicator=emoji_indicator,
+            title_body_separator=title_body_separator,
+        ),
     )
 
 
@@ -198,6 +234,14 @@ def _call_telegram_method(method_name: str, payload: dict[str, object]) -> Optio
         logger.debug("[TELEGRAM][CLIENT][SKIPPED] Telegram bot token missing, method %s will not be called", method_name)
         return None
 
+    if _is_telegram_method_muted(method_name):
+        logger.info(
+            "[TELEGRAM][CLIENT][MUTED] Telegram method %s dropped because Telegram rate limit is active for %d more seconds",
+            method_name,
+            _resolve_telegram_mute_remaining_seconds(),
+        )
+        return None
+
     target_endpoint_url = f"{_TELEGRAM_API_BASE_URL}/bot{settings.TELEGRAM_BOT_TOKEN}/{method_name}"
 
     try:
@@ -208,6 +252,8 @@ def _call_telegram_method(method_name: str, payload: dict[str, object]) -> Optio
         )
         if not http_response.ok:
             response_description: str = _extract_telegram_error_description(http_response)
+            if http_response.status_code == 429:
+                _mute_telegram_outbound_messages(http_response)
             logger.warning(
                 "[TELEGRAM][CLIENT][FAILURE] Telegram method %s failed with status %s description=%s",
                 method_name,
@@ -234,6 +280,48 @@ def _call_telegram_method(method_name: str, payload: dict[str, object]) -> Optio
             network_exception,
         )
         return None
+
+
+def _is_telegram_method_muted(method_name: str) -> bool:
+    if method_name not in _TELEGRAM_METHODS_MUTED_WHILE_RATE_LIMITED:
+        return False
+    if _telegram_outbound_muted_until_monotonic is None:
+        return False
+    return time.monotonic() < _telegram_outbound_muted_until_monotonic
+
+
+def _resolve_telegram_mute_remaining_seconds() -> int:
+    if _telegram_outbound_muted_until_monotonic is None:
+        return 0
+    return max(0, int(_telegram_outbound_muted_until_monotonic - time.monotonic()))
+
+
+def _mute_telegram_outbound_messages(http_response: requests.Response) -> None:
+    global _telegram_outbound_muted_until_monotonic
+    retry_after_seconds = _extract_telegram_retry_after_seconds(http_response)
+    if retry_after_seconds is None:
+        return
+    _telegram_outbound_muted_until_monotonic = time.monotonic() + retry_after_seconds
+    logger.debug(
+        "[TELEGRAM][CLIENT][MUTED] Outbound Telegram messages muted for %s seconds",
+        retry_after_seconds,
+    )
+
+
+def _extract_telegram_retry_after_seconds(http_response: requests.Response) -> Optional[int]:
+    try:
+        response_payload = http_response.json()
+    except ValueError:
+        return None
+    if not isinstance(response_payload, dict) or "parameters" not in response_payload:
+        return None
+    parameters = response_payload["parameters"]
+    if not isinstance(parameters, dict) or "retry_after" not in parameters:
+        return None
+    retry_after_seconds = parameters["retry_after"]
+    if not isinstance(retry_after_seconds, int) or retry_after_seconds <= 0:
+        return None
+    return retry_after_seconds
 
 
 def _extract_telegram_error_description(http_response: requests.Response) -> str:

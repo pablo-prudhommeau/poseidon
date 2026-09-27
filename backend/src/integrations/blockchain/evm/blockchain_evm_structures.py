@@ -39,6 +39,22 @@ class EvmChainPriceMetadataRegistry(BaseModel):
         )
 
 
+class BlockchainEvmRpcEndpoint(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    url: str
+    supports_historical_state: bool
+
+
+class BlockchainEvmRpcEndpointRateLimitState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rpc_url: str
+    cooldown_until_monotonic: Optional[float] = None
+    consecutive_failure_count: int = 0
+    historical_state_unavailable: bool = False
+
+
 EVM_CHAIN_PRICE_METADATA_REGISTRY = EvmChainPriceMetadataRegistry(
     entries=(
         EvmChainPriceMetadata(

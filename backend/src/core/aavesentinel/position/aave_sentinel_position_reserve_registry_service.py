@@ -17,7 +17,10 @@ from src.integrations.aave.aave_abis import (
     AAVE_POOL_ABI,
     ERC20_ABI,
 )
-from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
+from src.integrations.blockchain.blockchain_rpc_registry import (
+    BlockchainRpcRateLimitedError,
+    resolve_async_web3_provider_for_chain,
+)
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -37,6 +40,8 @@ async def load_aave_sentinel_reserve_registry(force_refresh: bool = False) -> Aa
             return _cached_reserve_registry
 
         loaded_registry = await _build_aave_sentinel_reserve_registry()
+        if len(loaded_registry.reserve_assets) == 0:
+            return loaded_registry
         _cached_reserve_registry = loaded_registry
         return loaded_registry
 
@@ -65,6 +70,11 @@ async def _build_aave_sentinel_reserve_registry() -> AaveSentinelReserveRegistry
             sum(1 for reserve_asset in reserve_assets if reserve_asset.requires_euro_conversion),
         )
         return AaveSentinelReserveRegistry(reserve_assets=tuple(reserve_assets))
+    except BlockchainRpcRateLimitedError:
+        logger.warning(
+            "[AAVESENTINEL][RESERVES] Reserve registry load skipped because the RPC endpoint is rate limited",
+        )
+        raise
     except Exception as exception:
         logger.exception("[AAVESENTINEL][RESERVES] Failed to load Aave reserve registry: %s", exception)
         return AaveSentinelReserveRegistry()
@@ -94,6 +104,8 @@ async def _load_aave_reserve_asset(
             stable_debt_token_address=str(reserve_data[9]).lower(),
             variable_debt_token_address=str(reserve_data[10]).lower(),
         )
+    except BlockchainRpcRateLimitedError:
+        raise
     except Exception as exception:
         logger.debug(
             "[AAVESENTINEL][RESERVES] Failed to load reserve asset %s: %s",

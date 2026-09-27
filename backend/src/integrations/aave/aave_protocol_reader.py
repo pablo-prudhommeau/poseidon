@@ -25,7 +25,10 @@ from src.integrations.blockchain.evm.blockchain_evm_multicall_reader import (
     BlockchainEvmMulticallCall,
     execute_multicall3_aggregate,
 )
-from src.integrations.blockchain.blockchain_rpc_registry import resolve_async_web3_provider_for_chain
+from src.integrations.blockchain.blockchain_rpc_registry import (
+    BlockchainRpcRateLimitedError,
+    resolve_async_web3_provider_for_chain,
+)
 from src.logging.logger import get_application_logger
 
 logger = get_application_logger(__name__)
@@ -137,6 +140,15 @@ class AaveProtocolReader:
                     )
                 )
             return asset_price_usd_snapshots
+        except BlockchainRpcRateLimitedError as rate_limit_error:
+            logger.warning(
+                "[AAVE][READER][ORACLE] Historical batch lookup skipped because the RPC endpoint is rate limited "
+                "block=%d call_count=%d: %s",
+                block_number,
+                len(contract_addresses),
+                rate_limit_error,
+            )
+            raise
         except Exception as exception:
             logger.exception(
                 "[AAVE][READER][ORACLE] Historical batch lookup failed block=%d call_count=%d: %s",
@@ -225,6 +237,15 @@ class AaveProtocolReader:
                     )
                 )
             return reserve_index_snapshots
+        except BlockchainRpcRateLimitedError as rate_limit_error:
+            logger.warning(
+                "[AAVE][READER][INDEX] Historical reserve index batch lookup skipped because the RPC endpoint is rate limited "
+                "block=%d call_count=%d: %s",
+                block_number,
+                len(underlying_addresses),
+                rate_limit_error,
+            )
+            raise
         except Exception as exception:
             logger.exception(
                 "[AAVE][READER][INDEX] Historical reserve index batch lookup failed block=%d call_count=%d: %s",
@@ -329,6 +350,15 @@ class AaveProtocolReader:
                     )
                 )
             return scaled_balance_snapshots
+        except BlockchainRpcRateLimitedError as rate_limit_error:
+            logger.warning(
+                "[AAVE][READER][SCALED] Live scaled balance batch lookup skipped because the RPC endpoint is rate limited "
+                "block=%d call_count=%d: %s",
+                block_number,
+                len(scaled_balance_batch_requests),
+                rate_limit_error,
+            )
+            raise
         except Exception as exception:
             logger.exception(
                 "[AAVE][READER][SCALED] Live scaled balance batch lookup failed block=%d call_count=%d: %s",

@@ -15,6 +15,13 @@ AVALANCHE_MULTICALL3_CONTRACT_ADDRESS: Final[str] = "0xcA11bde05977b363116702886
 
 MULTICALL3_ABI: Final[list[dict[str, object]]] = [
     {
+        "inputs": [{"internalType": "address", "name": "addr", "type": "address"}],
+        "name": "getEthBalance",
+        "outputs": [{"internalType": "uint256", "name": "balance", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
         "inputs": [
             {
                 "components": [

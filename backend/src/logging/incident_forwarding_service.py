@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import logging
+import re
 import threading
 import time
 import traceback
@@ -15,6 +16,13 @@ from src.integrations.telegram.telegram_client import send_alert
 _incident_forwarding_lock = threading.Lock()
 _last_incident_sent_at_by_fingerprint: dict[str, float] = {}
 _incident_forwarding_active = False
+_incident_window_started_at_monotonic: Optional[float] = None
+_incidents_sent_in_window: int = 0
+_suppressed_incident_count: int = 0
+
+_INCIDENT_FINGERPRINT_URL_PATTERN = re.compile(r"https?://\S+")
+_INCIDENT_FINGERPRINT_HEX_PATTERN = re.compile(r"0x[0-9a-fA-F]+")
+_INCIDENT_FINGERPRINT_NUMBER_PATTERN = re.compile(r"\d+(?:\.\d+)?")
 
 _SUPPRESSED_LOGGER_NAME_PREFIXES: tuple[str, ...] = (
     "poseidon.integrations.telegram",
@@ -45,13 +53,29 @@ def forward_incident_to_telegram(
         body=normalized_body,
     )
     current_timestamp = time.time()
+    suppressed_incident_count_to_announce: Optional[int] = None
+    should_send_incident = False
     with _incident_forwarding_lock:
+        suppressed_incident_count_to_announce = _rotate_incident_window_if_elapsed(current_timestamp=current_timestamp)
         last_sent_timestamp = _last_incident_sent_at_by_fingerprint.get(incident_fingerprint)
-        if last_sent_timestamp is not None:
-            elapsed_seconds = current_timestamp - last_sent_timestamp
-            if elapsed_seconds < settings.LOGGING_INCIDENT_COOLDOWN_SECONDS:
-                return
-        _last_incident_sent_at_by_fingerprint[incident_fingerprint] = current_timestamp
+        fingerprint_is_cooling_down = (
+            last_sent_timestamp is not None
+            and current_timestamp - last_sent_timestamp < settings.LOGGING_INCIDENT_COOLDOWN_SECONDS
+        )
+        if fingerprint_is_cooling_down:
+            should_send_incident = False
+        elif _incidents_sent_in_window >= settings.LOGGING_INCIDENT_MAX_PER_WINDOW:
+            _suppress_incident_for_window()
+            should_send_incident = False
+        else:
+            _last_incident_sent_at_by_fingerprint[incident_fingerprint] = current_timestamp
+            _record_incident_sent_in_window()
+            should_send_incident = True
+
+    if suppressed_incident_count_to_announce is not None:
+        _dispatch_suppressed_incident_summary(suppressed_incident_count_to_announce)
+    if not should_send_incident:
+        return
 
     _incident_forwarding_active = True
     try:
@@ -182,8 +206,52 @@ def _format_log_record_body(log_record: logging.LogRecord) -> str:
 
 
 def _build_incident_fingerprint(title: str, body: str) -> str:
-    fingerprint_source = f"{title}\n{body[:500]}"
+    fingerprint_source = (
+        f"{_normalize_incident_fingerprint_text(title)}\n"
+        f"{_normalize_incident_fingerprint_text(body)[:500]}"
+    )
     return hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[:24]
+
+
+def _normalize_incident_fingerprint_text(value: str) -> str:
+    without_urls = _INCIDENT_FINGERPRINT_URL_PATTERN.sub("<url>", value)
+    without_hexadecimal = _INCIDENT_FINGERPRINT_HEX_PATTERN.sub("<hex>", without_urls)
+    return _INCIDENT_FINGERPRINT_NUMBER_PATTERN.sub("<number>", without_hexadecimal)
+
+
+def _rotate_incident_window_if_elapsed(current_timestamp: float) -> Optional[int]:
+    global _incident_window_started_at_monotonic, _incidents_sent_in_window, _suppressed_incident_count
+    if _incident_window_started_at_monotonic is None:
+        _incident_window_started_at_monotonic = current_timestamp
+        return None
+    elapsed_seconds = current_timestamp - _incident_window_started_at_monotonic
+    if elapsed_seconds < settings.LOGGING_INCIDENT_WINDOW_SECONDS:
+        return None
+    suppressed_incident_count = _suppressed_incident_count
+    _incident_window_started_at_monotonic = current_timestamp
+    _incidents_sent_in_window = 0
+    _suppressed_incident_count = 0
+    if suppressed_incident_count > 0:
+        return suppressed_incident_count
+    return None
+
+
+def _record_incident_sent_in_window() -> None:
+    global _incidents_sent_in_window
+    _incidents_sent_in_window += 1
+
+
+def _suppress_incident_for_window() -> None:
+    global _suppressed_incident_count
+    _suppressed_incident_count += 1
+
+
+def _dispatch_suppressed_incident_summary(suppressed_incident_count: int) -> None:
+    send_alert(
+        title="Incident summary",
+        body=f"{suppressed_incident_count} incidents were suppressed during the previous window.",
+        emoji_indicator="🚨",
+    )
 
 
 def _truncate_incident_body(body: str) -> str:

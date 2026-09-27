@@ -10,6 +10,9 @@ from src.logging.incident_forwarding_service import (
     forward_asyncio_exception_context_to_telegram,
     forward_unhandled_exception_to_telegram,
 )
+from src.logging.logger import get_application_logger
+
+logger = get_application_logger(__name__)
 
 _previous_sys_excepthook: Optional[Callable[[type[BaseException], BaseException, Optional[TracebackType]], None]] = None
 _previous_threading_excepthook: Optional[
@@ -42,6 +45,12 @@ def install_asyncio_unhandled_exception_handler(event_loop: asyncio.AbstractEven
             loop: asyncio.AbstractEventLoop,
             context: dict[str, object],
     ) -> None:
+        if _is_benign_asyncio_connection_reset(context):
+            logger.debug(
+                "[ASYNCIO][CALLBACK] Ignored remote connection reset during transport shutdown: %s",
+                context.get("exception"),
+            )
+            return
         forward_asyncio_exception_context_to_telegram(context)
         if previous_handler is not None:
             previous_handler(loop, context)
@@ -50,6 +59,18 @@ def install_asyncio_unhandled_exception_handler(event_loop: asyncio.AbstractEven
 
     event_loop.set_exception_handler(asyncio_unhandled_exception_handler)
     _asyncio_exception_hooks_installed = True
+
+
+def _is_benign_asyncio_connection_reset(context: dict[str, object]) -> bool:
+    exception = context.get("exception")
+    if not isinstance(exception, ConnectionResetError):
+        return False
+    handle = context.get("handle")
+    handle_representation = "" if handle is None else repr(handle)
+    message = context.get("message")
+    message_text = message if isinstance(message, str) else ""
+    callback_text = f"{handle_representation} {message_text}"
+    return "_call_connection_lost" in callback_text
 
 
 def _sys_unhandled_exception_hook(

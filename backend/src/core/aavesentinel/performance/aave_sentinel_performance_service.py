@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
+from src.configuration.config import settings
 from src.core.aavesentinel.aave_sentinel_constants import WAVAX_CONTRACT_ADDRESS
 from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelCapitalFlowSummary,
@@ -17,6 +18,7 @@ from src.core.aavesentinel.aave_sentinel_structures import (
     AaveSentinelReserveInterestBreakdown,
     AaveSentinelReserveRegistry,
     AaveSentinelReserveScaledBalanceState,
+    AaveSentinelScaledBalanceMemoEntry,
     AaveSentinelUniversalLedger,
     AaveSentinelUniversalLedgerEntry,
     AaveSentinelWalletTokenBalance,
@@ -58,6 +60,7 @@ from src.core.aavesentinel.performance.aave_sentinel_performance_scaled_balance_
     clone_scaled_balances,
     collect_sorted_aave_position_ledger_entries,
     collect_underlying_addresses_for_index_lookup,
+    fetch_scaled_balances_at_block_with_memo,
 )
 from src.core.aavesentinel.performance.aave_sentinel_performance_strategy_cycle_helpers import (
     aggregate_performance_summary,
@@ -77,7 +80,6 @@ from src.core.aavesentinel.performance.aave_sentinel_performance_wallet_balance_
 from src.core.aavesentinel.position.aave_sentinel_position_reserve_registry_service import load_aave_sentinel_reserve_registry
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_protocol_reader import AaveProtocolReader
-from src.integrations.aave.aave_structures import AaveScaledBalanceBatchRequest
 from src.integrations.chainlink.chainlink_client import ChainlinkClient
 from src.integrations.frankfurter.frankfurter_client import FrankfurterClient
 from src.integrations.routescan.routescan_client import RoutescanClient
@@ -105,6 +107,10 @@ class AaveSentinelPerformanceService:
         )
         self._reserve_registry: Optional[AaveSentinelReserveRegistry] = None
         self._reserve_index_memo_entries: list[AaveSentinelReserveIndexMemoEntry] = []
+        self._scaled_balance_memo_entries: list[AaveSentinelScaledBalanceMemoEntry] = []
+        self._historical_lookup_semaphore = asyncio.Semaphore(
+            max(1, settings.AAVE_SENTINEL_HISTORICAL_LOOKUP_CONCURRENCY),
+        )
 
     @property
     def wallet_address(self) -> str:
@@ -205,21 +211,31 @@ class AaveSentinelPerformanceService:
             priced_underlying_addresses: list[str] = sorted(
                 set(underlying_addresses) | set(wallet_underlying_addresses)
             )
-            next_reserve_index_snapshots = await fetch_reserve_index_snapshots(
-                aave_protocol_reader=self._aave_protocol_reader,
-                reserve_index_memo_entries=self._reserve_index_memo_entries,
-                block_number=ledger_entry.block_number,
-                underlying_addresses=underlying_addresses,
-            )
-            asset_price_usd_by_underlying = await resolve_asset_prices_usd_for_underlyings(
-                aave_protocol_reader=self._aave_protocol_reader,
-                chainlink_client=self._chainlink_client,
-                frankfurter_client=self._frankfurter_client,
-                valuation_memo=self._valuation_memo,
-                block_number=ledger_entry.block_number,
-                timestamp_seconds=ledger_entry.timestamp_seconds,
-                underlying_addresses=priced_underlying_addresses,
-                reserve_registry=reserve_registry,
+            next_reserve_index_snapshots, asset_price_usd_by_underlying, reconciled_event_scaled_balances = (
+                await asyncio.gather(
+                    fetch_reserve_index_snapshots(
+                        aave_protocol_reader=self._aave_protocol_reader,
+                        reserve_index_memo_entries=self._reserve_index_memo_entries,
+                        block_number=ledger_entry.block_number,
+                        underlying_addresses=underlying_addresses,
+                    ),
+                    resolve_asset_prices_usd_for_underlyings(
+                        aave_protocol_reader=self._aave_protocol_reader,
+                        chainlink_client=self._chainlink_client,
+                        frankfurter_client=self._frankfurter_client,
+                        valuation_memo=self._valuation_memo,
+                        block_number=ledger_entry.block_number,
+                        timestamp_seconds=ledger_entry.timestamp_seconds,
+                        underlying_addresses=priced_underlying_addresses,
+                        reserve_registry=reserve_registry,
+                    ),
+                    self._fetch_live_scaled_balances(
+                        reserve_registry=reserve_registry,
+                        underlying_addresses=underlying_addresses,
+                        block_number=ledger_entry.block_number,
+                        refresh_from_chain=False,
+                    ),
+                )
             )
 
             previous_scaled_balances_for_capital = clone_scaled_balances(scaled_balances)
@@ -257,11 +273,6 @@ class AaveSentinelPerformanceService:
                 reserve_registry=reserve_registry,
                 scaled_balances=scaled_balances,
                 reserve_index_snapshots=next_reserve_index_snapshots,
-            )
-            reconciled_event_scaled_balances = await self._fetch_live_scaled_balances(
-                reserve_registry=reserve_registry,
-                underlying_addresses=underlying_addresses,
-                block_number=ledger_entry.block_number,
             )
             if reconciled_event_scaled_balances is not None:
                 scaled_balances = self._replace_scaled_balances_for_underlyings(
@@ -345,21 +356,31 @@ class AaveSentinelPerformanceService:
             )
 
             pre_reconciliation_scaled_balances = clone_scaled_balances(scaled_balances)
-            latest_reserve_index_snapshots = await fetch_reserve_index_snapshots(
-                aave_protocol_reader=self._aave_protocol_reader,
-                reserve_index_memo_entries=self._reserve_index_memo_entries,
-                block_number=latest_block_number,
-                underlying_addresses=underlying_addresses,
-            )
-            latest_asset_price_usd_by_underlying = await resolve_asset_prices_usd_for_underlyings(
-                aave_protocol_reader=self._aave_protocol_reader,
-                chainlink_client=self._chainlink_client,
-                frankfurter_client=self._frankfurter_client,
-                valuation_memo=self._valuation_memo,
-                block_number=latest_block_number,
-                timestamp_seconds=latest_timestamp_seconds,
-                underlying_addresses=priced_underlying_addresses,
-                reserve_registry=reserve_registry,
+            latest_reserve_index_snapshots, latest_asset_price_usd_by_underlying, reconciled_scaled_balances = (
+                await asyncio.gather(
+                    fetch_reserve_index_snapshots(
+                        aave_protocol_reader=self._aave_protocol_reader,
+                        reserve_index_memo_entries=self._reserve_index_memo_entries,
+                        block_number=latest_block_number,
+                        underlying_addresses=underlying_addresses,
+                    ),
+                    resolve_asset_prices_usd_for_underlyings(
+                        aave_protocol_reader=self._aave_protocol_reader,
+                        chainlink_client=self._chainlink_client,
+                        frankfurter_client=self._frankfurter_client,
+                        valuation_memo=self._valuation_memo,
+                        block_number=latest_block_number,
+                        timestamp_seconds=latest_timestamp_seconds,
+                        underlying_addresses=priced_underlying_addresses,
+                        reserve_registry=reserve_registry,
+                    ),
+                    self._fetch_live_scaled_balances(
+                        reserve_registry=reserve_registry,
+                        underlying_addresses=underlying_addresses,
+                        block_number=latest_block_number,
+                        refresh_from_chain=True,
+                    ),
+                )
             )
             if previous_reserve_index_snapshots and pre_reconciliation_scaled_balances:
                 period_supply_interest_usd, period_borrow_interest_usd, period_interest_breakdowns = (
@@ -375,11 +396,6 @@ class AaveSentinelPerformanceService:
                 cumulative_borrow_interest_usd += period_borrow_interest_usd
                 interest_breakdown_batches.append(period_interest_breakdowns)
 
-            reconciled_scaled_balances = await self._fetch_live_scaled_balances(
-                reserve_registry=reserve_registry,
-                underlying_addresses=underlying_addresses,
-                block_number=latest_block_number,
-            )
             final_scaled_balances = pre_reconciliation_scaled_balances
             if reconciled_scaled_balances is not None:
                 final_scaled_balances = self._replace_scaled_balances_for_underlyings(
@@ -562,36 +578,41 @@ class AaveSentinelPerformanceService:
                 )
             )
 
-        interval_forensic_breakdowns: list[AaveSentinelIntervalForensicBreakdown] = []
-        for forensic_window in forensic_windows:
-            window_start_timestamp_seconds = forensic_window.started_at_timestamp_seconds
-            window_end_timestamp_seconds = forensic_window.ended_at_timestamp_seconds
-            window_ledger_entries = self._collect_ledger_entries_in_timestamp_window(
+        window_ledger_entries_by_index: list[list[AaveSentinelUniversalLedgerEntry]] = [
+            self._collect_ledger_entries_in_timestamp_window(
                 ledger_entries=sorted_ledger_entries,
-                window_start_timestamp_seconds=window_start_timestamp_seconds,
-                window_end_timestamp_seconds=window_end_timestamp_seconds,
-                include_start_boundary=window_start_timestamp_seconds == 0,
+                window_start_timestamp_seconds=forensic_window.started_at_timestamp_seconds,
+                window_end_timestamp_seconds=forensic_window.ended_at_timestamp_seconds,
+                include_start_boundary=forensic_window.started_at_timestamp_seconds == 0,
             )
+            for forensic_window in forensic_windows
+        ]
+        flattened_ledger_entries: list[AaveSentinelUniversalLedgerEntry] = [
+            ledger_entry
+            for window_ledger_entries in window_ledger_entries_by_index
+            for ledger_entry in window_ledger_entries
+        ]
+        asset_prices_usd_by_contract_per_entry: list[dict[str, float]] = list(
+            await asyncio.gather(
+                *[
+                    self._resolve_forensic_asset_prices_with_concurrency_limit(
+                        ledger_entry=ledger_entry,
+                        aave_protocol_token_addresses=aave_protocol_token_addresses,
+                        reserve_registry=reserve_registry,
+                    )
+                    for ledger_entry in flattened_ledger_entries
+                ]
+            )
+        )
+
+        interval_forensic_breakdowns: list[AaveSentinelIntervalForensicBreakdown] = []
+        next_flattened_entry_index: int = 0
+        for forensic_window, window_ledger_entries in zip(forensic_windows, window_ledger_entries_by_index):
             gas_fee_usd = 0.0
             conversion_pnl_usd = 0.0
             for ledger_entry in window_ledger_entries:
-                priced_contract_addresses: list[str] = [WAVAX_CONTRACT_ADDRESS]
-                priced_contract_addresses.extend(
-                    collect_conversion_contract_addresses_from_ledger_entry(
-                        ledger_entry=ledger_entry,
-                        aave_protocol_token_addresses=aave_protocol_token_addresses,
-                    )
-                )
-                asset_price_usd_by_contract = await resolve_forensic_asset_prices_usd(
-                    aave_protocol_reader=self._aave_protocol_reader,
-                    chainlink_client=self._chainlink_client,
-                    frankfurter_client=self._frankfurter_client,
-                    valuation_memo=self._valuation_memo,
-                    block_number=ledger_entry.block_number,
-                    timestamp_seconds=ledger_entry.timestamp_seconds,
-                    contract_addresses=sorted(set(priced_contract_addresses)),
-                    reserve_registry=reserve_registry,
-                )
+                asset_price_usd_by_contract = asset_prices_usd_by_contract_per_entry[next_flattened_entry_index]
+                next_flattened_entry_index += 1
                 wavax_price_usd = asset_price_usd_by_contract.get(WAVAX_CONTRACT_ADDRESS.lower())
                 if wavax_price_usd is not None and ledger_entry.gas_fee_native_amount > 0:
                     gas_fee_usd += ledger_entry.gas_fee_native_amount * wavax_price_usd
@@ -602,13 +623,38 @@ class AaveSentinelPerformanceService:
                 )
             interval_forensic_breakdowns.append(
                 AaveSentinelIntervalForensicBreakdown(
-                    window_start_timestamp_seconds=window_start_timestamp_seconds,
-                    window_end_timestamp_seconds=window_end_timestamp_seconds,
+                    window_start_timestamp_seconds=forensic_window.started_at_timestamp_seconds,
+                    window_end_timestamp_seconds=forensic_window.ended_at_timestamp_seconds,
                     gas_fee_usd=gas_fee_usd,
                     conversion_pnl_usd=conversion_pnl_usd,
                 )
             )
         return interval_forensic_breakdowns
+
+    async def _resolve_forensic_asset_prices_with_concurrency_limit(
+            self,
+            ledger_entry: AaveSentinelUniversalLedgerEntry,
+            aave_protocol_token_addresses: frozenset[str],
+            reserve_registry: AaveSentinelReserveRegistry,
+    ) -> dict[str, float]:
+        priced_contract_addresses: list[str] = [WAVAX_CONTRACT_ADDRESS]
+        priced_contract_addresses.extend(
+            collect_conversion_contract_addresses_from_ledger_entry(
+                ledger_entry=ledger_entry,
+                aave_protocol_token_addresses=aave_protocol_token_addresses,
+            )
+        )
+        async with self._historical_lookup_semaphore:
+            return await resolve_forensic_asset_prices_usd(
+                aave_protocol_reader=self._aave_protocol_reader,
+                chainlink_client=self._chainlink_client,
+                frankfurter_client=self._frankfurter_client,
+                valuation_memo=self._valuation_memo,
+                block_number=ledger_entry.block_number,
+                timestamp_seconds=ledger_entry.timestamp_seconds,
+                contract_addresses=sorted(set(priced_contract_addresses)),
+                reserve_registry=reserve_registry,
+            )
 
     def _collect_ledger_entries_in_timestamp_window(
             self,
@@ -660,54 +706,17 @@ class AaveSentinelPerformanceService:
             reserve_registry: AaveSentinelReserveRegistry,
             underlying_addresses: list[str],
             block_number: int,
+            refresh_from_chain: bool,
     ) -> Optional[list[AaveSentinelReserveScaledBalanceState]]:
-        scaled_balances: list[AaveSentinelReserveScaledBalanceState] = []
-        underlying_address_set = {address.lower() for address in underlying_addresses}
-        scaled_balance_batch_requests: list[AaveScaledBalanceBatchRequest] = []
-        for reserve_asset in reserve_registry.reserve_assets:
-            if reserve_asset.underlying_address not in underlying_address_set:
-                continue
-            scaled_balance_batch_requests.append(
-                AaveScaledBalanceBatchRequest(
-                    underlying_address=reserve_asset.underlying_address,
-                    a_token_address=reserve_asset.a_token_address,
-                    variable_debt_token_address=reserve_asset.variable_debt_token_address,
-                    decimal_count=reserve_asset.decimal_count,
-                )
-            )
-        if len(scaled_balance_batch_requests) == 0:
-            return scaled_balances
-
-        scaled_balance_snapshots = await self._aave_protocol_reader.fetch_scaled_balances_at_block_batch(
+        return await fetch_scaled_balances_at_block_with_memo(
+            aave_protocol_reader=self._aave_protocol_reader,
+            scaled_balance_memo_entries=self._scaled_balance_memo_entries,
+            reserve_registry=reserve_registry,
             wallet_address=self._wallet_address,
-            scaled_balance_batch_requests=scaled_balance_batch_requests,
+            underlying_addresses=underlying_addresses,
             block_number=block_number,
+            refresh_from_chain=refresh_from_chain,
         )
-        if len(scaled_balance_snapshots) == 0:
-            return None
-
-        for scaled_balance_batch_request in scaled_balance_batch_requests:
-            scaled_balance_snapshot = None
-            normalized_underlying_address = scaled_balance_batch_request.underlying_address.lower()
-            for candidate_scaled_balance_snapshot in scaled_balance_snapshots:
-                if candidate_scaled_balance_snapshot.underlying_address == normalized_underlying_address:
-                    scaled_balance_snapshot = candidate_scaled_balance_snapshot
-                    break
-            if scaled_balance_snapshot is None:
-                continue
-            if (
-                    scaled_balance_snapshot.scaled_supply_balance == 0
-                    and scaled_balance_snapshot.scaled_debt_balance == 0
-            ):
-                continue
-            scaled_balances.append(
-                AaveSentinelReserveScaledBalanceState(
-                    underlying_address=scaled_balance_snapshot.underlying_address,
-                    scaled_supply_balance=scaled_balance_snapshot.scaled_supply_balance,
-                    scaled_debt_balance=scaled_balance_snapshot.scaled_debt_balance,
-                )
-            )
-        return scaled_balances
 
     async def _resolve_reserve_registry(self) -> AaveSentinelReserveRegistry:
         if self._reserve_registry is None:

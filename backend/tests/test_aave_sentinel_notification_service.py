@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from unittest.mock import AsyncMock, patch
 
+from src.core.aavesentinel.cache.aave_sentinel_cache import aave_sentinel_state_cache
+from src.core.aavesentinel.notification.aave_sentinel_notification_constants import (
+    AAVE_SENTINEL_PNL_NOTIFICATION_TITLE,
+    AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
+)
 from src.core.aavesentinel.notification.aave_sentinel_notification_service import AaveSentinelNotificationService
 from src.core.aavesentinel.aave_sentinel_structures import (
+    AaveSentinelAlertSeverity,
     AaveSentinelCapitalFlowSummary,
     AaveSentinelLiquidationDirection,
     AaveSentinelNonTradingMovementSource,
@@ -599,5 +606,54 @@ def test_format_pnl_detail_message_shows_realized_and_latent_on_open_short_cycle
         assert "        ◦ Latent : <code>-1,900.00 € ($-1,900.00)</code>" in formatted_message
         assert "allègement" not in formatted_message
         assert "position restante" not in formatted_message
+
+    asyncio.run(run_test())
+
+
+def test_performance_rebuild_edits_pending_snapshot_and_appends_pnl_pages() -> None:
+    async def run_test() -> None:
+        notification_service = AaveSentinelNotificationService()
+        notification_service._pending_snapshot_message_identifiers = [11]
+        notification_service._pending_pnl_message_identifiers = [22]
+        position_snapshot = AaveSentinelPositionSnapshot(
+            health_factor=1.2,
+            total_collateral_usd=100.0,
+            total_debt_usd=50.0,
+        )
+        performance_summary = AaveSentinelPerformanceSummary(global_pnl_usd=10.0, is_available=True)
+        aave_sentinel_state_cache.update_position_snapshot(position_snapshot=position_snapshot)
+        aave_sentinel_state_cache.update_performance_summary(performance_summary=performance_summary)
+        edit_alert_mock = AsyncMock(return_value=True)
+        send_alert_mock = AsyncMock(return_value=99)
+
+        with patch.object(notification_service, "edit_alert", edit_alert_mock), patch.object(
+                notification_service, "send_alert", send_alert_mock,
+        ), patch.object(
+                notification_service, "format_notification_message", AsyncMock(return_value="snapshot-body"),
+        ), patch.object(
+                notification_service, "format_pnl_detail_message_pages", AsyncMock(return_value=["page-1", "page-2"]),
+        ):
+            await notification_service.publish_pending_messages_after_performance_rebuild()
+
+        assert notification_service._pending_snapshot_message_identifiers == []
+        assert notification_service._pending_pnl_message_identifiers == []
+        assert edit_alert_mock.await_count == 2
+        edit_alert_mock.assert_any_await(
+            message_identifier=11,
+            title=AAVE_SENTINEL_SNAPSHOT_NOTIFICATION_TITLE,
+            message="snapshot-body",
+            severity=AaveSentinelAlertSeverity.INFO,
+        )
+        edit_alert_mock.assert_any_await(
+            message_identifier=22,
+            title=f"{AAVE_SENTINEL_PNL_NOTIFICATION_TITLE} (1/2)",
+            message="page-1",
+            severity=AaveSentinelAlertSeverity.INFO,
+        )
+        send_alert_mock.assert_awaited_once_with(
+            f"{AAVE_SENTINEL_PNL_NOTIFICATION_TITLE} (2/2)",
+            "page-2",
+            AaveSentinelAlertSeverity.INFO,
+        )
 
     asyncio.run(run_test())
