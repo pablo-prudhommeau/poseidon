@@ -27,6 +27,26 @@ from src.persistence.models import TradingShadowingVerdict, TradingShadowingProb
 logger = get_application_logger(__name__)
 
 
+def is_shadowing_price_aberrant_versus_entry(entry_price_usd: float, current_price_usd: float) -> bool:
+    if entry_price_usd <= 0.0 or current_price_usd <= 0.0:
+        return True
+    price_ratio: float = current_price_usd / entry_price_usd
+    return is_shadowing_price_ratio_aberrant_versus_entry(price_ratio=price_ratio)
+
+
+def is_take_profit_percentage_aberrant_versus_entry(realized_profit_and_loss_percentage: float) -> bool:
+    implied_price_ratio: float = (realized_profit_and_loss_percentage / 100.0) + 1.0
+    return is_shadowing_price_ratio_aberrant_versus_entry(price_ratio=implied_price_ratio)
+
+
+def is_shadowing_price_ratio_aberrant_versus_entry(price_ratio: float) -> bool:
+    maximum_ratio: float = settings.TRADING_SHADOWING_ABERRANT_PRICE_VERSUS_ENTRY_MAXIMUM_RATIO
+    if maximum_ratio <= 1.0:
+        return True
+    minimum_ratio: float = 1.0 / maximum_ratio
+    return price_ratio > maximum_ratio or price_ratio < minimum_ratio
+
+
 class TradingShadowingVerdictTracker:
     def check_pending_verdicts(self) -> None:
         logger.debug("[TRADING][SHADOWING][VERDICT] Starting shadowing verdict check cycle")
@@ -303,6 +323,29 @@ class TradingShadowingVerdictTracker:
                         continue
 
                     verdict.transient_slippage_first_deferred_at = None
+                    entry_price_usd: float = probe.entry_price_usd
+                    if is_shadowing_price_aberrant_versus_entry(
+                            entry_price_usd=entry_price_usd,
+                            current_price_usd=onchain_price,
+                    ):
+                        logger.debug(
+                            "[TRADING][SHADOWING][VERDICT] %s marked as STALED — price versus entry is aberrant "
+                            "(entry=%.12f onchain=%.12f dex=%.12f), stopping retries",
+                            probe.token_symbol,
+                            entry_price_usd,
+                            onchain_price,
+                            dex_price,
+                        )
+                        self._attach_stale_verdict(
+                            verdict=verdict,
+                            probe=probe,
+                            current_time=current_time,
+                            stale_cause=TradingShadowingStaleCause.ABERRANT_PRICE_VERSUS_ENTRY,
+                        )
+                        batch_statistics.resolved_verdict_count += 1
+                        batch_statistics.resolved_staled_aberrant_price_versus_entry_count += 1
+                        continue
+
                     if self._evaluate_price_against_thresholds(verdict, probe, onchain_price, current_time):
                         batch_statistics.resolved_verdict_count += 1
                         if verdict.exit_reason == "TAKE_PROFIT_2":

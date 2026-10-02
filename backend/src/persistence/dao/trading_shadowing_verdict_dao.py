@@ -253,7 +253,6 @@ class TradingShadowingVerdictDao:
                         TradingShadowingProbe.buy_to_sell_ratio,
                         TradingShadowingProbe.fully_diluted_valuation_usd,
                         TradingShadowingProbe.promotion_score,
-                        TradingShadowingProbe.cortex_inference_summary,
                     ),
                 )
                 .where(TradingShadowingVerdict.exit_reason.is_not(None))

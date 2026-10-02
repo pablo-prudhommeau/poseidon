@@ -231,6 +231,7 @@ class TradingShadowingStaleCause:
     UNSUPPORTED_DEX: str = "unsupported_dex"
     UNRECOVERABLE_ONCHAIN: str = "unrecoverable_onchain"
     ABERRANT_DEVIATION: str = "aberrant_deviation"
+    ABERRANT_PRICE_VERSUS_ENTRY: str = "aberrant_price_versus_entry"
     PERSISTENT_SLIPPAGE: str = "persistent_slippage"
 
 
@@ -249,6 +250,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
     resolved_staled_unrecoverable_onchain_price_count: int = 0
     resolved_staled_unsupported_dex_count: int = 0
     resolved_staled_persistent_slippage_count: int = 0
+    resolved_staled_aberrant_price_versus_entry_count: int = 0
     resolved_honeypot_count: int = 0
     resolved_lethargic_count: int = 0
     resolved_take_profit_2_count: int = 0
@@ -267,6 +269,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
         self.resolved_staled_unrecoverable_onchain_price_count += other.resolved_staled_unrecoverable_onchain_price_count
         self.resolved_staled_unsupported_dex_count += other.resolved_staled_unsupported_dex_count
         self.resolved_staled_persistent_slippage_count += other.resolved_staled_persistent_slippage_count
+        self.resolved_staled_aberrant_price_versus_entry_count += other.resolved_staled_aberrant_price_versus_entry_count
         self.resolved_honeypot_count += other.resolved_honeypot_count
         self.resolved_lethargic_count += other.resolved_lethargic_count
         self.resolved_take_profit_2_count += other.resolved_take_profit_2_count
@@ -288,6 +291,7 @@ class TradingShadowingVerdictCycleStatistics(BaseModel):
             ("staled_unrecoverable_onchain", self.resolved_staled_unrecoverable_onchain_price_count),
             ("staled_unsupported_dex", self.resolved_staled_unsupported_dex_count),
             ("staled_persistent_slippage", self.resolved_staled_persistent_slippage_count),
+            ("staled_aberrant_price_versus_entry", self.resolved_staled_aberrant_price_versus_entry_count),
             ("honeypot", self.resolved_honeypot_count),
             ("lethargic", self.resolved_lethargic_count),
             ("take_profit_2", self.resolved_take_profit_2_count),

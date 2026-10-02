@@ -8,3 +8,10 @@ class HoneypotShadowingVerdictBackfillResult(BaseModel):
 
     candidate_verdict_count: int
     reclassified_verdict_count: int
+
+
+class AberrantPriceVersusEntryShadowingVerdictBackfillResult(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    candidate_verdict_count: int
+    reclassified_verdict_count: int
