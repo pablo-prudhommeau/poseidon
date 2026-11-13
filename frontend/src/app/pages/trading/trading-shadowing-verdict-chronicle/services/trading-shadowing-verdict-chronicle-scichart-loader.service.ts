@@ -27,9 +27,10 @@ export class TradingShadowingVerdictChronicleSciChartLoaderService {
                 const sci = unwrapSciChartModule(raw);
                 if (!TradingShadowingVerdictChronicleSciChartLoaderService.runtimeConfigured) {
                     sci.SciChartSurface.UseCommunityLicense();
+                    const wasmVersion = sci.libraryVersion;
                     sci.SciChartSurface.configure({
-                        wasmUrl: '/scichart-wasm/scichart2d.wasm',
-                        wasmNoSimdUrl: '/scichart-wasm/scichart2d-nosimd.wasm'
+                        wasmUrl: `/scichart-wasm/scichart2d.wasm?v=${wasmVersion}`,
+                        wasmNoSimdUrl: `/scichart-wasm/scichart2d-nosimd.wasm?v=${wasmVersion}`
                     });
                     TradingShadowingVerdictChronicleSciChartLoaderService.runtimeConfigured = true;
                 }

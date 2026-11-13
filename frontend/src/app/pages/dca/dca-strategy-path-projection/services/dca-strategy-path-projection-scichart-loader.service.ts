@@ -27,9 +27,10 @@ export class DcaStrategyPathProjectionSciChartLoaderService {
                 const sciChartModule: DcaStrategyPathSciChartModule = unwrapSciChartModule(rawModule);
                 if (!DcaStrategyPathProjectionSciChartLoaderService.runtimeConfigured) {
                     sciChartModule.SciChartSurface.UseCommunityLicense();
+                    const wasmVersion = sciChartModule.libraryVersion;
                     sciChartModule.SciChartSurface.configure({
-                        wasmUrl: '/scichart-wasm/scichart2d.wasm',
-                        wasmNoSimdUrl: '/scichart-wasm/scichart2d-nosimd.wasm'
+                        wasmUrl: `/scichart-wasm/scichart2d.wasm?v=${wasmVersion}`,
+                        wasmNoSimdUrl: `/scichart-wasm/scichart2d-nosimd.wasm?v=${wasmVersion}`
                     });
                     DcaStrategyPathProjectionSciChartLoaderService.runtimeConfigured = true;
                 }
