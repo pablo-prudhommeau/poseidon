@@ -149,6 +149,14 @@ export class DefiIconsService {
         return wrapperElement;
     }
 
+    public getChainIconCandidates(chainName: string | null | undefined): string[] {
+        return this.buildChainIconCandidates(String(chainName ?? '').toLowerCase());
+    }
+
+    public getProtocolIconCandidates(dexscreenerId: string | null | undefined): string[] {
+        return this.buildProtocolIconCandidates(String(dexscreenerId ?? '').toLowerCase());
+    }
+
     public peekTokenIconSource(
         blockchainNetwork: string | null | undefined,
         tokenAddress: string | null | undefined
@@ -166,6 +174,19 @@ export class DefiIconsService {
             return cachedSource;
         }
         return null;
+    }
+
+    public renderTokenChainProtocolIcons(
+        hostElement: HTMLElement,
+        row: {
+            blockchain_network?: string | null;
+            dex_id?: string | null;
+            token_address?: string | null;
+            token_symbol?: string | null;
+        }
+    ): void {
+        hostElement.replaceChildren();
+        this.appendTokenChainProtocolIcons(hostElement, row);
     }
 
     public resolveTokenIconSource(
@@ -193,27 +214,6 @@ export class DefiIconsService {
         const resolution = this.resolveTokenIconSourceUncached(chainName, normalizedTokenAddress, normalizedTokenSymbol, cacheKey);
         this.pendingResolutionCache.set(cacheKey, resolution);
         return resolution;
-    }
-
-    public getChainIconCandidates(chainName: string | null | undefined): string[] {
-        return this.buildChainIconCandidates(String(chainName ?? '').toLowerCase());
-    }
-
-    public getProtocolIconCandidates(dexscreenerId: string | null | undefined): string[] {
-        return this.buildProtocolIconCandidates(String(dexscreenerId ?? '').toLowerCase());
-    }
-
-    public renderTokenChainProtocolIcons(
-        hostElement: HTMLElement,
-        row: {
-            blockchain_network?: string | null;
-            dex_id?: string | null;
-            token_address?: string | null;
-            token_symbol?: string | null;
-        }
-    ): void {
-        hostElement.replaceChildren();
-        this.appendTokenChainProtocolIcons(hostElement, row);
     }
 
     private appendTokenChainProtocolIcons(
@@ -406,6 +406,12 @@ export class DefiIconsService {
         return wrapperElement;
     }
 
+    private clearMissingIconPlaceholder(placeholderElement: HTMLElement): void {
+        placeholderElement.classList.remove('poseidon-icon-missing');
+        placeholderElement.replaceChildren();
+        placeholderElement.removeAttribute('title');
+    }
+
     private createCircleWrapper(sizePixels: number = 16): HTMLSpanElement {
         const element = document.createElement('span');
         element.className = 'relative inline-block align-middle';
@@ -426,22 +432,22 @@ export class DefiIconsService {
         return element;
     }
 
-    private createPlaceholderElement(): HTMLSpanElement {
-        const element = document.createElement('span');
-        element.className = 'absolute inset-0 rounded-full';
-        return element;
-    }
-
-    private markMissingIconPlaceholder(placeholderElement: HTMLElement): void {
-        placeholderElement.classList.add('poseidon-icon-missing');
-        placeholderElement.replaceChildren(this.createMissingIconSvg());
-        placeholderElement.style.opacity = '1';
-    }
-
-    private clearMissingIconPlaceholder(placeholderElement: HTMLElement): void {
-        placeholderElement.classList.remove('poseidon-icon-missing');
-        placeholderElement.replaceChildren();
-        placeholderElement.removeAttribute('title');
+    private createMissingIconSvg(): SVGSVGElement {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('aria-hidden', 'true');
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', '8');
+        circle.setAttribute('cy', '8');
+        circle.setAttribute('r', '6.5');
+        circle.setAttribute('fill', 'none');
+        circle.setAttribute('stroke', 'rgb(186, 196, 208)');
+        circle.setAttribute('stroke-opacity', '0.72');
+        circle.setAttribute('stroke-width', '0.7');
+        circle.setAttribute('stroke-linecap', 'round');
+        circle.setAttribute('stroke-dasharray', '1.15 1.7');
+        svg.append(circle, this.createMissingQuestionMark(16));
+        return svg;
     }
 
     private createMissingQuestionMark(size: number): SVGGElement {
@@ -463,22 +469,10 @@ export class DefiIconsService {
         return scaled;
     }
 
-    private createMissingIconSvg(): SVGSVGElement {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('viewBox', '0 0 16 16');
-        svg.setAttribute('aria-hidden', 'true');
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', '8');
-        circle.setAttribute('cy', '8');
-        circle.setAttribute('r', '6.5');
-        circle.setAttribute('fill', 'none');
-        circle.setAttribute('stroke', 'rgb(186, 196, 208)');
-        circle.setAttribute('stroke-opacity', '0.72');
-        circle.setAttribute('stroke-width', '0.7');
-        circle.setAttribute('stroke-linecap', 'round');
-        circle.setAttribute('stroke-dasharray', '1.15 1.7');
-        svg.append(circle, this.createMissingQuestionMark(16));
-        return svg;
+    private createPlaceholderElement(): HTMLSpanElement {
+        const element = document.createElement('span');
+        element.className = 'absolute inset-0 rounded-full';
+        return element;
     }
 
     private extractImageUrlFromDexscreenerResponse(response: DexscreenerPairsResponse): string | null {
@@ -502,6 +496,12 @@ export class DefiIconsService {
             }
         }
         return null;
+    }
+
+    private markMissingIconPlaceholder(placeholderElement: HTMLElement): void {
+        placeholderElement.classList.add('poseidon-icon-missing');
+        placeholderElement.replaceChildren(this.createMissingIconSvg());
+        placeholderElement.style.opacity = '1';
     }
 
     private normalizeExternalImageUrl(rawUrl: string): string {
@@ -544,6 +544,15 @@ export class DefiIconsService {
             .catch(() => {});
     }
 
+    private probeImageSource(source: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            const image = new Image();
+            image.onload = () => resolve(image.naturalWidth > 0);
+            image.onerror = () => resolve(false);
+            image.src = source;
+        });
+    }
+
     private readFromLocalStorage(key: string): string | null {
         try {
             const rawValue = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + key);
@@ -555,6 +564,14 @@ export class DefiIconsService {
             return isStillFresh && parsedEntry.source ? parsedEntry.source : null;
         } catch {
             return null;
+        }
+    }
+
+    private rememberTokenIconSource(cacheKey: string, source: string): void {
+        this.resolvedIconCache.set(cacheKey, source);
+        this.writeToLocalStorage(cacheKey, source);
+        if (source.startsWith('http://') || source.startsWith('https://')) {
+            this.persistAsDataUrl(cacheKey, source);
         }
     }
 
@@ -586,21 +603,15 @@ export class DefiIconsService {
         return resolutionPromise;
     }
 
-    private probeImageSource(source: string): Promise<boolean> {
-        return new Promise((resolve) => {
-            const image = new Image();
-            image.onload = () => resolve(image.naturalWidth > 0);
-            image.onerror = () => resolve(false);
-            image.src = source;
-        });
-    }
-
-    private rememberTokenIconSource(cacheKey: string, source: string): void {
-        this.resolvedIconCache.set(cacheKey, source);
-        this.writeToLocalStorage(cacheKey, source);
-        if (source.startsWith('http://') || source.startsWith('https://')) {
-            this.persistAsDataUrl(cacheKey, source);
-        }
+    private resolveTokenFallbackCascade(
+        imageElement: HTMLImageElement,
+        placeholderElement: HTMLElement,
+        chainName: string,
+        tokenAddress: string,
+        cacheKey: string
+    ): void {
+        const fallbackCandidates = this.buildTokenFallbackCandidates(chainName, tokenAddress);
+        this.attemptCandidateCascade(imageElement, placeholderElement, fallbackCandidates, cacheKey);
     }
 
     private async resolveTokenIconSourceUncached(
@@ -622,17 +633,6 @@ export class DefiIconsService {
             }
         }
         return null;
-    }
-
-    private resolveTokenFallbackCascade(
-        imageElement: HTMLImageElement,
-        placeholderElement: HTMLElement,
-        chainName: string,
-        tokenAddress: string,
-        cacheKey: string
-    ): void {
-        const fallbackCandidates = this.buildTokenFallbackCandidates(chainName, tokenAddress);
-        this.attemptCandidateCascade(imageElement, placeholderElement, fallbackCandidates, cacheKey);
     }
 
     private writeToLocalStorage(key: string, source: string): void {
