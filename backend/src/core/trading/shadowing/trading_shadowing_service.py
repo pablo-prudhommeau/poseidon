@@ -19,6 +19,7 @@ from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
     floor_datetime_to_granularity as _floor_datetime_to_granularity,
     iter_chronicle_display_bucket_epoch_milliseconds as _iter_chronicle_display_bucket_epoch_milliseconds,
     resolve_all_chronicle_granularity_seconds,
+    resolve_chronicle_cortex_rollout_window_start,
     sample_evenly_spaced_items,
     to_epoch_milliseconds as _to_epoch_milliseconds,
 )
@@ -243,6 +244,7 @@ def compute_trading_shadowing_verdict_chronicle() -> TradingShadowingVerdictChro
         bucket_configurations,
         fetch_end_datetime,
         global_from_datetime,
+        resolve_chronicle_cortex_rollout_window_start(all_from_datetime, global_from_datetime),
     )
     chronicle.buckets.append(all_bucket)
     return TradingShadowingVerdictChronicleComputationResult(
@@ -259,6 +261,7 @@ def _build_trading_shadowing_verdict_chronicle(
         bucket_configurations: list[TradingShadowingVerdictChronicleBucketConfiguration],
         fetch_end_datetime: datetime,
         global_from_datetime: datetime,
+        cortex_rollout_from_datetime: datetime,
 ) -> TradingShadowingVerdictChronicle:
     buckets: list[TradingShadowingVerdictChronicleBucket] = []
     trailing = settings.TRADING_SHADOWING_HISTORY_TRAILING_BUCKETS
@@ -288,7 +291,7 @@ def _build_trading_shadowing_verdict_chronicle(
         total_verdicts_considered=len(verdicts),
         source="computed",
         buckets=buckets,
-        cortex_model_rollouts=load_cortex_model_rollouts_for_chronicle(global_from_datetime, fetch_end_datetime),
+        cortex_model_rollouts=load_cortex_model_rollouts_for_chronicle(cortex_rollout_from_datetime, fetch_end_datetime),
     )
 
 

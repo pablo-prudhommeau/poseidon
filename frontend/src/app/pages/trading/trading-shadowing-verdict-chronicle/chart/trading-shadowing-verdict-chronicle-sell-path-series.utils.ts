@@ -148,6 +148,5 @@ export function synchronizeChronicleSellPathSegmentBundles(
 
     for (let index = targetCount; index < bundles.length; index++) {
         bundles[index].dataSeries.clear();
-        bundles[index].series.isVisible = false;
     }
 }

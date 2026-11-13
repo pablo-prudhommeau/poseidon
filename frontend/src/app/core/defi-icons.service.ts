@@ -149,6 +149,52 @@ export class DefiIconsService {
         return wrapperElement;
     }
 
+    public peekTokenIconSource(
+        blockchainNetwork: string | null | undefined,
+        tokenAddress: string | null | undefined
+    ): string | null {
+        const chainName = String(blockchainNetwork ?? '').toLowerCase();
+        const normalizedTokenAddress = String(tokenAddress ?? '').toLowerCase();
+        const cacheKey = `token:${chainName}:${normalizedTokenAddress}`;
+        const persistedSource = this.readFromLocalStorage(cacheKey);
+        if (persistedSource && !persistedSource.startsWith('data:')) {
+            this.resolvedIconCache.set(cacheKey, persistedSource);
+            return persistedSource;
+        }
+        const cachedSource = this.resolvedIconCache.get(cacheKey);
+        if (cachedSource && !cachedSource.startsWith('data:')) {
+            return cachedSource;
+        }
+        return null;
+    }
+
+    public resolveTokenIconSource(
+        blockchainNetwork: string | null | undefined,
+        tokenAddress: string | null | undefined,
+        tokenSymbol: string | null | undefined
+    ): Promise<string | null> {
+        const chainName = String(blockchainNetwork ?? '').toLowerCase();
+        const normalizedTokenAddress = String(tokenAddress ?? '').toLowerCase();
+        const normalizedTokenSymbol = String(tokenSymbol ?? '').toUpperCase();
+        const cacheKey = `token:${chainName}:${normalizedTokenAddress}`;
+        const persistedSource = this.readFromLocalStorage(cacheKey);
+        if (persistedSource && !persistedSource.startsWith('data:')) {
+            this.resolvedIconCache.set(cacheKey, persistedSource);
+            return Promise.resolve(persistedSource);
+        }
+        const cachedSource = this.resolvedIconCache.get(cacheKey);
+        if (cachedSource && !cachedSource.startsWith('data:')) {
+            return Promise.resolve(cachedSource);
+        }
+        const pendingResolution = this.pendingResolutionCache.get(cacheKey);
+        if (pendingResolution) {
+            return pendingResolution;
+        }
+        const resolution = this.resolveTokenIconSourceUncached(chainName, normalizedTokenAddress, normalizedTokenSymbol, cacheKey);
+        this.pendingResolutionCache.set(cacheKey, resolution);
+        return resolution;
+    }
+
     public getChainIconCandidates(chainName: string | null | undefined): string[] {
         return this.buildChainIconCandidates(String(chainName ?? '').toLowerCase());
     }
@@ -200,9 +246,11 @@ export class DefiIconsService {
         imageElement.onload = () => {
             imageElement.classList.add('is-loaded');
             placeholderElement.style.opacity = '0';
+            this.clearMissingIconPlaceholder(placeholderElement);
         };
         imageElement.onerror = () => {
             imageElement.style.opacity = '0';
+            this.markMissingIconPlaceholder(placeholderElement);
         };
         imageElement.src = source;
     }
@@ -214,6 +262,7 @@ export class DefiIconsService {
             if (candidateIndex >= candidates.length) {
                 imageElement.removeAttribute('src');
                 imageElement.style.opacity = '0';
+                this.markMissingIconPlaceholder(placeholderElement);
                 return;
             }
             const candidateUrl = candidates[candidateIndex++];
@@ -322,6 +371,7 @@ export class DefiIconsService {
         const wrapperElement = this.createCircleWrapper(sizePixels);
         const placeholderElement = this.createPlaceholderElement();
         const imageElement = this.createImageElement('token', sizePixels);
+        imageElement.loading = 'eager';
         wrapperElement.appendChild(placeholderElement);
         wrapperElement.appendChild(imageElement);
 
@@ -380,6 +430,55 @@ export class DefiIconsService {
         const element = document.createElement('span');
         element.className = 'absolute inset-0 rounded-full';
         return element;
+    }
+
+    private markMissingIconPlaceholder(placeholderElement: HTMLElement): void {
+        placeholderElement.classList.add('poseidon-icon-missing');
+        placeholderElement.replaceChildren(this.createMissingIconSvg());
+        placeholderElement.style.opacity = '1';
+    }
+
+    private clearMissingIconPlaceholder(placeholderElement: HTMLElement): void {
+        placeholderElement.classList.remove('poseidon-icon-missing');
+        placeholderElement.replaceChildren();
+        placeholderElement.removeAttribute('title');
+    }
+
+    private createMissingQuestionMark(size: number): SVGGElement {
+        const svgNamespace = 'http://www.w3.org/2000/svg';
+        const scaled = document.createElementNS(svgNamespace, 'g');
+        scaled.setAttribute('transform', `scale(${size / 16})`);
+        const glyph = document.createElementNS(svgNamespace, 'text');
+        glyph.setAttribute('x', '8');
+        glyph.setAttribute('y', '8');
+        glyph.setAttribute('text-anchor', 'middle');
+        glyph.setAttribute('dominant-baseline', 'central');
+        glyph.setAttribute('font-family', 'Inter, Segoe UI, sans-serif');
+        glyph.setAttribute('font-size', '9');
+        glyph.setAttribute('font-weight', '500');
+        glyph.setAttribute('fill', 'rgb(186, 196, 208)');
+        glyph.setAttribute('fill-opacity', '0.9');
+        glyph.textContent = '?';
+        scaled.append(glyph);
+        return scaled;
+    }
+
+    private createMissingIconSvg(): SVGSVGElement {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('aria-hidden', 'true');
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', '8');
+        circle.setAttribute('cy', '8');
+        circle.setAttribute('r', '6.5');
+        circle.setAttribute('fill', 'none');
+        circle.setAttribute('stroke', 'rgb(186, 196, 208)');
+        circle.setAttribute('stroke-opacity', '0.72');
+        circle.setAttribute('stroke-width', '0.7');
+        circle.setAttribute('stroke-linecap', 'round');
+        circle.setAttribute('stroke-dasharray', '1.15 1.7');
+        svg.append(circle, this.createMissingQuestionMark(16));
+        return svg;
     }
 
     private extractImageUrlFromDexscreenerResponse(response: DexscreenerPairsResponse): string | null {
@@ -485,6 +584,44 @@ export class DefiIconsService {
 
         this.pendingResolutionCache.set(deduplicationKey, resolutionPromise);
         return resolutionPromise;
+    }
+
+    private probeImageSource(source: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            const image = new Image();
+            image.onload = () => resolve(image.naturalWidth > 0);
+            image.onerror = () => resolve(false);
+            image.src = source;
+        });
+    }
+
+    private rememberTokenIconSource(cacheKey: string, source: string): void {
+        this.resolvedIconCache.set(cacheKey, source);
+        this.writeToLocalStorage(cacheKey, source);
+        if (source.startsWith('http://') || source.startsWith('https://')) {
+            this.persistAsDataUrl(cacheKey, source);
+        }
+    }
+
+    private async resolveTokenIconSourceUncached(
+        chainName: string,
+        tokenAddress: string,
+        tokenSymbol: string,
+        cacheKey: string
+    ): Promise<string | null> {
+        const resolvedUrl = await this.resolveDexscreenerTokenImageUrl(chainName, tokenAddress, tokenSymbol);
+        if (resolvedUrl && (await this.probeImageSource(resolvedUrl))) {
+            this.rememberTokenIconSource(cacheKey, resolvedUrl);
+            return resolvedUrl;
+        }
+        const fallbackCandidates = this.buildTokenFallbackCandidates(chainName, tokenAddress);
+        for (const candidateUrl of fallbackCandidates) {
+            if (await this.probeImageSource(candidateUrl)) {
+                this.rememberTokenIconSource(cacheKey, candidateUrl);
+                return candidateUrl;
+            }
+        }
+        return null;
     }
 
     private resolveTokenFallbackCascade(

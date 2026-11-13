@@ -129,22 +129,28 @@ export class TradingShadowingVerdictChronicleSurfaceCoordinator {
             return;
         }
         synchronizeChronicleSeriesFromArrays(model, this.displayArrays, this.goldenZoneThresholds);
+        model.sciChartSurface.suspendUpdates();
         try {
-            this.synchronizeGoldenZones(meta);
-            this.synchronizeCortexModelRollouts(meta);
-            synchronizeChronicleSellPathTokenIconAnnotations(
-                model,
-                this.defiIconsService,
-                this.displayArrays.sellPathProfitablePaths,
-                this.displayArrays.sellPathLossPaths
-            );
-        } catch {}
-        this.harmonizeRightAxes();
-        if (snapTimeVisibleRange) {
-            this.applyTimeVisibleRange(meta);
+            try {
+                this.synchronizeGoldenZones(meta);
+                this.synchronizeCortexModelRollouts(meta);
+            } catch {}
+            this.harmonizeRightAxes();
+            if (snapTimeVisibleRange) {
+                this.applyTimeVisibleRange(meta);
+            }
+            try {
+                synchronizeChronicleSellPathTokenIconAnnotations(
+                    model,
+                    this.defiIconsService,
+                    this.displayArrays.sellPathProfitablePaths,
+                    this.displayArrays.sellPathLossPaths
+                );
+            } catch {}
+        } finally {
+            model.sciChartSurface.resumeUpdates({ invalidateOnResume: true });
         }
         try {
-            model.sciChartSurface.invalidateElement();
             model.sciChartOverview.overviewSciChartSurface.invalidateElement();
         } catch {}
     }

@@ -7,8 +7,8 @@ from typing import TypeVar
 CHRONICLE_ALL_BUCKET_LABEL: str = "all"
 CHRONICLE_ALL_TARGET_BUCKET_COUNT: int = 1200
 CHRONICLE_ALL_GRANULARITY_CANDIDATE_SECONDS: tuple[int, ...] = (3600, 7200, 14400, 21600, 43200, 86400)
-CHRONICLE_MAX_METRIC_POINTS: int = 500
-CHRONICLE_MAX_VOLUME_POINTS: int = 900
+CHRONICLE_MAX_METRIC_POINTS: int = CHRONICLE_ALL_TARGET_BUCKET_COUNT
+CHRONICLE_MAX_VOLUME_POINTS: int = CHRONICLE_ALL_TARGET_BUCKET_COUNT
 CHRONICLE_MAX_SELL_CLOUD_POINTS: int = 2000
 CHRONICLE_ALL_VERDICT_SCAN_BATCH_SIZE: int = 5000
 
@@ -72,6 +72,13 @@ def simple_moving_average_like_trading_shadowing_verdict_chronicle_chart(values:
         current_window = min(index + 1, effective_window)
         result[index] = running_sum / current_window
     return result
+
+
+def resolve_chronicle_cortex_rollout_window_start(
+        earliest_history_datetime: datetime,
+        retention_window_start_datetime: datetime,
+) -> datetime:
+    return min(earliest_history_datetime, retention_window_start_datetime)
 
 
 def resolve_all_chronicle_granularity_seconds(span_seconds: float) -> int:

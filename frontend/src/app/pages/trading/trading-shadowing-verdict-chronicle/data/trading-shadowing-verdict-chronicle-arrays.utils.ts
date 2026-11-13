@@ -19,11 +19,19 @@ export type { SciChartModule };
 
 const CHRONICLE_MAX_METRIC_POINTS = 500;
 const CHRONICLE_MAX_VOLUME_POINTS = 900;
+const CHRONICLE_ALL_TARGET_BUCKET_COUNT = 1200;
 
 export type ChronicleBucketLabel = TradingShadowingVerdictChronicleBucketPayload['bucket_label'];
 export type TradingShadowingVerdictChronicleBucketLabel = ChronicleBucketLabel;
 
 export const CHRONICLE_ALL_BUCKET_LABEL = 'all';
+
+function resolveDisplayedSeriesPointCap(bucketLabel: string, boundedRangeCap: number): number {
+    if (bucketLabel === CHRONICLE_ALL_BUCKET_LABEL) {
+        return CHRONICLE_ALL_TARGET_BUCKET_COUNT;
+    }
+    return boundedRangeCap;
+}
 
 function buildDownsampledIndices(length: number, maxPoints: number): number[] {
     if (length <= maxPoints) {
@@ -301,7 +309,9 @@ export function buildChronicleArraysFromBucket(meta: ChronicleBucketMeta, smaWin
         hardGateOpenSeries
     } = alignRegimeGateSeriesToMetrics(metrics, meta.bucket.regime_gate);
 
-    const metricDownsampledIndices = buildDownsampledIndices(metricTimestampsMilliseconds.length, CHRONICLE_MAX_METRIC_POINTS);
+    const metricPointCap = resolveDisplayedSeriesPointCap(meta.bucket.bucket_label, CHRONICLE_MAX_METRIC_POINTS);
+    const volumePointCap = resolveDisplayedSeriesPointCap(meta.bucket.bucket_label, CHRONICLE_MAX_VOLUME_POINTS);
+    const metricDownsampledIndices = buildDownsampledIndices(metricTimestampsMilliseconds.length, metricPointCap);
     const downsampleSeriesByMetricIndices = (values: number[]): number[] => metricDownsampledIndices.map((index) => values[index] ?? 0);
     const downsampleBooleanSeriesByMetricIndices = (values: boolean[]): boolean[] => metricDownsampledIndices.map((index) => values[index] ?? false);
     const downsampledMetricTimestampsMilliseconds = metricDownsampledIndices.map((index) => metricTimestampsMilliseconds[index] ?? 0);
@@ -343,7 +353,7 @@ export function buildChronicleArraysFromBucket(meta: ChronicleBucketMeta, smaWin
         0,
         0.99
     );
-    const volumeDownsampledIndices = buildDownsampledIndices(volumeBucketTimestampsMilliseconds.length, CHRONICLE_MAX_VOLUME_POINTS);
+    const volumeDownsampledIndices = buildDownsampledIndices(volumeBucketTimestampsMilliseconds.length, volumePointCap);
     const downsampledVolumeBucketTimestampsMilliseconds = volumeDownsampledIndices.map((index) => volumeBucketTimestampsMilliseconds[index] ?? 0);
     const downsampledVolumeBucketVerdictCounts = volumeDownsampledIndices.map((index) => volumeBucketVerdictCounts[index] ?? 0);
 

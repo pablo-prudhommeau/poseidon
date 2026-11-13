@@ -285,7 +285,6 @@ export class TradingShadowingVerdictChronicleSurfaceBuilder {
             lossSellXyDataSeries: seriesBundle.lossSellXyDataSeries,
             profitableSellPathSegmentBundles: seriesBundle.profitableSellPathSegmentBundles,
             lossSellPathSegmentBundles: seriesBundle.lossSellPathSegmentBundles,
-            sellPathTokenIconAnnotations: [],
             cursorModifier: seriesBundle.cursorModifier,
             cortexCalibrationBandSegmentBundles: seriesBundle.cortexCalibrationBandSegmentBundles,
             cortexCalibrationBandUserVisible: CHRONICLE_DEFAULT_VISIBLE_SERIES.includes(CHRONICLE_SERIES.cortexCalibrationBand),

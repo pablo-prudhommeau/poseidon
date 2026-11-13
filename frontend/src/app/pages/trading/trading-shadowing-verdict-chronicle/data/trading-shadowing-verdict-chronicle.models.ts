@@ -44,11 +44,6 @@ export interface CortexCalibrationBandSegmentBundle {
     series: InstanceType<SciChartModule['SplineBandRenderableSeries']>;
 }
 
-export interface ChronicleSellPathTokenIconAnnotationBundle {
-    annotation: InstanceType<SciChartModule['HtmlCustomAnnotation']>;
-    seriesName: string;
-}
-
 export interface ChronicleSellPathSegmentBundle {
     dataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     series: InstanceType<SciChartModule['FastLineRenderableSeries']>;
@@ -156,7 +151,6 @@ export interface ChronicleChartModel {
     lossSellXyDataSeries: InstanceType<SciChartModule['XyDataSeries']>;
     profitableSellPathSegmentBundles: ChronicleSellPathSegmentBundle[];
     lossSellPathSegmentBundles: ChronicleSellPathSegmentBundle[];
-    sellPathTokenIconAnnotations: ChronicleSellPathTokenIconAnnotationBundle[];
     cursorModifier: InstanceType<SciChartModule['CursorModifier']>;
     cortexCalibrationBandSegmentBundles: CortexCalibrationBandSegmentBundle[];
     cortexCalibrationBandUserVisible: boolean;

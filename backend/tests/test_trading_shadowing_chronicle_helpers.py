@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from src.core.trading.shadowing.trading_shadowing_chronicle_helpers import (
+    CHRONICLE_ALL_TARGET_BUCKET_COUNT,
     CHRONICLE_MAX_METRIC_POINTS,
     CHRONICLE_MAX_SELL_CLOUD_POINTS,
+    CHRONICLE_MAX_VOLUME_POINTS,
     downsample_series_indices,
     format_chronicle_granularity_label,
     iter_chronicle_display_bucket_epoch_milliseconds,
     resolve_all_chronicle_granularity_seconds,
+    resolve_chronicle_cortex_rollout_window_start,
     sample_evenly_spaced_items,
     to_epoch_milliseconds,
 )
@@ -45,6 +48,26 @@ def test_iter_chronicle_display_bucket_epoch_milliseconds_floors_partial_bucket(
 
     assert timestamps[0] == to_epoch_milliseconds(floored_from)
     assert timestamps[-1] == to_epoch_milliseconds(floored_as_of)
+
+
+def test_cortex_rollout_window_starts_at_the_earliest_displayed_history() -> None:
+    timezone_info = timezone(timedelta(hours=2))
+    earliest_history = datetime(2026, 5, 19, 13, 14, tzinfo=timezone_info)
+    retention_window_start = datetime(2026, 9, 17, 20, 0, tzinfo=timezone_info)
+
+    assert resolve_chronicle_cortex_rollout_window_start(earliest_history, retention_window_start) == earliest_history
+    assert resolve_chronicle_cortex_rollout_window_start(retention_window_start, earliest_history) == earliest_history
+
+
+def test_all_range_resolved_grain_survives_the_display_point_cap() -> None:
+    one_hundred_eighty_days_seconds = 180.0 * 86400.0
+    granularity_seconds = resolve_all_chronicle_granularity_seconds(one_hundred_eighty_days_seconds)
+    bucket_count = int(one_hundred_eighty_days_seconds // granularity_seconds) + 1
+
+    assert granularity_seconds == 14400
+    assert bucket_count <= CHRONICLE_ALL_TARGET_BUCKET_COUNT
+    assert CHRONICLE_MAX_METRIC_POINTS == CHRONICLE_MAX_VOLUME_POINTS
+    assert downsample_series_indices(bucket_count, CHRONICLE_MAX_METRIC_POINTS) == list(range(bucket_count))
 
 
 def test_resolve_all_chronicle_granularity_seconds_tracks_target_bucket_count() -> None:

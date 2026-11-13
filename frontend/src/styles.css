@@ -901,6 +901,19 @@ ag-grid-angular.poseidon-ag-grid-surface .ag-cell.poseidon-grid-delta-stack-cell
     opacity: 1;
 }
 
+.poseidon-icon-missing {
+    display: block;
+    background: transparent;
+    border: none;
+    pointer-events: none;
+}
+
+.poseidon-icon-missing svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
 .apexcharts-canvas,
 .apexcharts-tooltip,
 .apexcharts-menu,
