@@ -12,6 +12,7 @@ class AaveLiveMetrics(BaseModel):
 class AaveEvmTransactionConfirmationFailureKind(Enum):
     REVERTED = "REVERTED"
     CONFIRMATION_TIMEOUT = "CONFIRMATION_TIMEOUT"
+    REPLACED_OR_DROPPED = "REPLACED_OR_DROPPED"
 
 
 class AaveEvmTransactionConfirmationOutcome(BaseModel):
@@ -20,6 +21,17 @@ class AaveEvmTransactionConfirmationOutcome(BaseModel):
     confirmation_failure_kind: Optional[AaveEvmTransactionConfirmationFailureKind] = None
     onchain_revert_reason: Optional[str] = None
     block_number: Optional[int] = None
+
+
+class AaveEvmTransactionBroadcast(BaseModel):
+    transaction_hash: str
+    nonce: int
+    submitted_gas_limit: int
+
+
+class AaveEvmFeeParameters(BaseModel):
+    max_priority_fee_per_gas_wei: int
+    max_fee_per_gas_wei: int
 
 
 class AaveReserveIndexSnapshot(BaseModel):

@@ -12,6 +12,7 @@ from src.configuration.config import settings
 from src.core.aavedca.aave_dca_helpers import deserialize_pipeline_operations
 from src.core.aavedca.aave_dca_structures import (
     AaveDcaAllocationDecision,
+    AaveDcaNativeGasRequirement,
     AaveDcaOrderStatus,
     AaveDcaPipelineOperationStatus,
 )
@@ -281,6 +282,30 @@ def delete_dca_order_telegram_message(dca_order: AaveDcaOrder, order_dao: AaveDc
     delete_message(dca_order.telegram_message_id)
     dca_order.telegram_message_id = None
     order_dao.save(dca_order)
+
+
+def dispatch_aave_dca_native_gas_shortfall_alert(
+        dca_strategy: AaveDcaStrategy,
+        native_gas_requirement: AaveDcaNativeGasRequirement,
+) -> None:
+    send_alert(
+        title=f"[{dca_strategy.target_asset_symbol}] AVAX insuffisant pour la suite de la stratégie",
+        body=(
+            f"⛽ Solde: {native_gas_requirement.wallet_balance_avax:.4f} AVAX\n"
+            f"📈 Besoin pour {native_gas_requirement.order_count} ordre(s) restant(s): "
+            f"{native_gas_requirement.required_balance_avax:.4f} AVAX\n"
+            f"➕ À ajouter: {native_gas_requirement.missing_balance_avax:.4f} AVAX"
+        ),
+        emoji_indicator="⛽",
+    )
+    logger.warning(
+        "[AAVEDCA][NOTIFICATION][GAS] Native gas below the remaining need — strategy_id=%s wallet_balance_avax=%.6f "
+        "required_balance_avax=%.6f remaining_order_count=%d",
+        dca_strategy.id,
+        native_gas_requirement.wallet_balance_avax,
+        native_gas_requirement.required_balance_avax,
+        native_gas_requirement.order_count,
+    )
 
 
 def order_status_requires_approval_footer(dca_order: AaveDcaOrder) -> bool:

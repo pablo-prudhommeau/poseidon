@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,8 @@ from src.api.http.api_schemas import (
     AaveDcaStrategiesResponse,
     AaveDcaStrategyCreatePayload,
     AaveDcaStrategyCreateResponse,
+    AaveDcaStrategyStatusUpdatePayload,
+    AaveDcaStrategyStatusUpdateResponse,
     SystemHealthComponentPayload,
     SystemHealthComponentsPayload,
     SystemHealthPayload,
@@ -17,9 +19,16 @@ from src.api.http.http_helpers import (
     build_aave_dca_orders_response,
     build_aave_dca_strategies_response,
     create_aave_dca_strategy_from_payload,
+    update_aave_dca_strategy_status_from_payload,
 )
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
+from src.core.aavedca.aave_dca_structures import (
+    AaveDcaActiveStrategyConflictError,
+    AaveDcaInsufficientNativeGasError,
+    AaveDcaStrategyNotFoundError,
+    AaveDcaStrategyStatusTransitionError,
+)
 from src.core.utils.date_utils import get_current_local_datetime
 from src.logging.logger import get_application_logger
 from src.persistence.database_session_manager import get_fastapi_database_session
@@ -56,7 +65,21 @@ async def create_new_aave_dca_strategy(
         database_session: Session = Depends(get_fastapi_database_session),
 ) -> AaveDcaStrategyCreateResponse:
     logger.debug("[HTTP][AAVEDCA][STRATEGY][CREATE] Initiating DCA strategy creation for symbol %s", strategy_payload.binance_trading_pair)
-    create_response = await create_aave_dca_strategy_from_payload(database_session, strategy_payload)
+    try:
+        create_response = await create_aave_dca_strategy_from_payload(database_session, strategy_payload)
+    except AaveDcaActiveStrategyConflictError as exception:
+        logger.info("[HTTP][AAVEDCA][STRATEGY][CREATE] DCA strategy creation refused: %s", exception)
+        raise HTTPException(status_code=409, detail="Another DCA strategy is already active on this blockchain") from exception
+    except AaveDcaInsufficientNativeGasError as exception:
+        logger.info("[HTTP][AAVEDCA][STRATEGY][CREATE] DCA strategy creation refused: %s", exception)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Insufficient AVAX for gas: add {exception.native_gas_requirement.missing_balance_avax:.4f} AVAX "
+                f"(wallet {exception.native_gas_requirement.wallet_balance_avax:.4f}, "
+                f"required {exception.native_gas_requirement.required_balance_avax:.4f})"
+            ),
+        ) from exception
     logger.info(
         "[HTTP][AAVEDCA][STRATEGY][CREATE] Successfully created DCA strategy with id %s generating %s orders",
         create_response.strategy_id,
@@ -64,6 +87,38 @@ async def create_new_aave_dca_strategy(
     )
     cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
     return create_response
+
+
+@router.patch("/api/dca/strategies/{strategy_uid}/status", tags=["dca"])
+def update_aave_dca_strategy_status_route(
+        strategy_uid: int,
+        status_payload: AaveDcaStrategyStatusUpdatePayload,
+        database_session: Session = Depends(get_fastapi_database_session),
+) -> AaveDcaStrategyStatusUpdateResponse:
+    logger.debug(
+        "[HTTP][AAVEDCA][STRATEGY][STATUS] Initiating status change to %s for DCA strategy id %s",
+        status_payload.strategy_status.value,
+        strategy_uid,
+    )
+    try:
+        status_update_response = update_aave_dca_strategy_status_from_payload(database_session, strategy_uid, status_payload)
+    except AaveDcaStrategyNotFoundError as exception:
+        logger.info("[HTTP][AAVEDCA][STRATEGY][STATUS] DCA strategy id %s not found: %s", strategy_uid, exception)
+        raise HTTPException(status_code=404, detail="DCA strategy not found") from exception
+    except AaveDcaStrategyStatusTransitionError as exception:
+        logger.info("[HTTP][AAVEDCA][STRATEGY][STATUS] DCA strategy id %s status change refused: %s", strategy_uid, exception)
+        raise HTTPException(status_code=409, detail=str(exception)) from exception
+    except AaveDcaActiveStrategyConflictError as exception:
+        logger.info("[HTTP][AAVEDCA][STRATEGY][STATUS] DCA strategy id %s activation refused: %s", strategy_uid, exception)
+        raise HTTPException(status_code=409, detail="Another DCA strategy is already active on this blockchain") from exception
+
+    logger.info(
+        "[HTTP][AAVEDCA][STRATEGY][STATUS] DCA strategy id %s moved from %s to %s",
+        strategy_uid,
+        status_update_response.previous_strategy_status.value,
+        status_update_response.strategy_status.value,
+    )
+    return status_update_response
 
 
 @router.get("/api/dca/strategies", tags=["dca"])

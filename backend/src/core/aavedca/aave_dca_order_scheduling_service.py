@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
+from src.core.aavedca.aave_dca_gas_reserve_service import alert_aave_dca_native_gas_shortfall
 from src.core.aavedca.aave_dca_helpers import calculate_dynamic_allocation, create_empty_pipeline_operations
 from src.core.aavedca.aave_dca_notification_service import publish_dca_order_telegram_message
 from src.core.aavedca.aave_dca_pipeline_service import AaveDcaPipelineService
@@ -56,6 +57,23 @@ class AaveDcaOrderSchedulingService:
             status_note=status_note,
         )
 
+    async def _alert_native_gas_shortfall(self, dca_strategy: AaveDcaStrategy) -> None:
+        if settings.AAVE_DCA_PAPER_MODE:
+            return
+        try:
+            remaining_order_count: int = self.dca_order_dao.count_remaining_by_strategy(dca_strategy.id)
+            await alert_aave_dca_native_gas_shortfall(
+                aave_executor=self.aave_executor,
+                dca_strategy=dca_strategy,
+                remaining_order_count=remaining_order_count,
+            )
+        except Exception as exception:
+            logger.exception(
+                "[AAVEDCA][SCHEDULING][GAS] Native gas requirement check failed for strategy_id=%s: %s",
+                dca_strategy.id,
+                exception,
+            )
+
     async def process_scheduled_dca_order(self, dca_order: AaveDcaOrder, dca_strategy: AaveDcaStrategy) -> None:
         pipeline_resume_statuses = (
             AaveDcaOrderStatus.AWAITING_WITHDRAW,
@@ -95,6 +113,8 @@ class AaveDcaOrderSchedulingService:
 
         dca_strategy.last_yield_calculation_timestamp = current_local_time
         self.database_session.commit()
+
+        await self._alert_native_gas_shortfall(dca_strategy)
 
         blockchain = BlockchainNetwork(dca_strategy.blockchain_network.lower())
         is_conflicting_debt_detected = await self.aave_executor.verify_active_debt(blockchain, dca_strategy.target_asset_address)

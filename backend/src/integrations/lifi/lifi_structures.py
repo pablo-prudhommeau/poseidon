@@ -9,6 +9,10 @@ class LifiRouteNormalizationError(ValueError):
     pass
 
 
+class LifiTransactionRequestRejectedError(Exception):
+    pass
+
+
 class LifiQuoteUnavailableError(RuntimeError):
     def __init__(
             self,

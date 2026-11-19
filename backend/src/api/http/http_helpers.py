@@ -11,6 +11,8 @@ from src.api.http.api_schemas import (
     AaveDcaStrategiesResponse,
     AaveDcaStrategyCreatePayload,
     AaveDcaStrategyCreateResponse,
+    AaveDcaStrategyStatusUpdatePayload,
+    AaveDcaStrategyStatusUpdateResponse,
     TradingEvaluationPayload,
     TradingPositionPayload,
     TradingPositionsResponse,
@@ -24,8 +26,14 @@ from src.api.serializers import (
 )
 from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
+from src.configuration.config import settings
+from src.core.aavedca.aave_dca_gas_reserve_service import ensure_aave_dca_native_gas_for_new_strategy
 from src.core.aavedca.aave_dca_helpers import generate_comparative_snapshot, generate_linear_execution_calendar
-from src.core.aavedca.aave_dca_structures import AaveDcaStrategyStatus
+from src.core.aavedca.aave_dca_strategy_status_service import (
+    ensure_no_other_active_aave_dca_strategy,
+    update_aave_dca_strategy_status,
+)
+from src.core.aavedca.aave_dca_structures import AaveDcaStrategyStatus, AaveDcaStrategyStatusChange
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.analytics.trading_analytics_helpers import (
     build_exit_reason_by_evaluation_id,
@@ -270,6 +278,18 @@ async def create_aave_dca_strategy_from_payload(
     dca_strategy_dao = AaveDcaStrategyDao(database_session)
     dca_order_dao = AaveDcaOrderDao(database_session)
 
+    ensure_no_other_active_aave_dca_strategy(
+        strategy_dao=dca_strategy_dao,
+        blockchain_network=strategy_payload.blockchain_network,
+        excluded_strategy_id=None,
+    )
+    if not settings.AAVE_DCA_PAPER_MODE:
+        await ensure_aave_dca_native_gas_for_new_strategy(
+            aave_executor=aave_executor_client,
+            blockchain_network=strategy_payload.blockchain_network,
+            order_count=strategy_payload.total_planned_executions,
+        )
+
     backtest_comparative_snapshot = await generate_comparative_snapshot(
         symbol=strategy_payload.binance_trading_pair,
         start_date=strategy_payload.bear_market_start_date,
@@ -296,6 +316,33 @@ async def create_aave_dca_strategy_from_payload(
         message="Strategy successfully created",
         strategy_id=saved_dca_strategy.id,
         orders_count=len(scheduled_orders),
+    )
+
+
+def update_aave_dca_strategy_status_from_payload(
+        database_session: Session,
+        strategy_uid: int,
+        status_payload: AaveDcaStrategyStatusUpdatePayload,
+) -> AaveDcaStrategyStatusUpdateResponse:
+    strategy_status_change: AaveDcaStrategyStatusChange = update_aave_dca_strategy_status(
+        database_session=database_session,
+        strategy_id=strategy_uid,
+        requested_status=status_payload.strategy_status,
+    )
+    cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+
+    message: str = f"Strategy status changed to {strategy_status_change.status.value}"
+    if strategy_status_change.suspended_in_flight_order_count > 0:
+        message = (
+            f"{message}, {strategy_status_change.suspended_in_flight_order_count} suspended order(s) "
+            f"stopped mid-execution: their funds may be in the wallet"
+        )
+    return AaveDcaStrategyStatusUpdateResponse(
+        message=message,
+        strategy_id=strategy_status_change.strategy_id,
+        previous_strategy_status=strategy_status_change.previous_status,
+        strategy_status=strategy_status_change.status,
+        suspended_in_flight_order_count=strategy_status_change.suspended_in_flight_order_count,
     )
 
 

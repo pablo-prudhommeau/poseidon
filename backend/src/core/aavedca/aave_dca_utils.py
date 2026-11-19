@@ -5,7 +5,14 @@ from decimal import Decimal
 from typing import Optional
 
 from src.configuration.config import settings
-from src.core.aavedca.aave_dca_structures import AaveDcaAllocationDecision, AaveDcaOrderStatus
+from src.core.aavedca.aave_dca_constants import AAVE_DCA_ORDER_ESTIMATED_GAS_UNITS
+from src.core.aavedca.aave_dca_structures import (
+    AaveDcaAllocationDecision,
+    AaveDcaNativeGasRequirement,
+    AaveDcaOrderStatus,
+    AaveDcaPipelineOperationStep,
+    AaveDcaStrategyStatus,
+)
 from src.core.utils.date_utils import get_current_local_datetime
 from src.integrations.aave.aave_structures import AaveEvmTransactionConfirmationFailureKind
 
@@ -56,6 +63,16 @@ def resolve_pipeline_step_descriptor(order_status: AaveDcaOrderStatus) -> Option
     return None
 
 
+def resolve_pipeline_operation_step(order_status: AaveDcaOrderStatus) -> Optional[AaveDcaPipelineOperationStep]:
+    if order_status == AaveDcaOrderStatus.AWAITING_WITHDRAW:
+        return AaveDcaPipelineOperationStep.WITHDRAW
+    if order_status == AaveDcaOrderStatus.AWAITING_SWAP:
+        return AaveDcaPipelineOperationStep.SWAP
+    if order_status == AaveDcaOrderStatus.AWAITING_SUPPLY:
+        return AaveDcaPipelineOperationStep.SUPPLY
+    return None
+
+
 def resolve_allocation_decision_display_title(allocation_decision: AaveDcaAllocationDecision) -> str:
     if allocation_decision == AaveDcaAllocationDecision.AGGRESSIVE_DIP_ACCUMULATION_SCALED:
         return "Accumulation Agressive 🚀"
@@ -84,6 +101,8 @@ def build_aave_dca_pipeline_step_failure_message(
 ) -> str:
     if confirmation_failure_kind == AaveEvmTransactionConfirmationFailureKind.CONFIRMATION_TIMEOUT:
         return f"{pipeline_step_label} transaction confirmation timed out"
+    if confirmation_failure_kind == AaveEvmTransactionConfirmationFailureKind.REPLACED_OR_DROPPED:
+        return f"{pipeline_step_label} transaction was replaced or dropped before confirmation"
     if onchain_revert_reason is not None and onchain_revert_reason.strip():
         return f"{pipeline_step_label} transaction reverted on-chain: {onchain_revert_reason.strip()}"
     return f"{pipeline_step_label} transaction not confirmed"
@@ -91,3 +110,33 @@ def build_aave_dca_pipeline_step_failure_message(
 
 def resolve_closest_market_timestamp(market_timestamps: list[int], target_timestamp: int) -> int:
     return min(market_timestamps, key=lambda current_timestamp: abs(current_timestamp - target_timestamp))
+
+
+def compute_aave_dca_native_gas_requirement(
+        order_count: int,
+        max_fee_per_gas_wei: int,
+        wallet_balance_avax: float,
+        minimum_reserve_avax: float,
+) -> AaveDcaNativeGasRequirement:
+    estimated_gas_cost_avax: float = order_count * AAVE_DCA_ORDER_ESTIMATED_GAS_UNITS * max_fee_per_gas_wei / (10 ** 18)
+    required_balance_avax: float = estimated_gas_cost_avax + minimum_reserve_avax
+    return AaveDcaNativeGasRequirement(
+        order_count=order_count,
+        gas_units_per_order=AAVE_DCA_ORDER_ESTIMATED_GAS_UNITS,
+        max_fee_per_gas_wei=max_fee_per_gas_wei,
+        estimated_gas_cost_avax=estimated_gas_cost_avax,
+        minimum_reserve_avax=minimum_reserve_avax,
+        required_balance_avax=required_balance_avax,
+        wallet_balance_avax=wallet_balance_avax,
+        missing_balance_avax=max(required_balance_avax - wallet_balance_avax, 0.0),
+        is_sufficient=wallet_balance_avax >= required_balance_avax,
+    )
+
+
+def is_aave_dca_strategy_status_transition_allowed(
+        current_status: AaveDcaStrategyStatus,
+        requested_status: AaveDcaStrategyStatus,
+) -> bool:
+    if current_status in (AaveDcaStrategyStatus.COMPLETED, AaveDcaStrategyStatus.CANCELLED):
+        return False
+    return requested_status != current_status

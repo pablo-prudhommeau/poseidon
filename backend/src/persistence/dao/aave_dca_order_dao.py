@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import or_, select, desc
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from src.core.aavedca.aave_dca_structures import AaveDcaOrderStatus
 from src.logging.logger import get_application_logger
 from src.persistence.models import AaveDcaOrder
 
@@ -88,6 +89,38 @@ class AaveDcaOrderDao:
             .order_by(AaveDcaOrder.planned_execution_date.asc())
         )
         return list(self.database_session.execute(database_query).scalars().all())
+
+    def retrieve_in_flight_by_strategy(self, strategy_id: int) -> List[AaveDcaOrder]:
+        logger.debug("[DATABASE][DAO][AAVEDCA_ORDER][RETRIEVE] Fetching in-flight orders for strategy %d", strategy_id)
+        in_flight_order_statuses: list[AaveDcaOrderStatus] = [
+            AaveDcaOrderStatus.AWAITING_WITHDRAW,
+            AaveDcaOrderStatus.AWAITING_SWAP,
+            AaveDcaOrderStatus.AWAITING_SUPPLY,
+        ]
+        database_query = (
+            select(AaveDcaOrder)
+            .where(AaveDcaOrder.strategy_id == strategy_id)
+            .where(AaveDcaOrder.order_status.in_(in_flight_order_statuses))
+            .order_by(AaveDcaOrder.id.asc())
+        )
+        return list(self.database_session.execute(database_query).scalars().all())
+
+    def count_remaining_by_strategy(self, strategy_id: int) -> int:
+        remaining_order_statuses: list[AaveDcaOrderStatus] = [
+            AaveDcaOrderStatus.PENDING,
+            AaveDcaOrderStatus.WAITING_USER_APPROVAL,
+            AaveDcaOrderStatus.AWAITING_WITHDRAW,
+            AaveDcaOrderStatus.AWAITING_SWAP,
+            AaveDcaOrderStatus.AWAITING_SUPPLY,
+        ]
+        database_query = (
+            select(func.count(AaveDcaOrder.id))
+            .where(AaveDcaOrder.strategy_id == strategy_id)
+            .where(AaveDcaOrder.order_status.in_(remaining_order_statuses))
+        )
+        remaining_order_count: int = self.database_session.execute(database_query).scalar_one()
+        logger.debug("[DATABASE][DAO][AAVEDCA_ORDER][COUNT] Strategy %d has %d remaining orders", strategy_id, remaining_order_count)
+        return remaining_order_count
 
     def retrieve_history_by_strategy(self, strategy_id: int) -> List[AaveDcaOrder]:
         database_query = select(AaveDcaOrder).where(AaveDcaOrder.strategy_id == strategy_id).order_by(desc(AaveDcaOrder.planned_execution_date))

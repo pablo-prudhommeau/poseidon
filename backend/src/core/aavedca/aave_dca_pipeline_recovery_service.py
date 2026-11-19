@@ -8,14 +8,16 @@ from src.cache.cache_invalidator import cache_invalidator
 from src.cache.cache_realm import CacheRealm
 from src.configuration.config import settings
 from src.core.aavedca.aave_dca_helpers import (
-    append_pipeline_operation,
     classify_aave_dca_pipeline_onchain_failure,
+    find_pending_broadcast_operation,
+    replace_broadcast_or_append_pipeline_operation,
 )
 from src.core.aavedca.aave_dca_notification_service import publish_dca_order_telegram_message
 from src.core.aavedca.aave_dca_structures import (
     AaveDcaBlockingPipelineError,
     AaveDcaPipelineOnchainFailureRetryPolicy,
     AaveDcaPipelineOperation,
+    AaveDcaPipelineOperationDetails,
     AaveDcaPipelineOperationStatus,
     AaveDcaPipelineOperationStep,
     AaveDcaPipelinePreflightFailureReason,
@@ -26,7 +28,11 @@ from src.core.aavedca.aave_dca_utils import (
     compute_pipeline_next_attempt_at,
 )
 from src.core.utils.date_utils import get_current_local_datetime
-from src.integrations.aave.aave_structures import AaveEvmTransactionConfirmationOutcome
+from src.integrations.aave.aave_structures import (
+    AaveEvmTransactionBroadcast,
+    AaveEvmTransactionConfirmationFailureKind,
+    AaveEvmTransactionConfirmationOutcome,
+)
 from src.logging.logger import get_application_logger
 from src.persistence.dao.aave_dca_order_dao import AaveDcaOrderDao
 from src.persistence.models import AaveDcaOrder, AaveDcaStrategy
@@ -49,14 +55,12 @@ class AaveDcaPipelineRecoveryService:
             dca_order: AaveDcaOrder,
             pipeline_step: AaveDcaPipelineOperationStep,
             pipeline_status: AaveDcaPipelineOperationStatus,
-            transaction_hash: Optional[str] = None,
-            route_tool: Optional[str] = None,
-            source_amount_base_units: Optional[int] = None,
-            expected_output_base_units: Optional[int] = None,
-            minimum_output_base_units: Optional[int] = None,
-            failure_code: Optional[str] = None,
-            failure_message: Optional[str] = None,
-            pipeline_attempt_number: Optional[int] = None,
+            operation_details: AaveDcaPipelineOperationDetails,
+            transaction_hash: Optional[str],
+            nonce: Optional[int],
+            failure_code: Optional[str],
+            failure_message: Optional[str],
+            pipeline_attempt_number: Optional[int],
     ) -> None:
         current_timestamp_iso: str = get_current_local_datetime().isoformat()
         pipeline_operation = AaveDcaPipelineOperation(
@@ -65,38 +69,65 @@ class AaveDcaPipelineRecoveryService:
             started_at=current_timestamp_iso,
             completed_at=current_timestamp_iso,
             transaction_hash=transaction_hash,
-            route_tool=route_tool,
-            source_amount_base_units=source_amount_base_units,
-            expected_output_base_units=expected_output_base_units,
-            minimum_output_base_units=minimum_output_base_units,
+            route_tool=operation_details.route_tool,
+            source_amount_base_units=operation_details.source_amount_base_units,
+            expected_output_base_units=operation_details.expected_output_base_units,
+            minimum_output_base_units=operation_details.minimum_output_base_units,
             failure_code=failure_code,
             failure_message=failure_message,
             pipeline_attempt_number=pipeline_attempt_number,
+            nonce=nonce,
+            pre_swap_target_balance_base_units=operation_details.pre_swap_target_balance_base_units,
         )
-        dca_order.pipeline_operations = append_pipeline_operation(
+        dca_order.pipeline_operations = replace_broadcast_or_append_pipeline_operation(
             dca_order.pipeline_operations,
             pipeline_operation,
+        )
+
+    def record_broadcast(
+            self,
+            dca_order: AaveDcaOrder,
+            pipeline_step: AaveDcaPipelineOperationStep,
+            transaction_broadcast: AaveEvmTransactionBroadcast,
+            operation_details: AaveDcaPipelineOperationDetails,
+    ) -> None:
+        self.record_pipeline_operation(
+            dca_order=dca_order,
+            pipeline_step=pipeline_step,
+            pipeline_status=AaveDcaPipelineOperationStatus.BROADCASTED,
+            operation_details=operation_details,
+            transaction_hash=transaction_broadcast.transaction_hash,
+            nonce=transaction_broadcast.nonce,
+            failure_code=None,
+            failure_message=None,
+            pipeline_attempt_number=dca_order.pipeline_attempt_count + 1,
+        )
+        self.dca_order_dao.save(dca_order)
+        self.database_session.commit()
+        cache_invalidator.mark_dirty(CacheRealm.AAVE_DCA_STRATEGIES)
+        logger.info(
+            "[AAVEDCA][RECOVERY][BROADCAST] Order_id=%s %s transaction %s recorded as broadcast with nonce=%s",
+            dca_order.id,
+            pipeline_step.value,
+            transaction_broadcast.transaction_hash,
+            transaction_broadcast.nonce,
         )
 
     def record_pre_broadcast_pipeline_failure(
             self,
             dca_order: AaveDcaOrder,
             pipeline_step: AaveDcaPipelineOperationStep,
+            operation_details: AaveDcaPipelineOperationDetails,
+            failure_code: Optional[str],
             failure_message: str,
-            route_tool: Optional[str] = None,
-            source_amount_base_units: Optional[int] = None,
-            expected_output_base_units: Optional[int] = None,
-            minimum_output_base_units: Optional[int] = None,
-            failure_code: Optional[str] = None,
     ) -> None:
         self.record_pipeline_operation(
             dca_order=dca_order,
             pipeline_step=pipeline_step,
             pipeline_status=AaveDcaPipelineOperationStatus.FAILED,
-            route_tool=route_tool,
-            source_amount_base_units=source_amount_base_units,
-            expected_output_base_units=expected_output_base_units,
-            minimum_output_base_units=minimum_output_base_units,
+            operation_details=operation_details,
+            transaction_hash=None,
+            nonce=None,
             failure_code=failure_code,
             failure_message=failure_message,
             pipeline_attempt_number=dca_order.pipeline_attempt_count + 1,
@@ -111,11 +142,19 @@ class AaveDcaPipelineRecoveryService:
             pipeline_step: AaveDcaPipelineOperationStep,
             pipeline_step_label: str,
             confirmation_outcome: AaveEvmTransactionConfirmationOutcome,
-            route_tool: Optional[str] = None,
-            source_amount_base_units: Optional[int] = None,
-            expected_output_base_units: Optional[int] = None,
-            minimum_output_base_units: Optional[int] = None,
+            operation_details: AaveDcaPipelineOperationDetails,
     ) -> str:
+        pending_broadcast_operation: Optional[AaveDcaPipelineOperation] = find_pending_broadcast_operation(
+            dca_order.pipeline_operations,
+            pipeline_step,
+        )
+        broadcast_nonce: Optional[int] = None
+        if (
+                pending_broadcast_operation is not None
+                and pending_broadcast_operation.transaction_hash == confirmation_outcome.transaction_hash
+        ):
+            broadcast_nonce = pending_broadcast_operation.nonce
+
         if confirmation_outcome.is_confirmed:
             if confirmation_outcome.transaction_hash is None:
                 raise AaveDcaBlockingPipelineError(
@@ -126,32 +165,43 @@ class AaveDcaPipelineRecoveryService:
                 dca_order=dca_order,
                 pipeline_step=pipeline_step,
                 pipeline_status=AaveDcaPipelineOperationStatus.COMPLETED,
+                operation_details=operation_details,
                 transaction_hash=confirmation_outcome.transaction_hash,
-                route_tool=route_tool,
-                source_amount_base_units=source_amount_base_units,
-                expected_output_base_units=expected_output_base_units,
-                minimum_output_base_units=minimum_output_base_units,
+                nonce=broadcast_nonce,
+                failure_code=None,
+                failure_message=None,
+                pipeline_attempt_number=None,
             )
             return confirmation_outcome.transaction_hash
 
-        failure_classification = classify_aave_dca_pipeline_onchain_failure(
-            confirmation_failure_kind=confirmation_outcome.confirmation_failure_kind,
-            onchain_revert_reason=confirmation_outcome.onchain_revert_reason,
-        )
         failure_message: str = build_aave_dca_pipeline_step_failure_message(
             pipeline_step_label=pipeline_step_label,
             onchain_revert_reason=confirmation_outcome.onchain_revert_reason,
             confirmation_failure_kind=confirmation_outcome.confirmation_failure_kind,
         )
+        if (
+                confirmation_outcome.confirmation_failure_kind == AaveEvmTransactionConfirmationFailureKind.CONFIRMATION_TIMEOUT
+                and broadcast_nonce is not None
+        ):
+            logger.info(
+                "[AAVEDCA][RECOVERY][BROADCAST] Order_id=%s %s transaction %s still unconfirmed: it stays broadcast and is never sent again",
+                dca_order.id,
+                pipeline_step.value,
+                confirmation_outcome.transaction_hash,
+            )
+            raise AaveDcaTransientPipelineError(failure_message)
+
+        failure_classification = classify_aave_dca_pipeline_onchain_failure(
+            confirmation_failure_kind=confirmation_outcome.confirmation_failure_kind,
+            onchain_revert_reason=confirmation_outcome.onchain_revert_reason,
+        )
         self.record_pipeline_operation(
             dca_order=dca_order,
             pipeline_step=pipeline_step,
             pipeline_status=AaveDcaPipelineOperationStatus.FAILED,
+            operation_details=operation_details,
             transaction_hash=confirmation_outcome.transaction_hash,
-            route_tool=route_tool,
-            source_amount_base_units=source_amount_base_units,
-            expected_output_base_units=expected_output_base_units,
-            minimum_output_base_units=minimum_output_base_units,
+            nonce=broadcast_nonce,
             failure_code=failure_classification.onchain_revert_reason,
             failure_message=failure_message,
             pipeline_attempt_number=dca_order.pipeline_attempt_count + 1,

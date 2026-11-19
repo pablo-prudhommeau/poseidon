@@ -6,6 +6,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field
 
+from src.core.aavedca.aave_dca_structures import AaveDcaStrategyStatus
 from src.core.structures.structures import BlockchainNetwork
 from src.core.trading.shadowing.trading_shadowing_structures import TradingShadowingPhase
 from src.core.trading.trading_structures import GasRefillBudgetDetailScope
@@ -68,6 +69,18 @@ class AaveDcaStrategyCreatePayload(BaseModel):
     bear_market_bottom_multiplier: float
     minimum_bull_market_multiplier: float
     aave_estimated_annual_percentage_yield: float
+
+
+class AaveDcaStrategyStatusUpdatePayload(BaseModel):
+    strategy_status: AaveDcaStrategyStatus
+
+
+class AaveDcaStrategyStatusUpdateResponse(BaseModel):
+    message: str
+    strategy_id: int
+    previous_strategy_status: AaveDcaStrategyStatus
+    strategy_status: AaveDcaStrategyStatus
+    suspended_in_flight_order_count: int
 
 
 class AaveDcaStrategyCreateResponse(BaseModel):

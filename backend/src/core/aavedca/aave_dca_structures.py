@@ -15,6 +15,18 @@ class AaveDcaConfigurationError(RuntimeError):
     pass
 
 
+class AaveDcaStrategyNotFoundError(Exception):
+    pass
+
+
+class AaveDcaStrategyStatusTransitionError(Exception):
+    pass
+
+
+class AaveDcaActiveStrategyConflictError(Exception):
+    pass
+
+
 class AaveDcaOrderStatus(Enum):
     PENDING = "PENDING"
     WAITING_USER_APPROVAL = "WAITING_USER_APPROVAL"
@@ -41,6 +53,7 @@ class AaveDcaPipelineOperationStep(Enum):
 
 
 class AaveDcaPipelineOperationStatus(Enum):
+    BROADCASTED = "BROADCASTED"
     COMPLETED = "COMPLETED"
     SKIPPED = "SKIPPED"
     FAILED = "FAILED"
@@ -53,6 +66,9 @@ class AaveDcaPipelinePreflightFailureReason(Enum):
     INVALID_EXECUTION_AMOUNT = "INVALID_EXECUTION_AMOUNT"
     EMPTY_TARGET_BALANCE_POST_SWAP = "EMPTY_TARGET_BALANCE_POST_SWAP"
     LIFI_QUOTE_INVALID = "LIFI_QUOTE_INVALID"
+    LIFI_TRANSACTION_REJECTED = "LIFI_TRANSACTION_REJECTED"
+    PRE_SWAP_BALANCE_MISSING = "PRE_SWAP_BALANCE_MISSING"
+    EMPTY_DEPOSIT_AMOUNT = "EMPTY_DEPOSIT_AMOUNT"
     ONCHAIN_EXECUTION_FAILED = "ONCHAIN_EXECUTION_FAILED"
     SWAP_AMOUNT_BELOW_ROUTE_MINIMUM = "SWAP_AMOUNT_BELOW_ROUTE_MINIMUM"
     MAX_RETRIES_EXCEEDED = "MAX_RETRIES_EXCEEDED"
@@ -80,6 +96,35 @@ class AaveDcaPipelinePreflightResult(BaseModel):
     aave_supply_balance: Optional[float] = None
     wallet_source_balance: Optional[float] = None
     required_execution_amount_base_units: int
+
+
+class AaveDcaStrategyStatusChange(BaseModel):
+    strategy_id: int
+    previous_status: AaveDcaStrategyStatus
+    status: AaveDcaStrategyStatus
+    suspended_in_flight_order_count: int
+
+
+class AaveDcaNativeGasRequirement(BaseModel):
+    order_count: int
+    gas_units_per_order: int
+    max_fee_per_gas_wei: int
+    estimated_gas_cost_avax: float
+    minimum_reserve_avax: float
+    required_balance_avax: float
+    wallet_balance_avax: float
+    missing_balance_avax: float
+    is_sufficient: bool
+
+
+class AaveDcaInsufficientNativeGasError(Exception):
+    def __init__(self, native_gas_requirement: AaveDcaNativeGasRequirement) -> None:
+        super().__init__(
+            f"Insufficient AVAX for gas: wallet_balance={native_gas_requirement.wallet_balance_avax:.4f} "
+            f"required_balance={native_gas_requirement.required_balance_avax:.4f} "
+            f"missing_balance={native_gas_requirement.missing_balance_avax:.4f}"
+        )
+        self.native_gas_requirement = native_gas_requirement
 
 
 class AaveDcaSwapPriceValidationResult(BaseModel):
@@ -116,6 +161,16 @@ class AaveDcaPipelineOperation(BaseModel):
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     pipeline_attempt_number: Optional[int] = None
+    nonce: Optional[int] = None
+    pre_swap_target_balance_base_units: Optional[int] = None
+
+
+class AaveDcaPipelineOperationDetails(BaseModel):
+    route_tool: Optional[str] = None
+    source_amount_base_units: Optional[int] = None
+    expected_output_base_units: Optional[int] = None
+    minimum_output_base_units: Optional[int] = None
+    pre_swap_target_balance_base_units: Optional[int] = None
 
 
 class AaveDcaOrderPipelineOperations(BaseModel):

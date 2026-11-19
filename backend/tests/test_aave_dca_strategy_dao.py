@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from aave_dca_test_helpers import build_aave_dca_database_session, build_aave_dca_strategy
+from src.core.aavedca.aave_dca_structures import AaveDcaStrategyStatus
+from src.core.structures.structures import BlockchainNetwork
 from src.persistence.dao.aave_dca_strategy_dao import AaveDcaStrategyDao
 from src.persistence.models import AaveDcaStrategy
 
@@ -59,3 +62,20 @@ def test_update_strategy_execution_metrics_uses_on_chain_target_quantity() -> No
 
     assert dca_strategy.total_deployed_amount == 0.345
     assert round(dca_strategy.average_purchase_price) == 64246
+
+
+def test_retrieve_active_by_blockchain_network_matches_the_network_case_insensitively() -> None:
+    database_session = build_aave_dca_database_session()
+    active_strategy = build_aave_dca_strategy(AaveDcaStrategyStatus.ACTIVE, "AVALANCHE")
+    database_session.add_all([
+        active_strategy,
+        build_aave_dca_strategy(AaveDcaStrategyStatus.PAUSED, "avalanche"),
+        build_aave_dca_strategy(AaveDcaStrategyStatus.ACTIVE, "base"),
+    ])
+    database_session.flush()
+
+    active_strategies: list[AaveDcaStrategy] = AaveDcaStrategyDao(database_session).retrieve_active_by_blockchain_network(
+        BlockchainNetwork.AVALANCHE,
+    )
+
+    assert active_strategies == [active_strategy]

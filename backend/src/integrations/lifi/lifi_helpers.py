@@ -14,6 +14,7 @@ from src.integrations.lifi.lifi_structures import (
     LifiSolanaQuotePayload,
     LifiSolanaSerializedTransaction,
     LifiTransactionRequest,
+    LifiTransactionRequestRejectedError,
 )
 from src.logging.logger import get_application_logger
 
@@ -37,6 +38,41 @@ def validate_executable_evm_transaction_request(transaction_request: LifiTransac
         raise LifiRouteNormalizationError("LI.FI EVM transaction request is missing source wallet address")
     if transaction_request.gas_limit is None or not transaction_request.gas_limit.strip():
         raise LifiRouteNormalizationError("LI.FI EVM transaction request is missing gas limit")
+
+
+def validate_lifi_swap_transaction_request(
+        transaction_request: LifiTransactionRequest,
+        wallet_address: str,
+        expected_router_address: str,
+        expected_chain_identifier: int,
+) -> None:
+    if transaction_request.to.strip().lower() != expected_router_address.strip().lower():
+        raise LifiTransactionRequestRejectedError(
+            f"LI.FI transaction recipient {transaction_request.to} is not the expected router {expected_router_address}"
+        )
+
+    transaction_value_wei: int = parse_lifi_hex_or_decimal_integer(transaction_request.value.strip())
+    if transaction_value_wei != 0:
+        raise LifiTransactionRequestRejectedError(
+            f"LI.FI transaction carries a native value of {transaction_value_wei} wei for an ERC-20 swap"
+        )
+
+    if transaction_request.from_address is None or transaction_request.from_address.strip().lower() != wallet_address.strip().lower():
+        raise LifiTransactionRequestRejectedError(
+            f"LI.FI transaction sender {transaction_request.from_address} is not the DCA wallet {wallet_address}"
+        )
+
+    if transaction_request.chain_id != expected_chain_identifier:
+        raise LifiTransactionRequestRejectedError(
+            f"LI.FI transaction chain {transaction_request.chain_id} is not the expected chain {expected_chain_identifier}"
+        )
+
+    logger.debug(
+        "[LIFI][ROUTE][EVM][GUARD] Swap transaction request accepted to=%s from=%s chain_id=%s",
+        transaction_request.to,
+        transaction_request.from_address,
+        transaction_request.chain_id,
+    )
 
 
 def resolve_lifi_transaction_gas_limit_in_units(transaction_request: LifiTransactionRequest) -> int:

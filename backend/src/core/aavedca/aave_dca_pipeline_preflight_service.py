@@ -30,6 +30,7 @@ class AaveDcaPipelinePreflightService:
             source_asset_decimals: int,
             required_execution_amount_base_units: int,
             minimum_native_gas_reserve_avax: float,
+            has_pending_broadcast: bool,
     ) -> AaveDcaPipelinePreflightResult:
         if required_execution_amount_base_units <= 0:
             return AaveDcaPipelinePreflightResult(
@@ -47,7 +48,7 @@ class AaveDcaPipelinePreflightService:
                 required_execution_amount_base_units=required_execution_amount_base_units,
             )
 
-        if order_status == AaveDcaOrderStatus.AWAITING_SUPPLY:
+        if order_status == AaveDcaOrderStatus.AWAITING_SUPPLY or has_pending_broadcast:
             return AaveDcaPipelinePreflightResult(
                 is_successful=True,
                 native_gas_balance_avax=native_gas_balance_avax,
@@ -99,6 +100,7 @@ class AaveDcaPipelinePreflightService:
             blockchain: BlockchainNetwork,
             amount_in_base_units: int,
             order_status: AaveDcaOrderStatus,
+            has_pending_broadcast: bool,
     ) -> None:
         preflight_result = await self.run_live_pipeline_preflight_checks(
             blockchain=blockchain,
@@ -107,6 +109,7 @@ class AaveDcaPipelinePreflightService:
             source_asset_decimals=dca_strategy.source_asset_decimals,
             required_execution_amount_base_units=amount_in_base_units,
             minimum_native_gas_reserve_avax=settings.AAVE_DCA_MINIMUM_NATIVE_GAS_RESERVE_AVAX,
+            has_pending_broadcast=has_pending_broadcast,
         )
 
         if preflight_result.is_successful:

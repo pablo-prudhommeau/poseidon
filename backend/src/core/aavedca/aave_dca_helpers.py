@@ -15,6 +15,9 @@ from src.core.aavedca.aave_dca_structures import (
     AaveDcaPipelineOnchainFailureRetryPolicy,
     AaveDcaPipelineOnchainRevertRule,
     AaveDcaPipelineOperation,
+    AaveDcaPipelineOperationDetails,
+    AaveDcaPipelineOperationStatus,
+    AaveDcaPipelineOperationStep,
     AaveDcaPipelinePreflightFailureReason,
     AaveDcaSwapPriceValidationResult,
 )
@@ -136,11 +139,89 @@ def append_pipeline_operation(
     return serialize_pipeline_operations(updated_container)
 
 
+def replace_broadcast_or_append_pipeline_operation(
+        existing_pipeline_operations: Optional[dict[str, object]],
+        pipeline_operation: AaveDcaPipelineOperation,
+) -> dict[str, object]:
+    pending_broadcast_operation: Optional[AaveDcaPipelineOperation] = find_pending_broadcast_operation(
+        existing_pipeline_operations,
+        pipeline_operation.step,
+    )
+    if (
+            pending_broadcast_operation is None
+            or pending_broadcast_operation.transaction_hash != pipeline_operation.transaction_hash
+    ):
+        return append_pipeline_operation(existing_pipeline_operations, pipeline_operation)
+
+    pipeline_operations_container = deserialize_pipeline_operations(existing_pipeline_operations)
+    updated_pipeline_operations: list[AaveDcaPipelineOperation] = list(pipeline_operations_container.pipeline_operations)
+    for operation_index in reversed(range(len(updated_pipeline_operations))):
+        if updated_pipeline_operations[operation_index].step == pipeline_operation.step:
+            updated_pipeline_operations[operation_index] = pipeline_operation
+            break
+    updated_container = AaveDcaOrderPipelineOperations(
+        initialized_at=pipeline_operations_container.initialized_at,
+        last_updated_at=get_current_local_datetime().isoformat(),
+        pipeline_operations=updated_pipeline_operations,
+    )
+    return serialize_pipeline_operations(updated_container)
+
+
+def find_last_pipeline_operation(
+        raw_pipeline_operations: Optional[dict[str, object]],
+        pipeline_step: AaveDcaPipelineOperationStep,
+) -> Optional[AaveDcaPipelineOperation]:
+    pipeline_operations: list[AaveDcaPipelineOperation] = deserialize_pipeline_operations(raw_pipeline_operations).pipeline_operations
+    for pipeline_operation in reversed(pipeline_operations):
+        if pipeline_operation.step == pipeline_step:
+            return pipeline_operation
+    return None
+
+
+def find_pending_broadcast_operation(
+        raw_pipeline_operations: Optional[dict[str, object]],
+        pipeline_step: AaveDcaPipelineOperationStep,
+) -> Optional[AaveDcaPipelineOperation]:
+    last_pipeline_operation: Optional[AaveDcaPipelineOperation] = find_last_pipeline_operation(raw_pipeline_operations, pipeline_step)
+    if (
+            last_pipeline_operation is None
+            or last_pipeline_operation.status != AaveDcaPipelineOperationStatus.BROADCASTED
+            or last_pipeline_operation.transaction_hash is None
+            or last_pipeline_operation.nonce is None
+    ):
+        return None
+    return last_pipeline_operation
+
+
+def find_last_completed_pipeline_operation(
+        raw_pipeline_operations: Optional[dict[str, object]],
+        pipeline_step: AaveDcaPipelineOperationStep,
+) -> Optional[AaveDcaPipelineOperation]:
+    pipeline_operations: list[AaveDcaPipelineOperation] = deserialize_pipeline_operations(raw_pipeline_operations).pipeline_operations
+    for pipeline_operation in reversed(pipeline_operations):
+        if pipeline_operation.step == pipeline_step and pipeline_operation.status == AaveDcaPipelineOperationStatus.COMPLETED:
+            return pipeline_operation
+    return None
+
+
+def build_pipeline_operation_details(pipeline_operation: AaveDcaPipelineOperation) -> AaveDcaPipelineOperationDetails:
+    return AaveDcaPipelineOperationDetails(
+        route_tool=pipeline_operation.route_tool,
+        source_amount_base_units=pipeline_operation.source_amount_base_units,
+        expected_output_base_units=pipeline_operation.expected_output_base_units,
+        minimum_output_base_units=pipeline_operation.minimum_output_base_units,
+        pre_swap_target_balance_base_units=pipeline_operation.pre_swap_target_balance_base_units,
+    )
+
+
 def classify_aave_dca_pipeline_onchain_failure(
         confirmation_failure_kind: Optional[AaveEvmTransactionConfirmationFailureKind],
         onchain_revert_reason: Optional[str],
 ) -> AaveDcaPipelineOnchainFailureClassification:
-    if confirmation_failure_kind == AaveEvmTransactionConfirmationFailureKind.CONFIRMATION_TIMEOUT:
+    if confirmation_failure_kind in (
+            AaveEvmTransactionConfirmationFailureKind.CONFIRMATION_TIMEOUT,
+            AaveEvmTransactionConfirmationFailureKind.REPLACED_OR_DROPPED,
+    ):
         return AaveDcaPipelineOnchainFailureClassification(
             onchain_revert_reason=onchain_revert_reason,
             retry_policy=AaveDcaPipelineOnchainFailureRetryPolicy.TRANSIENT,

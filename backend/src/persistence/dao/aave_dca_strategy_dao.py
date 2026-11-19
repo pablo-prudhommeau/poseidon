@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.core.aavedca.aave_dca_structures import AaveDcaStrategyStatus
+from src.core.structures.structures import BlockchainNetwork
 from src.logging.logger import get_application_logger
 from src.persistence.models import AaveDcaStrategy
 
@@ -27,6 +29,18 @@ class AaveDcaStrategyDao:
     def retrieve_active(self) -> List[AaveDcaStrategy]:
         logger.debug("[DATABASE][DAO][AAVEDCA_STRATEGY][RETRIEVE] Fetching active DCA strategies")
         database_query = select(AaveDcaStrategy).where(AaveDcaStrategy.strategy_status == "ACTIVE")
+        return list(self.database_session.execute(database_query).scalars().all())
+
+    def retrieve_active_by_blockchain_network(self, blockchain_network: BlockchainNetwork) -> List[AaveDcaStrategy]:
+        logger.debug(
+            "[DATABASE][DAO][AAVEDCA_STRATEGY][RETRIEVE] Fetching active DCA strategies on blockchain %s",
+            blockchain_network.value,
+        )
+        database_query = (
+            select(AaveDcaStrategy)
+            .where(AaveDcaStrategy.strategy_status == AaveDcaStrategyStatus.ACTIVE)
+            .where(func.lower(AaveDcaStrategy.blockchain_network) == blockchain_network.value)
+        )
         return list(self.database_session.execute(database_query).scalars().all())
 
     def update_strategy_execution_metrics(
