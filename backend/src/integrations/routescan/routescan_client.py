@@ -9,6 +9,7 @@ from web3 import Web3
 from src.configuration.config import settings
 from src.integrations.routescan.routescan_constants import (
     ROUTESCAN_AVALANCHE_ETHERSCAN_API_URL,
+    ROUTESCAN_END_BLOCK,
     ROUTESCAN_HTTP_TIMEOUT_SECONDS,
     ROUTESCAN_PAGE_DELAY_SECONDS,
     ROUTESCAN_PAGE_SIZE,
@@ -81,7 +82,7 @@ class RoutescanClient:
             "action": account_action.value,
             "address": self._wallet_checksum_address,
             "startblock": 0,
-            "endblock": 99_999_999,
+            "endblock": ROUTESCAN_END_BLOCK,
             "page": 1,
             "offset": ROUTESCAN_LATEST_TRANSACTION_WINDOW_SIZE,
             "sort": "desc",
@@ -120,7 +121,7 @@ class RoutescanClient:
                     "action": account_action.value,
                     "address": self._wallet_checksum_address,
                     "startblock": 0,
-                    "endblock": 99_999_999,
+                    "endblock": ROUTESCAN_END_BLOCK,
                     "page": current_page_number,
                     "offset": ROUTESCAN_PAGE_SIZE,
                     "sort": "asc",
